@@ -1,11 +1,57 @@
+from account.models import CustomUser
+from django.contrib.auth.models import AbstractUser
 from django.db import models
+
+
+# ProductCategory model
+class ProductCategory(models.Model):
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+
+    class Meta:
+        verbose_name_plural = "Product Categories"
+        ordering = ["name"]
+        # Ensure categories are ordered by name by default
+
+    def __str__(self):
+        return self.name
+
+    def get_category_details(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+        }
+
+    def get_products(self):
+        """Get all products in this category."""
+        return Product.objects.filter(category=self.name)
+
+    def get_product_count(self):
+        """Get the count of products in this category."""
+        return self.get_products().count()
+
+    def get_product_list(self):
+        """Get a list of products in this category."""
+        return [product.get_product_details() for product in self.get_products()]
 
 
 # Product model
 class Product(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
+    category = models.ForeignKey(
+        ProductCategory, on_delete=models.CASCADE, related_name="products"
+    )
     price = models.DecimalField(max_digits=10, decimal_places=2)
+    image = models.ImageField(upload_to="products/", blank=True, null=True)
+
+    class Meta:
+        verbose_name_plural = "Products"
+        unique_together = ("name", "category")
+        # Ensure product names are unique within their category
+        ordering = ["category", "name"]
+        # Ensure products are ordered by category and then by name
 
     def __str__(self):
         return self.name
@@ -16,76 +62,37 @@ class Product(models.Model):
             "name": self.name,
             "description": self.description,
             "price": str(self.price),
+            "image_url": self.image.url if self.image else None,  # Include S3 image URL
         }
 
 
 # Stock model
 class Stock(models.Model):
-    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    product = models.OneToOneField(Product, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField()
+
+    class Meta:
+        verbose_name_plural = "Stock"
+        ordering = ["product"]
+        # Ensure stocks are ordered by product name
 
     def __str__(self):
         return f"{self.product.name} - {self.quantity} in stock"
 
     def is_in_stock(self):
+        """Check if the product is in stock."""
         return self.quantity > 0
 
     def reduce_stock(self, quantity):
+        """Reduce stock by a specified quantity."""
         if quantity <= self.quantity:
             self.quantity -= quantity
             self.save()
         else:
             raise ValueError("Not enough stock available.")
 
+    def increase_stock(self, quantity):
+        """Increase stock by a specified quantity."""
+        self.quantity += quantity
+        self.save()
 
-# Order model
-class Order(models.Model):
-    customer_name = models.CharField(max_length=255)
-    order_date = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"Order #{self.id} by {self.customer_name}"
-
-    def get_total_price(self):
-        return sum(item.get_total_price() for item in self.items.all())
-
-    def get_order_details(self):
-        return {
-            "order_id": self.id,
-            "customer_name": self.customer_name,
-            "order_date": self.order_date.strftime("%Y-%m-%d %H:%M:%S"),
-            "total_price": self.get_total_price(),
-            "items": [item.get_item_details() for item in self.items.all()],
-        }
-
-
-# OrderItem model
-class OrderItem(models.Model):
-    order = models.ForeignKey(Order, related_name="items", on_delete=models.CASCADE)
-    product = models.ForeignKey(Product, on_delete=models.CASCADE)
-    quantity = models.PositiveIntegerField()
-
-    def __str__(self):
-        return f"{self.quantity} x {self.product.name} (Order #{self.order.id})"
-
-    def save(self, *args, **kwargs):
-        """Override save to reduce stock when an order item is created."""
-        if not self.pk:  # Only reduce stock on creation
-            stock = Stock.objects.get(product=self.product)
-            if stock.quantity >= self.quantity:
-                stock.reduce_stock(self.quantity)
-            else:
-                raise ValueError("Not enough stock available.")
-        super().save(*args, **kwargs)
-
-    def get_total_price(self):
-        return self.product.price * self.quantity
-
-    def get_item_details(self):
-        return {
-            "product_id": self.product.id,
-            "product_name": self.product.name,
-            "product_price": self.product.price,
-            "quantity": self.quantity,
-            "total_price": self.get_total_price(),
-        }
