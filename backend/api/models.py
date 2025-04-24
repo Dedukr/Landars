@@ -1,5 +1,6 @@
 from account.models import CustomUser
 from django.contrib.auth.models import AbstractUser
+from django.core.validators import MinValueValidator
 from django.db import models
 
 
@@ -64,12 +65,19 @@ class Product(models.Model):
             "price": str(self.price),
             "image_url": self.image.url if self.image else None,  # Include S3 image URL
         }
+    def get_product_stock(self):
+        """Get the stock for this product."""
+        try:
+            stock = self.stock
+            return stock.quantity
+        except Stock.DoesNotExist:
+            return 0
 
 
 # Stock model
 class Stock(models.Model):
-    product = models.OneToOneField(Product, on_delete=models.CASCADE)
-    quantity = models.PositiveIntegerField()
+    product = models.OneToOneField(Product, on_delete=models.CASCADE, related_name="stock")
+    quantity = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
     class Meta:
         verbose_name_plural = "Stock"
@@ -96,3 +104,65 @@ class Stock(models.Model):
         self.quantity += quantity
         self.save()
 
+
+# Order model
+class Order(models.Model):
+    customer = models.ForeignKey(
+        CustomUser, on_delete=models.SET_NULL, related_name="orders", null=True
+    )
+    notes = models.CharField(blank=True, null=True)
+    order_date = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(
+        max_length=50,
+        choices=[
+            ("pending", "Pending"),
+            ("paid", "Paid"),
+            ("delivered", "Delivered"),
+            ("completed", "Completed"),
+            ("cancelled", "Cancelled"),
+        ],
+        default="pending",
+    )
+
+    class Meta:
+        verbose_name_plural = "Orders"
+        ordering = ["-order_date"]
+
+    def __str__(self):
+        return f"Order #{self.id} by {self.customer}"
+
+    @property
+    def total_price(self):
+        return sum(item.get_total_price() for item in self.items.all())
+
+    def get_order_details(self):
+        return {
+            "order_id": self.id,
+            "customer": self.customer,
+            "order_date": self.order_date.strftime("%Y-%m-%d %H:%M:%S"),
+            "total_price": self.get_total_price(),
+            "items": [item.get_item_details() for item in self.items.all()],
+        }
+
+
+# OrderItem model
+class OrderItem(models.Model):
+    order = models.ForeignKey(Order, related_name="items", on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True)
+    quantity = models.DecimalField(
+        max_digits=10, decimal_places=2, validators=[MinValueValidator(0.01)]
+    )
+
+    def __str__(self):
+        return f"{self.product.name} - {self.quantity}"
+
+    def get_total_price(self):
+        return self.product.price * self.quantity
+
+    def get_item_details(self):
+        return {
+            "product_id": self.product.id,
+            "product_name": self.product.name,
+            "quantity": self.quantity,
+            "total_price": str(self.total_price()),
+        }

@@ -10,17 +10,16 @@ from .models import Address, CustomUser, Profile
 class CustomUserAdmin(UserAdmin):
     form = CustomUserForm
     add_form = CustomUserCreationForm
-    list_display = ("profile__name", "email", "is_staff", "is_active")
+    list_display = ("name", "profile__phone", "is_staff", "is_active")
     list_filter = (
         "is_staff",
         "is_active",
     )
-    ordering = ("profile__name",)
-    search_fields = ("profile__name", "email")
+    ordering = ("name",)
+    search_fields = ("name", "profile__phone", "email")
 
     fieldsets = [
-        (None, {"fields": ("email", "password")}),
-        ("Important dates", {"fields": ("last_login",)}),
+        (None, {"fields": ("name", "email", "password")}),
     ]
     add_fieldsets = [
         (
@@ -28,9 +27,6 @@ class CustomUserAdmin(UserAdmin):
             {
                 "classes": ("wide",),
                 "fields": (
-                    "email",
-                    "password1",
-                    "password2",
                     "name",
                     "phone",
                     "address_line",
@@ -38,6 +34,8 @@ class CustomUserAdmin(UserAdmin):
                     "city",
                     "postal_code",
                     "notes",
+                    "email",
+                    "password",
                 ),
             },
         ),
@@ -55,7 +53,7 @@ class CustomUserAdmin(UserAdmin):
                     _("Profile"),
                     {
                         "fields": (
-                            "name",
+                            # "name",
                             "phone",
                             "address_line",
                             "address_line2",
@@ -65,6 +63,7 @@ class CustomUserAdmin(UserAdmin):
                         )
                     },
                 ),
+                ("Important fields", {"fields": ("last_login", "is_active")}),
             ]
         if request.user.is_superuser:
             fieldsets = fieldsets + [
@@ -72,7 +71,6 @@ class CustomUserAdmin(UserAdmin):
                     _("Permissions"),
                     {
                         "fields": (
-                            "is_active",
                             "is_staff",
                             "is_superuser",
                             "groups",

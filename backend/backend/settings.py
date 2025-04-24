@@ -45,7 +45,6 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "account",
-    "orders",
     "api",
 ]
 

@@ -23,37 +23,47 @@ class CustomUserForm(UserChangeForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        if self.instance and hasattr(self.instance, "profile"):
-            self.fields["name"].initial = self.instance.profile.name
-            self.fields["phone"].initial = self.instance.profile.phone
-            self.fields["address"].initial = self.instance.profile.address
-            self.fields["notes"].initial = self.instance.profile.notes
+        if self.instance.pk:
+            profile = getattr(self.instance, "profile", None)
+            if profile:
+                # self.fields["name"].initial = profile.name
+                self.fields["phone"].initial = profile.phone
+                self.fields["notes"].initial = profile.notes
+                address = profile.address
+                if address:
+                    self.fields["address_line"].initial = address.address_line
+                    self.fields["address_line2"].initial = address.address_line2
+                    self.fields["city"].initial = address.city
+                    self.fields["postal_code"].initial = address.postal_code
+
+        # if self.instance and hasattr(self.instance, "profile"):
+        #     self.fields["name"].initial = self.instance.profile.name
+        #     self.fields["phone"].initial = self.instance.profile.phone
+        #     self.fields["address"].initial = self.instance.profile.address
+        #     self.fields["notes"].initial = self.instance.profile.notes
 
     def save(self, commit=True):
-        user = super().save(commit=False)
+        user = super().save(commit)
+        profile, _ = Profile.objects.get_or_create(user=user)
+        profile.name = self.cleaned_data.get("name")
+        profile.phone = self.cleaned_data.get("phone")
 
-        if commit:
-            user.save()
-            profile, created = Profile.objects.get_or_create(user=user)
-            profile.name = self.cleaned_data.get("name")
-            profile.phone = self.cleaned_data.get("phone")
-            profile.address = self.cleaned_data.get("address")
-            profile.notes = self.cleaned_data.get("notes")
-            profile.save()
+        address = profile.address or Address()
+        address.address_line = self.cleaned_data.get("address_line")
+        address.address_line2 = self.cleaned_data.get("address_line2")
+        address.city = self.cleaned_data.get("city")
+        address.postal_code = self.cleaned_data.get("postal_code")
+        address.save()
 
-            address, created = Address.objects.get_or_create(user=user)
-            address.address_line = self.cleaned_data.get("address_line")
-            address.address_line2 = self.cleaned_data.get("address_line2")
-            address.city = self.cleaned_data.get("city")
-            address.postal_code = self.cleaned_data.get("postal_code")
-            address.save()
+        profile.address = address
+        profile.save()
 
         return user
 
 
-class CustomUserCreationForm(UserCreationForm):
+class CustomUserCreationForm(forms.ModelForm):
     # Profile fields
-    name = forms.CharField(label="Name", required=False)
+    # name = forms.CharField(label="Name", required=True)
     phone = forms.CharField(label="Phone", required=False)
 
     # Address fields
@@ -63,13 +73,24 @@ class CustomUserCreationForm(UserCreationForm):
     postal_code = forms.CharField(label="Postal Code", required=False)
     country = forms.CharField(label="Country", required=False)
     notes = forms.CharField(label="Notes", required=False)
+    password = forms.CharField(
+        label="Password",
+        widget=forms.PasswordInput,
+        help_text="Leave blank to set an unusable password.",
+        required=False,
+    )
 
     class Meta:
         model = CustomUser
-        fields = ("email", "password1", "password2", "is_active")
+        fields = ("name",)
 
     def save(self, commit=True):
         user = super().save(commit=False)
+        password = self.cleaned_data.get("password")
+        if password:
+            user.set_password(password)
+        else:
+            user.set_unusable_password()
         if commit:
             user.save()
             address = Address.objects.create(
@@ -81,9 +102,10 @@ class CustomUserCreationForm(UserCreationForm):
 
             Profile.objects.create(
                 user=user,
-                name=self.cleaned_data["name"],
+                # name=self.cleaned_data["name"],
                 phone=self.cleaned_data["phone"],
                 address=address,
                 notes=self.cleaned_data.get("notes", ""),
             )
+
         return user
