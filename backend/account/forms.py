@@ -84,28 +84,29 @@ class CustomUserCreationForm(forms.ModelForm):
         model = CustomUser
         fields = ("name",)
 
-    def save(self, commit=True):
-        user = super().save(commit=False)
-        password = self.cleaned_data.get("password")
-        if password:
-            user.set_password(password)
-        else:
-            user.set_unusable_password()
-        if commit:
-            user.save()
-            address = Address.objects.create(
-                address_line=self.cleaned_data["address_line"],
-                address_line2=self.cleaned_data.get("address_line2", ""),
-                city=self.cleaned_data["city"],
-                postal_code=self.cleaned_data["postal_code"],
-            )
+        # def save(self, commit=True):
+        #     user = super().save(commit=False)
+        #     password = self.cleaned_data.get("password")
+        #     if password:
+        #         user.set_password(password)
+        #     else:
+        #         user.set_unusable_password()
+        #         pass
+        #     if commit:
+        #         user.save()
+        #         address = Address.objects.create(
+        #             address_line=self.cleaned_data.get("address_line", ""),
+        #             address_line2=self.cleaned_data.get("address_line2", ""),
+        #             city=self.cleaned_data.get("city", ""),
+        #             postal_code=self.cleaned_data.get("postal_code", ""),
+        #         )
 
-            Profile.objects.create(
-                user=user,
-                # name=self.cleaned_data["name"],
-                phone=self.cleaned_data["phone"],
-                address=address,
-                notes=self.cleaned_data.get("notes", ""),
-            )
+        #         Profile.objects.create(
+        #             user=user,
+        #             # name=self.cleaned_data["name"],
+        #             phone=self.cleaned_data.get("phone", ""),
+        #             address=address,
+        #             notes=self.cleaned_data.get("notes", ""),
+        #         )
 
-        return user
+        # return user

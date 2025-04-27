@@ -65,6 +65,7 @@ class Product(models.Model):
             "price": str(self.price),
             "image_url": self.image.url if self.image else None,  # Include S3 image URL
         }
+
     def get_product_stock(self):
         """Get the stock for this product."""
         try:
@@ -76,7 +77,9 @@ class Product(models.Model):
 
 # Stock model
 class Stock(models.Model):
-    product = models.OneToOneField(Product, on_delete=models.CASCADE, related_name="stock")
+    product = models.OneToOneField(
+        Product, on_delete=models.CASCADE, related_name="stock"
+    )
     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
     class Meta:
@@ -110,7 +113,7 @@ class Order(models.Model):
     customer = models.ForeignKey(
         CustomUser, on_delete=models.SET_NULL, related_name="orders", null=True
     )
-    notes = models.CharField(blank=True, null=True)
+    notes = models.CharField(max_length=200, blank=True, null=True)
     order_date = models.DateTimeField(auto_now_add=True)
     status = models.CharField(
         max_length=50,
