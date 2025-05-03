@@ -1,7 +1,8 @@
 from django.contrib import admin
+from django.urls import reverse
+from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
-from .forms import OrderAdminForm
 from .models import CustomUser, Order, OrderItem, Product, ProductCategory, Stock
 
 
@@ -18,28 +19,21 @@ class ProductCategoryAdmin(admin.ModelAdmin):
     list_display = ["name", "description"]
 
 
-@admin.register(Stock)
-class StockAdmin(admin.ModelAdmin):
-    list_display = ["product__category", "product", "quantity"]
-    list_filter = ["product__category"]
-    search_fields = ["product__name"]
-    ordering = ["product__category", "product__name"]
-
-
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
     extra = 1
     readonly_fields = ["get_total_price"]
 
     def get_total_price(self, obj):
-        return obj.product.price * obj.quantity
+        return round(obj.product.price * obj.quantity, 2)
 
     get_total_price.short_description = "Total Price"
 
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    form = OrderAdminForm
+    # form = OrderAdminForm
+    # add_form = OrderCreateForm
     list_display = [
         "order_date",
         "customer_name",
@@ -58,17 +52,61 @@ class OrderAdmin(admin.ModelAdmin):
     ordering = ["-order_date"]
     date_hierarchy = "order_date"
     inlines = [OrderItemInline]
-    readonly_fields = [
-        "order_date",
-        "customer_name",
-        "customer_phone",
-        "customer_address",
-        "get_total_price",
-    ]
 
-    # Custom methods to display customer info in the admin list
+    def get_fields(self, request, obj=None):
+        if obj:
+            if request.user.has_perm("account.change_customuser"):
+                return [
+                    "customer",  # link or plain text
+                    "notes",
+                    "status",
+                    "order_date",
+                    "customer_phone",
+                    "customer_address",
+                    "get_total_price",
+                ]
+            return [
+                "customer_name",
+                "notes",
+                "status",
+                "order_date",
+                "customer_phone",
+                "customer_address",
+                "get_total_price",
+            ]
+        return super().get_fields(request, obj)
+
+    def get_readonly_fields(self, request, obj=None):
+        readonly_on_change = [
+            "order_date",
+            "customer_phone",
+            "customer_address",
+            "get_total_price",
+        ]
+
+        if obj:  # We're in change mode
+            if request.user.has_perm("api.can_change_status_and_note"):
+                return [
+                    "customer_name"
+                ] + readonly_on_change  # Only status & notes editable
+            return readonly_on_change  # Admins can edit customer, status, notes
+        else:
+            return []
+
+    def get_queryset(self, request):
+        self.request = request  # Save request for later use
+        return super().get_queryset(request)
+
     def customer_name(self, obj):
+        request = getattr(self, "request", None)
+        if request and request.user.has_perm("account.change_customuser"):
+            if obj.customer:
+                url = reverse("admin:account_customuser_change", args=[obj.customer.id])
+                return format_html('<a href="{}">{}</a>', url, obj.customer.name)
+            return "No Customer"
         return obj.customer.name if obj.customer else "No Customer"
+
+    # customer_name.short_description = "Customer Name"
 
     def customer_phone(self, obj):
         return (
@@ -85,27 +123,13 @@ class OrderAdmin(admin.ModelAdmin):
         return "No Address"
 
     def get_total_price(self, obj):
-        return round(obj.total_price, 2)
+        return obj.total_price
 
     get_total_price.short_description = "Total Price"
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "customer":
             kwargs["queryset"] = CustomUser.objects.filter(is_staff=False)
+            if not request.user.has_perm("account.change_customuser"):
+                kwargs["disabled"] = True
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
-
-    fieldsets = [
-        (None, {"fields": ("customer", "notes")}),
-        (_("Order Details"), {"fields": ("order_date", "status")}),
-        (
-            "Customer Info",
-            {
-                "fields": (
-                    "customer_name",
-                    "customer_phone",
-                    "customer_address",
-                )
-            },
-        ),
-        ("Total Price", {"fields": ("get_total_price",)}),
-    ]

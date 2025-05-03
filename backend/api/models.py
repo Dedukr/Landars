@@ -130,6 +130,9 @@ class Order(models.Model):
     class Meta:
         verbose_name_plural = "Orders"
         ordering = ["-order_date"]
+        permissions = [
+            ("can_change_status_and_note", "Can change order status and notes"),
+        ]
 
     def __str__(self):
         return f"Order #{self.id} by {self.customer}"
@@ -160,7 +163,7 @@ class OrderItem(models.Model):
         return f"{self.product.name} - {self.quantity}"
 
     def get_total_price(self):
-        return self.product.price * self.quantity
+        return round(self.product.price * self.quantity, 2)
 
     def get_item_details(self):
         return {

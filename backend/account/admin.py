@@ -1,15 +1,36 @@
+from api.models import Order
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
+from django.urls import reverse
+from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
 from .forms import CustomUserCreationForm, CustomUserForm
 from .models import Address, CustomUser, Profile
 
 
-@admin.register(Profile)
-class ProfileAdmin(admin.ModelAdmin):
-    list_display = ("user", "phone", "address__city")
-    search_fields = ("user__name", "phone", "address__city")
+class OrderInline(admin.TabularInline):  # or StackedInline if you want vertical
+    model = Order
+    extra = 0  # no empty new forms
+    fields = ("order_link", "status", "notes", "total_price")
+    readonly_fields = ("order_link", "total_price")
+
+    def order_link(self, obj):
+        url = reverse(
+            "admin:api_order_change", args=[obj.pk]
+        )  # Update "api_orders_change" to match your app
+        return format_html(
+            '<a href="{}" style="color:#0a7;">🛒 {}</a>',
+            url,
+            obj.order_date.strftime("%B %d, %Y, %H:%M"),
+        )
+
+    order_link.short_description = "Order Date"
+
+    def total_price(self, obj):
+        return obj.total_price
+
+    total_price.short_description = "Total Price"
 
 
 @admin.register(CustomUser)
@@ -86,6 +107,10 @@ class CustomUserAdmin(UserAdmin):
             ]
         return fieldsets
 
+    get_inlines = lambda self, request, obj: (
+        [OrderInline] if obj and not obj.is_staff else []
+    )
+
     def save_model(self, request, obj, form, change):
         """
         Override save_model to handle Profile and Address creation.
@@ -115,3 +140,13 @@ class CustomUserAdmin(UserAdmin):
                     address=address,
                     notes=form.cleaned_data.get("notes", ""),
                 )
+
+    def response_add(self, request, obj, post_url_continue=None):
+        """
+        Redirect to the user list view after adding a new user.
+        """
+        from django.http import HttpResponseRedirect
+        from django.urls import reverse
+
+        # Redirect to the user list view
+        return HttpResponseRedirect(reverse("admin:account_customuser_changelist"))
