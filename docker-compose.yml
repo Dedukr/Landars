@@ -13,8 +13,7 @@ services:
   nginx:
     image: dedukr/landar-nginx:latest
     build:
-      context: .
-      dockerfile: ./nginx/Dockerfile
+      context: ./nginx
     ports:
       - "80:80"
       - "443:443"

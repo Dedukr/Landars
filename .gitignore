@@ -33,6 +33,3 @@ Thumbs.db
 # Build output
 build/
 dist/
-
-# Git files
-.git/
