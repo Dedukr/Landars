@@ -1,0 +1,27 @@
+services:
+  backend:
+    image: dedukr/landar-backend:latest
+    build:
+      context: ./backend
+    expose:
+      - "8000"
+    env_file:
+      - ./backend/.env
+    volumes:
+      - static_volume:/backend/static
+
+  nginx:
+    image: dedukr/landar-nginx:latest
+    build:
+      context: .
+      dockerfile: ./nginx/Dockerfile
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+    volumes:
+      - static_volume:/backend/static
+
+volumes:
+  static_volume:

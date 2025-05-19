@@ -70,6 +70,7 @@ class OrderAdmin(admin.ModelAdmin):
                 "notes",
                 "status",
                 "order_date",
+                
                 "customer_phone",
                 "customer_address",
                 "get_total_price",

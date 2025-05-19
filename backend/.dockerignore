@@ -1,0 +1,20 @@
+# Ignore all files
+**/*.pyc
+**/*.pyo
+**/*.mo
+.gitignore
+.git/
+**/__pycache__/
+# db.sqlite3
+**/*.md
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+.venv
+venv
+
+# OS generated files
+.DS_Store
+Thumbs.db

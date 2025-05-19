@@ -61,7 +61,9 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "backend.urls"
 # CORS settings
-CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost").split(",")
+CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "https://localhost").split(",")
+CSRF_TRUSTED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "https://localhost").split(",")
+# CORS_ALLOWED_ORIGINS = ["*"]
 
 
 TEMPLATES = [
@@ -140,7 +142,10 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
-STATIC_URL = "static/"
+
+STATIC_URL = "/static/"
+STATIC_ROOT = os.path.join(BASE_DIR, "static")
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
