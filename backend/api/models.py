@@ -39,18 +39,15 @@ class ProductCategory(models.Model):
 
 # Product model
 class Product(models.Model):
-    def product_image_upload_path(instance, filename):
-        return f"products/{filename}"
-
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     category = models.ForeignKey(
         ProductCategory, on_delete=models.CASCADE, related_name="products"
     )
     price = models.DecimalField(max_digits=10, decimal_places=2)
-    image = models.ImageField(
-        upload_to=product_image_upload_path, blank=True, null=True
-    )
+    # image = models.ImageField(
+    #     upload_to="products/", blank=True, null=True
+    # )
 
     class Meta:
         verbose_name_plural = "Products"
