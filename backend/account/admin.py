@@ -111,6 +111,20 @@ class CustomUserAdmin(UserAdmin):
         [OrderInline] if obj and not obj.is_staff else []
     )
 
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        # Only show root user to superusers
+        if request.user.is_superuser:
+            return qs
+        return qs.exclude(
+            is_superuser=True
+        )  # or exclude(id=1), or name="root" if that's root
+
+    def has_change_permission(self, request, obj=None):
+        if obj and obj.is_superuser and not request.user.is_superuser:
+            return False
+        return super().has_change_permission(request, obj)
+    
     def save_model(self, request, obj, form, change):
         """
         Override save_model to handle Profile and Address creation.
