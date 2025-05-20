@@ -12,8 +12,8 @@ FILENAME="db_backup_$DATE.sqlite3"
 mkdir -p $BACKUP_DIR_ON_HOST
 
 # Use docker cp to extract the file
-docker cp $CONTAINER:$DB_PATH_IN_CONTAINER $BACKUP_DIR_ON_HOST/$FILENAME && echo "$DATE | ✅ Backup saved as $BACKUP_DIR_ON_HOST/$FILENAME" || echo "$DATE | ❌ Failed to create backup"
-cp $BACKUP_DIR_ON_HOST/$FILENAME $DB_PATH_ON_HOST && echo "$DATE | ✅ Latest db saved as $DB_PATH_ON_HOST" || echo "$DATE | ❌ Failed to copy latest backup to $DB_PATH_ON_HOST"
+docker cp $CONTAINER:$DB_PATH_IN_CONTAINER $BACKUP_DIR_ON_HOST/$FILENAME && echo "$DATE | ✅ Backup saved as $BACKUP_DIR_ON_HOST/$FILENAME" || echo "$DATE | ❌ Failed to create backup of $CONTAINER:$DB_PATH_IN_CONTAINER"
+cp $BACKUP_DIR_ON_HOST/$FILENAME $DB_PATH_ON_HOST && echo "$DATE | ✅ Latest db saved as $DB_PATH_ON_HOST" || echo "$DATE | ❌ Failed to copy latest backup $BACKUP_DIR_ON_HOST/$FILENAME to $DB_PATH_ON_HOST"
 
 # Delete backups older than 7 days
 find $BACKUP_DIR_ON_HOST -name "*.sqlite3" -type f -mtime +7 -exec rm {} \;
