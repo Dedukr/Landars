@@ -147,6 +147,7 @@ class OrderAdmin(admin.ModelAdmin):
                     "customer_phone",
                     "customer_address",
                     "get_total_price",
+                    # "get_invoice",
                 ]
             return [
                 "customer_name",
@@ -156,6 +157,7 @@ class OrderAdmin(admin.ModelAdmin):
                 "customer_phone",
                 "customer_address",
                 "get_total_price",
+                # "get_invoice",
             ]
         return super().get_fields(request, obj)
 
