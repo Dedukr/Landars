@@ -113,7 +113,8 @@ class OrderAdmin(admin.ModelAdmin):
     class Media:
         js = ("admin/js/order_filter_cleaner.js",)
 
-    actions = [create_and_upload_invoice, "food_summary_csv"]
+    # actions = [create_and_upload_invoice, "food_summary_csv"]
+    actions = ["food_summary_csv"]
     # form = OrderAdminForm
     # add_form = OrderCreateForm
     list_display = [
