@@ -22,7 +22,7 @@ class OrderInline(admin.TabularInline):  # or StackedInline if you want vertical
         return format_html(
             '<a href="{}" style="color:#0a7;">🛒 {}</a>',
             url,
-            obj.order_date.strftime("%B %d, %Y, %H:%M"),
+            obj.delivery_date.strftime("%B %d, %Y, %H:%M"),
         )
 
     order_link.short_description = "Order Date"
@@ -124,7 +124,7 @@ class CustomUserAdmin(UserAdmin):
         if obj and obj.is_superuser and not request.user.is_superuser:
             return False
         return super().has_change_permission(request, obj)
-    
+
     def save_model(self, request, obj, form, change):
         """
         Override save_model to handle Profile and Address creation.

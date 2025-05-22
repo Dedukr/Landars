@@ -6,12 +6,18 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0001_initial'),
+        ("api", "0001_initial"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='order',
-            options={'ordering': ['-order_date'], 'permissions': [('can_change_note_and_status', 'Can change order status and notes')], 'verbose_name_plural': 'Orders'},
+            name="order",
+            options={
+                "ordering": ["-delivery_date"],
+                "permissions": [
+                    ("can_change_note_and_status", "Can change order status and notes")
+                ],
+                "verbose_name_plural": "Orders",
+            },
         ),
     ]

@@ -1,4 +1,8 @@
+import csv
+
 from django.contrib import admin
+from django.db.models import Sum
+from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
@@ -35,22 +39,22 @@ class OrderAdmin(admin.ModelAdmin):
     # form = OrderAdminForm
     # add_form = OrderCreateForm
     list_display = [
-        "order_date",
+        "delivery_date",
         "customer_name",
         "customer_phone",
         "customer_address",
         "get_total_price",
         "status",
     ]
-    list_filter = ["order_date", "status"]
+    list_filter = ["delivery_date", "status"]
     list_editable = ["status"]
     search_fields = [
         "customer__profile__name",
         "customer__profile__phone",
         "customer__email",
     ]
-    ordering = ["-order_date"]
-    date_hierarchy = "order_date"
+    ordering = ["-delivery_date"]
+    date_hierarchy = "delivery_date"
     inlines = [OrderItemInline]
 
     def get_fields(self, request, obj=None):
@@ -60,7 +64,7 @@ class OrderAdmin(admin.ModelAdmin):
                     "customer",  # link or plain text
                     "notes",
                     "status",
-                    "order_date",
+                    "delivery_date",
                     "customer_phone",
                     "customer_address",
                     "get_total_price",
@@ -69,8 +73,7 @@ class OrderAdmin(admin.ModelAdmin):
                 "customer_name",
                 "notes",
                 "status",
-                "order_date",
-                
+                "delivery_date",
                 "customer_phone",
                 "customer_address",
                 "get_total_price",
@@ -79,7 +82,7 @@ class OrderAdmin(admin.ModelAdmin):
 
     def get_readonly_fields(self, request, obj=None):
         readonly_on_change = [
-            "order_date",
+            "delivery_date",
             "customer_phone",
             "customer_address",
             "get_total_price",
@@ -134,3 +137,44 @@ class OrderAdmin(admin.ModelAdmin):
             if not request.user.has_perm("account.change_customuser"):
                 kwargs["disabled"] = True
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    actions = ["food_summary_csv"]
+
+    def food_summary_csv(self, request, queryset):
+        """
+        Export a food summary of all products and their total quantities for selected orders as CSV.
+        Only works if orders for one date are selected!
+        """
+        # Find the date(s) in the queryset (ideally, filter to a single date)
+        delivery_dates = queryset.values_list("delivery_date", flat=True).distinct()
+        # if delivery_dates.count() != 1:
+        #     self.message_user(
+        #         request,
+        #         "Please select orders for a single delivery date.",
+        #         level="error",
+        #     )
+        #     return
+
+        target_date = delivery_dates[0]
+
+        # Gather all OrderItems for those orders
+        order_items = OrderItem.objects.filter(order__in=queryset)
+        food_summary = (
+            order_items.values("product__name")
+            .annotate(total_qty=Sum("quantity"))
+            .order_by("product__name")
+        )
+
+        # Create CSV response
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = (
+            f'attachment; filename="{target_date}_summary.csv"'
+        )
+        writer = csv.writer(response)
+        writer.writerow(["Product", "Total Quantity"])
+        for row in food_summary:
+            writer.writerow([row["product__name"], row["total_qty"]])
+
+        return response
+
+    food_summary_csv.short_description = "Export food Summary (CSV)"

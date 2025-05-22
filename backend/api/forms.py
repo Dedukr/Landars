@@ -23,7 +23,7 @@ class OrderAdminForm(forms.ModelForm):
     #     required=False,
     #     widget=forms.Textarea(attrs={"rows": 3}),
     # )
-    # order_date = forms.DateField(
+    # delivery_date = forms.DateField(
     #     label="Order Date",
     #     widget=forms.DateInput(attrs={"type": "date"}),
     # )
@@ -41,6 +41,9 @@ class OrderAdminForm(forms.ModelForm):
         fields = [
             "customer",
         ]
+        widgets = {
+            "delivery_date": forms.DateInput(format="%d %B %Y", attrs={"type": "date"}),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

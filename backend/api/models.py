@@ -116,7 +116,7 @@ class Order(models.Model):
         CustomUser, on_delete=models.SET_NULL, related_name="orders", null=True
     )
     notes = models.CharField(max_length=200, blank=True, null=True)
-    order_date = models.DateTimeField(auto_now_add=True)
+    delivery_date = models.DateField(null=True)
     status = models.CharField(
         max_length=50,
         choices=[
@@ -131,7 +131,7 @@ class Order(models.Model):
 
     class Meta:
         verbose_name_plural = "Orders"
-        ordering = ["-order_date"]
+        ordering = ["-delivery_date"]
         permissions = [
             ("can_change_status_and_note", "Can change order status and notes"),
         ]
@@ -147,7 +147,7 @@ class Order(models.Model):
         return {
             "order_id": self.id,
             "customer": self.customer,
-            "order_date": self.order_date.strftime("%Y-%m-%d %H:%M:%S"),
+            "delivery_date": self.delivery_date.strftime("%Y-%m-%d %H:%M:%S"),
             "total_price": self.get_total_price(),
             "items": [item.get_item_details() for item in self.items.all()],
         }
