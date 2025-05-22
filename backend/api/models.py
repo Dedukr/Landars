@@ -117,7 +117,7 @@ class Order(models.Model):
     )
     notes = models.CharField(max_length=200, blank=True, null=True)
     delivery_date = models.DateField(null=True)
-    order_date = models.DateField(auto_now_add=True)
+    order_date = models.DateField(auto_now_add=True, null=True)
     status = models.CharField(
         max_length=50,
         choices=[
