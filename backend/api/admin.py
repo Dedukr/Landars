@@ -123,7 +123,7 @@ class OrderAdmin(admin.ModelAdmin):
         "customer_address",
         "get_total_price",
         "status",
-        "get_invoice",
+        # "get_invoice",
     ]
     list_filter = [DateFilter, "status"]
     list_editable = ["status"]
