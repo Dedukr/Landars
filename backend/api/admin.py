@@ -1,4 +1,5 @@
 import csv
+from datetime import date, timedelta
 
 from django.contrib import admin
 from django.db.models import Sum
@@ -34,8 +35,44 @@ class OrderItemInline(admin.TabularInline):
     get_total_price.short_description = "Total Price"
 
 
+class DateFilter(admin.SimpleListFilter):
+    title = _("Delivery Date")
+    parameter_name = "future_date"
+
+    def lookups(self, request, model_admin):
+        return [
+            ("past 7 days", _("Past 7 days")),
+            ("today", _("Today")),
+            ("Next 7 days", _("Next 7 days")),
+            ("Next 30 days", _("Next 30 days")),
+            # Add more as you need!
+        ]
+
+    def queryset(self, request, queryset):
+        today = date.today()
+        if self.value() == "past 7 days":
+            return queryset.filter(
+                delivery_date__gte=today - timedelta(days=7), delivery_date__lte=today
+            )
+        elif self.value() == "today":
+            return queryset.filter(delivery_date=today)
+        elif self.value() == "Next 7 days":
+            return queryset.filter(
+                delivery_date__gte=today, delivery_date__lte=today + timedelta(days=7)
+            )
+        elif self.value() == "Next 30 days":
+            return queryset.filter(
+                delivery_date__gte=today, delivery_date__lte=today + timedelta(days=30)
+            )
+        return queryset
+
+
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
+
+    class Media:
+        js = ("admin/js/order_filter_cleaner.js",)
+
     # form = OrderAdminForm
     # add_form = OrderCreateForm
     list_display = [
@@ -46,7 +83,7 @@ class OrderAdmin(admin.ModelAdmin):
         "get_total_price",
         "status",
     ]
-    list_filter = ["delivery_date", "status"]
+    list_filter = [DateFilter, "status"]
     list_editable = ["status"]
     search_fields = [
         "customer__profile__name",
