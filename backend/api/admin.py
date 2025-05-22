@@ -93,7 +93,7 @@ def create_and_upload_invoice(modeladmin, request, queryset):
 
     for order in queryset:
         # Render your invoice template to HTML
-        html_string = render_to_string("invoice3.html", {"order": order})
+        html_string = render_to_string("invoice.html", {"order": order})
         # Generate PDF in a temp file
         with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp_pdf:
             HTML(string=html_string).write_pdf(tmp_pdf.name)
