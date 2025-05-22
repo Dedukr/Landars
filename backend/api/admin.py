@@ -252,7 +252,7 @@ class OrderAdmin(admin.ModelAdmin):
         #     )
         #     return
 
-        target_date = delivery_dates[0]
+        target_date = delivery_dates
 
         # Gather all OrderItems for those orders
         order_items = OrderItem.objects.filter(order__in=queryset)
@@ -265,7 +265,7 @@ class OrderAdmin(admin.ModelAdmin):
         # Create CSV response
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = (
-            f'attachment; filename="{target_date}_summary.csv"'
+            f'attachment; filename="{",".join(sorted({d.strftime("%d %b %Y") for d in target_date}))}_summary.csv"'
         )
         writer = csv.writer(response)
         writer.writerow(["Product", "Total Quantity"])
