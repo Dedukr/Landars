@@ -117,6 +117,7 @@ class Order(models.Model):
     )
     notes = models.CharField(max_length=200, blank=True, null=True)
     delivery_date = models.DateField(null=True)
+    order_date = models.DateField(auto_now_add=True)
     status = models.CharField(
         max_length=50,
         choices=[
@@ -128,6 +129,9 @@ class Order(models.Model):
         ],
         default="pending",
     )
+    invoice_link = models.URLField(
+        max_length=200, blank=True, null=True
+    )  # URL to the invoice PDF
 
     class Meta:
         verbose_name_plural = "Orders"

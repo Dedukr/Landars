@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Invoice #{{ order.id }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+
+        .header {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        .items {
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        .items td,
+        .items th {
+            padding: 4px 8px;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .total {
+            font-weight: bold;
+        }
+
+        .right {
+            text-align: right;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">Invoice #{{ order.id }}</div>
+    <p><strong>Customer:</strong> {{ order.customer.name }}</p>
+    <p><strong>Phone:</strong> {{ order.customer.profile.phone }}</p>
+    <p><strong>Address:</strong>
+        {{ order.customer.profile.address.address_line }},
+        {{ order.customer.profile.address.address_line2 }},
+        {{ order.customer.profile.address.city }},
+        {{ order.customer.profile.address.postal_code }}
+    </p>
+    <p><strong>Date:</strong> {{ order.order_date|date:"d M Y H:i" }}</p>
+    <hr>
+    <table class="items">
+        <tr>
+            <th>Product</th>
+            <th>Qty</th>
+            <th>Price</th>
+            <th>Subtotal</th>
+        </tr>
+        {% for item in order.items.all %}
+        <tr>
+            <td>{{ item.product.name }}</td>
+            <td class="right">{{ item.quantity }}</td>
+            <td class="right">{{ item.product.price }}</td>
+            <td class="right">{{ item.get_total_price }}</td>
+        </tr>
+        {% endfor %}
+        <tr>
+            <td colspan="3" class="total right">Total</td>
+            <td class="total right">{{ order.total_price }}</td>
+        </tr>
+    </table>
+</body>
+
+</html>

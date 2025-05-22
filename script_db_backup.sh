@@ -7,23 +7,23 @@
 
 
 # For development purposes only. This script is intended to be run in a development environment and should not be used in production.
-CONTAINER=foodplatform-backend-1 
-DB_PATH_IN_CONTAINER=/backend/db/db.sqlite3
-DB_PATH_ON_HOST=./backend/db/db.sqlite3
-BACKUP_DIR_ON_HOST=./db_backups
-DATE=$(date +"%Y-%m-%d_%H-%M-%S")
-FILENAME="db_backup_$DATE.sqlite3"
+# CONTAINER=foodplatform-backend-1 
+# DB_PATH_IN_CONTAINER=/backend/db/db.sqlite3
+# DB_PATH_ON_HOST=./backend/db/db.sqlite3
+# BACKUP_DIR_ON_HOST=./db_backups
+# DATE=$(date +"%Y-%m-%d_%H-%M-%S")
+# FILENAME="db_backup_$DATE.sqlite3"
 
 
 # For production.
 # This script is intended to be run in a production environment and should not be used in development.
 
-# CONTAINER=landars-backend-1
-# DB_PATH_IN_CONTAINER=/backend/db/db.sqlite3
-# DB_PATH_ON_HOST=/home/dedmac/web/Landars/backend/db/db.sqlite3
-# BACKUP_DIR_ON_HOST=/home/dedmac/web/Landars/db_backups
-# DATE=$(date +"%Y-%m-%d_%H-%M-%S")
-# FILENAME="db_backup_$DATE.sqlite3"
+CONTAINER=landars-backend-1
+DB_PATH_IN_CONTAINER=/backend/db/db.sqlite3
+DB_PATH_ON_HOST=/home/dedmac/web/Landars/backend/db/db.sqlite3
+BACKUP_DIR_ON_HOST=/home/dedmac/web/Landars/db_backups
+DATE=$(date +"%Y-%m-%d_%H-%M-%S")
+FILENAME="db_backup_$DATE.sqlite3"
 
 # Create local backup folder if needed
 mkdir -p $BACKUP_DIR_ON_HOST

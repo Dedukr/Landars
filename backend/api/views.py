@@ -1,11 +1,31 @@
-from django.http import JsonResponse
+from django.contrib.admin.views.decorators import staff_member_required
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
+from django.template.loader import render_to_string
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .models import Order  # Adjust import path
 from .models import Product, Stock
 from .serializers import ProductSerializer
+
+
+@staff_member_required
+def order_invoice_pdf(request, pk):
+    from weasyprint import HTML
+
+    order = Order.objects.get_object_or_404(pk)
+    """Generate a PDF invoice for the order."""
+    if not order.invoice:
+        return JsonResponse(
+            {"error": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND
+        )
+    html_string = render_to_string("invoice.html", {"order": order})
+    pdf_file = HTML(string=html_string).write_pdf()
+    response = HttpResponse(pdf_file, content_type="application/pdf")
+    response["Content-Disposition"] = f'inline; filename="invoice_{order.id}.pdf"'
+    return response
 
 
 # Create your views here.
@@ -22,7 +42,7 @@ class ProductList(APIView):
         if serializer.is_valid():
             product = serializer.save()
             # Initialize stock for the new product
-            Stock.objects.create(product=product, quantity=request.data.get('stock', 0))
+            Stock.objects.create(product=product, quantity=request.data.get("stock", 0))
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -88,8 +108,12 @@ class StockUpdateView(APIView):
         """Update stock for a specific product."""
         try:
             stock = Stock.objects.get(product_id=product_id)
-            stock.quantity += int(request.data.get('quantity', 0))
+            stock.quantity += int(request.data.get("quantity", 0))
             stock.save()
-            return Response({"message": "Stock updated successfully."}, status=status.HTTP_200_OK)
+            return Response(
+                {"message": "Stock updated successfully."}, status=status.HTTP_200_OK
+            )
         except Stock.DoesNotExist:
-            return Response({"error": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "Product not found."}, status=status.HTTP_404_NOT_FOUND
+            )

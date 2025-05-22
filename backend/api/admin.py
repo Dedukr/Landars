@@ -1,9 +1,13 @@
 import csv
+import tempfile
 from datetime import date, timedelta
 
-from django.contrib import admin
+import boto3
+from django.conf import settings
+from django.contrib import admin, messages
 from django.db.models import Sum
 from django.http import HttpResponse
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
@@ -67,12 +71,49 @@ class DateFilter(admin.SimpleListFilter):
         return queryset
 
 
+def get_s3_client():
+    return boto3.client(
+        "s3",
+        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+        region_name=getattr(settings, "AWS_S3_REGION_NAME", None),
+    )
+
+
+def upload_invoice_to_s3(file_path, s3_key):
+    s3_client = get_s3_client()
+    bucket = settings.AWS_STORAGE_BUCKET_NAME
+    s3_client.upload_file(file_path, bucket, s3_key)
+    return s3_key
+
+
+@admin.action(description="Create & Upload Invoice to S3")
+def create_and_upload_invoice(modeladmin, request, queryset):
+    from weasyprint import HTML
+
+    for order in queryset:
+        # Render your invoice template to HTML
+        html_string = render_to_string("invoice3.html", {"order": order})
+        # Generate PDF in a temp file
+        with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp_pdf:
+            HTML(string=html_string).write_pdf(tmp_pdf.name)
+            s3_key = f"invoices/order_{order.id}.pdf"
+            upload_invoice_to_s3(tmp_pdf.name, s3_key)
+            # Save the S3 key to the order
+            order.invoice_link = s3_key
+            order.save()
+    modeladmin.message_user(
+        request, "Invoices created and uploaded!", level=messages.SUCCESS
+    )
+
+
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
 
     class Media:
         js = ("admin/js/order_filter_cleaner.js",)
 
+    actions = [create_and_upload_invoice, "food_summary_csv"]
     # form = OrderAdminForm
     # add_form = OrderCreateForm
     list_display = [
@@ -82,6 +123,7 @@ class OrderAdmin(admin.ModelAdmin):
         "customer_address",
         "get_total_price",
         "status",
+        "get_invoice",
     ]
     list_filter = [DateFilter, "status"]
     list_editable = ["status"]
@@ -175,7 +217,23 @@ class OrderAdmin(admin.ModelAdmin):
                 kwargs["disabled"] = True
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
-    actions = ["food_summary_csv"]
+    def get_invoice(self, obj):
+        if not obj.invoice_link:
+            return "No invoice"
+
+        # Generate presigned url
+        s3 = get_s3_client()
+        url = s3.generate_presigned_url(
+            "get_object",
+            Params={
+                "Bucket": settings.AWS_STORAGE_BUCKET_NAME,
+                "Key": obj.invoice_link,
+            },
+            ExpiresIn=300,
+        )
+        return format_html('<a href="{}" target="_blank">Invoice</a>', url)
+
+    get_invoice.short_description = "Invoice"
 
     def food_summary_csv(self, request, queryset):
         """
