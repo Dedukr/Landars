@@ -45,7 +45,7 @@
         {{ order.customer.profile.address.city }},
         {{ order.customer.profile.address.postal_code }}
     </p>
-    <p><strong>Date:</strong> {{ order.order_date|date:"d M Y H:i" }}</p>
+    <p><strong>Date:</strong> {{ order.order_date|date:"d M Y" }}</p>
     <hr>
     <table class="items">
         <tr>
