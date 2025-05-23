@@ -87,7 +87,7 @@ def upload_invoice_to_s3(file_path, s3_key):
     return s3_key
 
 
-@admin.action(description="Create & Upload Invoice to S3")
+@admin.action(description="Create & Upload Invoice")
 def create_and_upload_invoice(modeladmin, request, queryset):
     from weasyprint import HTML
 
@@ -276,4 +276,4 @@ class OrderAdmin(admin.ModelAdmin):
 
         return response
 
-    food_summary_csv.short_description = "Export food Summary (CSV)"
+    food_summary_csv.short_description = "Export food Summary"
