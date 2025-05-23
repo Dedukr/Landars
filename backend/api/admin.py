@@ -113,8 +113,8 @@ class OrderAdmin(admin.ModelAdmin):
     class Media:
         js = ("admin/js/order_filter_cleaner.js",)
 
-    # actions = [create_and_upload_invoice, "food_summary_csv"]
-    actions = ["food_summary_csv"]
+    actions = [create_and_upload_invoice, "food_summary_csv"]
+    # actions = ["food_summary_csv"]
     # form = OrderAdminForm
     # add_form = OrderCreateForm
     list_display = [
@@ -124,7 +124,7 @@ class OrderAdmin(admin.ModelAdmin):
         "customer_address",
         "get_total_price",
         "status",
-        # "get_invoice",
+        "get_invoice",
     ]
     list_filter = [DateFilter, "status"]
     list_editable = ["status"]
@@ -148,7 +148,7 @@ class OrderAdmin(admin.ModelAdmin):
                     "customer_phone",
                     "customer_address",
                     "get_total_price",
-                    # "get_invoice",
+                    "get_invoice",
                 ]
             return [
                 "customer_name",
@@ -158,7 +158,7 @@ class OrderAdmin(admin.ModelAdmin):
                 "customer_phone",
                 "customer_address",
                 "get_total_price",
-                # "get_invoice",
+                "get_invoice",
             ]
         return super().get_fields(request, obj)
 
@@ -168,6 +168,7 @@ class OrderAdmin(admin.ModelAdmin):
             "customer_phone",
             "customer_address",
             "get_total_price",
+            "get_invoice",
         ]
 
         if obj:  # We're in change mode
