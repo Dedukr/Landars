@@ -116,9 +116,13 @@ class OrderAdmin(admin.ModelAdmin):
         js = ("admin/js/order_filter_cleaner.js",)
 
     actions = [create_and_upload_invoice, "food_summary_csv"]
-    # actions = ["food_summary_csv"]
-    # form = OrderAdminForm
-    # add_form = OrderCreateForm
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        if "delete_selected" in actions:
+            del actions["delete_selected"]
+        return actions
+
     list_display = [
         "delivery_date",
         "customer_name",
