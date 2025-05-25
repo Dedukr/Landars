@@ -11,21 +11,21 @@ from .models import Product, Stock
 from .serializers import ProductSerializer
 
 
-@staff_member_required
-def order_invoice_pdf(request, pk):
-    from weasyprint import HTML
+# @staff_member_required
+# def order_invoice_pdf(request, pk):
+#     from weasyprint import HTML
 
-    order = Order.objects.get_object_or_404(pk)
-    """Generate a PDF invoice for the order."""
-    if not order.invoice:
-        return JsonResponse(
-            {"error": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND
-        )
-    html_string = render_to_string("invoice.html", {"order": order})
-    pdf_file = HTML(string=html_string).write_pdf()
-    response = HttpResponse(pdf_file, content_type="application/pdf")
-    response["Content-Disposition"] = f'inline; filename="invoice_{order.id}.pdf"'
-    return response
+#     order = Order.objects.get_object_or_404(pk)
+#     """Generate a PDF invoice for the order."""
+#     if not order.invoice:
+#         return JsonResponse(
+#             {"error": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND
+#         )
+#     html_string = render_to_string("invoice.html", {"order": order})
+#     pdf_file = HTML(string=html_string).write_pdf()
+#     response = HttpResponse(pdf_file, content_type="application/pdf")
+#     response["Content-Disposition"] = f'inline; filename="invoice_{order.id}.pdf"'
+#     return response
 
 
 # Create your views here.
@@ -42,7 +42,7 @@ class ProductList(APIView):
         if serializer.is_valid():
             product = serializer.save()
             # Initialize stock for the new product
-            Stock.objects.create(product=product, quantity=request.data.get("stock", 0))
+            # Stock.objects.create(product=product, quantity=request.data.get("stock", 0))
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

@@ -17,10 +17,20 @@ from .models import CustomUser, Order, OrderItem, Product, ProductCategory, Stoc
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ["name", "price"]
+    list_display = ["name", "price", "get_categories"]
     list_filter = ["category"]
+    filter_horizontal = ["category"]  # красиво отображает множественные категории
     search_fields = ["name"]
-    ordering = ["category", "name"]
+    ordering = ["name"]
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.prefetch_related("category").distinct()
+
+    def get_categories(self, obj):
+        return ", ".join([c.name for c in obj.category.all()])
+
+    get_categories.short_description = "Categories"
 
 
 @admin.register(ProductCategory)
@@ -94,7 +104,7 @@ def create_and_upload_invoice(modeladmin, request, queryset):
             order.invoice_link = s3_key
             order.save()
     modeladmin.message_user(
-        request, "Invoices created and uploaded!", level=messages.SUCCESS
+        request, "Invoice created and uploaded!", level=messages.SUCCESS
     )
 
 
@@ -220,33 +230,25 @@ class OrderAdmin(admin.ModelAdmin):
 
         # Sausage category name
         post_suitable_category = "sausages"
-
-        # Are all items sausages?
-        all_sausages = all(
-            item.product.category.name.lower() == post_suitable_category
-            for item in items
-        )
-
-        if all_sausages:
-            # Use your weight logic
+        for item in items:
+            category_names = item.product.category.values_list("name", flat=True)
+            if post_suitable_category not in [name.lower() for name in category_names]:
+                order.is_home_delivery = True
+                order.delivery_fee = 10
+                break
+        else:
+            order.is_home_delivery = False
             total_weight = sum(item.quantity for item in items)
             if total_weight <= 2:
-                delivery_fee = 5
+                order.delivery_fee = 5
             elif total_weight <= 10:
-                delivery_fee = 8
+                order.delivery_fee = 8
             else:
-                delivery_fee = 15
+                order.delivery_fee = 15
             # elif total_weight <= 20:
             #     delivery_fee = 15
             # else:
             #     delivery_fee = 25  # For > 20kg
-
-            order.is_home_delivery = False
-            order.delivery_fee = delivery_fee
-        else:
-            order.is_home_delivery = True
-            order.delivery_fee = 10
-
         order.save()
 
     def get_total_price(self, obj):
@@ -316,4 +318,4 @@ class OrderAdmin(admin.ModelAdmin):
 
         return response
 
-    food_summary_csv.short_description = "Export food Summary"
+    food_summary_csv.short_description = "Export Food Summary"

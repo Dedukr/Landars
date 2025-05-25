@@ -44,9 +44,7 @@ class ProductCategory(models.Model):
 class Product(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
-    category = models.ForeignKey(
-        ProductCategory, on_delete=models.CASCADE, related_name="products"
-    )
+    category = models.ManyToManyField(ProductCategory, related_name="products")
     price = models.DecimalField(
         max_digits=10, decimal_places=2, validators=[MinValueValidator(0)]
     )
@@ -56,9 +54,8 @@ class Product(models.Model):
 
     class Meta:
         verbose_name_plural = "Products"
-        unique_together = ("name", "category")
         # Ensure product names are unique within their category
-        ordering = ["category", "name"]
+        ordering = ["name"]
         # Ensure products are ordered by category and then by name
 
     def __str__(self):
@@ -68,6 +65,7 @@ class Product(models.Model):
         return {
             "id": self.id,
             "name": self.name,
+            "categories": [cat.name for cat in self.category.all()],
             "description": self.description,
             "price": str(self.price),
             "image_url": self.image.url if self.image else None,  # Include S3 image URL
@@ -160,9 +158,7 @@ class Order(models.Model):
     @property
     def total_price(self):
         """Calculate the total price of the order including delivery fee."""
-        return (
-            self.sum_price + self.delivery_fee
-        )
+        return self.sum_price + self.delivery_fee
 
     @property
     def due_date(self):
