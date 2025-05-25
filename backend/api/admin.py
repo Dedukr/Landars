@@ -12,6 +12,7 @@ from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
+from .forms import OrderItemInlineFormSet
 from .models import CustomUser, Order, OrderItem, Product, ProductCategory, Stock
 
 
@@ -26,17 +27,6 @@ class ProductAdmin(admin.ModelAdmin):
 @admin.register(ProductCategory)
 class ProductCategoryAdmin(admin.ModelAdmin):
     list_display = ["name", "description"]
-
-
-class OrderItemInline(admin.TabularInline):
-    model = OrderItem
-    extra = 1
-    readonly_fields = ["get_total_price"]
-
-    def get_total_price(self, obj):
-        return round(obj.product.price * obj.quantity, 2)
-
-    get_total_price.short_description = "Total Price"
 
 
 class DateFilter(admin.SimpleListFilter):
@@ -93,7 +83,9 @@ def create_and_upload_invoice(modeladmin, request, queryset):
 
     for order in queryset:
         # Render your invoice template to HTML
-        html_string = render_to_string("invoice.html", {"order": order})
+        html_string = render_to_string(
+            "invoice.html", {"order": order, "business": settings.BUSINESS_INFO}
+        )
         # Generate PDF in a temp file
         with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp_pdf:
             HTML(string=html_string).write_pdf(tmp_pdf.name)
@@ -105,6 +97,17 @@ def create_and_upload_invoice(modeladmin, request, queryset):
     modeladmin.message_user(
         request, "Invoices created and uploaded!", level=messages.SUCCESS
     )
+
+
+class OrderItemInline(admin.TabularInline):
+    model = OrderItem
+    extra = 1
+    readonly_fields = ["get_total_price"]
+
+    def get_total_price(self, obj):
+        return round(obj.product.price * obj.quantity, 2)
+
+    get_total_price.short_description = "Total Price"
 
 
 @admin.register(Order)
@@ -138,45 +141,43 @@ class OrderAdmin(admin.ModelAdmin):
     inlines = [OrderItemInline]
 
     def get_fields(self, request, obj=None):
+        fields = [
+            "customer",
+            "notes",
+            "status",
+            "delivery_date",
+        ]
         if obj:
-            if request.user.has_perm("account.change_customuser"):
-                return [
-                    "customer",  # link or plain text
-                    "notes",
-                    "status",
-                    "delivery_date",
-                    "customer_phone",
-                    "customer_address",
-                    "get_total_price",
-                    "get_invoice",
-                ]
-            return [
-                "customer_name",
-                "notes",
-                "status",
-                "delivery_date",
+            fields += [
                 "customer_phone",
                 "customer_address",
                 "get_total_price",
                 "get_invoice",
+                "is_home_delivery",
+                "delivery_fee",
             ]
-        return super().get_fields(request, obj)
+            if not request.user.has_perm("account.change_customuser"):
+                return fields[0].replace("customer_name")
+        return fields
 
     def get_readonly_fields(self, request, obj=None):
-        readonly_on_change = [
+        readonly = [
             "delivery_date",
             "customer_phone",
             "customer_address",
             "get_total_price",
             "get_invoice",
+            "delivery_fee",
         ]
 
         if obj:  # We're in change mode
+            readonly += [
+                "is_home_delivery",
+                "delivery_fee",
+            ]
             if request.user.has_perm("api.can_change_status_and_note"):
-                return [
-                    "customer_name"
-                ] + readonly_on_change  # Only status & notes editable
-            return readonly_on_change  # Admins can edit customer, status, notes
+                return ["customer_name"] + readonly  # Only status & notes editable
+            return readonly  # Admins can edit customer, status, notes
         else:
             return []
 
@@ -208,6 +209,42 @@ class OrderAdmin(admin.ModelAdmin):
             address = profile.address
             return f"{address.address_line}, {address.address_line2}, {address.city}, {address.postal_code}"
         return "No Address"
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        order = form.instance
+        items = order.items.all()
+
+        # Sausage category name
+        post_suitable_category = "sausages"
+
+        # Are all items sausages?
+        all_sausages = all(
+            item.product.category.name.lower() == post_suitable_category
+            for item in items
+        )
+
+        if all_sausages:
+            # Use your weight logic
+            total_weight = sum(item.quantity for item in items)
+            if total_weight <= 2:
+                delivery_fee = 5
+            elif total_weight <= 10:
+                delivery_fee = 8
+            else:
+                delivery_fee = 15
+            # elif total_weight <= 20:
+            #     delivery_fee = 15
+            # else:
+            #     delivery_fee = 25  # For > 20kg
+
+            order.is_home_delivery = False
+            order.delivery_fee = delivery_fee
+        else:
+            order.is_home_delivery = True
+            order.delivery_fee = 10
+
+        order.save()
 
     def get_total_price(self, obj):
         return obj.total_price

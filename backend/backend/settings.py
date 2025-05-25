@@ -169,3 +169,14 @@ AWS_QUERYSTRING_AUTH = False
 # AWS S3 Media files storage
 DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
 MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/"
+
+BUSINESS_INFO = {
+    "name": os.getenv("BUSINESS_NAME", "My Business name"),
+    "address": os.getenv("BUSINESS_ADDRESS", "Address"),
+    "city": os.getenv("BUSINESS_CITY", "City"),
+    "country": os.getenv("BUSINESS_COUNTRY", "Country"),
+    "postal_code": os.getenv("BUSINESS_POSTAL_CODE", "Postal_Code"),
+    "account_name": os.getenv("BUSINESS_ACCOUNT_NAME", "Account Name"),
+    "account_number": os.getenv("BUSINESS_ACCOUNT_NUMBER", "Account Number"),
+    "sort_code": os.getenv("BUSINESS_SORT_CODE", "Sort Code"),
+}

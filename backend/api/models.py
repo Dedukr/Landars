@@ -1,5 +1,8 @@
+from datetime import timedelta
+
 from account.models import CustomUser
 from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
 
@@ -44,7 +47,9 @@ class Product(models.Model):
     category = models.ForeignKey(
         ProductCategory, on_delete=models.CASCADE, related_name="products"
     )
-    price = models.DecimalField(max_digits=10, decimal_places=2)
+    price = models.DecimalField(
+        max_digits=10, decimal_places=2, validators=[MinValueValidator(0)]
+    )
     # image = models.ImageField(
     #     upload_to="products/", blank=True, null=True
     # )
@@ -116,7 +121,11 @@ class Order(models.Model):
         CustomUser, on_delete=models.SET_NULL, related_name="orders", null=True
     )
     notes = models.CharField(max_length=200, blank=True, null=True)
-    delivery_date = models.DateField(null=True)
+    delivery_date = models.DateField()
+    is_home_delivery = models.BooleanField(default=True, verbose_name="Home Delivery")
+    delivery_fee = models.DecimalField(
+        max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0)]
+    )
     order_date = models.DateField(auto_now_add=True, null=True)
     status = models.CharField(
         max_length=50,
@@ -129,7 +138,7 @@ class Order(models.Model):
         ],
         default="pending",
     )
-    invoice_link = models.URLField(
+    invoice_link = models.CharField(
         max_length=200, blank=True, null=True
     )  # URL to the invoice PDF
 
@@ -144,14 +153,26 @@ class Order(models.Model):
         return f"Order #{self.id} by {self.customer}"
 
     @property
-    def total_price(self):
+    def sum_price(self):
+        """Calculate the total price of the order."""
         return sum(item.get_total_price() for item in self.items.all())
+
+    @property
+    def total_price(self):
+        """Calculate the total price of the order including delivery fee."""
+        return (
+            self.sum_price + self.delivery_fee
+        )
+
+    @property
+    def due_date(self):
+        return self.order_date + timedelta(days=7)
 
     def get_order_details(self):
         return {
             "order_id": self.id,
             "customer": self.customer,
-            "delivery_date": self.delivery_date.strftime("%Y-%m-%d %H:%M:%S"),
+            "delivery_date": self.delivery_date.strftime("%Y-%m-%d"),
             "total_price": self.get_total_price(),
             "items": [item.get_item_details() for item in self.items.all()],
         }

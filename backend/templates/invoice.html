@@ -530,66 +530,77 @@
         </div>
     </div>
     <div style="margin-left: 40px; margin-right: 40px; overflow:hidden; min-height: 700px;">
-        <div class="brand-logo-container hidden">
-            <img class="logo-img brand-logo-img" src="data:image/png;base64,">
-        </div>
-        <div class="brand-logo-fallback-container" style="width: 100%; text-align: center; margin-bottom: 10px;">
-            <div class="h1 logo-gray">
-                Ruslan Konoz
-            </div>
-        </div>
-        <div class="mb20 flex-horizontal flex-justify flex-align-start" style="width: 100%;">
-            <div>
-                <div class="h1 mb20">
+        <div class="flex-horizontal flex-justify flex-align-start mb20">
+            <div class="width-100 pr15 border-box-box-sizing">
+                <div class="h1">
                     Invoice
                 </div>
-                <div class="mb20">
-                    <table cellpadding="0" cellspacing="0" class="metadata" style="">
-                        <tbody>
-                            <tr>
-                                <td>
-                                    Invoice number
-                                </td>
-                                <td>
-                                    #{{ order.id }}
-                                </td>
-                            </tr>
-                            <tr>
-                                <td>
-                                    Date
-                                </td>
-                                <td>
-                                    {{ order.order_date|date:"d M Y" }}
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+            </div>
+            <div class="width-100 pr15 border-box-box-sizing">
+                <div class="brand-logo-container hidden">
+                    <img class="logo-img brand-logo-img" src="data:image/png;base64,">
+                </div>
+            </div>
+            <div class="width-100 pr15 border-box-box-sizing">
+                <div class="brand-logo-container">
+                    <div class="h1 logo-gray">
+                        {{business.name}}
+                    </div>
                 </div>
             </div>
         </div>
-        <div class="flex-horizontal flex-align-start mb30 break-word">
-            <div class="width-40 pr15 border-box-box-sizing">
-                <div class="address-merchant-name bold hiddden">
-                    Ruslan Konoz
+        <div class="mb20" style="width: 100%;">
+            <div class="mb20">
+                <table cellpadding="0" cellspacing="0" class="metadata" style="">
+                    <tbody>
+                        <tr>
+                            <td>
+                                Invoice number
+                            </td>
+                            <td>
+                                #{{ order.id }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                Date
+                            </td>
+                            <td>
+                                {{ order.order_date|date:"d M Y" }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                Due Date
+                            </td>
+                            <td>
+                                {{ order.due_date|date:"d M Y" }}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="flex-horizontal flex-align-start break-word">
+            <div class="width-100 pr15 border-box-box-sizing">
+                <div class="address-merchant-name bold">
+                    {{business.name}}
                 </div>
                 <div class="address-lines">
                     <div>
-                        address1
+                        {{business.address}}
                     </div>
                     <div>
-                        address2
+                        {{business.city}}
                     </div>
                     <div>
-                        city
+                        {{business.postal_code}}
                     </div>
                     <div>
-                        postcode
-                    </div>
-                    <div>
-                        United Kingdom
+                        {{business.country}}
                     </div>
                 </div>
-                <div class="address-phone">
+                <!-- <div class="address-phone">
                     <div class="">
                         <strong>Phone:</strong>
                     </div>
@@ -599,16 +610,18 @@
                 </div>
                 <div>
                     email
-                </div>
+                </div> -->
             </div>
-            <div class="width-60">
-                <div class="pr15 border-box-box-sizing width-100">
-                    <div class="bold font-size-16">
+            <div class="flex-horizontal flex-justify pr15 border-box-box-sizing width-100">
+                <div class="width-50">
+                    <div class="bold font-size-16 text-align-center">
                         <strong>Bill to</strong>
                     </div>
-                    <div>
+                    <div class="break-word">
                         {{ order.customer.name }}
                     </div>
+                </div>
+                <div class="">
                     <div class="address-lines">
                         <div class="">
                             <strong>Address:</strong>
@@ -634,6 +647,11 @@
                             {{ order.customer.profile.address.postal_code }}
                         </div>
                         {% endif %}
+                        {% if order.customer.profile.address.country %}
+                        <div class="">
+                            {{ order.customer.profile.address.country }}
+                        </div>
+                        {% endif %}
                     </div>
                     <div class="address-phone">
                         <strong>Phone:</strong>
@@ -644,178 +662,210 @@
                     {% if order.customer.email %}
                     <div>{{ order.customer.email }}</div>
                     {% endif %}
-
                 </div>
+
             </div>
         </div>
-        <div class="mb10">
+        <div class="">
             <div class="h2">
-                £{{order.total_price}} billed on {{ order.order_date|date:"d M Y" }}
+                Bank Details
             </div>
-            <!-- <div class="mt10 pb5 bold">
-                <a
-                    href="https://invoice.stripe.com/i/acct_1PV1n5D0vxs6Rohp/live_YWNjdF8xUFYxbjVEMHZ4czZSb2hwLF9TTVB4Y2FHMmt2d1YwVjM1UVFzYXRmNVRiV1NFaDhJLDEzODQ5MTk4Mw0200QXWz0Hgi?s=pd">
-                    Pay online
-                </a>
-            </div> -->
+            <div class="">
+                Business Name: {{business.account_name}}
+            </div>
+            <div class="">
+                Account Number: {{business.account_number}}
+            </div>
+            <div class="">
+                Sort Code: {{business.sort_code}}
+            </div>
         </div>
-        <table cellpadding="0" cellspacing="0" class="line-item-table mb30 line-item-table-dynamic-column-widths"
-            style="">
-            <tbody>
-                <tr class="table-headers">
-                    <td class="width-50 center-valign">
-                        Description
-                    </td>
-                    <td>
-                    </td>
-                    <td class="width-1 align-right center-valign">
-                        Qty
-                    </td>
-                    <td class="width-40-px">
-                    </td>
-                    <td class="width-1 align-right center-valign">
-                        <div class="line-height-1point3">
-                            Unit price
-                        </div>
-                    </td>
-                    <td class="width-40-px">
-
-                    </td>
-                    <td class="width-0 center-valign">
-
-                    </td>
-                    <td class="width-0">
-
-                    </td>
-                    <td class="width-1 nowrap align-right center-valign align-right">
-                        <div class="line-height-1point3">
-                            Amount
-                        </div>
-                    </td>
-                </tr>
-                <tr>
-                    <td colspan="5" height="15"
-                        style=" border: 0; border-collapse: collapse; margin: 0; padding: 0; height: 15px; font-size: 1px; line-height: 1px; mso-line-height-rule: exactly;">
-                        &nbsp;
-                    </td>
-                </tr>
-                {% for item in order.items.all %}
-                <tr class="line-item-row subtitled">
-                    <td colspan="2">
-                        <div style="word-break: break-word; padding-left: 0px; padding-right: 5px;">
-                            {{ item.product.name }}
-                        </div>
-                    </td>
-                    <td>
-                        {{ item.quantity }}
-                    </td>
-                    <td>
-                    </td>
-                    <td class="break-word">
-                        <div>
-                            £{{ item.product.price }}
-                        </div>
-                    </td>
-                    <td>
-                    </td>
-                    <td>
-                    </td>
-                    <td>
-                    </td>
-                    <td class="break-word align-right">
-                        <div>
-                            £{{ item.get_total_price }}
-                        </div>
-                    </td>
-                </tr>
-                <tr>
-                    <td colspan="5" height="15"
-                        style=" border: 0; border-collapse: collapse; margin: 0; padding: 0; height: 15px; font-size: 1px; line-height: 1px; mso-line-height-rule: exactly;">
-                        &nbsp;
-                    </td>
-                </tr>
-                {% endfor %}
-
-                <!-- <tr class="summary-amount-border ">
-                    <td>
-                    </td>
-                    <td colspan="8">
-                    </td>
-                </tr>
-                <tr class="summary-amount  ">
-                    <td>
-                    </td>
-                    <td colspan="7">
-                        Subtotal
-                    </td>
-                    <td class="break-word align-right">
-                        £150.00
-                    </td>
-                </tr> -->
-                <tr class="summary-amount-border mt30">
-                    <td>
-                    </td>
-                    <td colspan="8">
-                    </td>
-                </tr>
-                <tr class="summary-amount bold ">
-                    <td>
-                    </td>
-                    <td colspan="7">
-                        Total
-                    </td>
-                    <td class="break-word align-right">
-                        £{{order.total_price}}
-                    </td>
-                </tr>
-                <!-- <tr class="summary-amount-border ">
-                    <td>
-                    </td>
-                    <td colspan="8">
-                    </td>
-                </tr>
-                <tr class="summary-amount  bold">
-                    <td>
-                    </td>
-                    <td colspan="7">
-                        Amount due
-                    </td>
-                    <td class="break-word align-right">
-                        £150.00
-                    </td>
-                </tr> -->
-            </tbody>
-        </table>
-        <div class="pb30 avoid-page-break">
+        <div class="mt20 pt20 light-gray-border-top fs-10 line-height-140">
+            <div class="mb10">
+                <div class="h2">
+                    £{{order.total_price}} billed due {{ order.due_date|date:"d M Y" }}
+                </div>
+                <!-- <div class="mt10 pb5 bold">
+                    <a
+                        href="https://invoice.stripe.com/i/acct_1PV1n5D0vxs6Rohp/live_YWNjdF8xUFYxbjVEMHZ4czZSb2hwLF9TTVB4Y2FHMmt2d1YwVjM1UVFzYXRmNVRiV1NFaDhJLDEzODQ5MTk4Mw0200QXWz0Hgi?s=pd">
+                        Pay online
+                    </a>
+                </div> -->
+            </div>
         </div>
-        <div class="fs-10">
+        <div class="line_items_table_title mt20">
+            <table cellpadding="0" cellspacing="0" class="line-item-table line-item-table-dynamic-column-widths"
+                style="">
+                <tbody>
+                    <tr class="table-headers">
+                        <td class="width-50 center-valign">
+                            Description
+                        </td>
+                        <td>
+                        </td>
+                        <td class="width-1 align-right center-valign">
+                            Qty
+                        </td>
+                        <td class="width-40-px">
+                        </td>
+                        <td class="width-1 align-right center-valign">
+                            <div class="line-height-1point3">
+                                Unit price
+                            </div>
+                        </td>
+                        <td class="width-40-px">
+
+                        </td>
+                        <td class="width-0 center-valign">
+
+                        </td>
+                        <td class="width-0">
+
+                        </td>
+                        <td class="width-1 nowrap align-right center-valign align-right">
+                            <div class="line-height-1point3">
+                                Amount
+                            </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colspan="5" height="5"
+                            style=" border: 0; border-collapse: collapse; margin: 0; padding: 0; height: 10px; font-size: 1px; line-height: 1px; mso-line-height-rule: exactly;">
+                            &nbsp;
+                        </td>
+                    </tr>
+                    {% for item in order.items.all %}
+                    <tr class="line-item-row subtitled">
+                        <td colspan="2">
+                            <div style="word-break: break-word; padding-left: 0px; padding-right: 5px;">
+                                {{ item.product.name }}
+                            </div>
+                        </td>
+                        <td>
+                            {{ item.quantity }}
+                        </td>
+                        <td>
+                        </td>
+                        <td class="break-word">
+                            <div>
+                                £{{ item.product.price }}
+                            </div>
+                        </td>
+                        <td>
+                        </td>
+                        <td>
+                        </td>
+                        <td>
+                        </td>
+                        <td class="break-word align-right">
+                            <div>
+                                £{{ item.get_total_price }}
+                            </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colspan="5" height="15"
+                            style=" border: 0; border-collapse: collapse; margin: 0; padding: 0; height: 15px; font-size: 1px; line-height: 1px; mso-line-height-rule: exactly;">
+                            &nbsp;
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    <!-- <tr class="summary-amount-border ">
+                        <td>
+                        </td>
+                        <td colspan="8">
+                        </td>
+                    </tr>
+                    <tr class="summary-amount  ">
+                        <td>
+                        </td>
+                        <td colspan="7">
+                            Subtotal
+                        </td>
+                        <td class="break-word align-right">
+                            £150.00
+                        </td>
+                    </tr> -->
+                    <tr class="summary-amount-border mt30">
+                        <td>
+                        </td>
+                        <td colspan="8">
+                        </td>
+                    </tr>
+                    <tr class="summary-amount bold">
+                        <td>
+                        </td>
+                        <td colspan="7">
+                            Total
+                        </td>
+                        <td class="break-word align-right">
+                            £{{order.sum_price}}
+                        </td>
+                    </tr>
+                    <tr class="summary-amount-border mt30">
+                        <td>
+                        </td>
+                        <td colspan="8">
+                        </td>
+                    </tr>
+                    <tr class="summary-amount">
+                        <td>
+                        </td>
+                        <td colspan="7">
+                            Delivery
+                        </td>
+                        <td class="break-word align-right">
+                            £{{order.delivery_fee}}
+                        </td>
+                    </tr>
+                    <tr class="summary-amount-border mt30">
+                        <td>
+                        </td>
+                        <td colspan="8">
+                        </td>
+                    </tr>
+                    <tr class="summary-amount bold">
+                        <td>
+                        </td>
+                        <td colspan="7">
+                            Amount due
+                        </td>
+                        <td class="break-word align-right">
+                            £{{order.total_price}}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="pb30 avoid-page-break">
+            </div>
+            <div class="fs-10">
+            </div>
         </div>
-    </div>
-    <div class="mt30 pt30 light-gray-border-top fs-10 line-height-140"
-        style=" padding-bottom: 40px; margin-left: 40px; margin-right: 40px; overflow:hidden; ">
-        <div class="mt20">
-            <div class="flex-horizontal flex-justify">
-                <div class="nowrap">
-                    #{{ order.id }} · £{{order.total_price}} billed on {{ order.order_date|date:"d M Y" }}
+        <div class="mt30 pt30 light-gray-border-top fs-10 line-height-140"
+            style=" padding-bottom: 40px; margin-left: 40px; margin-right: 40px; overflow:hidden; ">
+            <div class="mt20">
+                <div class="flex-horizontal flex-justify">
+                    <div class="nowrap">
+                        #{{ order.id }} · £{{order.total_price}} billed due {{ order.due_date|date:"d M Y" }}
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
-    <script>
-        window.addEventListener('load', function () {
-            const params = {};
-            location.search.substring(1).split('&').forEach(function (s) {
-                const nameValue = s.split('=', 2);
-                params[nameValue[0]] = decodeURIComponent(nameValue[1]);
+        <script>
+            window.addEventListener('load', function () {
+                const params = {};
+                location.search.substring(1).split('&').forEach(function (s) {
+                    const nameValue = s.split('=', 2);
+                    params[nameValue[0]] = decodeURIComponent(nameValue[1]);
+                });
+                const element = document.getElementsByClassName('page-number')[0];
+                if (element) {
+                    element.innerHTML = element.innerHTML
+                        .replace('[page_number]', params.page)
+                        .replace('[num_pages]', params.topage);
+                }
             });
-            const element = document.getElementsByClassName('page-number')[0];
-            if (element) {
-                element.innerHTML = element.innerHTML
-                    .replace('[page_number]', params.page)
-                    .replace('[num_pages]', params.topage);
-            }
-        });
-    </script>
+        </script>
 </body>
 
 </html>
