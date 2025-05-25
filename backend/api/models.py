@@ -11,6 +11,13 @@ from django.db import models
 class ProductCategory(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
+    # parent = models.ForeignKey(
+    #     "self",
+    #     null=True,
+    #     blank=True,
+    #     related_name="subcategories",
+    #     on_delete=models.CASCADE,
+    # )
 
     class Meta:
         verbose_name_plural = "Product Categories"
@@ -18,6 +25,9 @@ class ProductCategory(models.Model):
         # Ensure categories are ordered by name by default
 
     def __str__(self):
+        # Для удобства отображения в админке
+        if self.parent:
+            return f"{self.parent.name} — {self.name}"
         return self.name
 
     def get_category_details(self):
