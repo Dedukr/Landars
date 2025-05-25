@@ -12,7 +12,6 @@ from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
-from .forms import OrderItemInlineFormSet
 from .models import CustomUser, Order, OrderItem, Product, ProductCategory, Stock
 
 
