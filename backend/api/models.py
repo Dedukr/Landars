@@ -25,9 +25,9 @@ class ProductCategory(models.Model):
         # Ensure categories are ordered by name by default
 
     def __str__(self):
-        # Для удобства отображения в админке
-        if self.parent:
-            return f"{self.parent.name} — {self.name}"
+        # # Для удобства отображения в админке
+        # if self.parent:
+        #     return f"{self.parent.name} — {self.name}"
         return self.name
 
     def get_category_details(self):
