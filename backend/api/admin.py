@@ -5,7 +5,8 @@ from datetime import date, timedelta
 import boto3
 from django.conf import settings
 from django.contrib import admin, messages
-from django.db.models import Sum
+from django.db.models import Count, Sum
+from django.db.models.functions import Round
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -18,24 +19,35 @@ from .models import CustomUser, Order, OrderItem, Product, ProductCategory, Stoc
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
     list_display = ["name", "price", "get_categories"]
-    list_filter = ["category"]
-    filter_horizontal = ["category"]  # красиво отображает множественные категории
+    list_filter = ["categories"]
+    filter_horizontal = ["categories"]  # красиво отображает множественные категории
     search_fields = ["name"]
     ordering = ["name"]
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
-        return qs.prefetch_related("category").distinct()
+        return qs.prefetch_related("categories").distinct()
 
     def get_categories(self, obj):
-        return ", ".join([c.name for c in obj.category.all()])
+        return ", ".join([c.name for c in obj.categories.all()])
 
     get_categories.short_description = "Categories"
+
+    def formfield_for_manytomany(self, db_field, request, **kwargs):
+        if db_field.name == "categories":
+            # Only show leaf categories (those with NO children)
+            leaf_categories = ProductCategory.objects.annotate(
+                num_children=Count("subcategories")
+            ).filter(num_children=0)
+            kwargs["queryset"] = leaf_categories
+        return super().formfield_for_manytomany(db_field, request, **kwargs)
 
 
 @admin.register(ProductCategory)
 class ProductCategoryAdmin(admin.ModelAdmin):
-    list_display = ["name", "description"]
+    list_display = ["name", "description", "parent"]
+    list_filter = ["parent"]
+    search_fields = ["name"]
 
 
 class DateFilter(admin.SimpleListFilter):
@@ -134,6 +146,7 @@ class OrderAdmin(admin.ModelAdmin):
         return actions
 
     list_display = [
+        "id",
         "delivery_date",
         "customer_name",
         "customer_phone",
@@ -142,6 +155,7 @@ class OrderAdmin(admin.ModelAdmin):
         "status",
         "get_invoice",
     ]
+    list_display_links = ["id", "delivery_date", "customer_name"]
     list_filter = [DateFilter, "status"]
     list_editable = ["status"]
     search_fields = [
@@ -302,7 +316,7 @@ class OrderAdmin(admin.ModelAdmin):
         order_items = OrderItem.objects.filter(order__in=queryset)
         food_summary = (
             order_items.values("product__name")
-            .annotate(total_qty=Sum("quantity"))
+            .annotate(total_qty=Round(Sum("quantity"), precision=2))
             .order_by("product__name")
         )
 

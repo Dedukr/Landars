@@ -104,6 +104,7 @@ class CustomUserAdmin(UserAdmin):
                         )
                     },
                 ),
+                ("Important fields", {"fields": ("last_login", "is_active")}),
             ]
         return fieldsets
 

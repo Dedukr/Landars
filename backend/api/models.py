@@ -11,13 +11,13 @@ from django.db import models
 class ProductCategory(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
-    # parent = models.ForeignKey(
-    #     "self",
-    #     null=True,
-    #     blank=True,
-    #     related_name="subcategories",
-    #     on_delete=models.CASCADE,
-    # )
+    parent = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        related_name="subcategories",
+        on_delete=models.CASCADE,
+    )
 
     class Meta:
         verbose_name_plural = "Product Categories"
@@ -25,9 +25,9 @@ class ProductCategory(models.Model):
         # Ensure categories are ordered by name by default
 
     def __str__(self):
-        # # Для удобства отображения в админке
-        # if self.parent:
-        #     return f"{self.parent.name} — {self.name}"
+        # Для удобства отображения в админке
+        if self.parent:
+            return f"{self.parent.name} → {self.name}"
         return self.name
 
     def get_category_details(self):
@@ -54,7 +54,7 @@ class ProductCategory(models.Model):
 class Product(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
-    category = models.ManyToManyField(ProductCategory, related_name="products")
+    categories = models.ManyToManyField(ProductCategory, related_name="products")
     price = models.DecimalField(
         max_digits=10, decimal_places=2, validators=[MinValueValidator(0)]
     )
@@ -75,7 +75,7 @@ class Product(models.Model):
         return {
             "id": self.id,
             "name": self.name,
-            "categories": [cat.name for cat in self.category.all()],
+            "categories": [cat.name for cat in self.categories.all()],
             "description": self.description,
             "price": str(self.price),
             "image_url": self.image.url if self.image else None,  # Include S3 image URL
@@ -88,6 +88,16 @@ class Product(models.Model):
             return stock.quantity
         except Stock.DoesNotExist:
             return 0
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+
+        # Автоматично додати батьківські категорії для всіх обраних
+        for cat in self.categories.all():
+            parent = cat.parent
+            while parent:
+                self.categories.add(parent)
+                parent = parent.parent
 
 
 # Stock model
