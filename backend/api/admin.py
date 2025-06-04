@@ -62,6 +62,7 @@ class ProductCategoryAdmin(admin.ModelAdmin):
     list_display = ["name", "description", "parent"]
     list_filter = [ParentCategoryFilter]
     search_fields = ["name"]
+    ordering = ["parent__name", "name"]
 
 
 class DateFilter(admin.SimpleListFilter):
