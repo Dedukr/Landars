@@ -43,10 +43,26 @@ class ProductAdmin(admin.ModelAdmin):
         return super().formfield_for_manytomany(db_field, request, **kwargs)
 
 
+class ParentCategoryWithChildrenFilter(admin.SimpleListFilter):
+    title = "Parent Category"
+    parameter_name = "parent_category"
+
+    def lookups(self, request, model_admin):
+        # Only parents that have children
+        parents = ProductCategory.objects.filter(children__isnull=False).distinct()
+        return [(parent.id, parent.name) for parent in parents]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            # Get children of selected parent and filter products that belong to them
+            return queryset.filter(categories__parent_id=self.value())
+        return queryset
+
+
 @admin.register(ProductCategory)
 class ProductCategoryAdmin(admin.ModelAdmin):
     list_display = ["name", "description", "parent"]
-    list_filter = ["parent"]
+    list_filter = [ParentCategoryWithChildrenFilter]
     search_fields = ["name"]
 
 
