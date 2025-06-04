@@ -38,7 +38,7 @@ class ProductAdmin(admin.ModelAdmin):
             # Only categories that are not parents (i.e., that are leaf nodes)
             kwargs["queryset"] = ProductCategory.objects.filter(
                 subcategories__isnull=True
-            )
+            ).order_by("parent__name", "name")
         return super().formfield_for_manytomany(db_field, request, **kwargs)
 
 
