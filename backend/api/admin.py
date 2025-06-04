@@ -29,7 +29,9 @@ class ProductAdmin(admin.ModelAdmin):
         return qs.prefetch_related("categories").distinct()
 
     def get_categories(self, obj):
-        return ", ".join([c.name for c in obj.categories.all()])
+        return ", ".join(
+            [c.name for c in obj.categories.all().order_by("parent__name", "name")]
+        )
 
     get_categories.short_description = "Categories"
 
