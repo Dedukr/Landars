@@ -35,34 +35,33 @@ class ProductAdmin(admin.ModelAdmin):
 
     def formfield_for_manytomany(self, db_field, request, **kwargs):
         if db_field.name == "categories":
-            # Only show leaf categories (those with NO children)
-            leaf_categories = ProductCategory.objects.annotate(
-                num_children=Count("subcategories")
-            ).filter(num_children=0)
-            kwargs["queryset"] = leaf_categories
+            # Only categories that are not parents (i.e., that are leaf nodes)
+            kwargs["queryset"] = ProductCategory.objects.filter(
+                subcategories__isnull=True
+            )
         return super().formfield_for_manytomany(db_field, request, **kwargs)
 
 
-class ParentCategoryWithChildrenFilter(admin.SimpleListFilter):
+class ParentCategoryWithSubcategoriesFilter(admin.SimpleListFilter):
     title = "Parent Category"
     parameter_name = "parent_category"
 
     def lookups(self, request, model_admin):
-        # Only parents that have children
+        # Only categories that have subcategories
         parents = ProductCategory.objects.filter(subcategories__isnull=False).distinct()
         return [(parent.id, parent.name) for parent in parents]
 
     def queryset(self, request, queryset):
         if self.value():
-            # Get children of selected parent and filter products that belong to them
-            return queryset.filter(categories__parent_id=self.value())
+            # Filter Products where one of its categories has this parent
+            return queryset.filter(categories__parent_id=self.value()).distinct()
         return queryset
 
 
 @admin.register(ProductCategory)
 class ProductCategoryAdmin(admin.ModelAdmin):
     list_display = ["name", "description", "parent"]
-    list_filter = [ParentCategoryWithChildrenFilter]
+    list_filter = [ParentCategoryWithSubcategoriesFilter]
     search_fields = ["name"]
 
 
