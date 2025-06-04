@@ -49,7 +49,7 @@ class ParentCategoryWithChildrenFilter(admin.SimpleListFilter):
 
     def lookups(self, request, model_admin):
         # Only parents that have children
-        parents = ProductCategory.objects.filter(children__isnull=False).distinct()
+        parents = ProductCategory.objects.filter(subcategories__isnull=False).distinct()
         return [(parent.id, parent.name) for parent in parents]
 
     def queryset(self, request, queryset):
