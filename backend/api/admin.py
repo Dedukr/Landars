@@ -42,26 +42,28 @@ class ProductAdmin(admin.ModelAdmin):
         return super().formfield_for_manytomany(db_field, request, **kwargs)
 
 
-class ParentCategoryWithSubcategoriesFilter(admin.SimpleListFilter):
-    title = "Parent Category"
-    parameter_name = "parent_category"
+class HasChildrenFilter(admin.SimpleListFilter):
+    title = "Has Subcategories"
+    parameter_name = "has_children"
 
     def lookups(self, request, model_admin):
-        # Only categories that have subcategories
-        parents = ProductCategory.objects.filter(subcategories__isnull=False).distinct()
-        return [(parent.id, parent.name) for parent in parents]
+        return (
+            ("yes", "Yes"),
+            ("no", "No"),
+        )
 
     def queryset(self, request, queryset):
-        if self.value():
-            # Filter Products where one of its categories has this parent
-            return queryset.filter(categories__parent_id=self.value()).distinct()
+        if self.value() == "yes":
+            return queryset.filter(subcategories__isnull=False).distinct()
+        if self.value() == "no":
+            return queryset.filter(subcategories__isnull=True)
         return queryset
 
 
 @admin.register(ProductCategory)
 class ProductCategoryAdmin(admin.ModelAdmin):
     list_display = ["name", "description", "parent"]
-    list_filter = [ParentCategoryWithSubcategoriesFilter]
+    list_filter = [HasChildrenFilter]
     search_fields = ["name"]
 
 
