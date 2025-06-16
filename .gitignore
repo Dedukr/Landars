@@ -14,7 +14,7 @@ media/
 staticfiles/
 
 # Server files
-certs/
+nginx/certs/
 
 # Environment variables
 .env
