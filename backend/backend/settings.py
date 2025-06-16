@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "account",
+    # "api.apps.ApiConfig",
     "api",
     "storages",
 ]

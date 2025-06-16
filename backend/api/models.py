@@ -94,16 +94,6 @@ class Product(models.Model):
         except Stock.DoesNotExist:
             return 0
 
-    def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
-
-        # Автоматично додати батьківські категорії для всіх обраних
-        for cat in self.categories.all():
-            parent = cat.parent
-            while parent:
-                self.categories.add(parent)
-                parent = parent.parent
-
 
 # Stock model
 class Stock(models.Model):

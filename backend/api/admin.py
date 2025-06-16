@@ -43,6 +43,20 @@ class ProductAdmin(admin.ModelAdmin):
             ).order_by("parent__name", "name")
         return super().formfield_for_manytomany(db_field, request, **kwargs)
 
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+
+        # Now categories are saved, safe to modify them
+        instance = form.instance
+        to_add = set()
+        for cat in instance.categories.all():
+            parent = cat.parent
+            while parent:
+                to_add.add(parent)
+                parent = parent.parent
+        if to_add:
+            instance.categories.add(*to_add)
+
 
 class ParentCategoryFilter(admin.SimpleListFilter):
     title = _("Parent Category")
