@@ -274,7 +274,7 @@ class OrderAdmin(admin.ModelAdmin):
         items = order.items.all()
 
         # Sausage category name
-        post_suitable_category = "sausages"
+        post_suitable_category = "Sausages and Marinated products"
         for item in items:
             category_names = item.product.category.values_list("name", flat=True)
             if post_suitable_category not in [name.lower() for name in category_names]:
