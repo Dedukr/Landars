@@ -194,14 +194,22 @@ class OrderItem(models.Model):
     order = models.ForeignKey(Order, related_name="items", on_delete=models.CASCADE)
     product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True)
     quantity = models.DecimalField(
-        max_digits=10, decimal_places=2, validators=[MinValueValidator(0.01)]
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0.01)],
+        blank=False,
+        null=False,
     )
 
     def __str__(self):
         return f"{self.product.name} - {self.quantity}"
 
     def get_total_price(self):
-        return round(self.product.price * self.quantity, 2)
+        return (
+            round(self.product.price * self.quantity, 2)
+            if self.product and self.quantity
+            else ""
+        )
 
     def get_item_details(self):
         return {

@@ -17,7 +17,6 @@
 
 # For production.
 # This script is intended to be run in a production environment and should not be used in development.
-
 CONTAINER=landars-backend-1
 DB_PATH_IN_CONTAINER=/backend/db/db.sqlite3
 DB_PATH_ON_HOST=/home/dedmac/web/Landars/backend/db/db.sqlite3

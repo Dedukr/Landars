@@ -153,13 +153,14 @@ def create_and_upload_invoice(modeladmin, request, queryset):
 
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
-    extra = 1
+    min_num = 1
+    extra = 0
     readonly_fields = ["get_total_price"]
 
-    def get_total_price(self, obj):
-        return round(obj.product.price * obj.quantity, 2)
+    # def get_total_price(self, obj):
+    #     return round(obj.product.price * obj.quantity, 2)
 
-    get_total_price.short_description = "Total Price"
+    # get_total_price.short_description = "Total Price"
 
 
 @admin.register(Order)
@@ -276,7 +277,7 @@ class OrderAdmin(admin.ModelAdmin):
         # Sausage category name
         post_suitable_category = "Sausages and Marinated products"
         for item in items:
-            category_names = item.product.category.values_list("name", flat=True)
+            category_names = item.product.categories.values_list("name", flat=True)
             if post_suitable_category not in [name.lower() for name in category_names]:
                 order.is_home_delivery = True
                 order.delivery_fee = 10
