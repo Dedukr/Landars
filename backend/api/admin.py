@@ -21,7 +21,7 @@ class ProductAdmin(admin.ModelAdmin):
     list_display = ["name", "price", "get_categories"]
     list_filter = ["categories"]
     filter_horizontal = ["categories"]  # красиво отображает множественные категории
-    search_fields = ["name"]
+    search_fields = ["name", "description"]
     ordering = ["name"]
 
     def get_queryset(self, request):
@@ -156,6 +156,7 @@ class OrderItemInline(admin.TabularInline):
     min_num = 1
     extra = 0
     readonly_fields = ["get_total_price"]
+    autocomplete_fields = ["product"]
 
     # def get_total_price(self, obj):
     #     return round(obj.product.price * obj.quantity, 2)
