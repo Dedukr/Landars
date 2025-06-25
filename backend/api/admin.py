@@ -21,7 +21,7 @@ class ProductAdmin(admin.ModelAdmin):
     list_display = ["name", "price", "get_categories"]
     list_filter = ["categories"]
     filter_horizontal = ["categories"]  # красиво отображает множественные категории
-    search_fields = ["name", "description"]
+    search_fields = ["name"]
     ordering = ["name"]
 
     def get_queryset(self, request):
