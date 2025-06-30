@@ -172,12 +172,6 @@ class OrderAdmin(admin.ModelAdmin):
 
     actions = [create_and_upload_invoice, "food_summary_csv"]
 
-    def get_actions(self, request):
-        actions = super().get_actions(request)
-        if "delete_selected" in actions:
-            del actions["delete_selected"]
-        return actions
-
     list_display = [
         "id",
         "delivery_date",
@@ -199,6 +193,7 @@ class OrderAdmin(admin.ModelAdmin):
     ordering = ["-delivery_date"]
     date_hierarchy = "delivery_date"
     inlines = [OrderItemInline]
+    autocomplete_fields = ["customer"]
 
     def get_fields(self, request, obj=None):
         fields = [
@@ -217,7 +212,7 @@ class OrderAdmin(admin.ModelAdmin):
                 "delivery_fee",
             ]
             if not request.user.has_perm("account.change_customuser"):
-                return fields[0].replace("customer_name")
+                return fields[0].replace("customer", "customer_name")
         return fields
 
     def get_readonly_fields(self, request, obj=None):
@@ -267,7 +262,7 @@ class OrderAdmin(admin.ModelAdmin):
         profile = obj.customer.profile if obj.customer else None
         if profile and profile.address:
             address = profile.address
-            return f"{address.address_line}, {address.address_line2}, {address.city}, {address.postal_code}"
+            return f"{address.address_line + ', ' if address.address_line else ''}{address.address_line2 + ', ' if address.address_line2 else ''}{address.city + ', ' if address.city else ''}{address.postal_code if address.postal_code else ''}"
         return "No Address"
 
     def save_related(self, request, form, formsets, change):
