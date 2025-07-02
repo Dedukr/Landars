@@ -217,7 +217,6 @@ class OrderAdmin(admin.ModelAdmin):
 
     def get_readonly_fields(self, request, obj=None):
         readonly = [
-            "delivery_date",
             "customer_phone",
             "customer_address",
             "get_total_price",
