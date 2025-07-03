@@ -168,7 +168,9 @@ class OrderItemInline(admin.TabularInline):
 class OrderAdmin(admin.ModelAdmin):
 
     class Media:
-        js = ("admin/js/order_filter_cleaner.js",)
+        js = (
+            "admin/js/order_filter_cleaner.js",
+        )
 
     actions = [create_and_upload_invoice, "food_summary_csv"]
 
@@ -178,6 +180,7 @@ class OrderAdmin(admin.ModelAdmin):
         "customer_name",
         "customer_phone",
         "customer_address",
+        "notes",
         "get_total_price",
         "status",
         "get_invoice",
@@ -209,31 +212,28 @@ class OrderAdmin(admin.ModelAdmin):
                 "get_total_price",
                 "get_invoice",
                 "is_home_delivery",
-                "delivery_fee",
             ]
             if not request.user.has_perm("account.change_customuser"):
                 return fields[0].replace("customer", "customer_name")
+        fields += [
+            "delivery_fee_manual",
+            "delivery_fee",
+        ]
         return fields
 
     def get_readonly_fields(self, request, obj=None):
         readonly = [
+            "customer_name",
             "customer_phone",
             "customer_address",
             "get_total_price",
             "get_invoice",
-            "delivery_fee",
         ]
 
-        if obj:  # We're in change mode
-            readonly += [
-                "is_home_delivery",
-                "delivery_fee",
-            ]
+        if obj:
             if request.user.has_perm("api.can_change_status_and_note"):
                 return ["customer_name"] + readonly  # Only status & notes editable
-            return readonly  # Admins can edit customer, status, notes
-        else:
-            return []
+        return readonly  # Admins can edit customer, status, notes
 
     def get_queryset(self, request):
         self.request = request  # Save request for later use
@@ -269,27 +269,33 @@ class OrderAdmin(admin.ModelAdmin):
         order = form.instance
         items = order.items.all()
 
-        # Sausage category name
-        post_suitable_category = "Sausages and Marinated products"
-        for item in items:
-            category_names = item.product.categories.values_list("name", flat=True)
-            if post_suitable_category not in [name.lower() for name in category_names]:
-                order.is_home_delivery = True
-                order.delivery_fee = 10
-                break
-        else:
-            order.is_home_delivery = False
-            total_weight = sum(item.quantity for item in items)
-            if total_weight <= 2:
-                order.delivery_fee = 5
-            elif total_weight <= 10:
-                order.delivery_fee = 8
+        if not order.delivery_fee_manual:
+            # Sausage category name
+            post_suitable_category = "Sausages and Marinated products"
+            for item in items:
+                category_names = item.product.categories.values_list("name", flat=True)
+                if post_suitable_category not in [
+                    name.lower() for name in category_names
+                ]:
+                    order.is_home_delivery = True
+                    order.delivery_fee = 10
+                    break
             else:
-                order.delivery_fee = 15
-            # elif total_weight <= 20:
-            #     delivery_fee = 15
-            # else:
-            #     delivery_fee = 25  # For > 20kg
+                order.is_home_delivery = False
+                if order.total_price > 220:
+                    order.delivery_fee = 0
+                else:
+                    total_weight = sum(item.quantity for item in items)
+                    if total_weight <= 2:
+                        order.delivery_fee = 5
+                    elif total_weight <= 10:
+                        order.delivery_fee = 8
+                    else:
+                        order.delivery_fee = 15
+                    # elif total_weight <= 20:
+                    #     delivery_fee = 15
+                    # else:
+                    #     delivery_fee = 25  # For > 20kg
         order.save()
 
     def get_total_price(self, obj):

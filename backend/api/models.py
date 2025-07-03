@@ -136,6 +136,10 @@ class Order(models.Model):
     notes = models.CharField(max_length=200, blank=True, null=True)
     delivery_date = models.DateField()
     is_home_delivery = models.BooleanField(default=True, verbose_name="Home Delivery")
+    delivery_fee_manual = models.BooleanField(
+        default=False,
+        help_text="Check to exclude the delivery fee from the total price.",
+    )
     delivery_fee = models.DecimalField(
         max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0)]
     )
