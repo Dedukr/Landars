@@ -172,7 +172,12 @@ class Order(models.Model):
     @property
     def sum_price(self):
         """Calculate the total price of the order."""
-        return sum(item.get_total_price() for item in self.items.all())
+        result = 0
+        for item in self.items.all():
+            if not (item.get_total_price() == ""):
+                result += item.get_total_price()
+        return result
+        # return sum(item.get_total_price() if item.get_total_price() for item in self.items.all())
 
     @property
     def total_price(self):
@@ -206,7 +211,7 @@ class OrderItem(models.Model):
     )
 
     def __str__(self):
-        return f"{self.product.name} - {self.quantity}"
+        return f"{self.product.name if self.product else 'Deleted product'} - {self.quantity}"
 
     def get_total_price(self):
         return (
