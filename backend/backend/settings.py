@@ -147,6 +147,7 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, "static")
+print(STATIC_ROOT)
 
 
 # Default primary key field type
@@ -181,3 +182,5 @@ BUSINESS_INFO = {
     "account_number": os.getenv("BUSINESS_ACCOUNT_NUMBER", "Account Number"),
     "sort_code": os.getenv("BUSINESS_SORT_CODE", "Sort Code"),
 }
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
