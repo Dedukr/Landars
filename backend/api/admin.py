@@ -12,6 +12,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
+from weasyprint import HTML
 
 from .models import CustomUser, Order, OrderItem, Product, ProductCategory, Stock
 
@@ -131,7 +132,6 @@ def upload_invoice_to_s3(file_path, s3_key):
 
 @admin.action(description="Create & Upload Invoice")
 def create_and_upload_invoice(modeladmin, request, queryset):
-    from weasyprint import HTML
 
     for order in queryset:
         # Render your invoice template to HTML
@@ -168,11 +168,14 @@ class OrderItemInline(admin.TabularInline):
 class OrderAdmin(admin.ModelAdmin):
 
     class Media:
-        js = (
-            "admin/js/order_filter_cleaner.js",
-        )
+        js = ("admin/js/order_filter_cleaner.js",)
 
-    actions = [create_and_upload_invoice, "food_summary_csv"]
+    actions = [
+        create_and_upload_invoice,
+        "food_summary_csv",
+        "print_selected_orders",
+        "export_orders_pdf",
+    ]
 
     list_display = [
         "id",
@@ -327,6 +330,20 @@ class OrderAdmin(admin.ModelAdmin):
         return format_html('<a href="{}" target="_blank">Invoice</a>', url)
 
     get_invoice.short_description = "Invoice"
+
+    def export_orders_pdf(self, request, queryset):
+        html_string = render_to_string("orders.html", {"orders": queryset})
+
+        # Generate PDF from HTML
+        with tempfile.NamedTemporaryFile(delete=True) as output:
+            HTML(string=html_string).write_pdf(target=output.name)
+
+            output.seek(0)
+            response = HttpResponse(output.read(), content_type="application/pdf")
+            response["Content-Disposition"] = 'attachment; filename="orders.pdf"'
+            return response
+
+    export_orders_pdf.short_description = "Export selected orders to PDF"
 
     def food_summary_csv(self, request, queryset):
         """
