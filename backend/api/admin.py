@@ -373,7 +373,7 @@ class OrderAdmin(admin.ModelAdmin):
         ready_list = sorted(ready_summary.items())
 
         # Pad the shorter list
-        max_len = max(len(frozen_list), len(fresh_list))
+        max_len = max(len(frozen_list), len(ready_list))
         frozen_list += [("", "")] * (max_len - len(frozen_list))
         ready_list += [("", "")] * (max_len - len(ready_list))
 
