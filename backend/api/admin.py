@@ -176,9 +176,8 @@ class OrderAdmin(admin.ModelAdmin):
 
     actions = [
         create_and_upload_invoice,
-        "food_summary_csv",
-        "print_selected_orders",
         "export_orders_pdf",
+        "food_summary_csv",
         "food_summary_excel",
     ]
 
