@@ -12,10 +12,14 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
-from weasyprint import HTML
+
 
 from .models import CustomUser, Order, OrderItem, Product, ProductCategory, Stock
 
+from weasyprint import HTML
+
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
@@ -175,6 +179,7 @@ class OrderAdmin(admin.ModelAdmin):
         "food_summary_csv",
         "print_selected_orders",
         "export_orders_pdf",
+        "food_summary_excel",
     ]
 
     list_display = [
@@ -334,52 +339,111 @@ class OrderAdmin(admin.ModelAdmin):
             output.seek(0)
             # Use the delivery date of the first order for the filename
             if queryset.exists():
-                date_str = queryset.first().delivery_date.strftime("%Y-%m-%d")
+                date_str = queryset.first().delivery_date.strftime("%d-%b-%Y")
             else:
                 date_str = ""
             response = HttpResponse(output.read(), content_type="application/pdf")
             response["Content-Disposition"] = (
-                f'attachment; filename="orders_{date_str}.pdf"'
+                f'attachment; filename="{", ".join(sorted({d.strftime("%d-%b-%Y") for d in delivery_dates}))}_Orders.pdf"'
             )
             return response
 
-    export_orders_pdf.short_description = "Export selected orders to PDF"
+    export_orders_pdf.short_description = "Export Selected Orders to PDF"
 
     def food_summary_csv(self, request, queryset):
         """
         Export a food summary of all products and their total quantities for selected orders as CSV.
-        Only works if orders for one date are selected!
+        Frozen products are on the left, fresh products on the right.
         """
-        # Find the date(s) in the queryset (ideally, filter to a single date)
-        delivery_dates = queryset.values_list("delivery_date", flat=True).distinct()
-        # if delivery_dates.count() != 1:
-        #     self.message_user(
-        #         request,
-        #         "Please select orders for a single delivery date.",
-        #         level="error",
-        #     )
-        #     return
-
-        target_date = delivery_dates
-
-        # Gather all OrderItems for those orders
-        order_items = OrderItem.objects.filter(order__in=queryset)
-        food_summary = (
-            order_items.values("product__name")
-            .annotate(total_qty=Round(Sum("quantity"), precision=2))
-            .order_by("product__name")
+        order_items = OrderItem.objects.filter(order__in=queryset).select_related(
+            "product"
         )
+        frozen_summary = {}
+        fresh_summary = {}
+        for item in order_items:
+            product = item.product
+            if not product:
+                continue
+            if product.categories.filter(name__iexact="Frozen Products").exists():
+                frozen_summary[product.name] = frozen_summary.get(
+                    product.name, 0
+                ) + float(item.quantity)
+            else:
+                fresh_summary[product.name] = fresh_summary.get(
+                    product.name, 0
+                ) + float(item.quantity)
 
-        # Create CSV response
+        # Sort and convert to lists of tuples
+        frozen_list = sorted(frozen_summary.items())
+        fresh_list = sorted(fresh_summary.items())
+
+        # Pad the shorter list
+        max_len = max(len(frozen_list), len(fresh_list))
+        frozen_list += [("", "")] * (max_len - len(frozen_list))
+        fresh_list += [("", "")] * (max_len - len(fresh_list))
+
+        delivery_dates = queryset.values_list("delivery_date", flat=True).distinct()
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = (
-            f'attachment; filename="{",".join(sorted({d.strftime("%d %b %Y") for d in target_date}))}_summary.csv"'
+            f'attachment; filename="{", ".join(sorted({d.strftime("%d-%b-%Y") for d in delivery_dates}))}_Products.csv"'
         )
         writer = csv.writer(response)
-        writer.writerow(["Product", "Total Quantity"])
-        for row in food_summary:
-            writer.writerow([row["product__name"], row["total_qty"]])
-
+        writer.writerow(["Frozen Product", "Quantity", "", "Fresh Product", "Quantity"])
+        for (f_name, f_qty), (r_name, r_qty) in zip(frozen_list, fresh_list):
+            writer.writerow([f_name, f_qty, "", r_name, r_qty])
         return response
 
-    food_summary_csv.short_description = "Export Food Summary"
+    food_summary_csv.short_description = "Export Food Summary as CSV"
+
+    def food_summary_excel(self, request, queryset):
+        """
+        Export a food summary of all products and their total quantities for selected orders as Excel.
+        Frozen products are on the left, fresh products on the right.
+        """
+        order_items = OrderItem.objects.filter(order__in=queryset).select_related("product")
+
+        frozen_summary = {}
+        fresh_summary = {}
+
+        for item in order_items:
+            product = item.product
+            if not product:
+                continue
+            if product.categories.filter(name__iexact="Frozen Products").exists():
+                frozen_summary[product.name] = frozen_summary.get(product.name, 0) + float(item.quantity)
+            else:
+                fresh_summary[product.name] = fresh_summary.get(product.name, 0) + float(item.quantity)
+
+        frozen_list = sorted(frozen_summary.items())
+        fresh_list = sorted(fresh_summary.items())
+
+        max_len = max(len(frozen_list), len(fresh_list))
+        frozen_list += [("", "")] * (max_len - len(frozen_list))
+        fresh_list += [("", "")] * (max_len - len(fresh_list))
+
+        delivery_dates = queryset.values_list("delivery_date", flat=True).distinct()
+        filename = ", ".join(sorted({d.strftime("%d-%b-%Y") for d in delivery_dates})) + "_Products.xlsx"
+
+        # Create Excel workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Food Summary"
+
+        ws.append(["Frozen Product", "Quantity", "", "Fresh Product", "Quantity"])
+
+        for (f_name, f_qty), (r_name, r_qty) in zip(frozen_list, fresh_list):
+            ws.append([f_name, f_qty, "", r_name, r_qty])
+
+        # Auto-size columns
+        for col in ws.columns:
+            max_length = max(len(str(cell.value or "")) for cell in col)
+            col_letter = get_column_letter(col[0].column)
+            ws.column_dimensions[col_letter].width = max_length + 3
+
+        # Return HTTP response
+        response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        wb.save(response)
+        return response
+
+    food_summary_excel.short_description = "Export Food Summary as Excel"

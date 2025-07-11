@@ -11,10 +11,12 @@ django-cors-headers==4.7.0
 django-storages==1.14.6
 djangorestframework==3.16.0
 dotenv==0.9.9
+et_xmlfile==2.0.0
 fonttools==4.58.0
 gunicorn==23.0.0
 idna==3.10
 jmespath==1.0.1
+openpyxl==3.1.5
 packaging==25.0
 pillow==11.2.1
 pycparser==2.22
