@@ -166,6 +166,36 @@ class OrderItemInline(admin.TabularInline):
     # get_total_price.short_description = "Total Price"
 
 
+@admin.action(description="Mark selected orders as Pending")
+def mark_orders_pending(modeladmin, request, queryset):
+    updated = queryset.update(status="pending")
+    modeladmin.message_user(
+        request,
+        f"{updated} order(s) marked as pending.",
+        level=messages.SUCCESS,
+    )
+
+
+@admin.action(description="Mark selected orders as Paid")
+def mark_orders_paid(modeladmin, request, queryset):
+    updated = queryset.update(status="paid")
+    modeladmin.message_user(
+        request,
+        f"{updated} order(s) marked as paid.",
+        level=messages.SUCCESS,
+    )
+
+
+@admin.action(description="Mark selected orders as Cancelled")
+def mark_orders_cancelled(modeladmin, request, queryset):
+    updated = queryset.update(status="cancelled")
+    modeladmin.message_user(
+        request,
+        f"{updated} order(s) marked as cancelled.",
+        level=messages.SUCCESS,
+    )
+
+
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
 
@@ -174,6 +204,9 @@ class OrderAdmin(admin.ModelAdmin):
 
     actions = [
         create_and_upload_invoice,
+        mark_orders_paid,
+        mark_orders_cancelled,
+        mark_orders_pending,
         "export_orders_pdf",
         "food_summary_csv",
         "food_summary_excel",

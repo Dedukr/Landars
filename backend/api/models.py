@@ -149,8 +149,6 @@ class Order(models.Model):
         choices=[
             ("pending", "Pending"),
             ("paid", "Paid"),
-            ("delivered", "Delivered"),
-            ("completed", "Completed"),
             ("cancelled", "Cancelled"),
         ],
         default="pending",
