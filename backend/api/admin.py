@@ -5,7 +5,7 @@ from datetime import date, timedelta
 import boto3
 from django.conf import settings
 from django.contrib import admin, messages
-from django.db.models import Count, Sum
+from django.db.models import Sum
 from django.db.models.functions import Round
 from django.http import HttpResponse
 from django.template.loader import render_to_string
@@ -217,7 +217,8 @@ class OrderAdmin(admin.ModelAdmin):
                 "delivery_fee",
             ]
             if not request.user.has_perm("account.change_customuser"):
-                return fields[0].replace("customer_name")
+                fields[0] = "customer_name"
+                return fields
         return fields
 
     def get_readonly_fields(self, request, obj=None):

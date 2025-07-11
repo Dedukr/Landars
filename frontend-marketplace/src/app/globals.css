@@ -1,8 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f8fafc;
+  --foreground: #1a202c;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --sidebar-bg: #fff;
+  --sidebar-border: #d1d5db;
+  --card-bg: #fff;
+  --card-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.06);
+  --accent: #fbbf24;
 }
 
 @theme inline {
@@ -14,8 +21,15 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #18181b;
+    --foreground: #f3f4f6;
+    --primary: #60a5fa;
+    --primary-hover: #3b82f6;
+    --sidebar-bg: #23272f;
+    --sidebar-border: #374151;
+    --card-bg: #23272f;
+    --card-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.18);
+    --accent: #fbbf24;
   }
 }
 
@@ -23,4 +37,120 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+header {
+  background: var(--background);
+  color: var(--foreground);
+  border-bottom: 1px solid var(--sidebar-border);
+}
+
+header .shadow-sm {
+  box-shadow: var(--card-shadow);
+}
+
+header .rounded-lg {
+  border-radius: 0.75rem;
+}
+
+header .backdrop-blur {
+  backdrop-filter: blur(8px);
+}
+
+.navbar {
+  width: 100%;
+  background: var(--background);
+  color: var(--foreground);
+  border-bottom: 1px solid var(--sidebar-border);
+  padding: 0.5rem 2rem;
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.navbar .navbar-title {
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-right: 2rem;
+}
+
+.navbar .navbar-products {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.navbar .navbar-link {
+  text-decoration: none;
+  color: var(--primary);
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.navbar .navbar-link:hover {
+  color: var(--primary-hover);
+}
+
+aside,
+.sidebar,
+.filters-sidebar {
+  background: var(--sidebar-bg);
+  color: var(--foreground);
+  border-right: 1px solid var(--sidebar-border);
+}
+
+button,
+.btn,
+.filter-btn {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 0.5rem;
+  padding: 0.5rem 1.25rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+button:hover,
+.btn:hover,
+.filter-btn:hover {
+  background: var(--primary-hover);
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--primary);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }

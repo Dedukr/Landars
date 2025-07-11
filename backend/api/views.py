@@ -1,15 +1,10 @@
-from django.contrib.admin.views.decorators import staff_member_required
-from django.http import HttpResponse, JsonResponse
-from django.shortcuts import render
-from django.template.loader import render_to_string
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Order  # Adjust import path
-from .models import Product, Stock
-from .serializers import ProductSerializer
-
+from .models import Product, ProductCategory, Stock
+from .serializers import CategorySerializer, ProductSerializer
 
 # @staff_member_required
 # def order_invoice_pdf(request, pk):
@@ -31,8 +26,45 @@ from .serializers import ProductSerializer
 # Create your views here.
 class ProductList(APIView):
     def get(self, request):
-        """Retrieve all products with stock availability."""
+        """Retrieve all products with filtering and sorting."""
         products = Product.objects.all()
+
+        # Filtering
+        categories = request.query_params.get("categories")
+        if categories:
+            category_ids = [int(cid) for cid in categories.split(",") if cid.isdigit()]
+            if category_ids:
+                products = products.filter(categories__id__in=category_ids).distinct()
+
+        search = request.query_params.get("search")
+        if search:
+            products = products.filter(name__icontains=search)
+
+        price_min = request.query_params.get("price_min")
+        price_max = request.query_params.get("price_max")
+        if price_min:
+            products = products.filter(price__gte=price_min)
+        if price_max:
+            products = products.filter(price__lte=price_max)
+
+        in_stock = request.query_params.get("in_stock")
+        if in_stock == "1":
+            products = products.filter(stock__quantity__gt=0)
+
+        # Sorting
+        sort = request.query_params.get("sort")
+        if sort == "name_asc":
+            products = products.order_by("name")
+        elif sort == "name_desc":
+            products = products.order_by("-name")
+        elif sort == "price_asc":
+            products = products.order_by("price")
+        elif sort == "price_desc":
+            products = products.order_by("-price")
+        elif sort == "newest":
+            products = products.order_by("-id")
+        elif sort == "oldest":
+            products = products.order_by("id")
         serializer = ProductSerializer(products, many=True)
         return Response(serializer.data)
 
@@ -101,6 +133,14 @@ class ProductDetail(APIView):
             return Product.objects.get(id=product_id)
         except Product.DoesNotExist:
             return None
+
+
+class CategoryList(APIView):
+    def get(self, request):
+        """Retrieve all categories."""
+        categories = ProductCategory.objects.all()
+        serializer = CategorySerializer(categories, many=True)
+        return Response(serializer.data)
 
 
 class StockUpdateView(APIView):
