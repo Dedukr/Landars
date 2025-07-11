@@ -12,14 +12,12 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
-
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
+from weasyprint import HTML
 
 from .models import CustomUser, Order, OrderItem, Product, ProductCategory, Stock
 
-from weasyprint import HTML
-
-from openpyxl import Workbook
-from openpyxl.utils import get_column_letter
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
@@ -337,10 +335,8 @@ class OrderAdmin(admin.ModelAdmin):
 
             output.seek(0)
             # Use the delivery date of the first order for the filename
-            if queryset.exists():
-                date_str = queryset.first().delivery_date.strftime("%d-%b-%Y")
-            else:
-                date_str = ""
+
+            delivery_dates = queryset.values_list("delivery_date", flat=True).distinct()
             response = HttpResponse(output.read(), content_type="application/pdf")
             response["Content-Disposition"] = (
                 f'attachment; filename="{", ".join(sorted({d.strftime("%d-%b-%Y") for d in delivery_dates}))}_Orders.pdf"'
@@ -399,7 +395,9 @@ class OrderAdmin(admin.ModelAdmin):
         Export a food summary of all products and their total quantities for selected orders as Excel.
         Frozen products are on the left, fresh products on the right.
         """
-        order_items = OrderItem.objects.filter(order__in=queryset).select_related("product")
+        order_items = OrderItem.objects.filter(order__in=queryset).select_related(
+            "product"
+        )
 
         frozen_summary = {}
         fresh_summary = {}
@@ -409,9 +407,13 @@ class OrderAdmin(admin.ModelAdmin):
             if not product:
                 continue
             if product.categories.filter(name__iexact="Frozen Products").exists():
-                frozen_summary[product.name] = frozen_summary.get(product.name, 0) + float(item.quantity)
+                frozen_summary[product.name] = frozen_summary.get(
+                    product.name, 0
+                ) + float(item.quantity)
             else:
-                fresh_summary[product.name] = fresh_summary.get(product.name, 0) + float(item.quantity)
+                fresh_summary[product.name] = fresh_summary.get(
+                    product.name, 0
+                ) + float(item.quantity)
 
         frozen_list = sorted(frozen_summary.items())
         fresh_list = sorted(fresh_summary.items())
@@ -421,7 +423,10 @@ class OrderAdmin(admin.ModelAdmin):
         fresh_list += [("", "")] * (max_len - len(fresh_list))
 
         delivery_dates = queryset.values_list("delivery_date", flat=True).distinct()
-        filename = ", ".join(sorted({d.strftime("%d-%b-%Y") for d in delivery_dates})) + "_Products.xlsx"
+        filename = (
+            ", ".join(sorted({d.strftime("%d-%b-%Y") for d in delivery_dates}))
+            + "_Products.xlsx"
+        )
 
         # Create Excel workbook
         wb = Workbook()
@@ -440,7 +445,9 @@ class OrderAdmin(admin.ModelAdmin):
             ws.column_dimensions[col_letter].width = max_length + 3
 
         # Return HTTP response
-        response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        response = HttpResponse(
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         wb.save(response)
         return response
