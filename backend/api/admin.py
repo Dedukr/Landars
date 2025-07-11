@@ -400,7 +400,7 @@ class OrderAdmin(admin.ModelAdmin):
         )
 
         frozen_summary = {}
-        fresh_summary = {}
+        ready_summary = {}
 
         for item in order_items:
             product = item.product
@@ -411,16 +411,16 @@ class OrderAdmin(admin.ModelAdmin):
                     product.name, 0
                 ) + float(item.quantity)
             else:
-                fresh_summary[product.name] = fresh_summary.get(
+                ready_summary[product.name] = ready_summary.get(
                     product.name, 0
                 ) + float(item.quantity)
 
         frozen_list = sorted(frozen_summary.items())
-        fresh_list = sorted(fresh_summary.items())
+        ready_list = sorted(ready_summary.items())
 
-        max_len = max(len(frozen_list), len(fresh_list))
+        max_len = max(len(frozen_list), len(ready_list))
         frozen_list += [("", "")] * (max_len - len(frozen_list))
-        fresh_list += [("", "")] * (max_len - len(fresh_list))
+        ready_list += [("", "")] * (max_len - len(ready_list))
 
         delivery_dates = queryset.values_list("delivery_date", flat=True).distinct()
         filename = (
@@ -433,9 +433,9 @@ class OrderAdmin(admin.ModelAdmin):
         ws = wb.active
         ws.title = "Food Summary"
 
-        ws.append(["Frozen Product", "Quantity", "", "Fresh Product", "Quantity"])
+        ws.append(["Frozen Product", "Quantity", "", "Ready Product", "Quantity"])
 
-        for (f_name, f_qty), (r_name, r_qty) in zip(frozen_list, fresh_list):
+        for (f_name, f_qty), (r_name, r_qty) in zip(frozen_list, ready_list):
             ws.append([f_name, f_qty, "", r_name, r_qty])
 
         # Auto-size columns
