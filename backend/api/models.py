@@ -196,6 +196,15 @@ class Order(models.Model):
             "total_price": self.get_total_price(),
             "items": [item.get_item_details() for item in self.items.all()],
         }
+    @property
+    def customer_address(self):
+        profile = self.customer.profile if self.customer else None
+        if profile and profile.address:
+            address = profile.address
+            return f"{address.address_line + ', ' if address.address_line else ''}{address.address_line2 + ', ' if address.address_line2 else ''}{address.city + ', ' if address.city else ''}{address.postal_code if address.postal_code else ''}"
+        return "No Address"
+
+
 
 
 # OrderItem model

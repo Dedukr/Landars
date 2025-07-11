@@ -260,13 +260,6 @@ class OrderAdmin(admin.ModelAdmin):
             else "No Phone"
         )
 
-    def customer_address(self, obj):
-        profile = obj.customer.profile if obj.customer else None
-        if profile and profile.address:
-            address = profile.address
-            return f"{address.address_line + ', ' if address.address_line else ''}{address.address_line2 + ', ' if address.address_line2 else ''}{address.city + ', ' if address.city else ''}{address.postal_code if address.postal_code else ''}"
-        return "No Address"
-
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)
         order = form.instance
@@ -339,8 +332,15 @@ class OrderAdmin(admin.ModelAdmin):
             HTML(string=html_string).write_pdf(target=output.name)
 
             output.seek(0)
+            # Use the delivery date of the first order for the filename
+            if queryset.exists():
+                date_str = queryset.first().delivery_date.strftime("%Y-%m-%d")
+            else:
+                date_str = ""
             response = HttpResponse(output.read(), content_type="application/pdf")
-            response["Content-Disposition"] = 'attachment; filename="orders.pdf"'
+            response["Content-Disposition"] = (
+                f'attachment; filename="orders_{date_str}.pdf"'
+            )
             return response
 
     export_orders_pdf.short_description = "Export selected orders to PDF"
