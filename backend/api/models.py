@@ -181,6 +181,10 @@ class Order(models.Model):
     def total_price(self):
         """Calculate the total price of the order including delivery fee."""
         return self.sum_price + self.delivery_fee
+    
+    @property
+    def total_items(self):
+        return sum(item.quantity for item in self.items.all())
 
     @property
     def due_date(self):
