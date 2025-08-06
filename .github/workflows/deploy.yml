@@ -181,20 +181,20 @@ jobs:
             echo "Pulling latest code from repository..."
             git pull origin main || echo "Failed to pull latest code"
 
-            # Ensure SSL certificates directory exists and has proper permissions
+            # Ensure SSL certificates have proper permissions
             echo "Setting up SSL certificates..."
 
-            # Check if certificates exist, if not, create placeholder or copy from secure location
-            if [ ! -f "nginx/certs/landarsfood.com.pem" ]; then
-              echo "SSL certificates not found in repository. Please ensure certificates are in nginx/certs/"
+            # Check if certificates exist in system location
+            if [ ! -f "/etc/ssl/landarsfood/landarsfood.com.pem" ]; then
+              echo "SSL certificates not found in /etc/ssl/landarsfood/"
               echo "Required files:"
-              echo "- nginx/certs/landarsfood.com.pem"
-              echo "- nginx/certs/landarsfood.com.key.pem" 
-              echo "- nginx/certs/cloudflare.crt"
+              echo "- /etc/ssl/landarsfood/landarsfood.com.pem"
+              echo "- /etc/ssl/landarsfood/landarsfood.com.key.pem" 
+              echo "- /etc/ssl/landarsfood/cloudflare.crt"
               exit 1
             fi
 
-            chmod 600 nginx/certs/* 2>/dev/null || echo "SSL certificates permissions already set"
+            chmod 600 /etc/ssl/landarsfood/* 2>/dev/null || echo "SSL certificates permissions failed" 
 
             # Pull latest Docker images
             echo "Pulling latest Docker images..."
