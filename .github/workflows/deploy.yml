@@ -186,7 +186,7 @@ jobs:
 
             # Check if certificates exist, if not, create placeholder or copy from secure location
             if [ ! -f "nginx/certs/landarsfood.com.pem" ]; then
-              echo "SSL certificates not found in repository. Please ensure certificates are in ssl-certs/"
+              echo "SSL certificates not found in repository. Please ensure certificates are in nginx/certs/"
               echo "Required files:"
               echo "- nginx/certs/landarsfood.com.pem"
               echo "- nginx/certs/landarsfood.com.key.pem" 
@@ -194,7 +194,7 @@ jobs:
               exit 1
             fi
 
-            chmod 600 nginx/certs/* 2>/dev/null || echo "SSL certificates not found or permissions already set"
+            chmod 600 nginx/certs/* 2>/dev/null || echo "SSL certificates permissions already set"
 
             # Pull latest Docker images
             echo "Pulling latest Docker images..."
