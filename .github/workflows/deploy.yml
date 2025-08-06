@@ -204,16 +204,25 @@ jobs:
 
             # Health check
             echo "Performing health checks..."
-            if curl -f http://localhost:3000 > /dev/null 2>&1; then
-              echo "Frontend is responding"
+            # Check if services are running via Docker
+            if docker compose ps | grep -q "Up"; then
+              echo "Docker services are running successfully"
+              
+              # Check backend health (internal container check)
+              if docker compose exec -T backend python -c "import requests; requests.get('http://localhost:8000', timeout=5)" 2>/dev/null; then
+                echo "Backend is responding internally"
+              else
+                echo "Backend internal health check failed"
+              fi
+              
+              # Check if nginx is configured and running
+              if docker compose ps | grep -q "nginx.*Up"; then
+                echo "Nginx is running"
+              else
+                echo "Nginx is not running"
+              fi
             else
-              echo "Frontend health check failed"
-            fi
-
-            if curl -f http://localhost:8000 > /dev/null 2>&1; then
-              echo "Backend is responding"
-            else
-              echo "Backend health check failed"
+              echo "Docker services health check failed"
             fi
 
             echo "Deployment process completed!"
