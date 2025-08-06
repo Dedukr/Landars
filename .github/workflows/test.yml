@@ -151,9 +151,25 @@ jobs:
           passphrase: ${{ secrets.SERVER_SSH_PASSPHRASE }}
           port: ${{ secrets.SERVER_PORT }}
           script: |
+            # Debug: Show current directory and list files
+            pwd
+            ls -la
+
             # Navigate to project directory
             cd ${{ secrets.PROJECT_PATH }}
 
-            # Make deployment script executable and run it
-            chmod +x deploy.sh
-            ./deploy.sh
+            # Debug: Show new directory and list files
+            pwd
+            ls -la
+
+            # Check if deploy.sh exists
+            if [ -f "deploy.sh" ]; then
+              echo "deploy.sh found, making it executable..."
+              chmod +x deploy.sh
+              ./deploy.sh
+            else
+              echo "Error: deploy.sh not found in $(pwd)"
+              echo "Available files:"
+              ls -la
+              exit 1
+            fi
