@@ -183,19 +183,18 @@ jobs:
 
             # Ensure SSL certificates directory exists and has proper permissions
             echo "Setting up SSL certificates..."
-            mkdir -p ssl-certs
 
             # Check if certificates exist, if not, create placeholder or copy from secure location
-            if [ ! -f "ssl-certs/landarsfood.com.pem" ]; then
+            if [ ! -f "nginx/certs/landarsfood.com.pem" ]; then
               echo "SSL certificates not found in repository. Please ensure certificates are in ssl-certs/"
               echo "Required files:"
-              echo "- ssl-certs/landarsfood.com.pem"
-              echo "- ssl-certs/landarsfood.com.key.pem" 
-              echo "- ssl-certs/cloudflare.crt"
+              echo "- nginx/certs/landarsfood.com.pem"
+              echo "- nginx/certs/landarsfood.com.key.pem" 
+              echo "- nginx/certs/cloudflare.crt"
               exit 1
             fi
 
-            chmod 600 ssl-certs/* 2>/dev/null || echo "SSL certificates not found or permissions already set"
+            chmod 600 nginx/certs/* 2>/dev/null || echo "SSL certificates not found or permissions already set"
 
             # Pull latest Docker images
             echo "Pulling latest Docker images..."
