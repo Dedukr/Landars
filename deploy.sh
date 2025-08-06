@@ -6,9 +6,8 @@
 set -e  # Exit on any error
 
 # Configuration
-PROJECT_DIR="/path/to/your/project"  # Update this to your actual project path
+PROJECT_DIR="/home/dedmac/web/Landars/"  # Update this to your actual project path
 COMPOSE_FILE="docker-compose.yml"
-BACKUP_DIR="/path/to/backups"  # Update this to your backup directory
 
 # Colors for output
 RED='\033[0;31m'
