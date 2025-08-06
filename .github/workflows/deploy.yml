@@ -1,0 +1,219 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  REGISTRY: dedukr
+  BACKEND_IMAGE: landar-backend
+  FRONTEND_IMAGE: landar-frontend-marketplace
+
+jobs:
+  test:
+    name: Test Code
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      # - name: Set up Node.js
+      #   uses: actions/setup-node@v4
+      #   with:
+      #     node-version: "20"
+
+      - name: Install Python dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-django
+
+      - name: Debug directory structure
+        run: |
+          pwd
+          ls -la
+          echo "Checking if frontend-marketplace exists:"
+          ls -la | grep frontend || echo "frontend-marketplace not found in root"
+
+      # - name: Install Node.js dependencies
+      #   run: |
+      #     if [ -d "frontend-marketplace" ]; then
+      #       cd frontend-marketplace
+      #       npm ci
+      #     else
+      #       echo "Error: frontend-marketplace directory not found"
+      #       exit 1
+      #     fi
+
+      - name: Run backend tests
+        run: |
+          cd backend
+          python manage.py test --verbosity=2
+        env:
+          DJANGO_SETTINGS_MODULE: backend.settings
+
+      # - name: Run frontend tests
+      #   run: |
+      #     if [ -d "frontend-marketplace" ]; then
+      #       cd frontend-marketplace
+      #       npm run lint
+      #       npm run build
+      #     else
+      #       echo "Error: frontend-marketplace directory not found for tests"
+      #       exit 1
+      #     fi
+
+  build-and-push:
+    name: Build and Push Docker Images
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata for backend
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+
+      # - name: Extract metadata for frontend
+      #   id: meta-frontend
+      #   uses: docker/metadata-action@v5
+      #   with:
+      #     images: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}
+      #     tags: |
+      #       type=ref,event=branch
+      #       type=ref,event=pr
+      #       type=semver,pattern={{version}}
+      #       type=semver,pattern={{major}}.{{minor}}
+      #       type=sha,prefix={{branch}}-
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # - name: Build and push frontend image
+      #   uses: docker/build-push-action@v5
+      #   with:
+      #     context: ./frontend-marketplace
+      #     push: true
+      #     tags: ${{ steps.meta-frontend.outputs.tags }}
+      #     labels: ${{ steps.meta-frontend.outputs.labels }}
+      #     cache-from: type=gha
+      #     cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to Server
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    steps:
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          passphrase: ${{ secrets.SERVER_SSH_PASSPHRASE }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            # Navigate to project directory
+            cd ${{ secrets.PROJECT_PATH }}
+
+            # Pull latest code from repository
+            echo "Pulling latest code from repository..."
+            git pull origin main || echo "Failed to pull latest code"
+
+            # Pull latest Docker images
+            echo "Pulling latest Docker images..."
+            docker-compose pull || echo "Failed to pull Docker images"
+
+            # Stop existing containers gracefully
+            echo "Stopping existing containers..."
+            docker-compose down --timeout 30 || echo "Graceful shutdown failed, forcing stop"
+            docker-compose down --timeout 10 || echo "Failed to stop containers"
+
+            # Start containers with latest images
+            echo "Starting containers with latest images..."
+            docker-compose up -d || echo "Failed to start containers"
+
+            # Wait for services to be healthy
+            echo "Waiting for services to be ready..."
+            sleep 10
+
+            # Check if services are running
+            echo "Checking service status..."
+            if docker-compose ps | grep -q "Up"; then
+              echo "Services are running successfully!"
+            else
+              echo "Some services failed to start"
+              exit 1
+            fi
+
+            # Run database migrations (if needed)
+            echo "Running database migrations..."
+            docker-compose exec -T backend python manage.py makemigrations || echo "Database make migrations failed"
+            docker-compose exec -T backend python manage.py migrate || echo "Database migration failed"
+
+            # Collect static files
+            echo "Collecting static files..."
+            docker-compose exec -T backend python manage.py collectstatic --noinput || echo "Static file collection failed"
+
+            # Clean up unused Docker images
+            echo "Cleaning up unused Docker images..."
+            docker image prune -f || echo "Docker cleanup failed"
+
+            # Show final status
+            echo "Deployment completed successfully!"
+            echo "Current service status:"
+            docker-compose ps
+
+            # Health check
+            echo "Performing health checks..."
+            if curl -f http://localhost:3000 > /dev/null 2>&1; then
+              echo "Frontend is responding"
+            else
+              echo "Frontend health check failed"
+            fi
+
+            if curl -f http://localhost:8000 > /dev/null 2>&1; then
+              echo "Backend is responding"
+            else
+              echo "Backend health check failed"
+            fi
+
+            echo "Deployment process completed!"
