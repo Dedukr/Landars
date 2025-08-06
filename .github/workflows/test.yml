@@ -37,10 +37,22 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-django
 
+      - name: Debug directory structure
+        run: |
+          pwd
+          ls -la
+          echo "Checking if frontend-marketplace exists:"
+          ls -la | grep frontend || echo "frontend-marketplace not found in root"
+
       - name: Install Node.js dependencies
         run: |
-          cd frontend-marketplace
-          npm ci
+          if [ -d "frontend-marketplace" ]; then
+            cd frontend-marketplace
+            npm ci
+          else
+            echo "Error: frontend-marketplace directory not found"
+            exit 1
+          fi
 
       - name: Run backend tests
         run: |
@@ -51,9 +63,14 @@ jobs:
 
       - name: Run frontend tests
         run: |
-          cd frontend-marketplace
-          npm run lint
-          npm run build
+          if [ -d "frontend-marketplace" ]; then
+            cd frontend-marketplace
+            npm run lint
+            npm run build
+          else
+            echo "Error: frontend-marketplace directory not found for tests"
+            exit 1
+          fi
 
   build-and-push:
     name: Build and Push Docker Images
