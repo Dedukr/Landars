@@ -18,7 +18,9 @@ FROM nginx:alpine
 
 # Copy Nginx configuration
 COPY ./nginx.conf /etc/nginx/conf.d/default.conf 
-COPY ./certs/ /etc/ssl/landarsfood/
+
+# Create SSL directory (certificates will be mounted as volume)
+RUN mkdir -p /etc/ssl/landarsfood
 
 # Copy the built frontend files from the build stage
 # COPY --from=build-stage /frontend/build/ /var/www/frontend/

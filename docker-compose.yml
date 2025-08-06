@@ -22,6 +22,7 @@ services:
       - backend
     volumes:
       - static_volume:/backend/static
+      - ./nginx/certs:/etc/ssl/landarsfood:ro
 
 volumes:
   static_volume:
