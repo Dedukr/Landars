@@ -18,6 +18,7 @@ FROM nginx:alpine
 
 # Copy Nginx configuration
 COPY ./nginx.conf /etc/nginx/conf.d/default.conf 
+COPY ./certs/ /etc/ssl/landarsfood/
 
 # Create SSL directory (certificates will be mounted as volume)
 RUN mkdir -p /etc/ssl/landarsfood
