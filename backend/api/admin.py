@@ -189,6 +189,7 @@ class OrderAdmin(admin.ModelAdmin):
         "customer_phone",
         "customer_address",
         "notes",
+        "get_total_items",
         "get_total_price",
         "status",
         "get_invoice",
@@ -217,6 +218,7 @@ class OrderAdmin(admin.ModelAdmin):
             fields += [
                 "customer_phone",
                 "customer_address",
+                "get_total_items",
                 "get_total_price",
                 "get_invoice",
                 "is_home_delivery",
@@ -234,6 +236,7 @@ class OrderAdmin(admin.ModelAdmin):
             "customer_name",
             "customer_phone",
             "customer_address",
+            "get_total_items",
             "get_total_price",
             "get_invoice",
         ]
@@ -303,6 +306,11 @@ class OrderAdmin(admin.ModelAdmin):
         return obj.total_price
 
     get_total_price.short_description = "Total Price"
+
+    def get_total_items(self, obj):
+        return obj.total_items
+
+    get_total_items.short_description = "Total Items"
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "customer":
