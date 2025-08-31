@@ -153,19 +153,6 @@ def create_and_upload_invoice(modeladmin, request, queryset):
     )
 
 
-class OrderItemInline(admin.TabularInline):
-    model = OrderItem
-    min_num = 1
-    extra = 0
-    readonly_fields = ["get_total_price"]
-    autocomplete_fields = ["product"]
-
-    # def get_total_price(self, obj):
-    #     return round(obj.product.price * obj.quantity, 2)
-
-    # get_total_price.short_description = "Total Price"
-
-
 @admin.action(description="Mark selected orders as Pending")
 def mark_orders_pending(modeladmin, request, queryset):
     updated = queryset.update(status="pending")
@@ -196,6 +183,29 @@ def mark_orders_cancelled(modeladmin, request, queryset):
     )
 
 
+@admin.action(description="Get the total income")
+def calculate_sum(modeladmin, request, queryset):
+    total_sum = sum(order.total_price for order in queryset)
+    modeladmin.message_user(
+        request,
+        f"The sum of selected orders is {total_sum}",
+        level=messages.SUCCESS,
+    )
+
+
+class OrderItemInline(admin.TabularInline):
+    model = OrderItem
+    min_num = 1
+    extra = 0
+    readonly_fields = ["get_total_price"]
+    autocomplete_fields = ["product"]
+
+    # def get_total_price(self, obj):
+    #     return round(obj.product.price * obj.quantity, 2)
+
+    # get_total_price.short_description = "Total Price"
+
+
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
 
@@ -207,6 +217,7 @@ class OrderAdmin(admin.ModelAdmin):
         mark_orders_paid,
         mark_orders_cancelled,
         mark_orders_pending,
+        calculate_sum,
         "export_orders_pdf",
         "food_summary_csv",
         "food_summary_excel",
