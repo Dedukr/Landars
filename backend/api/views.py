@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Order  # Adjust import path
-from .models import Product, Stock
+from .models import Product
 from .serializers import ProductSerializer
 
 

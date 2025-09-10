@@ -823,6 +823,24 @@
                         <td colspan="8">
                         </td>
                     </tr>
+                    {% if order.discount > 0 %}
+                    <tr class="summary-amount">
+                        <td>
+                        </td>
+                        <td colspan="7">
+                            Discount
+                        </td>
+                        <td class="break-word align-right">
+                            - £{{order.discount}}
+                        </td>
+                    </tr>
+                    <tr class="summary-amount-border mt30">
+                        <td>
+                        </td>
+                        <td colspan="8">
+                        </td>
+                    </tr>
+                    {% endif %}
                     <tr class="summary-amount bold">
                         <td>
                         </td>

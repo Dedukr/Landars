@@ -16,7 +16,7 @@ from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 from weasyprint import HTML
 
-from .models import CustomUser, Order, OrderItem, Product, ProductCategory, Stock
+from .models import CustomUser, Order, OrderItem, Product, ProductCategory
 
 
 @admin.register(Product)
@@ -266,6 +266,7 @@ class OrderAdmin(admin.ModelAdmin):
         fields += [
             "delivery_fee_manual",
             "delivery_fee",
+            "discount",
         ]
         return fields
 
@@ -300,7 +301,7 @@ class OrderAdmin(admin.ModelAdmin):
         )
 
     def save_related(self, request, form, formsets, change):
-        # super().save_related(request, form, formsets, change)
+        super().save_related(request, form, formsets, change)
         order = form.instance
         items = order.items.all()
 

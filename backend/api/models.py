@@ -148,6 +148,9 @@ class Order(models.Model):
     delivery_fee = models.DecimalField(
         max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0)]
     )
+    discount = models.DecimalField(
+        max_digits=3, decimal_places=2, default=0, validators=[MinValueValidator(0)]
+    )
     order_date = models.DateField(auto_now_add=True, null=True)
     status = models.CharField(
         max_length=50,
@@ -171,7 +174,7 @@ class Order(models.Model):
 
     @property
     def sum_price(self):
-        """Calculate the total price of the order."""
+        """Calculate the total items price."""
         result = 0
         for item in self.items.all():
             if not (item.get_total_price() == ""):
@@ -181,8 +184,8 @@ class Order(models.Model):
 
     @property
     def total_price(self):
-        """Calculate the total price of the order including delivery fee."""
-        return self.sum_price + self.delivery_fee
+        """Calculate the total price of the order including discount and delivery fee."""
+        return self.sum_price + self.delivery_fee - self.discount
 
     @property
     def total_items(self):

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Product, Stock
+from .models import Product
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -18,6 +18,6 @@ class ProductSerializer(serializers.ModelSerializer):
             "stock_quantity",
         ]
 
-    def get_stock_quantity(self, obj):
-        stock = Stock.objects.filter(product=obj).first()
-        return stock.quantity if stock else 0
+    # def get_stock_quantity(self, obj):
+    #     stock = Stock.objects.filter(product=obj).first()
+    #     return stock.quantity if stock else 0
