@@ -76,56 +76,61 @@ class Product(models.Model):
     def __str__(self):
         return self.name
 
+    def get_categories(self):
+        return [
+            cat.name for cat in self.categories.all().order_by("parent__name", "name")
+        ]
+
     def get_product_details(self):
         return {
             "id": self.id,
             "name": self.name,
-            "categories": [cat.name for cat in self.categories.all()],
+            "categories": self.get_categories,
             "description": self.description,
             "price": str(self.price),
             "image_url": self.image.url if self.image else None,  # Include S3 image URL
         }
 
-    def get_product_stock(self):
-        """Get the stock for this product."""
-        try:
-            stock = self.stock
-            return stock.quantity
-        except Stock.DoesNotExist:
-            return 0
+    # def get_product_stock(self):
+    #     """Get the stock for this product."""
+    #     try:
+    #         stock = self.stock
+    #         return stock.quantity
+    #     except Stock.DoesNotExist:
+    #         return 0
 
 
 # Stock model
-class Stock(models.Model):
-    product = models.OneToOneField(
-        Product, on_delete=models.CASCADE, related_name="stock"
-    )
-    quantity = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+# class Stock(models.Model):
+#     product = models.OneToOneField(
+#         Product, on_delete=models.CASCADE, related_name="stock"
+#     )
+#     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
-    class Meta:
-        verbose_name_plural = "Stock"
-        ordering = ["product"]
-        # Ensure stocks are ordered by product name
+#     class Meta:
+#         verbose_name_plural = "Stock"
+#         ordering = ["product"]
+#         # Ensure stocks are ordered by product name
 
-    def __str__(self):
-        return f"{self.product.name} - {self.quantity} in stock"
+#     def __str__(self):
+#         return f"{self.product.name} - {self.quantity} in stock"
 
-    def is_in_stock(self):
-        """Check if the product is in stock."""
-        return self.quantity > 0
+#     def is_in_stock(self):
+#         """Check if the product is in stock."""
+#         return self.quantity > 0
 
-    def reduce_stock(self, quantity):
-        """Reduce stock by a specified quantity."""
-        if quantity <= self.quantity:
-            self.quantity -= quantity
-            self.save()
-        else:
-            raise ValueError("Not enough stock available.")
+#     def reduce_stock(self, quantity):
+#         """Reduce stock by a specified quantity."""
+#         if quantity <= self.quantity:
+#             self.quantity -= quantity
+#             self.save()
+#         else:
+#             raise ValueError("Not enough stock available.")
 
-    def increase_stock(self, quantity):
-        """Increase stock by a specified quantity."""
-        self.quantity += quantity
-        self.save()
+#     def increase_stock(self, quantity):
+#         """Increase stock by a specified quantity."""
+#         self.quantity += quantity
+#         self.save()
 
 
 # Order model
@@ -138,7 +143,7 @@ class Order(models.Model):
     is_home_delivery = models.BooleanField(default=True, verbose_name="Home Delivery")
     delivery_fee_manual = models.BooleanField(
         default=False,
-        help_text="Check to exclude the delivery fee from the total price.",
+        help_text="Check to set the delivery fee manually",
     )
     delivery_fee = models.DecimalField(
         max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0)]
@@ -160,9 +165,6 @@ class Order(models.Model):
     class Meta:
         verbose_name_plural = "Orders"
         ordering = ["-delivery_date"]
-        permissions = [
-            ("can_change_status_and_note", "Can change order status and notes"),
-        ]
 
     def __str__(self):
         return f"Order #{self.id} by {self.customer}"
@@ -181,7 +183,7 @@ class Order(models.Model):
     def total_price(self):
         """Calculate the total price of the order including delivery fee."""
         return self.sum_price + self.delivery_fee
-    
+
     @property
     def total_items(self):
         return sum(item.quantity for item in self.items.all())
@@ -198,6 +200,7 @@ class Order(models.Model):
             "total_price": self.get_total_price(),
             "items": [item.get_item_details() for item in self.items.all()],
         }
+
     @property
     def customer_address(self):
         profile = self.customer.profile if self.customer else None
@@ -205,8 +208,6 @@ class Order(models.Model):
             address = profile.address
             return f"{address.address_line + ', ' if address.address_line else ''}{address.address_line2 + ', ' if address.address_line2 else ''}{address.city + ', ' if address.city else ''}{address.postal_code if address.postal_code else ''}"
         return "No Address"
-
-
 
 
 # OrderItem model

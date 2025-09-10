@@ -31,12 +31,10 @@ class ProductAdmin(admin.ModelAdmin):
         qs = super().get_queryset(request)
         return qs.prefetch_related("categories").distinct()
 
-    def get_categories(self, obj):
-        return ", ".join(
-            [c.name for c in obj.categories.all().order_by("parent__name", "name")]
-        )
+    def get_readable_categories(self, obj):
+        return ", ".join(obj.get_categories)
 
-    get_categories.short_description = "Categories"
+    get_readable_categories.short_description = "Categories"
 
     def formfield_for_manytomany(self, db_field, request, **kwargs):
         if db_field.name == "categories":
@@ -94,7 +92,6 @@ class DateFilter(admin.SimpleListFilter):
             ("today", _("Today")),
             ("Next 7 days", _("Next 7 days")),
             ("Next 30 days", _("Next 30 days")),
-            # Add more as you need!
         ]
 
     def queryset(self, request, queryset):
@@ -281,10 +278,6 @@ class OrderAdmin(admin.ModelAdmin):
             "get_total_price",
             "get_invoice",
         ]
-
-        if obj:
-            if request.user.has_perm("api.can_change_status_and_note"):
-                return ["customer_name"] + readonly  # Only status & notes editable
         return readonly  # Admins can edit customer, status, notes
 
     def get_queryset(self, request):
@@ -297,10 +290,7 @@ class OrderAdmin(admin.ModelAdmin):
             if obj.customer:
                 url = reverse("admin:account_customuser_change", args=[obj.customer.id])
                 return format_html('<a href="{}">{}</a>', url, obj.customer.name)
-            return "No Customer"
         return obj.customer.name if obj.customer else "No Customer"
-
-    # customer_name.short_description = "Customer Name"
 
     def customer_phone(self, obj):
         return (
@@ -310,7 +300,7 @@ class OrderAdmin(admin.ModelAdmin):
         )
 
     def save_related(self, request, form, formsets, change):
-        super().save_related(request, form, formsets, change)
+        # super().save_related(request, form, formsets, change)
         order = form.instance
         items = order.items.all()
 
