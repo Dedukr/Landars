@@ -149,7 +149,7 @@ class Order(models.Model):
         max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0)]
     )
     discount = models.DecimalField(
-        max_digits=3, decimal_places=2, default=0, validators=[MinValueValidator(0)]
+        max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0)]
     )
     order_date = models.DateField(auto_now_add=True, null=True)
     status = models.CharField(
