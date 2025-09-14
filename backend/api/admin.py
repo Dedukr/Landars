@@ -1,4 +1,5 @@
 import csv
+from decimal import Decimal
 import tempfile
 from datetime import date, timedelta
 
@@ -300,6 +301,16 @@ class OrderAdmin(admin.ModelAdmin):
             else "No Phone"
         )
 
+    def get_total_price(self, obj):
+        return obj.total_price
+
+    get_total_price.short_description = "Total Price"
+
+    def get_total_items(self, obj):
+        return obj.total_items
+
+    get_total_items.short_description = "Total Items"
+
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)
         order = form.instance
@@ -333,16 +344,6 @@ class OrderAdmin(admin.ModelAdmin):
                     # else:
                     #     delivery_fee = 25  # For > 20kg
         order.save()
-
-    def get_total_price(self, obj):
-        return obj.total_price
-
-    get_total_price.short_description = "Total Price"
-
-    def get_total_items(self, obj):
-        return obj.total_items
-
-    get_total_items.short_description = "Total Items"
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "customer":
