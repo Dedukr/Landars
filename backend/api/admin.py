@@ -12,8 +12,11 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
+from weasyprint import HTML
 
-from .models import CustomUser, Order, OrderItem, Product, ProductCategory, Stock
+from .models import CustomUser, Order, OrderItem, Product, ProductCategory
 
 
 @admin.register(Product)
@@ -21,19 +24,17 @@ class ProductAdmin(admin.ModelAdmin):
     list_display = ["name", "price", "get_categories"]
     list_filter = ["categories"]
     filter_horizontal = ["categories"]  # красиво отображает множественные категории
-    search_fields = ["name", "description"]
+    search_fields = ["name"]
     ordering = ["name"]
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         return qs.prefetch_related("categories").distinct()
 
-    def get_categories(self, obj):
-        return ", ".join(
-            [c.name for c in obj.categories.all().order_by("parent__name", "name")]
-        )
+    def get_readable_categories(self, obj):
+        return ", ".join(obj.get_categories)
 
-    get_categories.short_description = "Categories"
+    get_readable_categories.short_description = "Categories"
 
     def formfield_for_manytomany(self, db_field, request, **kwargs):
         if db_field.name == "categories":
@@ -91,7 +92,6 @@ class DateFilter(admin.SimpleListFilter):
             ("today", _("Today")),
             ("Next 7 days", _("Next 7 days")),
             ("Next 30 days", _("Next 30 days")),
-            # Add more as you need!
         ]
 
     def queryset(self, request, queryset):
@@ -131,7 +131,6 @@ def upload_invoice_to_s3(file_path, s3_key):
 
 @admin.action(description="Create & Upload Invoice")
 def create_and_upload_invoice(modeladmin, request, queryset):
-    from weasyprint import HTML
 
     for order in queryset:
         # Render your invoice template to HTML
@@ -148,6 +147,46 @@ def create_and_upload_invoice(modeladmin, request, queryset):
             order.save()
     modeladmin.message_user(
         request, "Invoice created and uploaded!", level=messages.SUCCESS
+    )
+
+
+@admin.action(description="Mark selected orders as Pending")
+def mark_orders_pending(modeladmin, request, queryset):
+    updated = queryset.update(status="pending")
+    modeladmin.message_user(
+        request,
+        f"{updated} order(s) marked as pending.",
+        level=messages.SUCCESS,
+    )
+
+
+@admin.action(description="Mark selected orders as Paid")
+def mark_orders_paid(modeladmin, request, queryset):
+    updated = queryset.update(status="paid")
+    modeladmin.message_user(
+        request,
+        f"{updated} order(s) marked as paid.",
+        level=messages.SUCCESS,
+    )
+
+
+@admin.action(description="Mark selected orders as Cancelled")
+def mark_orders_cancelled(modeladmin, request, queryset):
+    updated = queryset.update(status="cancelled")
+    modeladmin.message_user(
+        request,
+        f"{updated} order(s) marked as cancelled.",
+        level=messages.SUCCESS,
+    )
+
+
+@admin.action(description="Get the total income")
+def calculate_sum(modeladmin, request, queryset):
+    total_sum = sum(order.total_price for order in queryset)
+    modeladmin.message_user(
+        request,
+        f"The sum of selected orders is {total_sum}",
+        level=messages.SUCCESS,
     )
 
 
@@ -170,13 +209,16 @@ class OrderAdmin(admin.ModelAdmin):
     class Media:
         js = ("admin/js/order_filter_cleaner.js",)
 
-    actions = [create_and_upload_invoice, "food_summary_csv"]
-
-    def get_actions(self, request):
-        actions = super().get_actions(request)
-        if "delete_selected" in actions:
-            del actions["delete_selected"]
-        return actions
+    actions = [
+        create_and_upload_invoice,
+        mark_orders_paid,
+        mark_orders_cancelled,
+        mark_orders_pending,
+        calculate_sum,
+        "export_orders_pdf",
+        "food_summary_csv",
+        "food_summary_excel",
+    ]
 
     list_display = [
         "id",
@@ -184,6 +226,8 @@ class OrderAdmin(admin.ModelAdmin):
         "customer_name",
         "customer_phone",
         "customer_address",
+        "notes",
+        "get_total_items",
         "get_total_price",
         "status",
         "get_invoice",
@@ -199,6 +243,7 @@ class OrderAdmin(admin.ModelAdmin):
     ordering = ["-delivery_date"]
     date_hierarchy = "delivery_date"
     inlines = [OrderItemInline]
+    autocomplete_fields = ["customer"]
 
     def get_fields(self, request, obj=None):
         fields = [
@@ -211,36 +256,31 @@ class OrderAdmin(admin.ModelAdmin):
             fields += [
                 "customer_phone",
                 "customer_address",
+                "get_total_items",
                 "get_total_price",
                 "get_invoice",
                 "is_home_delivery",
-                "delivery_fee",
             ]
             if not request.user.has_perm("account.change_customuser"):
                 fields[0] = "customer_name"
                 return fields
+        fields += [
+            "delivery_fee_manual",
+            "delivery_fee",
+            "discount",
+        ]
         return fields
 
     def get_readonly_fields(self, request, obj=None):
         readonly = [
-            "delivery_date",
+            "customer_name",
             "customer_phone",
             "customer_address",
+            "get_total_items",
             "get_total_price",
             "get_invoice",
-            "delivery_fee",
         ]
-
-        if obj:  # We're in change mode
-            readonly += [
-                "is_home_delivery",
-                "delivery_fee",
-            ]
-            if request.user.has_perm("api.can_change_status_and_note"):
-                return ["customer_name"] + readonly  # Only status & notes editable
-            return readonly  # Admins can edit customer, status, notes
-        else:
-            return []
+        return readonly  # Admins can edit customer, status, notes
 
     def get_queryset(self, request):
         self.request = request  # Save request for later use
@@ -252,10 +292,7 @@ class OrderAdmin(admin.ModelAdmin):
             if obj.customer:
                 url = reverse("admin:account_customuser_change", args=[obj.customer.id])
                 return format_html('<a href="{}">{}</a>', url, obj.customer.name)
-            return "No Customer"
         return obj.customer.name if obj.customer else "No Customer"
-
-    # customer_name.short_description = "Customer Name"
 
     def customer_phone(self, obj):
         return (
@@ -264,45 +301,49 @@ class OrderAdmin(admin.ModelAdmin):
             else "No Phone"
         )
 
-    def customer_address(self, obj):
-        profile = obj.customer.profile if obj.customer else None
-        if profile and profile.address:
-            address = profile.address
-            return f"{address.address_line}, {address.address_line2}, {address.city}, {address.postal_code}"
-        return "No Address"
-
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)
         order = form.instance
         items = order.items.all()
 
-        # Sausage category name
-        post_suitable_category = "Sausages and Marinated products"
-        for item in items:
-            category_names = item.product.categories.values_list("name", flat=True)
-            if post_suitable_category not in [name.lower() for name in category_names]:
-                order.is_home_delivery = True
-                order.delivery_fee = 10
-                break
-        else:
-            order.is_home_delivery = False
-            total_weight = sum(item.quantity for item in items)
-            if total_weight <= 2:
-                order.delivery_fee = 5
-            elif total_weight <= 10:
-                order.delivery_fee = 8
+        if not order.delivery_fee_manual:
+            # Sausage category name
+            post_suitable_category = "Sausages and Marinated products"
+            for item in items:
+                category_names = item.product.categories.values_list("name", flat=True)
+                if post_suitable_category not in [
+                    name.lower() for name in category_names
+                ]:
+                    order.is_home_delivery = True
+                    order.delivery_fee = 10
+                    break
             else:
-                order.delivery_fee = 15
-            # elif total_weight <= 20:
-            #     delivery_fee = 15
-            # else:
-            #     delivery_fee = 25  # For > 20kg
+                order.is_home_delivery = False
+                if order.total_price > 220:
+                    order.delivery_fee = 0
+                else:
+                    total_weight = sum(item.quantity for item in items)
+                    if total_weight <= 2:
+                        order.delivery_fee = 5
+                    elif total_weight <= 10:
+                        order.delivery_fee = 8
+                    else:
+                        order.delivery_fee = 15
+                    # elif total_weight <= 20:
+                    #     delivery_fee = 15
+                    # else:
+                    #     delivery_fee = 25  # For > 20kg
         order.save()
 
     def get_total_price(self, obj):
         return obj.total_price
 
     get_total_price.short_description = "Total Price"
+
+    def get_total_items(self, obj):
+        return obj.total_items
+
+    get_total_items.short_description = "Total Items"
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "customer":
@@ -329,41 +370,130 @@ class OrderAdmin(admin.ModelAdmin):
 
     get_invoice.short_description = "Invoice"
 
+    def export_orders_pdf(self, request, queryset):
+        html_string = render_to_string("orders.html", {"orders": queryset})
+
+        # Generate PDF from HTML
+        with tempfile.NamedTemporaryFile(delete=True) as output:
+            HTML(string=html_string).write_pdf(target=output.name)
+
+            output.seek(0)
+            # Use the delivery date of the first order for the filename
+
+            delivery_dates = queryset.values_list("delivery_date", flat=True).distinct()
+            response = HttpResponse(output.read(), content_type="application/pdf")
+            response["Content-Disposition"] = (
+                f'attachment; filename="{", ".join(sorted({d.strftime("%d-%b-%Y") for d in delivery_dates}))}_Orders.pdf"'
+            )
+            return response
+
+    export_orders_pdf.short_description = "Export Selected Orders to PDF"
+
     def food_summary_csv(self, request, queryset):
         """
         Export a food summary of all products and their total quantities for selected orders as CSV.
-        Only works if orders for one date are selected!
+        Frozen products are on the left, fresh products on the right.
         """
-        # Find the date(s) in the queryset (ideally, filter to a single date)
-        delivery_dates = queryset.values_list("delivery_date", flat=True).distinct()
-        # if delivery_dates.count() != 1:
-        #     self.message_user(
-        #         request,
-        #         "Please select orders for a single delivery date.",
-        #         level="error",
-        #     )
-        #     return
-
-        target_date = delivery_dates
-
-        # Gather all OrderItems for those orders
-        order_items = OrderItem.objects.filter(order__in=queryset)
-        food_summary = (
-            order_items.values("product__name")
-            .annotate(total_qty=Round(Sum("quantity"), precision=2))
-            .order_by("product__name")
+        order_items = OrderItem.objects.filter(order__in=queryset).select_related(
+            "product"
         )
+        frozen_summary = {}
+        ready_summary = {}
+        for item in order_items:
+            product = item.product
+            if not product:
+                continue
+            if product.categories.filter(name__iexact="Frozen Products").exists():
+                frozen_summary[product.name] = frozen_summary.get(
+                    product.name, 0
+                ) + float(item.quantity)
+            else:
+                ready_summary[product.name] = ready_summary.get(
+                    product.name, 0
+                ) + float(item.quantity)
 
-        # Create CSV response
+        # Sort and convert to lists of tuples
+        frozen_list = sorted(frozen_summary.items())
+        ready_list = sorted(ready_summary.items())
+
+        # Pad the shorter list
+        max_len = max(len(frozen_list), len(ready_list))
+        frozen_list += [("", "")] * (max_len - len(frozen_list))
+        ready_list += [("", "")] * (max_len - len(ready_list))
+
+        delivery_dates = queryset.values_list("delivery_date", flat=True).distinct()
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = (
-            f'attachment; filename="{",".join(sorted({d.strftime("%d %b %Y") for d in target_date}))}_summary.csv"'
+            f'attachment; filename="{", ".join(sorted({d.strftime("%d-%b-%Y") for d in delivery_dates}))}_Products.csv"'
         )
         writer = csv.writer(response)
-        writer.writerow(["Product", "Total Quantity"])
-        for row in food_summary:
-            writer.writerow([row["product__name"], row["total_qty"]])
-
+        writer.writerow(["Frozen Product", "Quantity", "", "Ready Product", "Quantity"])
+        for (f_name, f_qty), (r_name, r_qty) in zip(frozen_list, ready_list):
+            writer.writerow([f_name, f_qty, "", r_name, r_qty])
         return response
 
-    food_summary_csv.short_description = "Export Food Summary"
+    food_summary_csv.short_description = "Export Food Summary as CSV"
+
+    def food_summary_excel(self, request, queryset):
+        """
+        Export a food summary of all products and their total quantities for selected orders as Excel.
+        Frozen products are on the left, fresh products on the right.
+        """
+        order_items = OrderItem.objects.filter(order__in=queryset).select_related(
+            "product"
+        )
+
+        frozen_summary = {}
+        ready_summary = {}
+
+        for item in order_items:
+            product = item.product
+            if not product:
+                continue
+            if product.categories.filter(name__iexact="Frozen Products").exists():
+                frozen_summary[product.name] = frozen_summary.get(
+                    product.name, 0
+                ) + float(item.quantity)
+            else:
+                ready_summary[product.name] = ready_summary.get(
+                    product.name, 0
+                ) + float(item.quantity)
+
+        frozen_list = sorted(frozen_summary.items())
+        ready_list = sorted(ready_summary.items())
+
+        max_len = max(len(frozen_list), len(ready_list))
+        frozen_list += [("", "")] * (max_len - len(frozen_list))
+        ready_list += [("", "")] * (max_len - len(ready_list))
+
+        delivery_dates = queryset.values_list("delivery_date", flat=True).distinct()
+        filename = (
+            ", ".join(sorted({d.strftime("%d-%b-%Y") for d in delivery_dates}))
+            + "_Products.xlsx"
+        )
+
+        # Create Excel workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Food Summary"
+
+        ws.append(["Frozen Product", "Quantity", "", "Ready Product", "Quantity"])
+
+        for (f_name, f_qty), (r_name, r_qty) in zip(frozen_list, ready_list):
+            ws.append([f_name, f_qty, "", r_name, r_qty])
+
+        # Auto-size columns
+        for col in ws.columns:
+            max_length = max(len(str(cell.value or "")) for cell in col)
+            col_letter = get_column_letter(col[0].column)
+            ws.column_dimensions[col_letter].width = max_length + 3
+
+        # Return HTTP response
+        response = HttpResponse(
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        wb.save(response)
+        return response
+
+    food_summary_excel.short_description = "Export Food Summary as Excel"

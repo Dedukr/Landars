@@ -2,9 +2,9 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Order  # Adjust import path
-from .models import Product, ProductCategory, Stock
-from .serializers import CategorySerializer, ProductSerializer
+from .models import Product, ProductCategory, Order
+from .serializers import ProductSerializer, CategorySerializer
+
 
 # @staff_member_required
 # def order_invoice_pdf(request, pk):
@@ -143,17 +143,17 @@ class CategoryList(APIView):
         return Response(serializer.data)
 
 
-class StockUpdateView(APIView):
-    def patch(self, request, product_id):
-        """Update stock for a specific product."""
-        try:
-            stock = Stock.objects.get(product_id=product_id)
-            stock.quantity += int(request.data.get("quantity", 0))
-            stock.save()
-            return Response(
-                {"message": "Stock updated successfully."}, status=status.HTTP_200_OK
-            )
-        except Stock.DoesNotExist:
-            return Response(
-                {"error": "Product not found."}, status=status.HTTP_404_NOT_FOUND
-            )
+# class StockUpdateView(APIView):
+#     def patch(self, request, product_id):
+#         """Update stock for a specific product."""
+#         try:
+#             stock = Stock.objects.get(product_id=product_id)
+#             stock.quantity += int(request.data.get("quantity", 0))
+#             stock.save()
+#             return Response(
+#                 {"message": "Stock updated successfully."}, status=status.HTTP_200_OK
+#             )
+#         except Stock.DoesNotExist:
+#             return Response(
+#                 {"error": "Product not found."}, status=status.HTTP_404_NOT_FOUND
+#             )

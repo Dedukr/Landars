@@ -22,7 +22,7 @@ class OrderInline(admin.TabularInline):  # or StackedInline if you want vertical
         return format_html(
             '<a href="{}" style="color:#0a7;">🛒 {}</a>',
             url,
-            obj.delivery_date.strftime("%B %d, %Y, %H:%M"),
+            obj.delivery_date.strftime("%B %d, %Y"),
         )
 
     order_link.short_description = "Order Date"
@@ -43,7 +43,7 @@ class CustomUserAdmin(UserAdmin):
         "is_active",
     )
     ordering = ("name",)
-    search_fields = ("name", "email")
+    search_fields = ("name", "email", "profile__phone")
 
     fieldsets = [
         (None, {"fields": ("name", "email", "password")}),
@@ -120,6 +120,15 @@ class CustomUserAdmin(UserAdmin):
         return qs.exclude(
             is_superuser=True
         )  # or exclude(id=1), or name="root" if that's root
+
+    def get_search_results(self, request, queryset, search_term):
+        queryset, use_distinct = super().get_search_results(
+            request, queryset, search_term
+        )
+        # Only filter out staff for autocomplete requests
+        if request.path.endswith("/autocomplete/"):
+            queryset = queryset.filter(is_staff=False)
+        return queryset, use_distinct
 
     def has_change_permission(self, request, obj=None):
         if obj and obj.is_superuser and not request.user.is_superuser:
