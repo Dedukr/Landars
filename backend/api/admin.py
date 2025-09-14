@@ -317,7 +317,7 @@ class OrderAdmin(admin.ModelAdmin):
         items = order.items.all()
 
         if not order.delivery_fee_manual:
-            # Sausage category name
+            # Post category name
             post_suitable_category = "Sausages and Marinated products"
             for item in items:
                 category_names = item.product.categories.values_list("name", flat=True)
