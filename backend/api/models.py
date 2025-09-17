@@ -167,7 +167,7 @@ class Order(models.Model):
 
     class Meta:
         verbose_name_plural = "Orders"
-        ordering = ["-delivery_date"]
+        # ordering = ["-delivery_date"]
 
     def __str__(self):
         return f"Order #{self.id} by {self.customer}"

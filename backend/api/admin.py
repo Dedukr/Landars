@@ -191,6 +191,16 @@ def calculate_sum(modeladmin, request, queryset):
     )
 
 
+@admin.action(description="Get the total items purchased")
+def calculate_total_items(modeladmin, request, queryset):
+    total_items = sum(order.total_items for order in queryset)
+    modeladmin.message_user(
+        request,
+        f"The total number of items purchased is {total_items}",
+        level=messages.SUCCESS,
+    )
+
+
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
     min_num = 1
@@ -216,6 +226,7 @@ class OrderAdmin(admin.ModelAdmin):
         mark_orders_cancelled,
         mark_orders_pending,
         calculate_sum,
+        calculate_total_items,
         "export_orders_pdf",
         "food_summary_csv",
         "food_summary_excel",
@@ -241,7 +252,7 @@ class OrderAdmin(admin.ModelAdmin):
         "customer__profile__phone",
         "customer__email",
     ]
-    ordering = ["-delivery_date"]
+    ordering = ["-id"]
     date_hierarchy = "delivery_date"
     inlines = [OrderItemInline]
     autocomplete_fields = ["customer"]
@@ -317,7 +328,7 @@ class OrderAdmin(admin.ModelAdmin):
         items = order.items.all()
 
         if not order.delivery_fee_manual:
-            # Sausage category name
+            # Post category name
             post_suitable_category = "Sausages and Marinated products"
             for item in items:
                 category_names = item.product.categories.values_list("name", flat=True)
