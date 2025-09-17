@@ -1,10 +1,11 @@
 "use client";
-import React, {
+import * as React from "react";
+import {
   createContext,
   useContext,
   useState,
   useEffect,
-  ReactNode,
+  type ReactNode,
 } from "react";
 
 interface CartItem {
@@ -36,10 +37,12 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   }, [cart]);
 
   const addToCart = (productId: number, quantity: number = 1) => {
-    setCart((prev) => {
-      const existing = prev.find((item) => item.productId === productId);
+    setCart((prev: CartItem[]) => {
+      const existing = prev.find(
+        (item: CartItem) => item.productId === productId
+      );
       if (existing) {
-        return prev.map((item) =>
+        return prev.map((item: CartItem) =>
           item.productId === productId
             ? { ...item, quantity: item.quantity + quantity }
             : item
@@ -51,13 +54,15 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const removeFromCart = (productId: number) => {
-    setCart((prev) => {
-      const existing = prev.find((item) => item.productId === productId);
+    setCart((prev: CartItem[]) => {
+      const existing = prev.find(
+        (item: CartItem) => item.productId === productId
+      );
       if (!existing) return prev;
       if (existing.quantity <= 1) {
-        return prev.filter((item) => item.productId !== productId);
+        return prev.filter((item: CartItem) => item.productId !== productId);
       } else {
-        return prev.map((item) =>
+        return prev.map((item: CartItem) =>
           item.productId === productId
             ? { ...item, quantity: item.quantity - 1 }
             : item
@@ -68,12 +73,10 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
 
   const clearCart = () => setCart([]);
 
-  return (
-    <CartContext.Provider
-      value={{ cart, addToCart, removeFromCart, clearCart }}
-    >
-      {children}
-    </CartContext.Provider>
+  return React.createElement(
+    CartContext.Provider,
+    { value: { cart, addToCart, removeFromCart, clearCart } },
+    children
   );
 };
 

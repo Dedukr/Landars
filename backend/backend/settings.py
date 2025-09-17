@@ -30,7 +30,11 @@ SECRET_KEY = "django-insecure-+c6w+lxtf*1xscm)4_f#6e5n+xsz4=@r-&08__hli=b!%7v-=9
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "True") == "True"
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost").split(",")
+# Allow all hosts in development to avoid DisallowedHost behind proxies/rewrites
+if DEBUG:
+    ALLOWED_HOSTS = ["*"]
+else:
+    ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost").split(",")
 
 
 # Application definition
@@ -62,6 +66,8 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = "backend.urls"
+# Avoid Django adding trailing slashes that cause 301s for API
+APPEND_SLASH = False
 # CORS settings
 CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "https://localhost").split(",")
 CSRF_TRUSTED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "https://localhost").split(",")
