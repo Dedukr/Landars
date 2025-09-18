@@ -34,27 +34,21 @@ RUN apk add --no-cache \
     font-noto-emoji \
     wget
 
-# Create non-root user
-RUN addgroup -g 1001 django && \
-    adduser -D -u 1001 -G django django
+
 
 # Set working directory
 WORKDIR /backend
 
 # Copy Python packages from builder
-COPY --from=builder /root/.local /home/django/.local
-ENV PATH=/home/django/.local/bin:$PATH
+COPY --from=builder /root/.local /root/.local
+ENV PATH=/root/.local/bin:$PATH
 
 # Copy application code
 COPY . .
 
-# Create database directory and set permissions
-RUN mkdir -p /backend/db && \
-    chown -R django:django /backend && \
-    chmod -R 755 /backend/db
-
-# Change ownership to non-root user
-USER django
+# Run migrations
+RUN python manage.py makemigrations
+RUN python manage.py migrate
 
 # Collect static files
 RUN python manage.py collectstatic --noinput
