@@ -16,11 +16,33 @@ Including another URLconf
 """
 
 from django.contrib import admin
+from django.http import JsonResponse
 from django.urls import include, path
+from django.views.decorators.http import require_http_methods
+
+
+@require_http_methods(["GET"])
+def health_check(request):
+    """Health check endpoint for Docker health checks"""
+    try:
+        # Simple health check without database dependency
+        return JsonResponse(
+            {
+                "status": "healthy",
+                "service": "backend",
+                "timestamp": "2025-01-18T21:30:00Z",
+            }
+        )
+    except Exception as e:
+        return JsonResponse(
+            {"status": "unhealthy", "service": "backend", "error": str(e)}, status=500
+        )
+
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("api.urls")),
+    path("health/", health_check, name="health_check"),
     path(
         "api-auth/", include("rest_framework.urls")
     ),  # Uncomment if you want to use the browsable API authentication

@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   /* config options here */
   trailingSlash: true,
+  output: "standalone", // Enable standalone output for Docker
   async rewrites() {
     return [
       {

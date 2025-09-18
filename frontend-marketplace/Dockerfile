@@ -8,18 +8,25 @@ RUN npm ci --prefer-offline --no-audit --progress=false
 COPY . .
 RUN npm run build
 
-# Production image: only copy built assets and minimal files
+# Production image: use standalone output for minimal size
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
-# Copy only the necessary files from builder
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
+# Create non-root user for security
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
 
-# Expose port (optional, for clarity)
+# Copy standalone build output (includes only necessary files)
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+
+# Change ownership to non-root user
+RUN chown -R nextjs:nodejs /app
+USER nextjs
+
+# Expose port
 EXPOSE 3000
 
-CMD ["npx", "next", "start"]
+CMD ["node", "server.js"]
