@@ -61,7 +61,7 @@ def migrate_table_data(table_name, sqlite_conn, postgres_conn):
 
     if not columns:
         print(f"  ⚠️  Table {table_name} not found in SQLite")
-        return
+        return []
 
     # Get all data from SQLite
     cursor.execute(f"SELECT * FROM {table_name}")
@@ -69,13 +69,14 @@ def migrate_table_data(table_name, sqlite_conn, postgres_conn):
 
     if not rows:
         print(f"  ℹ️  Table {table_name} is empty")
-        return
+        return []
 
     # Get column names
     column_names = [col[1] for col in columns]
 
     # Insert data into PostgreSQL
     postgres_cursor = postgres_conn.cursor()
+    parent_relationships = []
 
     try:
         # Clear existing data in PostgreSQL table
@@ -84,15 +85,28 @@ def migrate_table_data(table_name, sqlite_conn, postgres_conn):
         # Special handling for problematic tables
         if table_name == "api_productcategory":
             print(
-                f"  Special handling for {table_name} - clearing parent_id references"
+                f"  Special handling for {table_name} - preserving parent_id references"
             )
-            # Clear all parent_id references to avoid foreign key issues
+            # Store parent relationships for later processing
             parent_idx = column_names.index("parent_id")
+            id_idx = column_names.index("id")
+
+            # First, insert all categories without parent relationships
             processed_rows = []
+
             for row in rows:
                 row_list = list(row)
-                row_list[parent_idx] = None  # Clear parent_id
+                parent_id = row_list[parent_idx]
+                category_id = row_list[id_idx]
+
+                if parent_id is not None:
+                    # Store the relationship for later
+                    parent_relationships.append((category_id, parent_id))
+                    # Clear parent_id for now to avoid foreign key issues
+                    row_list[parent_idx] = None
+
                 processed_rows.append(tuple(row_list))
+
             rows = processed_rows
 
         # Convert rows with proper data type handling
@@ -127,9 +141,35 @@ def migrate_table_data(table_name, sqlite_conn, postgres_conn):
 
         postgres_conn.commit()
         print(f"  ✅ Migrated {len(converted_rows)} rows to {table_name}")
+        return parent_relationships
 
     except Exception as e:
         print(f"  ❌ Error migrating {table_name}: {e}")
+        postgres_conn.rollback()
+        return []
+
+
+def restore_parent_relationships(postgres_conn, parent_relationships):
+    """Restore parent-child relationships for categories after all categories are inserted"""
+    if not parent_relationships:
+        return
+
+    print(f"  Restoring {len(parent_relationships)} parent relationships...")
+    postgres_cursor = postgres_conn.cursor()
+
+    try:
+        for child_id, parent_id in parent_relationships:
+            # Update the category with its parent relationship
+            postgres_cursor.execute(
+                "UPDATE api_productcategory SET parent_id = %s WHERE id = %s",
+                (parent_id, child_id),
+            )
+
+        postgres_conn.commit()
+        print(f"  ✅ Restored {len(parent_relationships)} parent relationships")
+
+    except Exception as e:
+        print(f"  ❌ Error restoring parent relationships: {e}")
         postgres_conn.rollback()
 
 
@@ -143,6 +183,7 @@ def migrate_data():
         return False
 
     postgres_conn = connections["default"]
+    parent_relationships = []  # Store parent relationships for categories
 
     try:
         # Get all tables
@@ -181,11 +222,19 @@ def migrate_data():
         print("Migrating tables in dependency order...")
 
         # Migrate each table in order
+        all_parent_relationships = []
         for table in migration_order:
             if table in tables:  # Only migrate if table exists
-                migrate_table_data(table, sqlite_conn, postgres_conn)
+                relationships = migrate_table_data(table, sqlite_conn, postgres_conn)
+                if relationships:
+                    all_parent_relationships.extend(relationships)
             else:
                 print(f"Skipping {table} - not found in SQLite database")
+
+        # Restore parent relationships after all categories are migrated
+        if all_parent_relationships:
+            print("\nRestoring parent category relationships...")
+            restore_parent_relationships(postgres_conn, all_parent_relationships)
 
         print("\n✅ Data migration completed successfully!")
         return True
@@ -223,4 +272,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
