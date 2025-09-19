@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Load environment variables from .env file
-load_dotenv(os.path.join(BASE_DIR, ".env"))
+load_dotenv(os.path.join(BASE_DIR, "../.env"))
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
@@ -96,23 +96,58 @@ WSGI_APPLICATION = "backend.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db" / "db_prod.sqlite3",
-    }
-}
+# PostgreSQL configuration using environment variables
+def get_database_config():
+    """Get database configuration from environment variables with validation"""
+    required_vars = [
+        "POSTGRES_DB",
+        "POSTGRES_USER",
+        "POSTGRES_PASSWORD",
+        "POSTGRES_HOST",
+    ]
+    missing_vars = [var for var in required_vars if not os.getenv(var)]
 
-# DATABASES = {
-#     "default": {
-#         "ENGINE": "django.db.backends.postgresql",
-#         "NAME": os.getenv("POSTGRES_DB"),
-#         "USER": os.getenv("POSTGRES_USER"),
-#         "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
-#         "HOST": os.getenv("POSTGRES_HOST"),
-#         "PORT": os.getenv("POSTGRES_PORT"),
-#     }
-# }
+    if missing_vars:
+        raise ValueError(
+            f"Missing required environment variables: {', '.join(missing_vars)}"
+        )
+    
+    IN_DOCKER = os.getenv("IN_DOCKER", "False") == "True"
+    PG_HOST = os.getenv("POSTGRES_HOST") if IN_DOCKER else "localhost"
+
+    return {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("POSTGRES_DB"),
+        "USER": os.getenv("POSTGRES_USER"),
+        "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
+        "HOST": PG_HOST,
+        "PORT": os.getenv("POSTGRES_PORT", "5432"),
+        "OPTIONS": {
+            "connect_timeout": 10,
+        },
+    }
+
+
+try:
+    DATABASES = {"default": get_database_config()}
+    # DATABASES = {
+    #     "default": {
+    #         "ENGINE": "django.db.backends.sqlite3",
+    #         "NAME": BASE_DIR / "db" / "db.sqlite3",
+    #     }
+    # }
+except ValueError as e:
+    print(
+        f"Database configuration error: {e}\n",
+        "Please ensure all required environment variables are set in your .env file",
+    )
+    # Fallback to SQLite for development if PostgreSQL config is missing
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db" / "db.sqlite3",
+        }
+    }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators

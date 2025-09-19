@@ -31,10 +31,7 @@ RUN apk add --no-cache \
     postgresql-libs \
     font-noto \
     font-noto-cjk \
-    font-noto-emoji \
-    wget
-
-
+    font-noto-emoji 
 
 # Set working directory
 WORKDIR /backend
@@ -45,10 +42,6 @@ ENV PATH=/root/.local/bin:$PATH
 
 # Copy application code
 COPY . .
-
-# Run migrations
-RUN python manage.py makemigrations
-RUN python manage.py migrate
 
 # Collect static files
 RUN python manage.py collectstatic --noinput
