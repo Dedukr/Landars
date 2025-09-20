@@ -96,6 +96,7 @@ WSGI_APPLICATION = "backend.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
+
 # PostgreSQL configuration using environment variables
 def get_database_config():
     """Get database configuration from environment variables with validation"""
@@ -111,7 +112,7 @@ def get_database_config():
         raise ValueError(
             f"Missing required environment variables: {', '.join(missing_vars)}"
         )
-    
+
     IN_DOCKER = os.getenv("IN_DOCKER", "False") == "True"
     PG_HOST = os.getenv("POSTGRES_HOST") if IN_DOCKER else "localhost"
 
@@ -188,7 +189,6 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, "static")
-print(STATIC_ROOT)
 
 
 # Default primary key field type
@@ -225,3 +225,25 @@ BUSINESS_INFO = {
 }
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Simple logging configuration
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "simple": {
+            "format": "{levelname} {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "simple",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO",
+    },
+}

@@ -131,6 +131,7 @@ def upload_invoice_to_s3(file_path, s3_key):
 @admin.action(description="Create & Upload Invoice")
 def create_and_upload_invoice(modeladmin, request, queryset):
     from weasyprint import HTML
+
     for order in queryset:
         # Render your invoice template to HTML
         html_string = render_to_string(

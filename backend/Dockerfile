@@ -43,6 +43,9 @@ ENV PATH=/root/.local/bin:$PATH
 # Copy application code
 COPY . .
 
+# Copy sequence fix script
+COPY ../fix_sequences.py /tmp/fix_sequences.py
+
 # Collect static files
 RUN python manage.py collectstatic --noinput
 

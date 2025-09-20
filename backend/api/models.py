@@ -21,8 +21,8 @@ class ProductCategory(models.Model):
 
     class Meta:
         verbose_name_plural = "Product Categories"
-        ordering = ["name"]
-        # Ensure categories are ordered by name by default
+        ordering = ["parent__name", "name"]
+        # Ensure categories are ordered by parent name first, then by name
 
     def __str__(self):
         # if self.parent:
