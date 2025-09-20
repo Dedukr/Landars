@@ -11,8 +11,16 @@
 # - Backup size tracking
 # - Duration tracking
 # - Automatic cleanup of old backups
+# - Configuration loaded from .env file
 #
 # Usage: ./script_db_backup.sh [stats|cleanup]
+#
+# Environment Variables (loaded from .env file):
+# - BACKUP_CONTAINER: Docker container name
+# - DB_PATH_IN_CONTAINER: Database path inside container
+# - DB_PATH_ON_HOST: Database path on host machine
+# - BACKUP_DIR_ON_HOST: Backup directory on host machine
+# - BACKUP_RETENTION_DAYS: Number of days to keep backups
 #
 #########################################################################
 
@@ -29,26 +37,91 @@ log_success() {
     echo "[SUCCESS] $(date '+%Y-%m-%d %H:%M:%S') - $1"
 }
 
+log_warning() {
+    echo "[WARNING] $(date '+%Y-%m-%d %H:%M:%S') - $1"
+}
+
 log_info "SQLite backup script started"
 
-# Configuration - Update these paths as needed
-# For development purposes only. This script is intended to be run in a development environment and should not be used in production.
-# CONTAINER=foodplatform-backend-1 
-# DB_PATH_IN_CONTAINER=/backend/db/db.sqlite3
-# DB_PATH_ON_HOST=./backend/db/db.sqlite3
-# BACKUP_DIR_ON_HOST=./db_backups
+# Function to load environment variables from .env file
+load_env() {
+    local env_file=".env"
+    
+    if [[ -f "$env_file" ]]; then
+        log_info "Loading configuration from $env_file"
+        # Export variables from .env file, ignoring comments and empty lines
+        set -a
+        source <(grep -v '^#' "$env_file" | grep -v '^$' | sed 's/^/export /')
+        set +a
+    else
+        log_warning ".env file not found. Using default configuration."
+        log_info "To use custom configuration, create a .env file with the following variables:"
+        echo "  BACKUP_CONTAINER=your-container-name"
+        echo "  DB_PATH_IN_CONTAINER=/path/to/db/in/container"
+        echo "  DB_PATH_ON_HOST=/path/to/db/on/host"
+        echo "  BACKUP_DIR_ON_HOST=/path/to/backup/directory"
+        echo "  BACKUP_RETENTION_DAYS=31"
+    fi
+}
 
-# For production.
-# This script is intended to be run in a production environment and should not be used in development.
-CONTAINER=landars-backend-1
-DB_PATH_IN_CONTAINER=/backend/db/db.sqlite3
-DB_PATH_ON_HOST=/home/dedmac/web/Landars/backend/db/db.sqlite3
-BACKUP_DIR_ON_HOST=/home/dedmac/web/Landars/db_backups
+# Load environment variables
+load_env
+
+# Configuration with defaults (can be overridden by .env file)
+CONTAINER=${BACKUP_CONTAINER:-"landars-backend-1"}
+DB_PATH_IN_CONTAINER=${DB_PATH_IN_CONTAINER:-"/backend/db/db.sqlite3"}
+DB_PATH_ON_HOST=${DB_PATH_ON_HOST:-"/home/dedmac/web/Landars/backend/db/db.sqlite3"}
+BACKUP_DIR_ON_HOST=${BACKUP_DIR_ON_HOST:-"/home/dedmac/web/Landars/db_backups"}
+BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-31}
+
+# Validate configuration
+validate_config() {
+    local errors=0
+    
+    if [[ -z "$CONTAINER" ]]; then
+        log_error "BACKUP_CONTAINER is not set"
+        ((errors++))
+    fi
+    
+    if [[ -z "$DB_PATH_IN_CONTAINER" ]]; then
+        log_error "DB_PATH_IN_CONTAINER is not set"
+        ((errors++))
+    fi
+    
+    if [[ -z "$DB_PATH_ON_HOST" ]]; then
+        log_error "DB_PATH_ON_HOST is not set"
+        ((errors++))
+    fi
+    
+    if [[ -z "$BACKUP_DIR_ON_HOST" ]]; then
+        log_error "BACKUP_DIR_ON_HOST is not set"
+        ((errors++))
+    fi
+    
+    if ! [[ "$BACKUP_RETENTION_DAYS" =~ ^[0-9]+$ ]]; then
+        log_error "BACKUP_RETENTION_DAYS must be a positive integer"
+        ((errors++))
+    fi
+    
+    if [[ $errors -gt 0 ]]; then
+        log_error "Configuration validation failed with $errors error(s)"
+        return 1
+    fi
+    
+    return 0
+}
+
+# Validate configuration
+if ! validate_config; then
+    log_error "Please fix the configuration errors and try again"
+    exit 1
+fi
+
+log_info "Configuration validated successfully"
 
 # Backup configuration
 DATE=$(date +"%Y-%m-%d_%H-%M-%S")
 FILENAME="db_backup_$DATE.sqlite3"
-BACKUP_RETENTION_DAYS=31
 
 # Create backup function
 create_sqlite_backup() {
@@ -112,12 +185,22 @@ show_usage() {
     echo "  cleanup       - Clean up old backup files"
     echo "  help          - Show this help message"
     echo ""
-    echo "Configuration:"
+    echo "Configuration (loaded from .env file or defaults):"
     echo "  Container: $CONTAINER"
     echo "  Source: $DB_PATH_IN_CONTAINER"
     echo "  Backup Dir: $BACKUP_DIR_ON_HOST"
     echo "  Current DB: $DB_PATH_ON_HOST"
     echo "  Retention: $BACKUP_RETENTION_DAYS days"
+    echo ""
+    echo "Environment Variables:"
+    echo "  BACKUP_CONTAINER      - Docker container name"
+    echo "  DB_PATH_IN_CONTAINER  - Database path inside container"
+    echo "  DB_PATH_ON_HOST       - Database path on host machine"
+    echo "  BACKUP_DIR_ON_HOST    - Backup directory on host machine"
+    echo "  BACKUP_RETENTION_DAYS - Number of days to keep backups"
+    echo ""
+    echo "To customize configuration, create a .env file in the script directory"
+    echo "with the above environment variables."
 }
 
 # Main script logic
