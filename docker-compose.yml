@@ -1,6 +1,8 @@
 services:
   postgres:
-    image: postgres:15-alpine
+    build:
+      context: ./postgresql
+      dockerfile: Dockerfile
     env_file:
       - .env
     environment:
@@ -9,15 +11,17 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - postgres_archive:/var/lib/postgresql/archive
+      - postgres_backups:/var/lib/postgresql/backups
     ports:
       - "${POSTGRES_PORT}:5432"
     restart: unless-stopped
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 512M
         reservations:
-          memory: 128M
+          memory: 256M
 
   backend:
     image: dedukr/landar-backend:latest
@@ -90,3 +94,5 @@ services:
 volumes:
   static_volume:
   postgres_data:
+  postgres_archive:
+  postgres_backups:
