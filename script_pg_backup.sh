@@ -155,6 +155,16 @@ create_sql_backup() {
     # Clean up container file
     docker exec "$container" rm -f "$container_backup_path" || true
     
+    # Upload to S3 if configured
+    if [[ -n "$AWS_S3_BUCKET" ]]; then
+        log_info "Uploading backup to AWS S3..."
+        if python3 "${PROJECT_DIR}/backup-scripts/s3-upload.py" "$timestamped_path" "sql"; then
+            log_success "Backup uploaded to S3 successfully"
+        else
+            log_warning "S3 upload failed, but local backup is complete"
+        fi
+    fi
+    
     local duration=$(($(date +%s) - start_time))
     log_success "SQL backup process completed successfully in ${duration}s!"
     log_info "Timestamped backup: $timestamped_path"
