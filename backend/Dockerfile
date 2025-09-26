@@ -1,5 +1,5 @@
 # Multi-stage build for smaller production image
-FROM python:3.10-alpine AS builder
+FROM python:3.12-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache \
@@ -18,7 +18,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Production stage
-FROM python:3.10-alpine AS runner
+FROM python:3.12-alpine AS runner
 
 # Install runtime dependencies only
 RUN apk add --no-cache \
@@ -44,7 +44,7 @@ ENV PATH=/root/.local/bin:$PATH
 COPY . .
 
 # Copy sequence fix script
-COPY ../fix_sequences.py /tmp/fix_sequences.py
+COPY fix_sequences.py /tmp/fix_sequences.py
 
 # Collect static files
 RUN python manage.py collectstatic --noinput

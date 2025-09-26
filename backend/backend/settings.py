@@ -66,12 +66,18 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = "backend.urls"
-# Avoid Django adding trailing slashes that cause 301s for API
-APPEND_SLASH = False
+# Allow Django to append trailing slashes for API consistency
+APPEND_SLASH = True
 # CORS settings
-CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "https://localhost").split(",")
-CSRF_TRUSTED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "https://localhost").split(",")
-# CORS_ALLOWED_ORIGINS = ["*"]
+CORS_ALLOWED_ORIGINS = os.getenv(
+    "CORS_ALLOWED_ORIGINS", "http://localhost:3000,https://localhost"
+).split(",")
+CSRF_TRUSTED_ORIGINS = os.getenv(
+    "CORS_ALLOWED_ORIGINS", "http://localhost:3000,https://localhost"
+).split(",")
+# For development, allow all origins
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
 
 
 TEMPLATES = [
@@ -113,8 +119,8 @@ def get_database_config():
             f"Missing required environment variables: {', '.join(missing_vars)}"
         )
 
-    IN_DOCKER = os.getenv("IN_DOCKER", "False") == "True"
-    PG_HOST = os.getenv("POSTGRES_HOST") if IN_DOCKER else "localhost"
+    # Prefer explicit POSTGRES_HOST if provided, otherwise fall back to Docker service name
+    PG_HOST = os.getenv("POSTGRES_HOST", "postgres")
 
     return {
         "ENGINE": "django.db.backends.postgresql",

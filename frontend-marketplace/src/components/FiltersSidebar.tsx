@@ -70,7 +70,9 @@ export default function FiltersSidebar({
         childIds.length > 0 &&
         childIds.every((id) => filters.categories.includes(id));
       const isChecked =
-        filters.categories.includes(cat.id) || allChildrenChecked;
+        childIds.length > 0
+          ? allChildrenChecked
+          : filters.categories.includes(cat.id);
       return (
         <div key={cat.id} style={{ marginLeft: level * 16 }}>
           <label className="flex items-center gap-2 cursor-pointer">
@@ -89,33 +91,42 @@ export default function FiltersSidebar({
     });
   }
 
-  // When a parent is checked, check all children. When unchecked, uncheck all children.
+  // Handle category tree changes - parent categories act as select-all buttons
   function handleCategoryTreeChange(cat: Category, isChecked: boolean) {
     const children = categoryTree[cat.id] || [];
     const childIds = children.map((c) => c.id);
     let newCategories = [...filters.categories];
-    if (isChecked) {
-      // Uncheck this and all children
-      newCategories = newCategories.filter(
-        (id) => id !== cat.id && !childIds.includes(id)
-      );
+
+    if (childIds.length > 0) {
+      // This is a parent category - act as select-all button for children
+      if (isChecked) {
+        // Uncheck all children (parent ID is never added to filter array)
+        newCategories = newCategories.filter((id) => !childIds.includes(id));
+      } else {
+        // Check all children (parent ID is never added to filter array)
+        newCategories = Array.from(new Set([...newCategories, ...childIds]));
+      }
     } else {
-      // Check this and all children
-      newCategories = Array.from(
-        new Set([...newCategories, cat.id, ...childIds])
-      );
+      // This is a child category - handle normally
+      if (isChecked) {
+        // Uncheck this category
+        newCategories = newCategories.filter((id) => id !== cat.id);
+      } else {
+        // Check this category
+        newCategories = Array.from(new Set([...newCategories, cat.id]));
+      }
     }
     setFilters({ ...filters, categories: newCategories });
   }
 
-  function handleInStockChange() {
-    setFilters({ ...filters, inStock: !filters.inStock });
-  }
+  // function handleInStockChange() {
+  //   setFilters({ ...filters, inStock: !filters.inStock });
+  // }
 
   // Sidebar content
   const sidebar = (
-    <aside className="w-auto bg-white border-r border-gray-100 p-4 pt-6 sticky top-20 h-[calc(100vh-5rem)] overflow-y-auto hidden md:block rounded-tr-lg rounded-br-lg shadow-sm">
-      <h2 className="text-lg font-bold mb-4">Filters</h2>
+    <aside className="w-auto bg-white border-r border-gray-100 p-4 pt-6 fixed top-20 left-0 h-[calc(100vh-5rem)] overflow-y-auto hidden md:block rounded-tr-lg rounded-br-lg shadow-sm z-10">
+      <h2 className="text-xl font-bold mb-4 text-center">Filters</h2>
       {/* Category */}
       <div className="mb-4">
         <button
@@ -140,7 +151,9 @@ export default function FiltersSidebar({
                     childIds.length > 0 &&
                     childIds.every((id) => filters.categories.includes(id));
                   const isChecked =
-                    filters.categories.includes(cat.id) || allChildrenChecked;
+                    childIds.length > 0
+                      ? allChildrenChecked
+                      : filters.categories.includes(cat.id);
                   return (
                     <div key={cat.id}>
                       <label className="flex items-center gap-2 cursor-pointer">
@@ -163,7 +176,7 @@ export default function FiltersSidebar({
           </div>
         )}
       </div>
-      {/* In Stock */}
+      {/* In Stock
       <div className="mb-4">
         <button
           className="w-full flex justify-between items-center font-semibold mb-2"
@@ -181,7 +194,7 @@ export default function FiltersSidebar({
             <span>Show only in-stock</span>
           </div>
         )}
-      </div>
+      </div> */}
     </aside>
   );
 
@@ -198,7 +211,7 @@ export default function FiltersSidebar({
         <div className="fixed inset-0 z-50 bg-black/40 flex">
           <aside className="w-auto bg-white p-4 pt-6 h-full overflow-y-auto rounded-tr-lg rounded-br-lg shadow-lg animate-fade-in">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">Filters</h2>
+              <h2 className="text-xl font-bold text-center">Filters</h2>
               <button
                 className="text-2xl font-bold"
                 onClick={() => setOpen(false)}
@@ -235,8 +248,9 @@ export default function FiltersSidebar({
                             filters.categories.includes(id)
                           );
                         const isChecked =
-                          filters.categories.includes(cat.id) ||
-                          allChildrenChecked;
+                          childIds.length > 0
+                            ? allChildrenChecked
+                            : filters.categories.includes(cat.id);
                         return (
                           <div key={cat.id}>
                             <label className="flex items-center gap-2 cursor-pointer">
@@ -259,7 +273,7 @@ export default function FiltersSidebar({
                 </div>
               )}
             </div>
-            {/* In Stock */}
+            {/* In Stock
             <div className="mb-4">
               <button
                 className="w-full flex justify-between items-center font-semibold mb-2"
@@ -277,7 +291,7 @@ export default function FiltersSidebar({
                   <span>Show only in-stock</span>
                 </div>
               )}
-            </div>
+            </div> */}
           </aside>
           <div className="flex-1" onClick={() => setOpen(false)} />
         </div>

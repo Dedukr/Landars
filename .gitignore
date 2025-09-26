@@ -43,3 +43,6 @@ dist/
 
 # Database backups
 *.sql
+
+# Playwright agent files
+.playwright*

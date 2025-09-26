@@ -1,15 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f8fafc;
-  --foreground: #1a202c;
-  --primary: #2563eb;
-  --primary-hover: #1d4ed8;
-  --sidebar-bg: #fff;
-  --sidebar-border: #d1d5db;
-  --card-bg: #fff;
-  --card-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.06);
-  --accent: #fbbf24;
+  /* Landar's Food brand palette (light) */
+  --background: #f5e6cc; /* warm beige */
+  --foreground: #1b1b1b; /* rich black */
+  --primary: #111111; /* banner black */
+  --primary-hover: #2b2b2b; /* slightly lighter for hover */
+  --sidebar-bg: #fff7e8; /* soft cream for panels */
+  --sidebar-border: #e1caa6; /* muted beige border */
+  --card-bg: #ffffff; /* product cards stay white for contrast */
+  --card-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+  --accent: #d9a441; /* gold accent from logo */
 }
 
 @theme inline {
@@ -21,15 +22,16 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #18181b;
-    --foreground: #f3f4f6;
-    --primary: #60a5fa;
-    --primary-hover: #3b82f6;
-    --sidebar-bg: #23272f;
-    --sidebar-border: #374151;
-    --card-bg: #23272f;
-    --card-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.18);
-    --accent: #fbbf24;
+    /* Dark theme tuned to brand */
+    --background: #121212;
+    --foreground: #f3f3f3;
+    --primary: #e3b652; /* warm gold on dark */
+    --primary-hover: #c99d3c;
+    --sidebar-bg: #1a1a1a;
+    --sidebar-border: #2a2a2a;
+    --card-bg: #1f1f1f;
+    --card-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+    --accent: #e3b652;
   }
 }
 
@@ -40,7 +42,7 @@ body {
 }
 
 header {
-  background: var(--background);
+  background: var(--sidebar-bg);
   color: var(--foreground);
   border-bottom: 1px solid var(--sidebar-border);
 }

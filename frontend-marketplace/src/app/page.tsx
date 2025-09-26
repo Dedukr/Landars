@@ -20,7 +20,6 @@ export default function Home() {
     inStock: false,
   });
   const [sort, setSort] = useState("name_asc");
-  const [view, setView] = useState<"grid" | "list">("grid");
   const [search, setSearch] = useState("");
 
   useEffect(() => {
@@ -41,23 +40,13 @@ export default function Home() {
   return (
     <main className="flex flex-col md:flex-row md:items-start md:justify-center min-h-screen p-4 sm:p-8 md:p-12 md:ml-8">
       <FiltersSidebar filters={filters} setFilters={setFilters} />
-      <section className="flex-1 w-full">
+      <section className="flex-1 w-full md:ml-80">
         <h1 className="text-3xl font-bold mb-8">
           Welcome to the Food Marketplace
         </h1>
         {/* Search bar removed from here */}
-        <SortingBar
-          sort={sort}
-          setSort={setSort}
-          view={view}
-          setView={setView}
-        />
-        <ProductGrid
-          filters={filters}
-          sort={sort}
-          view={view}
-          search={search}
-        />
+        <SortingBar sort={sort} setSort={setSort} />
+        <ProductGrid filters={filters} sort={sort} search={search} />
       </section>
     </main>
   );

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useCart } from "@/contexts/CartContext";
 import Image from "next/image";
+import ProductModal from "./ProductModal";
 
 interface Product {
   id: number;
@@ -20,21 +21,17 @@ interface Filters {
 interface ProductGridProps {
   filters: Filters;
   sort: string;
-  view: "grid" | "list";
   search?: string;
 }
 
 const skeletons = Array.from({ length: 8 });
 
-const ProductGrid: React.FC<ProductGridProps> = ({
-  filters,
-  sort,
-  view,
-  search,
-}) => {
+const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const { cart, addToCart, removeFromCart } = useCart();
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   useEffect(() => {
     async function fetchProducts() {
       setLoading(true);
@@ -54,13 +51,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({
   }, [filters, sort, search]);
 
   return (
-    <div
-      className={
-        view === "grid"
-          ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6"
-          : "flex flex-col gap-4"
-      }
-    >
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
       {loading
         ? skeletons.map((_, i) => (
             <div
@@ -76,11 +67,15 @@ const ProductGrid: React.FC<ProductGridProps> = ({
         : products.map((product) => (
             <div
               key={product.id}
-              className="rounded-lg shadow p-4 flex flex-col hover:shadow-lg transition-shadow border animate-fade-in-up"
+              className="rounded-lg shadow p-4 flex flex-col hover:shadow-lg transition-shadow border animate-fade-in-up cursor-pointer relative"
               style={{
                 background: "var(--card-bg)",
                 color: "var(--foreground)",
                 borderColor: "var(--sidebar-border)",
+              }}
+              onClick={() => {
+                setSelectedProduct(product);
+                setIsModalOpen(true);
               }}
             >
               <div className="h-32 w-full flex items-center justify-center bg-gray-50 rounded mb-2 overflow-hidden">
@@ -109,37 +104,51 @@ const ProductGrid: React.FC<ProductGridProps> = ({
                   ? product.description.slice(0, 48) + "..."
                   : product.description}
               </div>
-              <div
-                className="font-bold text-lg mt-2"
-                style={{ color: "var(--primary)" }}
-              >
-                £{product.price}
-              </div>
-              {/* Quantity and Add to Cart (placeholder) */}
-              <div className="flex items-center gap-2 mt-2">
-                <button
-                  className="px-2 py-1 rounded bg-gray-200 text-lg font-bold"
-                  onClick={() => removeFromCart(product.id)}
-                  disabled={
-                    !cart.find((item) => item.productId === product.id)
-                      ?.quantity
-                  }
+              {/* Price and quantity controls in a flex container */}
+              <div className="flex items-center justify-between mt-2">
+                <div
+                  className="font-bold text-lg"
+                  style={{ color: "var(--primary)" }}
                 >
-                  -
-                </button>
-                <span>
-                  {cart.find((item) => item.productId === product.id)
-                    ?.quantity || 0}
-                </span>
-                <button
-                  className="px-2 py-1 rounded bg-gray-200 text-lg font-bold"
-                  onClick={() => addToCart(product.id, 1)}
-                >
-                  +
-                </button>
+                  £{product.price}
+                </div>
+                {/* Quantity controls moved to the right */}
+                <div className="flex items-center gap-2">
+                  <button
+                    className="px-2 py-1 rounded bg-gray-200 text-lg font-bold hover:bg-gray-300 transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeFromCart(product.id);
+                    }}
+                    disabled={
+                      !cart.find((item) => item.productId === product.id)
+                        ?.quantity
+                    }
+                  >
+                    -
+                  </button>
+                  <span className="min-w-[1.5rem] text-center">
+                    {cart.find((item) => item.productId === product.id)
+                      ?.quantity || 0}
+                  </span>
+                  <button
+                    className="px-2 py-1 rounded bg-gray-200 text-lg font-bold hover:bg-gray-300 transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      addToCart(product.id, 1);
+                    }}
+                  >
+                    +
+                  </button>
+                </div>
               </div>
             </div>
           ))}
+      <ProductModal
+        product={selectedProduct}
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+      />
     </div>
   );
 };

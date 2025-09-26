@@ -14,6 +14,7 @@ from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
+from weasyprint import HTML
 
 from .models import CustomUser, Order, OrderItem, Product, ProductCategory
 

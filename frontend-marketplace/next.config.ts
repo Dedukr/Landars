@@ -7,6 +7,14 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       {
+        source: "/api/categories",
+        destination: "http://backend:8000/api/categories/",
+      },
+      {
+        source: "/api/products",
+        destination: "http://backend:8000/api/products/",
+      },
+      {
         source: "/api/:path*",
         destination: "http://backend:8000/api/:path*",
       },
