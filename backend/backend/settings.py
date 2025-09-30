@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "rest_framework.authtoken",
     "corsheaders",
     "account",
     # "api.apps.ApiConfig",
@@ -65,20 +66,79 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
+# Disable CSRF for API endpoints in development
+if DEBUG:
+    CSRF_COOKIE_SECURE = False
+    CSRF_COOKIE_HTTPONLY = False
+    CSRF_COOKIE_SAMESITE = "Lax"
+
 ROOT_URLCONF = "backend.urls"
 # Allow Django to append trailing slashes for API consistency
 APPEND_SLASH = True
 # CORS settings
 CORS_ALLOWED_ORIGINS = os.getenv(
-    "CORS_ALLOWED_ORIGINS", "http://localhost:3000,https://localhost"
+    "CORS_ALLOWED_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000,https://localhost",
 ).split(",")
 CSRF_TRUSTED_ORIGINS = os.getenv(
-    "CORS_ALLOWED_ORIGINS", "http://localhost:3000,https://localhost"
+    "CORS_ALLOWED_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000,https://localhost",
 ).split(",")
+
+# Additional CORS settings for proper functionality
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_ALL_HEADERS = True
+CORS_ALLOWED_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
+
+# Allow all methods for API calls
+CORS_ALLOW_METHODS = [
+    "DELETE",
+    "GET",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
+]
+
 # For development, allow all origins
 if DEBUG:
     CORS_ALLOW_ALL_ORIGINS = True
 
+# Additional CORS settings for debugging
+CORS_EXPOSE_HEADERS = [
+    "Content-Type",
+    "X-CSRFToken",
+    "Authorization",
+]
+
+# Preflight cache time
+CORS_PREFLIGHT_MAX_AGE = 86400
+
+# REST Framework settings
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.AllowAny",
+    ],
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+    ],
+    "DEFAULT_PARSER_CLASSES": [
+        "rest_framework.parsers.JSONParser",
+    ],
+}
 
 TEMPLATES = [
     {

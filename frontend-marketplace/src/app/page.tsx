@@ -45,7 +45,12 @@ export default function Home() {
           Welcome to the Food Marketplace
         </h1>
         {/* Search bar removed from here */}
-        <SortingBar sort={sort} setSort={setSort} />
+        <SortingBar
+          sort={sort}
+          setSort={setSort}
+          search={search}
+          setSearch={setSearch}
+        />
         <ProductGrid filters={filters} sort={sort} search={search} />
       </section>
     </main>

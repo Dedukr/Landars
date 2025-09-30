@@ -97,7 +97,7 @@ logger = get_logger('$PROJECT_DIR')
 with logger.process_logger('database_backup', 'backup'):
     pass
 " 2>/dev/null || true
-    ./script_db_backup.sh
+    ./management/pg_backup.sh backup
 fi
 
 # Pull latest code
@@ -184,7 +184,9 @@ logger = get_logger('$PROJECT_DIR')
 with logger.process_logger('sequence_fix', 'database'):
     pass
 " 2>/dev/null || true
-docker-compose exec -T backend python /tmp/fix_sequences.py || warn "Sequence fix failed"
+# Copy and run the sequence fix script
+docker cp management/fix_identity_columns.py $(docker-compose ps -q backend):/tmp/fix_identity_columns.py
+docker-compose exec -T backend python /tmp/fix_identity_columns.py || warn "Sequence fix failed"
 
 # Collect static files
 log "Collecting static files..."

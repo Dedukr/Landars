@@ -72,7 +72,6 @@ BUSINESS_SORT_CODE="Your Sort Code"
 chmod 600 .env
 ```
 
-
 ### 5.1 Backup Your Current Database
 
 ```bash
@@ -126,7 +125,7 @@ docker-compose up -d backend
 
 ```bash
 # Copy migration script to container
-docker cp migrate_final.py $(docker-compose ps -q backend):/backend/
+docker cp management/migrate_final.py $(docker-compose ps -q backend):/backend/
 
 # Run migration
 docker-compose exec backend python /backend/migrate_final.py

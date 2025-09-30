@@ -50,23 +50,23 @@ This platform includes a comprehensive backup system with both traditional SQL b
 
 ```bash
 # Create backup
-./script_pg_backup.sh backup
+./management/pg_backup.sh backup
 
 # Create comprehensive backup (SQL + PITR)
-./script_pg_backup.sh full-backup
+./management/pg_backup.sh full-backup
 
 # Check system status
-./script_pg_backup.sh status
+./management/pg_backup.sh status
 ```
 
 ### Recovery Commands
 
 ```bash
 # Traditional restore
-./script_pg_backup.sh restore
+./management/pg_backup.sh restore
 
 # Point-in-time recovery
-./script_pg_backup.sh pitr-restore --target-time '2024-09-22 14:30:00'
+./management/pg_backup.sh pitr-restore --target-time '2024-09-22 14:30:00'
 ```
 
 For detailed backup documentation, see [BACKUP_README.md](BACKUP_README.md).

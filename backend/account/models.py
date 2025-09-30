@@ -36,9 +36,9 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     is_staff = models.BooleanField(default=False)
     objects = CustomUserManager()
 
-    USERNAME_FIELD = "name"  # field used to log in
+    USERNAME_FIELD = "email"  # field used to log in
     EMAIL_FIELD = "email"  # field used to send emails
-    REQUIRED_FIELDS = []  # when creating superuser from CLI
+    REQUIRED_FIELDS = ["name"]  # when creating superuser from CLI
 
     def __str__(self):
         # return self.profile.name if hasattr(self, "profile") else self.email

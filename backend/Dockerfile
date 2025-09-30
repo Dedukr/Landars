@@ -14,7 +14,7 @@ RUN apk add --no-cache \
     postgresql-dev
 
 # Install Python dependencies
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Production stage
@@ -41,10 +41,10 @@ COPY --from=builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
 
 # Copy application code
-COPY . .
+COPY backend/ .
 
 # Copy sequence fix script
-COPY fix_sequences.py /tmp/fix_sequences.py
+COPY management/fix_identity_columns.py /tmp/fix_identity_columns.py
 
 # Collect static files
 RUN python manage.py collectstatic --noinput
