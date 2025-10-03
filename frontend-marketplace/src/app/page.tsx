@@ -38,10 +38,10 @@ export default function Home() {
   }, []);
 
   return (
-    <main className="flex flex-col md:flex-row md:items-start md:justify-center min-h-screen p-4 sm:p-8 md:p-12 md:ml-8">
+    <main className="flex flex-col md:flex-row md:items-start md:justify-center min-h-screen p-2 sm:p-4 md:p-6 md:ml-4">
       <FiltersSidebar filters={filters} setFilters={setFilters} />
-      <section className="flex-1 w-full md:ml-80">
-        <h1 className="text-3xl font-bold mb-8">
+      <section className="flex-1 w-full ml-0 content-offset-md">
+        <h1 className="text-3xl font-bold mb-8 tablet-title-margin large-tablet-title-margin">
           Welcome to the Food Marketplace
         </h1>
         {/* Search bar removed from here */}

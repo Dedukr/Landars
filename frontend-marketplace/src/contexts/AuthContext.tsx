@@ -6,6 +6,7 @@ import React, {
   useEffect,
   ReactNode,
 } from "react";
+import { makeAuthenticatedRequest } from "@/utils/csrf";
 
 interface User {
   id: number;
@@ -58,11 +59,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       // Call logout endpoint if token exists
       if (token) {
-        await fetch("http://localhost:8000/api/auth/logout/", {
+        await makeAuthenticatedRequest("/api/auth/logout/", {
           method: "POST",
           headers: {
             Authorization: `Token ${token}`,
-            "Content-Type": "application/json",
           },
         });
       }
@@ -74,6 +74,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null);
       localStorage.removeItem("authToken");
       localStorage.removeItem("user");
+      // Clear wishlist when user logs out
+      localStorage.removeItem("wishlist");
     }
   };
 

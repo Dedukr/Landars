@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -21,18 +22,20 @@ const userMenu = [
 export default function Header() {
   const { cart } = useCart();
   const { user, logout } = useAuth();
+  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
 
-  function handleMenuClick(item: {
+  async function handleMenuClick(item: {
     name: string;
     href?: string;
     action?: string;
   }) {
     if (item.action === "logout") {
-      logout();
+      await logout();
+      router.push("/"); // Redirect to home page after logout
     }
     setMenuOpen(false);
     setMobileMenuOpen(false);
@@ -202,7 +205,7 @@ export default function Header() {
                 {/* Desktop Dropdown */}
                 {menuOpen && (
                   <div
-                    className="absolute right-0 mt-2 w-48 rounded-lg shadow-lg py-2 animate-fade-in z-50"
+                    className="absolute right-0 mt-2 w-48 rounded-lg shadow-lg animate-fade-in z-[60]"
                     style={{
                       background: "var(--card-bg)",
                       border: "1px solid var(--sidebar-border)",
@@ -217,28 +220,30 @@ export default function Header() {
                       </p>
                       <p className="text-xs text-gray-500">{user.email}</p>
                     </div>
-                    {userMenu.map((item) =>
-                      item.href ? (
-                        <Link
-                          key={item.name}
-                          href={item.href}
-                          className="block px-4 py-2 transition-colors hover:bg-gray-100"
-                          style={{ color: "var(--foreground)" }}
-                          onClick={() => setMenuOpen(false)}
-                        >
-                          {item.name}
-                        </Link>
-                      ) : (
-                        <button
-                          key={item.name}
-                          className="block w-full text-left px-4 py-2 transition-colors hover:bg-gray-100"
-                          style={{ color: "var(--foreground)" }}
-                          onClick={() => handleMenuClick(item)}
-                        >
-                          {item.name}
-                        </button>
-                      )
-                    )}
+                    <div>
+                      {userMenu.map((item) =>
+                        item.href ? (
+                          <Link
+                            key={item.name}
+                            href={item.href}
+                            className="block px-4 py-2 transition-colors hover:opacity-80"
+                            style={{ color: "var(--foreground)" }}
+                            onClick={() => setMenuOpen(false)}
+                          >
+                            {item.name}
+                          </Link>
+                        ) : (
+                          <button
+                            key={item.name}
+                            className="block w-full text-left px-4 transition-colors hover:opacity-80"
+                            style={{ color: "var(--foreground)" }}
+                            onClick={() => handleMenuClick(item)}
+                          >
+                            {item.name}
+                          </button>
+                        )
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -285,7 +290,7 @@ export default function Header() {
                   <Link
                     key={link.name}
                     href={link.href}
-                    className="block px-3 py-2 text-base font-medium rounded-md transition-colors hover:bg-gray-100"
+                    className="block px-3 py-2 text-base font-medium rounded-md transition-colors hover:opacity-80"
                     style={{ color: "var(--foreground)" }}
                     onClick={closeMobileMenu}
                   >
@@ -312,7 +317,7 @@ export default function Header() {
                         <Link
                           key={item.name}
                           href={item.href}
-                          className="block px-3 py-2 text-base font-medium rounded-md transition-colors hover:bg-gray-100"
+                          className="block px-3 py-2 text-base font-medium rounded-md transition-colors hover:opacity-80"
                           style={{ color: "var(--foreground)" }}
                           onClick={closeMobileMenu}
                         >
@@ -321,7 +326,7 @@ export default function Header() {
                       ) : (
                         <button
                           key={item.name}
-                          className="block w-full text-left px-3 py-2 text-base font-medium rounded-md transition-colors hover:bg-gray-100"
+                          className="block w-full text-left px-3 py-2 text-base font-medium rounded-md transition-colors hover:opacity-80"
                           style={{ color: "var(--foreground)" }}
                           onClick={() => handleMenuClick(item)}
                         >

@@ -11,6 +11,8 @@
   --card-bg: #ffffff; /* product cards stay white for contrast */
   --card-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
   --accent: #d9a441; /* gold accent from logo */
+  /* Sidebar width used for responsive content offset */
+  --sidebar-width: 18rem;
 }
 
 @theme inline {
@@ -32,6 +34,22 @@
     --card-bg: #1f1f1f;
     --card-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
     --accent: #b8956a; /* even darker beige for dark theme */
+  }
+}
+
+/* Responsive sidebar width and content offset helpers */
+@media (min-width: 768px) {
+  :root {
+    --sidebar-width: 18rem; /* md */
+  }
+  .content-offset-md {
+    margin-left: calc(var(--sidebar-width) + 10px) !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --sidebar-width: 20rem; /* lg */
   }
 }
 
@@ -188,5 +206,30 @@ input:focus {
 
   input[type="text"]::placeholder {
     color: #cccccc !important;
+  }
+}
+
+/* Custom breakpoint for screens from 1024px down to small */
+@media (max-width: 1023px) {
+  .mb-1024-down {
+    margin-bottom: 0.75rem !important;
+  }
+}
+
+/* Tablet-specific adjustments (768px to 1024px) */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .tablet-title-margin {
+    margin-bottom: 1rem !important; /* 16px */
+  }
+
+  .tablet-padding {
+    padding: 1rem !important; /* 16px */
+  }
+}
+
+/* Large tablet and small desktop (1024px to 1280px) */
+@media (min-width: 1024px) and (max-width: 1280px) {
+  .large-tablet-title-margin {
+    margin-bottom: 1.5rem !important; /* 24px */
   }
 }

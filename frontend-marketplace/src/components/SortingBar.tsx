@@ -60,7 +60,7 @@ const SortingBar: React.FC<SortingBarProps> = ({
   }
 
   return (
-    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-6">
+    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-6 mb-1024-down">
       {/* Search Bar */}
       <div className="relative flex-1 max-w-md">
         <input

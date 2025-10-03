@@ -9,4 +9,5 @@ urlpatterns = [
     path("logout/", views.logout_view, name="logout"),
     path("profile/", views.user_profile, name="user_profile"),
     path("token/", obtain_auth_token, name="obtain_auth_token"),
+    path("csrf-token/", views.csrf_token, name="csrf_token"),
 ]

@@ -125,7 +125,10 @@ export default function FiltersSidebar({
 
   // Sidebar content
   const sidebar = (
-    <aside className="w-auto bg-white border-r border-gray-100 p-4 pt-6 fixed top-20 left-0 h-[calc(100vh-5rem)] overflow-y-auto hidden md:block rounded-tr-lg rounded-br-lg shadow-sm z-10">
+    <aside
+      className="w-auto bg-white border-r border-gray-100 p-4 pt-6 fixed top-20 left-0 h-[calc(100vh-5rem)] overflow-y-auto hidden md:block rounded-tr-lg rounded-br-lg shadow-sm z-10"
+      style={{ width: "var(--sidebar-width)" }}
+    >
       <h2 className="text-xl font-bold mb-4 text-center">Filters</h2>
       {/* Category */}
       <div className="mb-4">

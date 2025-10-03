@@ -2,9 +2,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Product, ProductCategory, Order
-from .serializers import ProductSerializer, CategorySerializer
-
+from .models import Order, Product, ProductCategory, Wishlist
+from .serializers import CategorySerializer, ProductSerializer, WishlistSerializer
 
 # @staff_member_required
 # def order_invoice_pdf(request, pk):
@@ -157,3 +156,78 @@ class CategoryList(APIView):
 #             return Response(
 #                 {"error": "Product not found."}, status=status.HTTP_404_NOT_FOUND
 #             )
+
+
+class WishlistView(APIView):
+    def get(self, request):
+        """Get user's wishlist items."""
+        if not request.user.is_authenticated:
+            return Response(
+                {"error": "Authentication required"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        wishlist_items = Wishlist.objects.filter(user=request.user)
+        serializer = WishlistSerializer(wishlist_items, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        """Add a product to wishlist."""
+        if not request.user.is_authenticated:
+            return Response(
+                {"error": "Authentication required"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        product_id = request.data.get("product_id")
+        if not product_id:
+            return Response(
+                {"error": "product_id is required"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            product = Product.objects.get(id=product_id)
+        except Product.DoesNotExist:
+            return Response(
+                {"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Check if already in wishlist
+        wishlist_item, created = Wishlist.objects.get_or_create(
+            user=request.user, product=product
+        )
+
+        if created:
+            serializer = WishlistSerializer(wishlist_item)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        else:
+            return Response(
+                {"message": "Product already in wishlist"}, status=status.HTTP_200_OK
+            )
+
+    def delete(self, request):
+        """Remove a product from wishlist."""
+        if not request.user.is_authenticated:
+            return Response(
+                {"error": "Authentication required"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        product_id = request.data.get("product_id")
+        if not product_id:
+            return Response(
+                {"error": "product_id is required"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            wishlist_item = Wishlist.objects.get(
+                user=request.user, product_id=product_id
+            )
+            wishlist_item.delete()
+            return Response(
+                {"message": "Product removed from wishlist"}, status=status.HTTP_200_OK
+            )
+        except Wishlist.DoesNotExist:
+            return Response(
+                {"error": "Product not in wishlist"}, status=status.HTTP_404_NOT_FOUND
+            )

@@ -48,3 +48,6 @@ wal_archive/
 
 # Playwright agent files
 .playwright*
+
+# Cookies
+cookies.txt

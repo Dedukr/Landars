@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { useCart } from "@/contexts/CartContext";
+import { useWishlist } from "@/contexts/WishlistContext";
+import { useAuth } from "@/contexts/AuthContext";
 import Image from "next/image";
 import ProductModal from "./ProductModal";
+import SignInPopup from "./SignInPopup";
 
 interface Product {
   id: number;
@@ -30,8 +33,25 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const { cart, addToCart, removeFromCart } = useCart();
+  const { addToWishlist, removeFromWishlist, isInWishlist } = useWishlist();
+  const { user } = useAuth();
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showSignInPopup, setShowSignInPopup] = useState(false);
+
+  const handleWishlistClick = (productId: number) => {
+    if (!user) {
+      setShowSignInPopup(true);
+      return;
+    }
+
+    if (isInWishlist(productId)) {
+      removeFromWishlist(productId);
+    } else {
+      addToWishlist(productId);
+    }
+  };
+
   useEffect(() => {
     async function fetchProducts() {
       setLoading(true);
@@ -78,6 +98,44 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
                 setIsModalOpen(true);
               }}
             >
+              {/* Wishlist Heart Icon - positioned in top-right corner */}
+              <button
+                className="absolute top-3 right-3 shadow-lg flex items-center justify-center hover:scale-110 transition-all duration-200 z-10"
+                style={{
+                  background: "white",
+                  cursor: "pointer",
+                  width: "32px",
+                  height: "32px",
+                  borderRadius: "50%",
+                  aspectRatio: "1 / 1",
+                  padding: "0",
+                  border: "none",
+                  outline: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleWishlistClick(product.id);
+                }}
+                title={
+                  isInWishlist(product.id)
+                    ? "Remove from wishlist"
+                    : "Add to wishlist"
+                }
+              >
+                <span
+                  style={{
+                    fontSize: "18px",
+                    fontWeight: "bold",
+                    lineHeight: "1",
+                    display: "block",
+                  }}
+                >
+                  {isInWishlist(product.id) ? "❤️" : "🖤"}
+                </span>
+              </button>
               {/* Image section - fixed height */}
               <div className="h-32 w-full flex items-center justify-center bg-gray-50 rounded mb-2 overflow-hidden flex-shrink-0">
                 {product.image_url ? (
@@ -111,43 +169,44 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
 
                 {/* Price and quantity controls - always at bottom */}
                 <div className="mt-auto pt-2">
-                  {/* Price tag centered above buttons */}
-                  <div className="text-center mb-2">
+                  {/* Price and quantity controls in a row */}
+                  <div className="flex items-center justify-between">
+                    {/* Price tag on the left */}
                     <div
                       className="font-bold text-lg"
                       style={{ color: "var(--primary)" }}
                     >
                       £{product.price}
                     </div>
-                  </div>
-                  {/* Quantity controls centered */}
-                  <div className="flex items-center justify-center gap-1">
-                    <button
-                      className="px-1.5 py-0.5 rounded bg-gray-200 text-sm font-bold hover:bg-gray-300 transition-colors"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeFromCart(product.id);
-                      }}
-                      disabled={
-                        !cart.find((item) => item.productId === product.id)
-                          ?.quantity
-                      }
-                    >
-                      -
-                    </button>
-                    <span className="min-w-[1.25rem] text-center text-sm">
-                      {cart.find((item) => item.productId === product.id)
-                        ?.quantity || 0}
-                    </span>
-                    <button
-                      className="px-1.5 py-0.5 rounded bg-gray-200 text-sm font-bold hover:bg-gray-300 transition-colors"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        addToCart(product.id, 1);
-                      }}
-                    >
-                      +
-                    </button>
+                    {/* Quantity controls on the right */}
+                    <div className="flex items-center gap-1">
+                      <button
+                        className="px-1.5 py-0.5 rounded bg-gray-200 text-sm font-bold hover:bg-gray-300 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeFromCart(product.id);
+                        }}
+                        disabled={
+                          !cart.find((item) => item.productId === product.id)
+                            ?.quantity
+                        }
+                      >
+                        -
+                      </button>
+                      <span className="min-w-[1.25rem] text-center text-sm">
+                        {cart.find((item) => item.productId === product.id)
+                          ?.quantity || 0}
+                      </span>
+                      <button
+                        className="px-1.5 py-0.5 rounded bg-gray-200 text-sm font-bold hover:bg-gray-300 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          addToCart(product.id, 1);
+                        }}
+                      >
+                        +
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -157,6 +216,10 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
         product={selectedProduct}
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
+      />
+      <SignInPopup
+        isOpen={showSignInPopup}
+        onClose={() => setShowSignInPopup(false)}
       />
     </div>
   );

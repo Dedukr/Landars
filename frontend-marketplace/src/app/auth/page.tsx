@@ -3,6 +3,7 @@ import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
+import { makeAuthenticatedRequest } from "@/utils/csrf";
 
 function AuthForm() {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -55,20 +56,14 @@ function AuthForm() {
       }
 
       try {
-        const response = await fetch(
-          "http://localhost:8000/api/auth/register/",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              name: formData.name,
-              email: formData.email,
-              password: formData.password,
-            }),
-          }
-        );
+        const response = await makeAuthenticatedRequest("/api/auth/register/", {
+          method: "POST",
+          body: JSON.stringify({
+            name: formData.name,
+            email: formData.email,
+            password: formData.password,
+          }),
+        });
 
         const data = await response.json();
 
@@ -84,11 +79,8 @@ function AuthForm() {
     } else {
       // Sign in logic
       try {
-        const response = await fetch("http://localhost:8000/api/auth/login/", {
+        const response = await makeAuthenticatedRequest("/api/auth/login/", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
           body: JSON.stringify({
             email: formData.email,
             password: formData.password,

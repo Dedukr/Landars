@@ -242,3 +242,29 @@ class OrderItem(models.Model):
             "quantity": self.quantity,
             "total_price": str(self.total_price()),
         }
+
+
+# Wishlist model
+class Wishlist(models.Model):
+    user = models.ForeignKey(
+        CustomUser, on_delete=models.CASCADE, related_name="wishlist"
+    )
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    added_date = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = "Wishlists"
+        ordering = ["-added_date"]
+        unique_together = ["user", "product"]  # Prevent duplicate entries
+
+    def __str__(self):
+        return f"{self.user.name} - {self.product.name}"
+
+    def get_wishlist_details(self):
+        return {
+            "id": self.id,
+            "product_id": self.product.id,
+            "product_name": self.product.name,
+            "product_price": str(self.product.price),
+            "added_date": self.added_date.isoformat(),
+        }

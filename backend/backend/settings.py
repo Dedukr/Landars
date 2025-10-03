@@ -74,16 +74,18 @@ if DEBUG:
 
 ROOT_URLCONF = "backend.urls"
 # Allow Django to append trailing slashes for API consistency
-APPEND_SLASH = True
+APPEND_SLASH = False
 # CORS settings
-CORS_ALLOWED_ORIGINS = os.getenv(
-    "CORS_ALLOWED_ORIGINS",
-    "http://localhost:3000,http://127.0.0.1:3000,https://localhost",
-).split(",")
-CSRF_TRUSTED_ORIGINS = os.getenv(
-    "CORS_ALLOWED_ORIGINS",
-    "http://localhost:3000,http://127.0.0.1:3000,https://localhost",
-).split(",")
+CORS_ALLOWED_ORIGINS = (
+    os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+    if os.getenv("CORS_ALLOWED_ORIGINS")
+    else []
+)
+CSRF_TRUSTED_ORIGINS = (
+    os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",")
+    if os.getenv("CSRF_TRUSTED_ORIGINS")
+    else []
+)
 
 # Additional CORS settings for proper functionality
 CORS_ALLOW_CREDENTIALS = True
@@ -127,6 +129,7 @@ CORS_PREFLIGHT_MAX_AGE = 86400
 # REST Framework settings
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.TokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [

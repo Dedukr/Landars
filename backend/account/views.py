@@ -1,11 +1,10 @@
-import json
-
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.http import JsonResponse
+from django.middleware.csrf import get_token
 from django.shortcuts import render
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import api_view, permission_classes
@@ -22,7 +21,7 @@ from .models import CustomUser
 def register(request):
     """Register a new user"""
     try:
-        data = json.loads(request.body)
+        data = request.data
         email = data.get("email")
         password = data.get("password")
         name = data.get("name")
@@ -61,8 +60,6 @@ def register(request):
             status=status.HTTP_201_CREATED,
         )
 
-    except json.JSONDecodeError:
-        return Response({"error": "Invalid JSON"}, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -72,7 +69,7 @@ def register(request):
 def login_view(request):
     """Login a user"""
     try:
-        data = json.loads(request.body)
+        data = request.data
         email = data.get("email")
         password = data.get("password")
 
@@ -102,8 +99,6 @@ def login_view(request):
             status=status.HTTP_200_OK,
         )
 
-    except json.JSONDecodeError:
-        return Response({"error": "Invalid JSON"}, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -140,3 +135,11 @@ def user_profile(request):
         },
         status=status.HTTP_200_OK,
     )
+
+
+@ensure_csrf_cookie
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def csrf_token(request):
+    """Get CSRF token for frontend"""
+    return Response({"csrfToken": get_token(request)})

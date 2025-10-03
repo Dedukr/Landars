@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Order, OrderItem, Product, ProductCategory
+from .models import Order, OrderItem, Product, ProductCategory, Wishlist
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -31,3 +31,15 @@ class ProductSerializer(serializers.ModelSerializer):
     # def get_stock_quantity(self, obj):
     #     stock = Stock.objects.filter(product=obj).first()
     #     return stock.quantity if stock else 0
+
+
+class WishlistSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source="product.name", read_only=True)
+    product_price = serializers.DecimalField(
+        source="product.price", max_digits=10, decimal_places=2, read_only=True
+    )
+
+    class Meta:
+        model = Wishlist
+        fields = ["id", "product", "product_name", "product_price", "added_date"]
+        read_only_fields = ["id", "added_date"]

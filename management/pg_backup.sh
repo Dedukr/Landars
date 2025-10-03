@@ -117,8 +117,8 @@ PITR_RETENTION_DAYS="${PITR_RETENTION_DAYS:-7}"
 LOCAL_RETENTION_COUNT="${LOCAL_RETENTION_COUNT:-10}"
 
 # S3 Configuration
-AWS_S3_BUCKET="${AWS_S3_BUCKET:-}"
-AWS_REGION="${AWS_REGION:-us-east-1}"
+AWS_STORAGE_BUCKET_NAME="${AWS_STORAGE_BUCKET_NAME:-}"
+AWS_S3_REGION_NAME="${AWS_S3_REGION_NAME:-us-east-1}"
 S3_STORAGE_CLASS="${S3_STORAGE_CLASS:-STANDARD_IA}"
 
 # SQLite legacy support
@@ -155,12 +155,12 @@ validate_config() {
     fi
     
     # Check S3 configuration if S3 backup is enabled
-    if [[ -n "$AWS_S3_BUCKET" ]]; then
+    if [[ -n "$AWS_STORAGE_BUCKET_NAME" ]]; then
         if ! command -v aws &> /dev/null; then
             log_warning "AWS CLI not found. S3 backup will be disabled."
-            AWS_S3_BUCKET=""
+            AWS_STORAGE_BUCKET_NAME=""
         else
-            log_info "S3 backup enabled to bucket: $AWS_S3_BUCKET"
+            log_info "S3 backup enabled to bucket: $AWS_STORAGE_BUCKET_NAME"
         fi
     fi
     
@@ -284,7 +284,7 @@ create_postgresql_backup() {
         fi
         
         # Upload to S3 if configured
-        if [[ -n "$AWS_S3_BUCKET" ]]; then
+        if [[ -n "$AWS_STORAGE_BUCKET_NAME" ]]; then
             upload_to_s3 "$backup_path" "postgresql"
         fi
         
@@ -404,7 +404,7 @@ create_sqlite_backup() {
         fi
         
         # Upload to S3 if configured
-        if [[ -n "$AWS_S3_BUCKET" ]]; then
+        if [[ -n "$AWS_STORAGE_BUCKET_NAME" ]]; then
             upload_to_s3 "$backup_path" "sqlite"
         fi
         
@@ -483,7 +483,7 @@ create_pitr_backup() {
             docker exec "$container" rm -rf "$backup_dir"
             
             # Upload to S3 if configured
-            if [[ -n "$AWS_S3_BUCKET" ]]; then
+            if [[ -n "$AWS_STORAGE_BUCKET_NAME" ]]; then
                 # Create a tar.gz of the PITR backup for S3
                 local tar_file="$ARCHIVE_DIR/${backup_name}.tar.gz"
                 tar -czf "$tar_file" -C "$ARCHIVE_DIR" "$backup_name"
@@ -532,7 +532,7 @@ upload_to_s3() {
     local file_path="$1"
     local backup_type="$2"
     
-    if [[ -z "$AWS_S3_BUCKET" ]]; then
+    if [[ -z "$AWS_STORAGE_BUCKET_NAME" ]]; then
         log_debug "S3 backup not configured, skipping upload"
         return 0
     fi
@@ -542,12 +542,12 @@ upload_to_s3() {
     local file_name=$(basename "$file_path")
     local s3_key="${S3_BACKUP_DIR}/${backup_type}/${DATE_ONLY}/${file_name}"
     
-    if aws s3 cp "$file_path" "s3://${AWS_S3_BUCKET}/${s3_key}" \
+    if aws s3 cp "$file_path" "s3://${AWS_STORAGE_BUCKET_NAME}/${s3_key}" \
         --storage-class "$S3_STORAGE_CLASS" \
-        --region "$AWS_REGION" \
+        --region "$AWS_S3_REGION_NAME" \
         --quiet; then
         
-        log_success "✅ Backup uploaded to S3: s3://${AWS_S3_BUCKET}/${s3_key}"
+        log_success "✅ Backup uploaded to S3: s3://${AWS_STORAGE_BUCKET_NAME}/${s3_key}"
         return 0
     else
         log_error "❌ S3 upload failed"
@@ -557,7 +557,7 @@ upload_to_s3() {
 
 # Cleanup old S3 backups
 cleanup_s3_backups() {
-    if [[ -z "$AWS_S3_BUCKET" ]]; then
+    if [[ -z "$AWS_STORAGE_BUCKET_NAME" ]]; then
         log_debug "S3 backup not configured, skipping S3 cleanup"
         return 0
     fi
@@ -575,12 +575,12 @@ cleanup_s3_backups() {
     fi
     
     # List and delete old backups
-    aws s3 ls "s3://${AWS_S3_BUCKET}/${S3_BACKUP_DIR}/" --recursive --region "$AWS_REGION" | \
+    aws s3 ls "s3://${AWS_STORAGE_BUCKET_NAME}/${S3_BACKUP_DIR}/" --recursive --region "$AWS_S3_REGION_NAME" | \
     while read -r line; do
         local date_str=$(echo "$line" | awk '{print $1}')
         if [[ "$date_str" < "$cutoff_date" ]]; then
             local key=$(echo "$line" | awk '{for(i=4;i<=NF;i++) printf "%s ", $i; print ""}' | sed 's/ $//')
-            aws s3 rm "s3://${AWS_S3_BUCKET}/${key}" --region "$AWS_REGION" --quiet
+            aws s3 rm "s3://${AWS_STORAGE_BUCKET_NAME}/${key}" --region "$AWS_S3_REGION_NAME" --quiet
             log_debug "Deleted old S3 backup: $key"
         fi
     done
@@ -661,10 +661,10 @@ show_statistics() {
     echo "  Local Backup Count: $LOCAL_RETENTION_COUNT"
     echo ""
     
-    if [[ -n "$AWS_S3_BUCKET" ]]; then
+    if [[ -n "$AWS_STORAGE_BUCKET_NAME" ]]; then
         echo -e "${CYAN}S3 Configuration:${NC}"
-        echo "  S3 Bucket: $AWS_S3_BUCKET"
-        echo "  S3 Region: $AWS_REGION"
+        echo "  S3 Bucket: $AWS_STORAGE_BUCKET_NAME"
+        echo "  S3 Region: $AWS_S3_REGION_NAME"
         echo "  Storage Class: $S3_STORAGE_CLASS"
         echo ""
     fi
@@ -704,7 +704,7 @@ health_check() {
     fi
     
     # Check S3 configuration
-    if [[ -n "$AWS_S3_BUCKET" ]]; then
+    if [[ -n "$AWS_STORAGE_BUCKET_NAME" ]]; then
         if command -v aws &> /dev/null; then
             echo "  ✅ AWS CLI available for S3 backups"
         else
@@ -848,7 +848,7 @@ show_usage() {
     echo "  POSTGRES_DB              - PostgreSQL database name"
     echo "  POSTGRES_USER            - PostgreSQL username"
     echo "  POSTGRES_PASSWORD        - PostgreSQL password"
-    echo "  AWS_S3_BUCKET           - S3 bucket for cloud backup"
+    echo "  AWS_STORAGE_BUCKET_NAME - S3 bucket for cloud backup"
     echo "  SQL_RETENTION_DAYS      - Days to keep SQL backups"
     echo "  LOCAL_RETENTION_COUNT   - Number of local backups to keep"
     echo "  DEBUG                   - Enable debug logging (true/false)"
@@ -898,8 +898,8 @@ show_config() {
     echo "  Local Count: $LOCAL_RETENTION_COUNT"
     echo ""
     echo "Cloud Settings:"
-    echo "  S3 Bucket: ${AWS_S3_BUCKET:-'Not configured'}"
-    echo "  S3 Region: $AWS_REGION"
+    echo "  S3 Bucket: ${AWS_STORAGE_BUCKET_NAME:-'Not configured'}"
+    echo "  S3 Region: $AWS_S3_REGION_NAME"
     echo "  Storage Class: $S3_STORAGE_CLASS"
     echo ""
     echo "Container Settings:"
