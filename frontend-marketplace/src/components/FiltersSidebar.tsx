@@ -31,7 +31,7 @@ export default function FiltersSidebar({
     async function fetchCategories() {
       setLoading(true);
       try {
-        const res = await fetch("/api/categories/");
+        const res = await fetch(`/api/categories/`);
         if (!res.ok) throw new Error("Failed to fetch categories");
         const data = await res.json();
         setCategories(data);
@@ -205,7 +205,7 @@ export default function FiltersSidebar({
   const mobileSidebar = (
     <>
       <button
-        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-blue-600 text-white px-6 py-2 rounded-full shadow-lg md:hidden"
+        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 md:hidden bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
         onClick={() => setOpen(true)}
       >
         Filter
@@ -216,7 +216,7 @@ export default function FiltersSidebar({
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-center">Filters</h2>
               <button
-                className="text-2xl font-bold"
+                className="text-2xl font-bold p-1 hover:bg-gray-100 rounded transition-colors"
                 onClick={() => setOpen(false)}
               >
                 &times;

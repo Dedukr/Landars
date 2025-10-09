@@ -1,14 +1,15 @@
 "use client";
 import React, { useState } from "react";
+import SortList, { SortOption } from "./SortList";
 
-const sortOptions = [
-  { value: "name_asc", label: "Name: A-Z" },
-  { value: "name_desc", label: "Name: Z-A" },
-  { value: "price_asc", label: "Price: Low to High" },
-  { value: "price_desc", label: "Price: High to Low" },
-  { value: "newest", label: "Newest" },
-  { value: "oldest", label: "Oldest" },
+const sortOptions: SortOption[] = [
+  { value: "name_asc", label: "Name: A-Z", icon: "↑" },
+  { value: "name_desc", label: "Name: Z-A", icon: "↓" },
+  { value: "price_desc", label: "Price: High to Low", icon: "↓" },
+  { value: "price_asc", label: "Price: Low to High", icon: "↑" },
 ];
+
+// Date sorting has been removed as requested
 
 interface Product {
   id: number;
@@ -68,7 +69,7 @@ const SortingBar: React.FC<SortingBarProps> = ({
           value={search}
           onChange={handleSearchChange}
           placeholder="Search products by name..."
-          className="w-full rounded px-3 py-2 transition-all duration-300"
+          className="w-full rounded-full px-4 py-2.5 transition-all duration-300"
           style={{
             border: "1px solid var(--sidebar-border)",
             background: "var(--card-bg)",
@@ -101,21 +102,18 @@ const SortingBar: React.FC<SortingBarProps> = ({
 
       {/* Sort Dropdown */}
       <div className="flex items-center gap-2">
-        <label htmlFor="sort" className="font-medium text-sm">
+        <label htmlFor="sort" className="font-medium text-sm" id="sort-label">
           Sort by:
         </label>
-        <select
-          id="sort"
-          value={sort}
-          onChange={(e) => setSort(e.target.value)}
-          className="border border-gray-300 rounded px-2 py-1 text-sm"
-        >
-          {sortOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+        <div className="min-w-[200px]">
+          <SortList
+            options={sortOptions}
+            value={sort}
+            onChange={setSort}
+            placeholder="Choose sorting..."
+            className="w-full"
+          />
+        </div>
       </div>
     </div>
   );

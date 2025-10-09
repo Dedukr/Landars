@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import FiltersSidebar from "@/components/FiltersSidebar";
 import SortingBar from "@/components/SortingBar";
 import ProductGrid from "@/components/ProductGrid";
+import Breadcrumb from "@/components/Breadcrumb";
 
 interface Filters {
   categories: number[];
@@ -26,14 +27,32 @@ export default function Home() {
     function handleGlobalSearch(e: CustomEvent<string>) {
       if (e.detail !== undefined) setSearch(e.detail);
     }
+    function handleClearFilters() {
+      setFilters({
+        categories: [],
+        price: [DEFAULT_MIN_PRICE, DEFAULT_MAX_PRICE],
+        inStock: false,
+      });
+      setSearch("");
+    }
     window.addEventListener(
       "product-search",
       handleGlobalSearch as EventListener
+    );
+    window.addEventListener(
+      "clear-filters",
+      handleClearFilters as EventListener
     );
     return () =>
       window.removeEventListener(
         "product-search",
         handleGlobalSearch as EventListener
+      );
+
+    return () =>
+      window.removeEventListener(
+        "clear-filters",
+        handleClearFilters as EventListener
       );
   }, []);
 
@@ -41,8 +60,9 @@ export default function Home() {
     <main className="flex flex-col md:flex-row md:items-start md:justify-center min-h-screen p-2 sm:p-4 md:p-6 md:ml-4">
       <FiltersSidebar filters={filters} setFilters={setFilters} />
       <section className="flex-1 w-full ml-0 content-offset-md">
-        <h1 className="text-3xl font-bold mb-8 tablet-title-margin large-tablet-title-margin">
-          Welcome to the Food Marketplace
+        <Breadcrumb items={[{ label: "Home", href: "/" }, { label: "Shop" }]} />
+        <h1 className="text-3xl font-bold mb-6 tablet-title-margin large-tablet-title-margin">
+          Shop
         </h1>
         {/* Search bar removed from here */}
         <SortingBar

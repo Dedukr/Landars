@@ -78,11 +78,10 @@ chmod 600 .env
 # Create backup directory
 mkdir -p db_backups
 
-# Backup SQLite database
-cp backend/db/db_prod.sqlite3 db_backups/db_backup_$(date +%Y-%m-%d_%H-%M-%S).sqlite3
-
-# Also backup any other SQLite files
-cp backend/db/db.sqlite3 db_backups/db_backup_$(date +%Y-%m-%d_%H-%M-%S)_alt.sqlite3 2>/dev/null || true
+# Note: SQLite databases have been removed as part of the PostgreSQL migration
+# If you still have SQLite files, backup them before proceeding:
+# cp backend/db/db_prod.sqlite3 db_backups/db_backup_$(date +%Y-%m-%d_%H-%M-%S).sqlite3 2>/dev/null || true
+# cp backend/db/db.sqlite3 db_backups/db_backup_$(date +%Y-%m-%d_%H-%M-%S)_alt.sqlite3 2>/dev/null || true
 ```
 
 ### 5.2 Stop Current Services

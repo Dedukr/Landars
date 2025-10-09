@@ -5,6 +5,7 @@ from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.utils import timezone
 
 
 # ProductCategory model
@@ -244,27 +245,112 @@ class OrderItem(models.Model):
         }
 
 
-# Wishlist model
+# Wishlist model (similar to Cart)
 class Wishlist(models.Model):
-    user = models.ForeignKey(
+    user = models.OneToOneField(
         CustomUser, on_delete=models.CASCADE, related_name="wishlist"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = "Wishlists"
+
+    def __str__(self):
+        return f"Wishlist for {self.user.name}"
+
+    @property
+    def total_items(self):
+        """Calculate the total number of items in the wishlist."""
+        return self.items.count()
+
+    def get_wishlist_details(self):
+        return {
+            "id": self.id,
+            "user": self.user.name,
+            "total_items": self.total_items,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+            "items": [item.get_wishlist_item_details() for item in self.items.all()],
+        }
+
+
+# WishlistItem model (similar to CartItem)
+class WishlistItem(models.Model):
+    wishlist = models.ForeignKey(
+        Wishlist, related_name="items", on_delete=models.CASCADE
     )
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     added_date = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        verbose_name_plural = "Wishlists"
+        verbose_name_plural = "Wishlist Items"
         ordering = ["-added_date"]
-        unique_together = ["user", "product"]  # Prevent duplicate entries
+        unique_together = [
+            "wishlist",
+            "product",
+        ]  # Prevent duplicate products in wishlist
 
     def __str__(self):
-        return f"{self.user.name} - {self.product.name}"
+        return f"{self.product.name} in {self.wishlist.user.name}'s wishlist"
 
-    def get_wishlist_details(self):
+    def get_wishlist_item_details(self):
         return {
             "id": self.id,
             "product_id": self.product.id,
             "product_name": self.product.name,
             "product_price": str(self.product.price),
+            "product_description": self.product.description,
+            "product_categories": self.product.get_categories(),
             "added_date": self.added_date.isoformat(),
         }
+
+
+# Cart model
+class Cart(models.Model):
+    user = models.OneToOneField(
+        CustomUser, on_delete=models.CASCADE, related_name="cart"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = "Carts"
+
+    def __str__(self):
+        return f"Cart for {self.user.name}"
+
+    @property
+    def total_price(self):
+        """Calculate the total price of all items in the cart."""
+        return sum(item.get_total_price() for item in self.items.all())
+
+    @property
+    def total_items(self):
+        """Calculate the total number of items in the cart."""
+        return sum(item.quantity for item in self.items.all())
+
+
+# CartItem model
+class CartItem(models.Model):
+    cart = models.ForeignKey(Cart, related_name="items", on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0.01)],
+        default=1,
+    )
+    added_date = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = "Cart Items"
+        ordering = ["-added_date"]
+        unique_together = ["cart", "product"]  # Prevent duplicate products in cart
+
+    def __str__(self):
+        return f"{self.product.name} x {self.quantity}"
+
+    def get_total_price(self):
+        """Calculate the total price for this cart item."""
+        return round(self.product.price * self.quantity, 2)

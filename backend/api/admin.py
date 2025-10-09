@@ -14,9 +14,18 @@ from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
-from weasyprint import HTML
 
-from .models import CustomUser, Order, OrderItem, Product, ProductCategory
+from .models import (
+    Cart,
+    CartItem,
+    CustomUser,
+    Order,
+    OrderItem,
+    Product,
+    ProductCategory,
+    Wishlist,
+    WishlistItem,
+)
 
 
 @admin.register(Product)
@@ -80,6 +89,78 @@ class ProductCategoryAdmin(admin.ModelAdmin):
     list_filter = [ParentCategoryFilter]
     search_fields = ["name"]
     ordering = ["parent__name", "name"]
+
+
+class CartItemInline(admin.TabularInline):
+    model = CartItem
+    extra = 0
+    fields = ["product", "quantity", "added_date"]
+    readonly_fields = ["added_date"]
+    autocomplete_fields = ["product"]
+
+
+@admin.register(Cart)
+class CartAdmin(admin.ModelAdmin):
+    list_display = ["user", "total_items", "total_price", "created_at", "updated_at"]
+    list_filter = ["created_at", "updated_at"]
+    search_fields = ["user__name", "user__email"]
+    readonly_fields = ["created_at", "updated_at", "total_items", "total_price"]
+    inlines = [CartItemInline]
+
+    def total_items(self, obj):
+        return obj.total_items
+
+    total_items.short_description = "Total Items"
+
+    def total_price(self, obj):
+        return f"£{obj.total_price:.2f}"
+
+    total_price.short_description = "Total Price"
+
+
+@admin.register(CartItem)
+class CartItemAdmin(admin.ModelAdmin):
+    list_display = ["cart", "product", "quantity", "get_total_price", "added_date"]
+    list_filter = ["added_date"]
+    search_fields = ["cart__user__name", "product__name"]
+    readonly_fields = ["added_date", "get_total_price"]
+    autocomplete_fields = ["cart", "product"]
+
+    def get_total_price(self, obj):
+        return f"£{obj.get_total_price():.2f}"
+
+    get_total_price.short_description = "Total Price"
+
+
+class WishlistItemInline(admin.TabularInline):
+    model = WishlistItem
+    extra = 0
+    fields = ["product", "added_date"]
+    readonly_fields = ["added_date"]
+    autocomplete_fields = ["product"]
+
+
+@admin.register(Wishlist)
+class WishlistAdmin(admin.ModelAdmin):
+    list_display = ["user", "total_items", "created_at", "updated_at"]
+    list_filter = ["created_at", "updated_at"]
+    search_fields = ["user__name", "user__email"]
+    readonly_fields = ["created_at", "updated_at", "total_items"]
+    inlines = [WishlistItemInline]
+
+    def total_items(self, obj):
+        return obj.total_items
+
+    total_items.short_description = "Total Items"
+
+
+@admin.register(WishlistItem)
+class WishlistItemAdmin(admin.ModelAdmin):
+    list_display = ["wishlist", "product", "added_date"]
+    list_filter = ["added_date"]
+    search_fields = ["wishlist__user__name", "product__name"]
+    readonly_fields = ["added_date"]
+    autocomplete_fields = ["wishlist", "product"]
 
 
 class DateFilter(admin.SimpleListFilter):

@@ -1,4 +1,6 @@
 // CSRF token utility functions
+// API configuration
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
 let csrfToken: string | null = null;
 
@@ -11,9 +13,7 @@ export async function fetchCSRFToken(): Promise<string> {
   }
 
   try {
-    // Use the nginx proxy directly since Next.js rewrites have issues with trailing slashes
-    const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
-    const response = await fetch(`${baseUrl}/api/auth/csrf-token/`, {
+    const response = await fetch(`${API_BASE_URL}/api/auth/csrf-token/`, {
       method: "GET",
       credentials: "include", // Important for CSRF cookies
     });
@@ -55,7 +55,7 @@ export function getCSRFTokenFromCookie(): string | null {
 }
 
 /**
- * Make an authenticated API request with CSRF token
+ * Make an authenticated API request with CSRF token and optional JWT
  */
 export async function makeAuthenticatedRequest(
   url: string,
@@ -71,9 +71,21 @@ export async function makeAuthenticatedRequest(
   // Prepare headers
   const headers = new Headers(options.headers);
   headers.set("X-CSRFToken", token);
-  headers.set("Content-Type", "application/json");
 
-  // Make request with CSRF token
+  // Set Content-Type if not already set
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  // Add JWT token from localStorage if available and not already in headers
+  if (typeof window !== "undefined" && !headers.has("Authorization")) {
+    const authToken = localStorage.getItem("authToken");
+    if (authToken) {
+      headers.set("Authorization", `Bearer ${authToken}`);
+    }
+  }
+
+  // Make request with CSRF token and JWT
   return fetch(url, {
     ...options,
     headers,

@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { CompactThemeToggle } from "@/components/ThemeToggle";
 
 const navLinks = [
   { name: "Shop", href: "/" },
@@ -87,8 +88,9 @@ export default function Header() {
         {/* Main header content */}
         <div className="flex items-center justify-between px-4 py-2 md:px-8 md:py-3 gap-4">
           {/* Logo - responsive sizing */}
-          <div
-            className="flex items-center gap-2 md:gap-3 flex-shrink-0 min-w-0"
+          <Link
+            href="/"
+            className="flex items-center gap-2 md:gap-3 flex-shrink-0 min-w-0 hover:opacity-80 transition-opacity"
             style={{ minWidth: "140px" }}
           >
             <Image
@@ -104,7 +106,7 @@ export default function Header() {
             >
               Landar&apos;s Food
             </span>
-          </div>
+          </Link>
 
           {/* Desktop Navigation - hidden on mobile */}
           <nav className="hidden lg:flex items-center gap-8">
@@ -125,8 +127,31 @@ export default function Header() {
             ))}
           </nav>
 
-          {/* Right side - Cart and User/Auth */}
+          {/* Right side - Theme Toggle, Cart and User/Auth */}
           <div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
+            {/* Theme Toggle */}
+            <CompactThemeToggle className="hidden sm:block" />
+
+            {/* Wishlist Icon */}
+            <Link
+              href="/wishlist"
+              className="relative group p-2"
+              aria-label="Wishlist"
+              style={{ color: "var(--primary)" }}
+            >
+              <svg
+                width="20"
+                height="20"
+                className="md:w-6 md:h-6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+              >
+                <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+              </svg>
+            </Link>
+
             {/* Cart Icon */}
             <Link
               href="/cart"
@@ -157,7 +182,7 @@ export default function Header() {
 
             {/* Mobile Menu Button */}
             <button
-              className="lg:hidden p-2 rounded-md hover:bg-gray-100 focus:outline-none"
+              className="lg:hidden p-2 hover:bg-gray-100 rounded transition-colors"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               aria-label="Toggle mobile menu"
             >
@@ -205,7 +230,7 @@ export default function Header() {
                 {/* Desktop Dropdown */}
                 {menuOpen && (
                   <div
-                    className="absolute right-0 mt-2 w-48 rounded-lg shadow-lg animate-fade-in z-[60]"
+                    className="absolute right-0 mt-2 w-48 rounded-lg overflow-hidden shadow-lg animate-fade-in z-[60]"
                     style={{
                       background: "var(--card-bg)",
                       border: "1px solid var(--sidebar-border)",
@@ -235,8 +260,17 @@ export default function Header() {
                         ) : (
                           <button
                             key={item.name}
-                            className="block w-full text-left px-4 transition-colors hover:opacity-80"
-                            style={{ color: "var(--foreground)" }}
+                            className="block w-full text-left px-4 py-2 transition-colors hover:opacity-80 rounded-b-lg"
+                            style={{
+                              color:
+                                item.name === "Log Out"
+                                  ? "white"
+                                  : "var(--foreground)",
+                              backgroundColor:
+                                item.name === "Log Out"
+                                  ? "var(--accent)"
+                                  : "transparent",
+                            }}
                             onClick={() => handleMenuClick(item)}
                           >
                             {item.name}
@@ -252,19 +286,13 @@ export default function Header() {
               <div className="hidden lg:flex items-center gap-2">
                 <Link
                   href="/auth?mode=signin"
-                  className="px-3 py-1 text-sm font-medium rounded-md transition-colors"
-                  style={{
-                    color: "var(--primary)",
-                    border: "1px solid var(--primary)",
-                    background: "transparent",
-                  }}
+                  className="text-gray-700 hover:text-blue-600 transition-colors"
                 >
                   Sign In
                 </Link>
                 <Link
                   href="/auth?mode=signup"
-                  className="px-3 py-1 text-sm font-medium rounded-md text-white transition-colors"
-                  style={{ background: "var(--primary)" }}
+                  className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
                 >
                   Sign Up
                 </Link>
@@ -284,6 +312,17 @@ export default function Header() {
             }}
           >
             <div className="px-4 py-4 space-y-4">
+              {/* Mobile Theme Toggle */}
+              <div className="flex items-center justify-between pb-2 border-b border-gray-200">
+                <span
+                  className="text-sm font-medium"
+                  style={{ color: "var(--foreground)" }}
+                >
+                  Theme
+                </span>
+                <CompactThemeToggle />
+              </div>
+
               {/* Mobile Navigation Links */}
               <nav className="space-y-2">
                 {navLinks.map((link) => (
@@ -297,6 +336,14 @@ export default function Header() {
                     {link.name}
                   </Link>
                 ))}
+                <Link
+                  href="/wishlist"
+                  className="block px-3 py-2 text-base font-medium rounded-md transition-colors hover:opacity-80"
+                  style={{ color: "var(--foreground)" }}
+                  onClick={closeMobileMenu}
+                >
+                  Wishlist
+                </Link>
               </nav>
 
               {/* Mobile User Section */}
@@ -327,7 +374,16 @@ export default function Header() {
                         <button
                           key={item.name}
                           className="block w-full text-left px-3 py-2 text-base font-medium rounded-md transition-colors hover:opacity-80"
-                          style={{ color: "var(--foreground)" }}
+                          style={{
+                            color:
+                              item.name === "Log Out"
+                                ? "white"
+                                : "var(--foreground)",
+                            backgroundColor:
+                              item.name === "Log Out"
+                                ? "var(--accent)"
+                                : "transparent",
+                          }}
                           onClick={() => handleMenuClick(item)}
                         >
                           {item.name}
@@ -341,21 +397,15 @@ export default function Header() {
                 <div className="pt-4 border-t border-gray-200 space-y-2">
                   <Link
                     href="/auth?mode=signin"
-                    className="block w-full text-center px-4 py-2 text-base font-medium rounded-md transition-colors"
-                    style={{
-                      color: "var(--primary)",
-                      border: "1px solid var(--primary)",
-                      background: "transparent",
-                    }}
                     onClick={() => setMobileMenuOpen(false)}
+                    className="block w-full text-center py-2 px-4 border border-gray-300 rounded hover:bg-gray-50 transition-colors"
                   >
                     Sign In
                   </Link>
                   <Link
                     href="/auth?mode=signup"
-                    className="block w-full text-center px-4 py-2 text-base font-medium rounded-md text-white transition-colors"
-                    style={{ background: "var(--primary)" }}
                     onClick={() => setMobileMenuOpen(false)}
+                    className="block w-full text-center py-2 px-4 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
                   >
                     Sign Up
                   </Link>

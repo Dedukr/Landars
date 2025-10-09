@@ -9,6 +9,7 @@ A comprehensive food platform with Django backend, Next.js frontend, and Postgre
 - **Database**: PostgreSQL with advanced backup and recovery
 - **Deployment**: Docker containerized with Nginx reverse proxy
 - **Backup System**: Comprehensive backup with Point-in-Time Recovery (PITR)
+- **Security**: Enterprise-grade authentication with JWT, rate limiting, and account lockout
 
 ## Quick Start
 
@@ -120,8 +121,44 @@ The platform includes a comprehensive backup system:
 
 For complete backup documentation, see [BACKUP_README.md](BACKUP_README.md).
 
+## Security
+
+This platform implements comprehensive security measures including:
+
+- **JWT Authentication**: Token-based auth with automatic expiration
+- **Rate Limiting**: Protection against brute force attacks
+- **Account Lockout**: Automatic blocking after failed login attempts
+- **Password Complexity**: Strong password requirements (12+ characters)
+- **Security Headers**: HTTPS, HSTS, XSS protection, and more
+- **Security Logging**: Comprehensive audit trail of all authentication events
+
+For detailed security documentation, see:
+
+- [SECURITY.md](SECURITY.md) - Complete security implementation guide
+- [SECURITY_IMPROVEMENTS_SUMMARY.md](SECURITY_IMPROVEMENTS_SUMMARY.md) - Summary of all security changes
+
+### Quick Security Setup
+
+```bash
+# Generate secure SECRET_KEY
+cd backend
+python generate_secret_key.py
+
+# Copy to .env file
+cp ../env.template ../.env
+# Edit .env and add the generated SECRET_KEY
+
+# Install security dependencies
+pip install -r requirements.txt
+
+# Run migrations for security features
+python manage.py migrate
+```
+
 ## Documentation
 
+- [SECURITY.md](SECURITY.md) - Security implementation and best practices
+- [SECURITY_IMPROVEMENTS_SUMMARY.md](SECURITY_IMPROVEMENTS_SUMMARY.md) - Security changes summary
 - [BACKUP_README.md](BACKUP_README.md) - Complete backup and recovery guide
 - [CI_CD_SETUP.md](CI_CD_SETUP.md) - Production deployment guide
 - [PITR_README.md](PITR_README.md) - Technical PITR implementation details

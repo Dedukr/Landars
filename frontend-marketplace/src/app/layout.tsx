@@ -2,9 +2,12 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
+import AuthWrapper from "@/components/AuthWrapper";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { CartProvider } from "@/contexts/CartContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { WishlistProvider } from "@/contexts/WishlistContext";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -43,14 +46,20 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${inter.variable} antialiased`}
       >
-        <AuthProvider>
-          <CartProvider>
-            <WishlistProvider>
-              <Header />
-              {children}
-            </WishlistProvider>
-          </CartProvider>
-        </AuthProvider>
+        <ErrorBoundary>
+          <ThemeProvider>
+            <AuthProvider>
+              <AuthWrapper>
+                <CartProvider>
+                  <WishlistProvider>
+                    <Header />
+                    {children}
+                  </WishlistProvider>
+                </CartProvider>
+              </AuthWrapper>
+            </AuthProvider>
+          </ThemeProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

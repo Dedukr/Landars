@@ -1,18 +1,59 @@
 @import "tailwindcss";
 
 :root {
-  /* Landar's Food brand palette (light) */
-  --background: #f5e6cc; /* warm beige */
-  --foreground: #1b1b1b; /* rich black */
-  --primary: #111111; /* banner black */
+  /* Light theme base (refined) */
+  --background: #faf4e8; /* airy warm beige */
+  --foreground: #1a1a1a; /* deep neutral for text */
+  --primary: #111111; /* brand banner black */
   --primary-hover: #2b2b2b; /* slightly lighter for hover */
-  --sidebar-bg: #fff7e8; /* soft cream for panels */
-  --sidebar-border: #e1caa6; /* muted beige border */
-  --card-bg: #ffffff; /* product cards stay white for contrast */
-  --card-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
-  --accent: #d9a441; /* gold accent from logo */
+  --sidebar-bg: #fff9ef; /* softer cream panels */
+  --sidebar-border: #ead9bf; /* subtle beige border */
+  --card-bg: #ffffff; /* strong contrast on cards */
+  --card-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  --accent: #d9a441; /* brand gold accent */
+  --sort-bg: #ffffff; /* white sort background */
+  --sort-border-radius: 9999px; /* elliptical sort button */
+  --sort-arrow-color: #ffffff; /* white arrow for visibility */
+  --sort-selected-bg: var(--primary); /* default selected option bg (light) */
+  --sort-selected-fg: #ffffff; /* default selected option text (light) */
   /* Sidebar width used for responsive content offset */
   --sidebar-width: 18rem;
+}
+
+/* Light theme (explicit) */
+.light {
+  --background: #faf4e8; /* airy warm beige */
+  --foreground: #1a1a1a; /* deep neutral for text */
+  --primary: #111111; /* brand banner black */
+  --primary-hover: #2b2b2b; /* slightly lighter for hover */
+  --sidebar-bg: #fff9ef; /* softer cream panels */
+  --sidebar-border: #ead9bf; /* subtle beige border */
+  --card-bg: #ffffff; /* strong contrast on cards */
+  --card-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  --accent: #d9a441; /* brand gold accent */
+  --sort-bg: #ffffff; /* white sort background */
+  --sort-border-radius: 9999px; /* elliptical sort button */
+  --sort-arrow-color: #ffffff; /* white arrow for visibility */
+  --sort-selected-bg: var(--primary);
+  --sort-selected-fg: #ffffff;
+}
+
+/* Dark theme (explicit) */
+.dark {
+  --background: #0f0f0f; /* deeper dark base */
+  --foreground: #eae6df; /* soft warm light text */
+  --primary: #caa977; /* brand gold, slightly muted */
+  --primary-hover: #b99760; /* darker gold for hover */
+  --sidebar-bg: #171717; /* elevated panel */
+  --sidebar-border: #2a2a2a; /* subtle separation */
+  --card-bg: #141414; /* card background */
+  --card-shadow: 0 8px 26px rgba(0, 0, 0, 0.45);
+  --accent: #caa977; /* align accent to primary in dark */
+  --sort-bg: #2a2520; /* darker beige sort background */
+  --sort-border-radius: 9999px; /* elliptical sort button */
+  --sort-arrow-color: #ffffff; /* make sort arrow white in dark mode */
+  --sort-selected-bg: var(--accent); /* beige selected option in dark */
+  --sort-selected-fg: #1a1a1a; /* dark text on beige */
 }
 
 @theme inline {
@@ -22,18 +63,20 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* System preference fallback (only when no explicit theme is set) */
 @media (prefers-color-scheme: dark) {
-  :root {
-    /* Dark theme tuned to brand */
-    --background: #121212;
-    --foreground: #f3f3f3;
-    --primary: #b8956a; /* even darker beige for dark theme */
-    --primary-hover: #a6855a; /* even darker beige for hover */
-    --sidebar-bg: #1a1a1a;
+  :root:not(.light):not(.dark) {
+    /* Dark fallback tuned to brand */
+    --background: #0f0f0f;
+    --foreground: #eae6df;
+    --primary: #caa977;
+    --primary-hover: #b99760;
+    --sidebar-bg: #171717;
     --sidebar-border: #2a2a2a;
-    --card-bg: #1f1f1f;
-    --card-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
-    --accent: #b8956a; /* even darker beige for dark theme */
+    --card-bg: #141414;
+    --card-shadow: 0 8px 26px rgba(0, 0, 0, 0.45);
+    --accent: #caa977;
+    --sort-bg: #2a2520;
   }
 }
 
@@ -57,12 +100,16 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+  font-size: 0.85em; /* 15% reduction (100% - 15% = 85%) */
 }
 
 header {
   background: var(--sidebar-bg);
   color: var(--foreground);
   border-bottom: 1px solid var(--sidebar-border);
+  transition: background-color 0.3s ease, color 0.3s ease,
+    border-color 0.3s ease;
 }
 
 header .shadow-sm {
@@ -92,7 +139,7 @@ header .backdrop-blur {
 }
 
 .navbar .navbar-title {
-  font-size: 1.5rem;
+  font-size: 1.275rem; /* 1.5rem * 0.85 = 1.275rem */
   font-weight: bold;
   margin-right: 2rem;
 }
@@ -107,7 +154,7 @@ header .backdrop-blur {
   text-decoration: none;
   color: var(--primary);
   font-weight: 500;
-  font-size: 1.1rem;
+  font-size: 0.935rem; /* 1.1rem * 0.85 = 0.935rem */
   font-family: var(--font-inter), "Segoe UI", "Roboto", sans-serif;
   transition: color 0.2s;
 }
@@ -122,24 +169,6 @@ aside,
   background: var(--sidebar-bg);
   color: var(--foreground);
   border-right: 1px solid var(--sidebar-border);
-}
-
-button,
-.btn,
-.filter-btn {
-  background: var(--primary);
-  color: #fff;
-  border: none;
-  border-radius: 0.5rem;
-  padding: 0.5rem 1.25rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-button:hover,
-.btn:hover,
-.filter-btn:hover {
-  background: var(--primary-hover);
 }
 
 input[type="checkbox"],
@@ -232,4 +261,65 @@ input:focus {
   .large-tablet-title-margin {
     margin-bottom: 1.5rem !important; /* 24px */
   }
+}
+
+/* Ensure selected sort option is styled and always elliptical */
+.light [role="listbox"] [role="option"][aria-selected="true"],
+.light button[data-sort-selected="true"] {
+  color: var(--sort-selected-fg) !important;
+  background: var(--sort-selected-bg) !important;
+  border-radius: 9999px !important; /* rounded-full - always elliptical */
+}
+
+/* Always elliptical for all sort options for visual consistency */
+[role="listbox"] [role="option"] {
+  border-radius: 9999px; /* rounded-full - always elliptical */
+}
+
+/* Force elliptical styling for sort button in light mode with higher specificity */
+.light button[data-sort-selected="true"] {
+  border-radius: 9999px !important; /* Force elliptical */
+}
+
+/* Force elliptical styling for all sort buttons regardless of theme */
+button[data-sort-selected="true"] {
+  border-radius: 9999px !important; /* Force elliptical */
+}
+
+/* Additional override for any potential Tailwind conflicts */
+.rounded-full {
+  border-radius: 9999px !important;
+}
+
+/* Ultra-specific override for sort button */
+button[data-sort-selected="true"].rounded-full {
+  border-radius: 9999px !important;
+}
+
+/* Force elliptical for sort button with maximum specificity */
+.light button[data-sort-selected="true"].rounded-full {
+  border-radius: 9999px !important;
+}
+
+/* Override any potential conflicting styles */
+button[data-sort-selected="true"] {
+  border-radius: 9999px !important;
+}
+
+/* Dark mode selected option visuals */
+.dark [role="listbox"] [role="option"][aria-selected="true"],
+.dark button[data-sort-selected="true"] {
+  background: var(--sort-selected-bg) !important;
+  color: var(--sort-selected-fg) !important;
+}
+
+/* Force white arrow in both light and dark modes for visibility */
+button[data-sort-selected="true"] svg,
+.light button[data-sort-selected="true"] svg,
+.dark button[data-sort-selected="true"] svg,
+button[data-sort-selected="true"] svg[style*="color"],
+.light button[data-sort-selected="true"] svg[style*="color"],
+.dark button[data-sort-selected="true"] svg[style*="color"] {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
 }

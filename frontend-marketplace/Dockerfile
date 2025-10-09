@@ -2,6 +2,10 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
+# Accept build argument for API base URL
+ARG NEXT_PUBLIC_API_BASE_URL
+ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
+
 # Install dependencies and build app in one layer for better caching
 COPY package.json package-lock.json ./
 RUN npm ci --prefer-offline --no-audit --progress=false

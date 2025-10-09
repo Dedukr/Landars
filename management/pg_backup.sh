@@ -109,6 +109,9 @@ PROJECT_DIR="${PROJECT_DIR:-$(pwd)}"
 BACKUP_BASE_DIR="${BACKUP_BASE_DIR:-${PROJECT_DIR}/db_backups}"
 LEGACY_BACKUP_DIR="${LEGACY_BACKUP_DIR:-${PROJECT_DIR}/db_backups/sqlite}"
 ARCHIVE_DIR="${ARCHIVE_DIR:-${PROJECT_DIR}/db_backups/wal_archive}"
+# Feature flags to control legacy/pitr behavior safely
+ENABLE_LEGACY_SQLITE="${ENABLE_LEGACY_SQLITE:-false}"
+ENABLE_PITR="${ENABLE_PITR:-false}"
 S3_BACKUP_DIR="${S3_BACKUP_DIR:-database-backups}"
 
 # Retention policies
@@ -209,8 +212,12 @@ check_container_running() {
 # Create backup directories
 ensure_backup_dirs() {
     mkdir -p "$BACKUP_BASE_DIR/postgresql"
-    mkdir -p "$LEGACY_BACKUP_DIR"
-    mkdir -p "$ARCHIVE_DIR"
+    if [[ "$ENABLE_LEGACY_SQLITE" == "true" ]]; then
+        mkdir -p "$LEGACY_BACKUP_DIR"
+    fi
+    if [[ "$ENABLE_PITR" == "true" ]]; then
+        mkdir -p "$ARCHIVE_DIR"
+    fi
     log_debug "Backup directories ensured"
 }
 
@@ -753,8 +760,8 @@ create_full_backup() {
     
     echo ""
     
-    # SQLite backup (if container available)
-    if check_container_running "$SQLITE_CONTAINER" 2>/dev/null; then
+    # SQLite backup (if enabled and container available)
+    if [[ "$ENABLE_LEGACY_SQLITE" == "true" ]] && check_container_running "$SQLITE_CONTAINER" 2>/dev/null; then
         ((total_count++))
         if create_sqlite_backup; then
             ((success_count++))
@@ -764,7 +771,7 @@ create_full_backup() {
     
     # PITR backup (if available)
     local container
-    if container=$(get_postgres_container 2>/dev/null) && docker exec "$container" test -f "/usr/local/bin/base-backup.sh" 2>/dev/null; then
+    if [[ "$ENABLE_PITR" == "true" ]] && container=$(get_postgres_container 2>/dev/null) && docker exec "$container" test -f "/usr/local/bin/base-backup.sh" 2>/dev/null; then
         ((total_count++))
         if create_pitr_backup; then
             ((success_count++))
@@ -807,8 +814,12 @@ cleanup_all() {
     log_info "🧹 Running comprehensive cleanup..."
     
     cleanup_old_postgresql_backups
-    cleanup_old_sqlite_backups
-    cleanup_old_pitr_backups
+    if [[ "$ENABLE_LEGACY_SQLITE" == "true" ]]; then
+        cleanup_old_sqlite_backups
+    fi
+    if [[ "$ENABLE_PITR" == "true" ]]; then
+        cleanup_old_pitr_backups
+    fi
     cleanup_s3_backups
     
     log_success "✅ Comprehensive cleanup completed"

@@ -3,7 +3,17 @@ import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
-import { makeAuthenticatedRequest } from "@/utils/csrf";
+import { httpClient } from "@/utils/httpClient";
+
+interface AuthResponse {
+  access: string;
+  refresh: string;
+  user: {
+    id: number;
+    name: string;
+    email: string;
+  };
+}
 
 function AuthForm() {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -16,6 +26,8 @@ function AuthForm() {
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const router = useRouter();
   const { login } = useAuth();
 
@@ -35,6 +47,21 @@ function AuthForm() {
     });
   };
 
+  const validatePassword = (password: string): string | null => {
+    if (password.length < 8) {
+      return "Password must be at least 8 characters long";
+    }
+
+    const hasLetter = /[a-zA-Z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+
+    if (!hasLetter || !hasNumber) {
+      return "Password must contain at least one letter and one number";
+    }
+
+    return null;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -48,55 +75,55 @@ function AuthForm() {
         return;
       }
 
-      // Validate password length
-      if (formData.password.length < 8) {
-        setError("Password must be at least 8 characters long");
+      // Validate password strength
+      const passwordError = validatePassword(formData.password);
+      if (passwordError) {
+        setError(passwordError);
         setLoading(false);
         return;
       }
 
       try {
-        const response = await makeAuthenticatedRequest("/api/auth/register/", {
-          method: "POST",
-          body: JSON.stringify({
+        const data = await httpClient.post<AuthResponse>(
+          "/api/auth/register/",
+          {
             name: formData.name,
             email: formData.email,
             password: formData.password,
-          }),
-        });
+          }
+        );
 
-        const data = await response.json();
+        // Handle JWT tokens
+        login({ access: data.access, refresh: data.refresh }, data.user);
+        router.push("/");
+      } catch (error: unknown) {
+        // Display error message from server
+        const errorMessage =
+          error instanceof Error
+            ? Array.isArray(error.message)
+              ? error.message.join(", ")
+              : error.message
+            : "Registration failed";
 
-        if (response.ok) {
-          login(data.token, data.user);
-          router.push("/");
-        } else {
-          setError(data.error || "Registration failed");
-        }
-      } catch {
-        setError("Network error. Please try again.");
+        setError(errorMessage);
+        // Registration error occurred
       }
     } else {
       // Sign in logic
       try {
-        const response = await makeAuthenticatedRequest("/api/auth/login/", {
-          method: "POST",
-          body: JSON.stringify({
-            email: formData.email,
-            password: formData.password,
-          }),
+        const data = await httpClient.post<AuthResponse>("/api/auth/login/", {
+          email: formData.email,
+          password: formData.password,
         });
 
-        const data = await response.json();
-
-        if (response.ok) {
-          login(data.token, data.user);
-          router.push("/");
-        } else {
-          setError(data.error || "Login failed");
-        }
-      } catch {
-        setError("Network error. Please try again.");
+        // Handle JWT tokens
+        login({ access: data.access, refresh: data.refresh }, data.user);
+        router.push("/");
+      } catch (error: unknown) {
+        const errorMessage =
+          error instanceof Error ? error.message : "Login failed";
+        setError(errorMessage);
+        // Login error occurred
       }
     }
 
@@ -218,24 +245,79 @@ function AuthForm() {
               >
                 Password
               </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete={isSignUp ? "new-password" : "current-password"}
-                required
-                className="mt-1 appearance-none relative block w-full px-3 py-2 border rounded-md focus:outline-none focus:z-10 sm:text-sm"
-                style={{
-                  borderColor: "var(--sidebar-border)",
-                  backgroundColor: "var(--card-bg)",
-                  color: "var(--foreground)",
-                }}
-                placeholder={
-                  isSignUp ? "Password (min 8 characters)" : "Password"
-                }
-                value={formData.password}
-                onChange={handleChange}
-              />
+              <div className="flex items-end gap-2">
+                <input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete={isSignUp ? "new-password" : "current-password"}
+                  required
+                  className="mt-1 appearance-none relative block w-full px-3 py-2 border rounded-md focus:outline-none focus:z-10 sm:text-sm"
+                  style={{
+                    borderColor: "var(--sidebar-border)",
+                    backgroundColor: "var(--card-bg)",
+                    color: "var(--foreground)",
+                  }}
+                  placeholder={
+                    isSignUp
+                      ? "Password (min 8 characters, letters and numbers)"
+                      : "Password"
+                  }
+                  value={formData.password}
+                  onChange={handleChange}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="flex items-center justify-center cursor-pointer hover:opacity-70 transition-opacity border-0 bg-transparent"
+                  style={{
+                    color: "var(--foreground)",
+                    background: "none",
+                    paddingLeft: "8px",
+                    paddingRight: "8px",
+                    paddingTop: "4px",
+                    paddingBottom: "4px",
+                  }}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                      className="w-6 h-6"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
+                      />
+                    </svg>
+                  ) : (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                      className="w-6 h-6"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
+                      />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                      />
+                    </svg>
+                  )}
+                </button>
+              </div>
             </div>
             {isSignUp && (
               <div>
@@ -246,22 +328,77 @@ function AuthForm() {
                 >
                   Confirm Password
                 </label>
-                <input
-                  id="confirmPassword"
-                  name="confirmPassword"
-                  type="password"
-                  autoComplete="new-password"
-                  required={isSignUp}
-                  className="mt-1 appearance-none relative block w-full px-3 py-2 border rounded-md focus:outline-none focus:z-10 sm:text-sm"
-                  style={{
-                    borderColor: "var(--sidebar-border)",
-                    backgroundColor: "var(--card-bg)",
-                    color: "var(--foreground)",
-                  }}
-                  placeholder="Confirm password"
-                  value={formData.confirmPassword}
-                  onChange={handleChange}
-                />
+                <div className="flex items-end gap-2">
+                  <input
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    required={isSignUp}
+                    className="mt-1 appearance-none relative block w-full px-3 py-2 border rounded-md focus:outline-none focus:z-10 sm:text-sm"
+                    style={{
+                      borderColor: "var(--sidebar-border)",
+                      backgroundColor: "var(--card-bg)",
+                      color: "var(--foreground)",
+                    }}
+                    placeholder="Confirm password"
+                    value={formData.confirmPassword}
+                    onChange={handleChange}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="flex items-center justify-center cursor-pointer hover:opacity-70 transition-opacity border-0 bg-transparent"
+                    style={{
+                      color: "var(--foreground)",
+                      background: "none",
+                      paddingLeft: "8px",
+                      paddingRight: "8px",
+                      paddingTop: "4px",
+                      paddingBottom: "4px",
+                    }}
+                    aria-label={
+                      showConfirmPassword ? "Hide password" : "Show password"
+                    }
+                  >
+                    {showConfirmPassword ? (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth={1.5}
+                        stroke="currentColor"
+                        className="w-6 h-6"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
+                        />
+                      </svg>
+                    ) : (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth={1.5}
+                        stroke="currentColor"
+                        className="w-6 h-6"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
+                        />
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -276,22 +413,7 @@ function AuthForm() {
             <button
               type="submit"
               disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              style={{
-                backgroundColor: "var(--primary)",
-                borderColor: "var(--primary)",
-              }}
-              onMouseEnter={(e) => {
-                if (!loading) {
-                  e.currentTarget.style.backgroundColor =
-                    "var(--primary-hover)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!loading) {
-                  e.currentTarget.style.backgroundColor = "var(--primary)";
-                }
-              }}
+              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {loading
                 ? isSignUp
