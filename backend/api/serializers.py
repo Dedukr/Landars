@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from .models import (
@@ -54,7 +56,11 @@ class ProductSerializer(serializers.ModelSerializer):
 class WishlistItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source="product.name", read_only=True)
     product_price = serializers.DecimalField(
-        source="product.price", max_digits=10, decimal_places=2, read_only=True
+        source="product.price",
+        max_digits=10,
+        decimal_places=2,
+        min_value=Decimal("0"),
+        read_only=True,
     )
     product_description = serializers.CharField(
         source="product.description", read_only=True
@@ -105,7 +111,11 @@ class WishlistSerializer(serializers.ModelSerializer):
 class CartItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source="product.name", read_only=True)
     product_price = serializers.DecimalField(
-        source="product.price", max_digits=10, decimal_places=2, read_only=True
+        source="product.price",
+        max_digits=10,
+        decimal_places=2,
+        min_value=Decimal("0"),
+        read_only=True,
     )
     product_image_url = serializers.SerializerMethodField()
     total_price = serializers.SerializerMethodField()

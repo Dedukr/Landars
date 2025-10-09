@@ -145,7 +145,8 @@ def login_view(request):
                 f"Failed login attempt for email: {email} from IP: {request.META.get('REMOTE_ADDR')}"
             )
             return Response(
-                {"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED
+                {"error": "Invalid email or password"},
+                status=status.HTTP_401_UNAUTHORIZED,
             )
 
         if not user.is_active:
