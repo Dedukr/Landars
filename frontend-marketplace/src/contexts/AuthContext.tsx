@@ -133,6 +133,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem("refreshToken");
       localStorage.removeItem("user");
       localStorage.removeItem("wishlist");
+      localStorage.removeItem("cart");
+      localStorage.removeItem("guest_wishlist");
+
+      // Dispatch custom logout event to notify other contexts
+      window.dispatchEvent(new CustomEvent("user:logout"));
     }
   }, [token, refreshTokenValue]);
 

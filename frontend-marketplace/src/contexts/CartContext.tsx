@@ -124,10 +124,22 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   // Clear localStorage cart when user logs out
   useEffect(() => {
     if (!user) {
-      // User logged out, clear localStorage cart
+      // User logged out, clear localStorage cart and reset local state
       localStorage.removeItem("cart");
+      setCart([]);
     }
   }, [user]);
+
+  // Listen for logout events
+  useEffect(() => {
+    const handleLogout = () => {
+      setCart([]);
+      localStorage.removeItem("cart");
+    };
+
+    window.addEventListener("user:logout", handleLogout);
+    return () => window.removeEventListener("user:logout", handleLogout);
+  }, []);
 
   // Save cart to localStorage only if user is not authenticated
   useEffect(() => {

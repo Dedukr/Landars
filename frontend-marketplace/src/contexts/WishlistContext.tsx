@@ -120,6 +120,26 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [user, token, mergeWishlists]);
 
+  // Clear wishlist when user logs out
+  useEffect(() => {
+    if (!user) {
+      // User logged out, clear wishlist state and localStorage
+      setWishlist([]);
+      localStorage.removeItem("guest_wishlist");
+    }
+  }, [user]);
+
+  // Listen for logout events
+  useEffect(() => {
+    const handleLogout = () => {
+      setWishlist([]);
+      localStorage.removeItem("guest_wishlist");
+    };
+
+    window.addEventListener("user:logout", handleLogout);
+    return () => window.removeEventListener("user:logout", handleLogout);
+  }, []);
+
   // Listen for storage changes (when wishlist is cleared on logout)
   useEffect(() => {
     const handleStorageChange = () => {
