@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useCart } from "@/contexts/CartContext";
@@ -62,14 +62,7 @@ export default function CartPage() {
     fetchProducts();
   }, [cart]);
 
-  useEffect(() => {
-    // Fetch recommendations when cart has items and products are loaded
-    if (cart.length > 0 && products.length > 0) {
-      fetchRecommendations();
-    }
-  }, [cart, products]);
-
-  async function fetchRecommendations() {
+  const fetchRecommendations = useCallback(async () => {
     try {
       // Get categories from cart items
       const cartCategories = products
@@ -105,7 +98,14 @@ export default function CartPage() {
       console.error("Failed to fetch recommendations:", error);
       setRecommendations([]);
     }
-  }
+  }, [products, cart]);
+
+  useEffect(() => {
+    // Fetch recommendations when cart has items and products are loaded
+    if (cart.length > 0 && products.length > 0) {
+      fetchRecommendations();
+    }
+  }, [cart, products, fetchRecommendations]);
 
   function getProduct(productId: number) {
     return products.find((p) => p && p.id === productId);

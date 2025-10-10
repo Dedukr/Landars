@@ -9,6 +9,14 @@ import {
 } from "react";
 import { useAuth } from "./AuthContext";
 import { httpClient } from "@/utils/httpClient";
+import {
+  createCartMerger,
+  type CartMergeResult,
+  type CartConflict,
+  MergeStrategy,
+  ConflictResolution,
+  CartMergeError,
+} from "@/utils/cartMerger";
 
 interface CartResponse {
   items: Array<{
@@ -24,7 +32,7 @@ interface CartResponse {
   total_items: number;
 }
 
-interface CartItem {
+export interface CartItem {
   productId: number;
   quantity: number;
 }
@@ -36,6 +44,8 @@ interface CartContextType {
   removeItem: (productId: number) => void;
   clearCart: () => void;
   isLoading: boolean;
+  mergeConflicts: CartConflict[];
+  lastMergeSummary: CartMergeResult["mergeSummary"] | null;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -43,65 +53,153 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 export const CartProvider = ({ children }: { children: ReactNode }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [mergeConflicts, setMergeConflicts] = useState<CartConflict[]>([]);
+  const [lastMergeSummary, setLastMergeSummary] = useState<
+    CartMergeResult["mergeSummary"] | null
+  >(null);
   const { user, loading: authLoading } = useAuth();
 
-  const syncLocalCartToBackend = React.useCallback(
-    async (localItems: CartItem[]) => {
-      if (authLoading) return; // Don't sync while auth is loading
+  // Initialize cart merger with smart strategy
+  const cartMerger = React.useMemo(
+    () => createCartMerger(MergeStrategy.SMART, ConflictResolution.KEEP_HIGHER),
+    []
+  );
 
-      // Sync each item from local storage to backend
-      for (const item of localItems) {
-        try {
+  /**
+   * Intelligently merge local cart with backend cart
+   * This replaces the old sync logic that caused duplication
+   */
+  const mergeCartsIntelligently = React.useCallback(
+    async (localItems: CartItem[], backendItems: CartItem[]) => {
+      if (authLoading)
+        return { mergedCart: [], conflicts: [], mergeSummary: null };
+
+      try {
+        console.log("🔄 Starting intelligent cart merge...");
+        console.log("Local items:", localItems);
+        console.log("Backend items:", backendItems);
+
+        const mergeResult = await cartMerger.mergeCarts(
+          localItems,
+          backendItems
+        );
+
+        console.log("✅ Cart merge completed:", mergeResult);
+
+        // Store merge information for user feedback
+        setMergeConflicts(mergeResult.conflicts);
+        setLastMergeSummary(mergeResult.mergeSummary);
+
+        return mergeResult;
+      } catch (error) {
+        console.error("❌ Cart merge failed:", error);
+        if (error instanceof CartMergeError) {
+          console.error("Original error:", error.originalError);
+        }
+        throw error;
+      }
+    },
+    [authLoading, cartMerger]
+  );
+
+  /**
+   * Sync merged cart to backend with proper error handling
+   */
+  const syncMergedCartToBackend = React.useCallback(
+    async (mergedCart: CartItem[]) => {
+      if (authLoading || mergedCart.length === 0) return;
+
+      try {
+        console.log("🔄 Syncing merged cart to backend...", mergedCart);
+
+        // Clear existing backend cart first to avoid conflicts
+        await httpClient.delete("/api/cart/");
+
+        // Add each item from merged cart to backend
+        for (const item of mergedCart) {
           await httpClient.post("/api/cart/", {
             productId: item.productId,
             quantity: item.quantity,
           });
-        } catch (error) {
-          console.error("Failed to sync cart item:", error);
         }
+
+        console.log("✅ Merged cart synced to backend successfully");
+      } catch (error) {
+        console.error("❌ Failed to sync merged cart to backend:", error);
+        throw error;
       }
     },
     [authLoading]
   );
 
+  /**
+   * Fetch cart from backend with intelligent merging
+   * This replaces the old logic that caused duplication
+   */
   const fetchCartFromBackend = React.useCallback(
-    async (skipLocalSync = false) => {
-      if (authLoading) return; // Don't fetch while auth is loading
+    async (skipLocalMerge = false) => {
+      if (authLoading) return; // Don't fetch while auth is loading```
 
       setIsLoading(true);
       try {
+        console.log("🔄 Fetching cart from backend...");
         const data = await httpClient.get<CartResponse>("/api/cart/");
 
         // Convert backend cart format to frontend format
-        const cartItems = data.items.map(
+        const backendItems = data.items.map(
           (item: { product: number; quantity: string }) => ({
             productId: item.product,
             quantity: parseFloat(item.quantity),
           })
         );
-        setCart(cartItems);
 
-        // If there were items in localStorage, sync them to backend (only on first load)
-        if (!skipLocalSync) {
+        // If there are local items and we should merge them
+        if (!skipLocalMerge) {
           const localCart = localStorage.getItem("cart");
           if (localCart) {
             const localItems = JSON.parse(localCart);
             if (localItems.length > 0) {
-              // Merge local cart with backend cart
-              await syncLocalCartToBackend(localItems);
+              console.log(
+                "🔄 Found local cart items, merging intelligently..."
+              );
+
+              // Use intelligent merging instead of simple sync
+              const mergeResult = await mergeCartsIntelligently(
+                localItems,
+                backendItems
+              );
+
+              // Update cart with merged result
+              setCart(mergeResult.mergedCart);
+
+              // Sync merged cart to backend
+              await syncMergedCartToBackend(mergeResult.mergedCart);
+
+              // Clear local storage after successful merge
               localStorage.removeItem("cart");
-              // Refresh cart after sync (skip local sync to avoid recursion)
-              await fetchCartFromBackend(true);
+
+              console.log("✅ Cart merge and sync completed");
+              return;
             }
           }
         }
+
+        // No local items to merge, just set backend cart
+        setCart(backendItems);
+        console.log("✅ Backend cart loaded:", backendItems);
       } catch (error) {
-        console.error("Failed to fetch cart:", error);
+        console.error("❌ Failed to fetch cart:", error);
+        // On error, try to preserve local cart
+        const localCart = localStorage.getItem("cart");
+        if (localCart) {
+          console.log("⚠️ Using local cart as fallback");
+          setCart(JSON.parse(localCart));
+        }
       } finally {
         setIsLoading(false);
       }
     },
-    [syncLocalCartToBackend]
+    [authLoading, mergeCartsIntelligently, syncMergedCartToBackend]
   );
 
   // Load cart from backend if user is authenticated, otherwise from localStorage
@@ -310,6 +408,8 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         removeItem,
         clearCart,
         isLoading,
+        mergeConflicts,
+        lastMergeSummary,
       },
     },
     children
