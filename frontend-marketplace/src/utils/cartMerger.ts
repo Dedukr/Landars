@@ -54,7 +54,6 @@ export enum MergeStrategy {
 export class CartMerger {
   private strategy: MergeStrategy;
   private conflictResolution: ConflictResolution;
-  private logger: CartMergeLogger;
 
   constructor(
     strategy: MergeStrategy = MergeStrategy.SMART,
@@ -62,7 +61,6 @@ export class CartMerger {
   ) {
     this.strategy = strategy;
     this.conflictResolution = conflictResolution;
-    this.logger = new CartMergeLogger();
   }
 
   /**
@@ -73,8 +71,6 @@ export class CartMerger {
     backendCart: CartItem[],
     productDetails?: Map<number, { name: string; maxQuantity?: number }>
   ): Promise<CartMergeResult> {
-    this.logger.logMergeStart(localCart, backendCart);
-
     try {
       const conflicts: CartConflict[] = [];
       const mergedCart: CartItem[] = [];
@@ -134,10 +130,9 @@ export class CartMerger {
         ),
       };
 
-      this.logger.logMergeComplete(result);
       return result;
     } catch (error) {
-      this.logger.logMergeError(error);
+      console.error("❌ Cart Merge Error:", error);
       throw new CartMergeError("Failed to merge carts", error);
     }
   }
@@ -257,9 +252,6 @@ export class CartMerger {
       .map((item) => {
         const maxQuantity = productDetails?.get(item.productId)?.maxQuantity;
         if (maxQuantity && item.quantity > maxQuantity) {
-          this.logger.logValidationWarning(
-            `Product ${item.productId} quantity capped at ${maxQuantity}`
-          );
           return { ...item, quantity: maxQuantity };
         }
         return item;
@@ -299,7 +291,6 @@ export class CartMerger {
    */
   setStrategy(strategy: MergeStrategy): void {
     this.strategy = strategy;
-    this.logger.logStrategyChange(strategy);
   }
 
   /**
@@ -307,62 +298,6 @@ export class CartMerger {
    */
   setConflictResolution(resolution: ConflictResolution): void {
     this.conflictResolution = resolution;
-    this.logger.logConflictResolutionChange(resolution);
-  }
-}
-
-/**
- * Comprehensive logging for cart merge operations
- */
-class CartMergeLogger {
-  private isDebugMode: boolean;
-
-  constructor(debugMode: boolean = process.env.NODE_ENV === "development") {
-    this.isDebugMode = debugMode;
-  }
-
-  logMergeStart(localCart: CartItem[], backendCart: CartItem[]): void {
-    if (this.isDebugMode) {
-      console.group("🛒 Cart Merge Started");
-      console.log("Local cart items:", localCart.length);
-      console.log("Backend cart items:", backendCart.length);
-      console.log("Local cart:", localCart);
-      console.log("Backend cart:", backendCart);
-      console.groupEnd();
-    }
-  }
-
-  logMergeComplete(result: CartMergeResult): void {
-    if (this.isDebugMode) {
-      console.group("✅ Cart Merge Completed");
-      console.log("Merged cart items:", result.mergedCart.length);
-      console.log("Conflicts resolved:", result.conflicts.length);
-      console.log("Merge summary:", result.mergeSummary);
-      console.log("Final cart:", result.mergedCart);
-      console.groupEnd();
-    }
-  }
-
-  logMergeError(error: unknown): void {
-    console.error("❌ Cart Merge Error:", error);
-  }
-
-  logValidationWarning(message: string): void {
-    if (this.isDebugMode) {
-      console.warn("⚠️ Cart Validation Warning:", message);
-    }
-  }
-
-  logStrategyChange(strategy: MergeStrategy): void {
-    if (this.isDebugMode) {
-      console.log("🔄 Merge Strategy Changed:", strategy);
-    }
-  }
-
-  logConflictResolutionChange(resolution: ConflictResolution): void {
-    if (this.isDebugMode) {
-      console.log("🔄 Conflict Resolution Changed:", resolution);
-    }
   }
 }
 
@@ -400,5 +335,3 @@ export async function mergeCarts(
   const merger = createCartMerger();
   return await merger.mergeCarts(localCart, backendCart, productDetails);
 }
-
-

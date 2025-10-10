@@ -6,6 +6,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useMemo,
   type ReactNode,
 } from "react";
 import { useAuth } from "./AuthContext";
@@ -165,91 +166,127 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [wishlist, user]);
 
-  const addToWishlist = async (productId: number) => {
-    if (user && token) {
-      // User is authenticated - add to backend
-      try {
-        await httpClient.post("/api/wishlist/", {
-          productId: productId,
-        });
+  const addToWishlist = useCallback(
+    async (productId: number) => {
+      if (user && token) {
+        // User is authenticated - add to backend
+        try {
+          // Optimistic update
+          setWishlist((prev: number[]) => {
+            if (!prev.includes(productId)) {
+              return [...prev, productId];
+            }
+            return prev;
+          });
 
+          await httpClient.post("/api/wishlist/", {
+            productId: productId,
+          });
+        } catch (error) {
+          console.error("Failed to add to wishlist:", error);
+          // Revert optimistic update on error
+          setWishlist((prev: number[]) =>
+            prev.filter((id) => id !== productId)
+          );
+        }
+      } else {
+        // Guest user - add to local state
         setWishlist((prev: number[]) => {
           if (!prev.includes(productId)) {
             return [...prev, productId];
           }
           return prev;
         });
-      } catch (error) {
-        console.error("Failed to add to wishlist:", error);
       }
-    } else {
-      // Guest user - add to local state
-      setWishlist((prev: number[]) => {
-        if (!prev.includes(productId)) {
-          return [...prev, productId];
+    },
+    [user, token]
+  );
+
+  const removeFromWishlist = useCallback(
+    async (productId: number) => {
+      if (user && token) {
+        // User is authenticated - remove from backend
+        try {
+          // Optimistic update
+          setWishlist((prev: number[]) =>
+            prev.filter((id) => id !== productId)
+          );
+
+          await httpClient.request("/api/wishlist/", {
+            method: "DELETE",
+            body: JSON.stringify({ productId: productId }),
+          });
+        } catch (error) {
+          console.error("Failed to remove from wishlist:", error);
+          // Revert optimistic update on error
+          setWishlist((prev: number[]) => [...prev, productId]);
         }
-        return prev;
-      });
-    }
-  };
-
-  const removeFromWishlist = async (productId: number) => {
-    if (user && token) {
-      // User is authenticated - remove from backend
-      try {
-        await httpClient.request("/api/wishlist/", {
-          method: "DELETE",
-          body: JSON.stringify({ productId: productId }),
-        });
-
+      } else {
+        // Guest user - remove from local state
         setWishlist((prev: number[]) => prev.filter((id) => id !== productId));
-      } catch (error) {
-        console.error("Failed to remove from wishlist:", error);
       }
-    } else {
-      // Guest user - remove from local state
-      setWishlist((prev: number[]) => prev.filter((id) => id !== productId));
-    }
-  };
+    },
+    [user, token]
+  );
 
-  const isInWishlist = (productId: number) => {
-    return wishlist.includes(productId);
-  };
+  const isInWishlist = useCallback(
+    (productId: number) => {
+      return wishlist.includes(productId);
+    },
+    [wishlist]
+  );
 
-  const clearWishlist = async () => {
+  const clearWishlist = useCallback(async () => {
     if (user && token) {
       // User is authenticated - clear from backend
+      const previousWishlist = [...wishlist];
       try {
+        // Optimistic update
+        setWishlist([]);
+
         // Get current wishlist items and remove each one
-        const currentWishlist = [...wishlist];
-        for (const productId of currentWishlist) {
+        for (const productId of previousWishlist) {
           await httpClient.request("/api/wishlist/", {
             method: "DELETE",
             body: JSON.stringify({ productId: productId }),
           });
         }
-        setWishlist([]);
       } catch (error) {
         console.error("Failed to clear wishlist:", error);
+        // Revert optimistic update on error
+        setWishlist(previousWishlist);
       }
     } else {
       // Guest user - clear local state
       setWishlist([]);
       localStorage.removeItem("guest_wishlist");
     }
-  };
+  }, [user, token, wishlist]);
+
+  // Memoize the context value to prevent unnecessary re-renders
+  const contextValue = useMemo(
+    () => ({
+      wishlist,
+      addToWishlist,
+      removeFromWishlist,
+      isInWishlist,
+      clearWishlist,
+      loading,
+    }),
+    [
+      wishlist,
+      addToWishlist,
+      removeFromWishlist,
+      isInWishlist,
+      clearWishlist,
+      loading,
+    ]
+  );
 
   return React.createElement(
     WishlistContext.Provider,
     {
-      value: {
-        wishlist,
-        addToWishlist,
-        removeFromWishlist,
-        isInWishlist,
-        clearWishlist,
-        loading,
-      },
+      value: contextValue,
     },
     children
   );

@@ -64,23 +64,8 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
   // Virtualization state - limit visible products for better performance
   const [visibleProductsCount, setVisibleProductsCount] = useState(50);
 
-  const { cart, addToCart, removeFromCart } = useCart();
-  const { addToWishlist, removeFromWishlist, isInWishlist } = useWishlist();
   const { user } = useAuth();
   const [showSignInPopup, setShowSignInPopup] = useState(false);
-
-  const handleWishlistClick = (productId: number) => {
-    if (!user) {
-      setShowSignInPopup(true);
-      return;
-    }
-
-    if (isInWishlist(productId)) {
-      removeFromWishlist(productId);
-    } else {
-      addToWishlist(productId);
-    }
-  };
 
   // Function to build query parameters with memoization
   const buildQueryParams = useMemo(
@@ -275,148 +260,178 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
   }, [filters, sort, search, fetchProducts]);
 
   // Memoized product component for better performance
-  const ProductCard = React.memo(({ product }: { product: Product }) => (
-    <div
-      key={product.id}
-      className="rounded-lg shadow p-4 flex flex-col hover:shadow-lg transition-shadow border animate-fade-in-up relative h-80 focus-within:ring-2 focus-within:ring-offset-2"
-      style={{
-        background: "var(--card-bg)",
-        color: "var(--foreground)",
-        borderColor: "var(--sidebar-border)",
-      }}
-    >
-      {/* Wishlist Heart Icon - positioned in top-right corner */}
-      <div className="absolute top-3 right-3 z-10">
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            handleWishlistClick(product.id);
-          }}
-          className="w-8 h-8 flex items-center justify-center rounded-full shadow-lg hover:scale-110 transition-all duration-200"
-          style={{ background: "white" }}
-          aria-label={
-            isInWishlist(product.id)
-              ? "Remove from wishlist"
-              : "Add to wishlist"
-          }
-        >
-          <span className="text-xl leading-none block">
-            {isInWishlist(product.id) ? "❤️" : "🖤"}
-          </span>
-        </button>
-      </div>
-      {/* Product Link */}
-      <Link
-        href={`/product/${product.id}`}
-        className="flex flex-col flex-grow cursor-pointer outline-none focus:outline-none"
+  const ProductCard = React.memo(({ product }: { product: Product }) => {
+    const { cart, addToCart, removeFromCart } = useCart();
+    const { isInWishlist, addToWishlist, removeFromWishlist } = useWishlist();
+
+    // Memoize cart item lookup
+    const cartItem = React.useMemo(
+      () => cart.find((item) => item.productId === product.id),
+      [cart, product.id]
+    );
+
+    // Memoize wishlist status
+    const inWishlist = React.useMemo(
+      () => isInWishlist(product.id),
+      [isInWishlist, product.id]
+    );
+
+    const handleWishlistClick = React.useCallback(() => {
+      if (!user) {
+        setShowSignInPopup(true);
+        return;
+      }
+
+      if (inWishlist) {
+        removeFromWishlist(product.id);
+      } else {
+        addToWishlist(product.id);
+      }
+    }, [inWishlist, removeFromWishlist, addToWishlist, product.id]);
+
+    const handleAddToCart = React.useCallback(
+      (e?: React.MouseEvent) => {
+        e?.preventDefault?.();
+        e?.stopPropagation?.();
+        addToCart(product.id, 1);
+      },
+      [addToCart, product.id]
+    );
+
+    const handleRemoveFromCart = React.useCallback(
+      (e?: React.MouseEvent) => {
+        e?.preventDefault?.();
+        e?.stopPropagation?.();
+        removeFromCart(product.id);
+      },
+      [removeFromCart, product.id]
+    );
+
+    return (
+      <div
+        key={product.id}
+        className="rounded-lg shadow p-4 flex flex-col hover:shadow-lg transition-shadow border animate-fade-in-up relative h-80 focus-within:ring-2 focus-within:ring-offset-2"
+        style={{
+          background: "var(--card-bg)",
+          color: "var(--foreground)",
+          borderColor: "var(--sidebar-border)",
+        }}
       >
-        {/* Image section - fixed height with lazy loading */}
-        <div className="h-32 w-full flex items-center justify-center bg-gray-50 rounded mb-2 overflow-hidden flex-shrink-0 relative">
-          {/* Stock badge */}
-          {typeof product.stock_quantity === "number" && (
-            <span
-              className="absolute top-2 left-2 px-2 py-0.5 rounded text-xs font-medium"
-              style={{
-                background: product.stock_quantity > 0 ? "#E6F7EE" : "#FCE8E6",
-                color: product.stock_quantity > 0 ? "#15803d" : "#b91c1c",
-              }}
-            >
-              {product.stock_quantity > 0 ? "In stock" : "Out of stock"}
+        {/* Wishlist Heart Icon - positioned in top-right corner */}
+        <div className="absolute top-3 right-3 z-10">
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleWishlistClick();
+            }}
+            className="w-8 h-8 flex items-center justify-center rounded-full shadow-lg hover:scale-110 transition-all duration-200"
+            style={{ background: "white" }}
+            aria-label={inWishlist ? "Remove from wishlist" : "Add to wishlist"}
+          >
+            <span className="text-xl leading-none block">
+              {inWishlist ? "❤️" : "🖤"}
             </span>
-          )}
-          {product.image_url ? (
-            <Image
-              src={product.image_url}
-              alt={product.name}
-              className="object-cover h-full w-full"
-              width={128}
-              height={128}
-              loading="lazy"
-              placeholder="blur"
-              blurDataURL="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
-            />
-          ) : (
-            <span className="text-4xl text-gray-300">🍎</span>
-          )}
+          </button>
         </div>
-
-        {/* Content section - grows to fill available space */}
-        <div className="flex flex-col flex-grow">
-          <div
-            className="font-semibold text-lg truncate mb-1"
-            title={product.name}
-          >
-            {product.name}
+        {/* Product Link */}
+        <Link
+          href={`/product/${product.id}`}
+          className="flex flex-col flex-grow cursor-pointer outline-none focus:outline-none"
+        >
+          {/* Image section - fixed height with lazy loading */}
+          <div className="h-32 w-full flex items-center justify-center bg-gray-50 rounded mb-2 overflow-hidden flex-shrink-0 relative">
+            {/* Stock badge */}
+            {typeof product.stock_quantity === "number" && (
+              <span
+                className="absolute top-2 left-2 px-2 py-0.5 rounded text-xs font-medium"
+                style={{
+                  background:
+                    product.stock_quantity > 0 ? "#E6F7EE" : "#FCE8E6",
+                  color: product.stock_quantity > 0 ? "#15803d" : "#b91c1c",
+                }}
+              >
+                {product.stock_quantity > 0 ? "In stock" : "Out of stock"}
+              </span>
+            )}
+            {product.image_url ? (
+              <Image
+                src={product.image_url}
+                alt={product.name}
+                className="object-cover h-full w-full"
+                width={128}
+                height={128}
+                loading="lazy"
+                placeholder="blur"
+                blurDataURL="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
+              />
+            ) : (
+              <span className="text-4xl text-gray-300">🍎</span>
+            )}
           </div>
-          <div
-            className="text-sm truncate flex-grow"
-            style={{ color: "var(--foreground)" }}
-            title={product.description}
-          >
-            {product.description.length > 48
-              ? product.description.slice(0, 48) + "..."
-              : product.description}
-          </div>
-        </div>
-      </Link>
 
-      {/* Price and Add to Cart - always at bottom */}
-      <div className="mt-auto pt-3">
-        <div className="flex items-center justify-between">
-          {/* Price tag */}
-          <div
-            className="font-bold text-lg"
-            style={{ color: "var(--primary)" }}
-          >
-            £{product.price}
-          </div>
-
-          {/* Add to Cart Button */}
-          {cart.find((item) => item.productId === product.id) ? (
-            <AddToCartButton
-              compact
-              inCart
-              quantity={
-                cart.find((item) => item.productId === product.id)?.quantity ||
-                0
-              }
-              onAdd={(e) => {
-                e?.preventDefault?.();
-                e?.stopPropagation?.();
-                addToCart(product.id, 1);
-              }}
-              onRemove={(e) => {
-                e?.preventDefault?.();
-                e?.stopPropagation?.();
-                removeFromCart(product.id);
-              }}
-            />
-          ) : (
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={
-                typeof product.stock_quantity === "number" &&
-                product.stock_quantity <= 0
-              }
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                addToCart(product.id, 1);
-              }}
-              className="text-sm"
+          {/* Content section - grows to fill available space */}
+          <div className="flex flex-col flex-grow">
+            <div
+              className="font-semibold text-lg truncate mb-1"
+              title={product.name}
             >
-              {typeof product.stock_quantity === "number" &&
-              product.stock_quantity <= 0
-                ? "Out of stock"
-                : "Add to Cart"}
-            </Button>
-          )}
+              {product.name}
+            </div>
+            <div
+              className="text-sm truncate flex-grow"
+              style={{ color: "var(--foreground)" }}
+              title={product.description}
+            >
+              {product.description.length > 48
+                ? product.description.slice(0, 48) + "..."
+                : product.description}
+            </div>
+          </div>
+        </Link>
+
+        {/* Price and Add to Cart - always at bottom */}
+        <div className="mt-auto pt-3">
+          <div className="flex items-center justify-between">
+            {/* Price tag */}
+            <div
+              className="font-bold text-lg"
+              style={{ color: "var(--primary)" }}
+            >
+              £{product.price}
+            </div>
+
+            {/* Add to Cart Button */}
+            {cartItem ? (
+              <AddToCartButton
+                compact
+                inCart
+                quantity={cartItem.quantity || 0}
+                onAdd={handleAddToCart}
+                onRemove={handleRemoveFromCart}
+              />
+            ) : (
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={
+                  typeof product.stock_quantity === "number" &&
+                  product.stock_quantity <= 0
+                }
+                onClick={handleAddToCart}
+                className="text-sm"
+              >
+                {typeof product.stock_quantity === "number" &&
+                product.stock_quantity <= 0
+                  ? "Out of stock"
+                  : "Add to Cart"}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
-    </div>
-  ));
+    );
+  });
 
   ProductCard.displayName = "ProductCard";
 

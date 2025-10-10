@@ -5,6 +5,8 @@ import {
   useContext,
   useState,
   useEffect,
+  useCallback,
+  useMemo,
   type ReactNode,
 } from "react";
 import { useAuth } from "./AuthContext";
@@ -75,16 +77,14 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         return { mergedCart: [], conflicts: [], mergeSummary: null };
 
       try {
-        console.log("🔄 Starting intelligent cart merge...");
-        console.log("Local items:", localItems);
-        console.log("Backend items:", backendItems);
+        // Starting intelligent cart merge
 
         const mergeResult = await cartMerger.mergeCarts(
           localItems,
           backendItems
         );
 
-        console.log("✅ Cart merge completed:", mergeResult);
+        // Cart merge completed successfully
 
         // Store merge information for user feedback
         setMergeConflicts(mergeResult.conflicts);
@@ -110,7 +110,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
       if (authLoading || mergedCart.length === 0) return;
 
       try {
-        console.log("🔄 Syncing merged cart to backend...", mergedCart);
+        // Syncing merged cart to backend
 
         // Clear existing backend cart first to avoid conflicts
         await httpClient.delete("/api/cart/");
@@ -123,7 +123,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
           });
         }
 
-        console.log("✅ Merged cart synced to backend successfully");
+        // Merged cart synced to backend successfully
       } catch (error) {
         console.error("❌ Failed to sync merged cart to backend:", error);
         throw error;
@@ -142,7 +142,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
 
       setIsLoading(true);
       try {
-        console.log("🔄 Fetching cart from backend...");
+        // Fetching cart from backend
         const data = await httpClient.get<CartResponse>("/api/cart/");
 
         // Convert backend cart format to frontend format
@@ -159,9 +159,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
           if (localCart) {
             const localItems = JSON.parse(localCart);
             if (localItems.length > 0) {
-              console.log(
-                "🔄 Found local cart items, merging intelligently..."
-              );
+              // Found local cart items, merging intelligently
 
               // Use intelligent merging instead of simple sync
               const mergeResult = await mergeCartsIntelligently(
@@ -178,7 +176,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
               // Clear local storage after successful merge
               localStorage.removeItem("cart");
 
-              console.log("✅ Cart merge and sync completed");
+              // Cart merge and sync completed
               return;
             }
           }
@@ -186,13 +184,13 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
 
         // No local items to merge, just set backend cart
         setCart(backendItems);
-        console.log("✅ Backend cart loaded:", backendItems);
+        // Backend cart loaded successfully
       } catch (error) {
         console.error("❌ Failed to fetch cart:", error);
         // On error, try to preserve local cart
         const localCart = localStorage.getItem("cart");
         if (localCart) {
-          console.log("⚠️ Using local cart as fallback");
+          // Using local cart as fallback
           setCart(JSON.parse(localCart));
         }
       } finally {
@@ -246,17 +244,57 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [cart, user]);
 
-  const addToCart = async (productId: number, quantity: number = 1) => {
-    if (user) {
-      // Add to backend cart
-      setIsLoading(true);
-      try {
-        await httpClient.post("/api/cart/", {
-          productId: productId,
-          quantity: quantity,
-        });
+  const addToCart = useCallback(
+    async (productId: number, quantity: number = 1) => {
+      if (user) {
+        // Add to backend cart
+        setIsLoading(true);
+        try {
+          await httpClient.post("/api/cart/", {
+            productId: productId,
+            quantity: quantity,
+          });
 
-        // Update local state
+          // Update local state with optimistic update
+          setCart((prev: CartItem[]) => {
+            const existing = prev.find(
+              (item: CartItem) => item.productId === productId
+            );
+            if (existing) {
+              return prev.map((item: CartItem) =>
+                item.productId === productId
+                  ? { ...item, quantity: item.quantity + quantity }
+                  : item
+              );
+            } else {
+              return [...prev, { productId, quantity }];
+            }
+          });
+        } catch (error) {
+          console.error("Failed to add to cart:", error);
+          // Revert optimistic update on error
+          setCart((prev: CartItem[]) => {
+            const existing = prev.find(
+              (item: CartItem) => item.productId === productId
+            );
+            if (existing && existing.quantity > quantity) {
+              return prev.map((item: CartItem) =>
+                item.productId === productId
+                  ? { ...item, quantity: item.quantity - quantity }
+                  : item
+              );
+            } else if (existing && existing.quantity === quantity) {
+              return prev.filter(
+                (item: CartItem) => item.productId !== productId
+              );
+            }
+            return prev;
+          });
+        } finally {
+          setIsLoading(false);
+        }
+      } else {
+        // Add to local cart with optimistic update
         setCart((prev: CartItem[]) => {
           const existing = prev.find(
             (item: CartItem) => item.productId === productId
@@ -271,124 +309,138 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
             return [...prev, { productId, quantity }];
           }
         });
-      } catch (error) {
-        console.error("Failed to add to cart:", error);
-      } finally {
-        setIsLoading(false);
       }
-    } else {
-      // Add to local cart
-      setCart((prev: CartItem[]) => {
-        const existing = prev.find(
-          (item: CartItem) => item.productId === productId
-        );
-        if (existing) {
-          return prev.map((item: CartItem) =>
-            item.productId === productId
-              ? { ...item, quantity: item.quantity + quantity }
-              : item
-          );
-        } else {
-          return [...prev, { productId, quantity }];
-        }
-      });
-    }
-  };
+    },
+    [user]
+  );
 
-  const removeFromCart = async (productId: number) => {
-    if (user) {
-      // Remove from backend cart
-      setIsLoading(true);
-      try {
-        const existing = cart.find((item) => item.productId === productId);
-        if (!existing) return;
+  const removeFromCart = useCallback(
+    async (productId: number) => {
+      if (user) {
+        // Remove from backend cart
+        setIsLoading(true);
+        try {
+          const existing = cart.find((item) => item.productId === productId);
+          if (!existing) return;
 
-        const newQuantity = existing.quantity - 1;
+          const newQuantity = existing.quantity - 1;
 
-        if (newQuantity <= 0) {
-          // Delete the item
-          await httpClient.request("/api/cart/", {
-            method: "DELETE",
-            body: JSON.stringify({ productId: productId }),
+          // Optimistic update
+          if (newQuantity <= 0) {
+            setCart((prev: CartItem[]) =>
+              prev.filter((item: CartItem) => item.productId !== productId)
+            );
+
+            // Delete the item from backend
+            await httpClient.request("/api/cart/", {
+              method: "DELETE",
+              body: JSON.stringify({ productId: productId }),
+            });
+          } else {
+            setCart((prev: CartItem[]) =>
+              prev.map((item: CartItem) =>
+                item.productId === productId
+                  ? { ...item, quantity: newQuantity }
+                  : item
+              )
+            );
+
+            // Update quantity in backend
+            await httpClient.patch("/api/cart/", {
+              productId: productId,
+              quantity: newQuantity,
+            });
+          }
+        } catch (error) {
+          console.error("Failed to remove from cart:", error);
+          // Revert optimistic update on error
+          setCart((prev: CartItem[]) => {
+            const existing = prev.find((item) => item.productId === productId);
+            if (!existing) {
+              // Item was removed, restore it
+              return [...prev, { productId, quantity: 1 }];
+            }
+            return prev;
           });
+        } finally {
+          setIsLoading(false);
+        }
+      } else {
+        // Remove from local cart with optimistic update
+        setCart((prev: CartItem[]) => {
+          const existing = prev.find(
+            (item: CartItem) => item.productId === productId
+          );
+          if (!existing) return prev;
+          if (existing.quantity <= 1) {
+            return prev.filter(
+              (item: CartItem) => item.productId !== productId
+            );
+          } else {
+            return prev.map((item: CartItem) =>
+              item.productId === productId
+                ? { ...item, quantity: item.quantity - 1 }
+                : item
+            );
+          }
+        });
+      }
+    },
+    [user, cart]
+  );
 
+  const removeItem = useCallback(
+    async (productId: number) => {
+      if (user) {
+        // Remove entire item from backend cart
+        setIsLoading(true);
+        const previousCart = [...cart];
+        try {
+          // Optimistic update
           setCart((prev: CartItem[]) =>
             prev.filter((item: CartItem) => item.productId !== productId)
           );
-        } else {
-          // Update quantity
+
           await httpClient.patch("/api/cart/", {
             productId: productId,
-            quantity: newQuantity,
+            quantity: 0,
           });
-
-          setCart((prev: CartItem[]) =>
-            prev.map((item: CartItem) =>
-              item.productId === productId
-                ? { ...item, quantity: newQuantity }
-                : item
-            )
+        } catch (error) {
+          console.error("Failed to remove item from cart:", error);
+          // Revert optimistic update on error
+          const removedItem = previousCart.find(
+            (item) => item.productId === productId
           );
+          if (removedItem) {
+            setCart((prev: CartItem[]) => [...prev, removedItem]);
+          }
+        } finally {
+          setIsLoading(false);
         }
-      } catch (error) {
-        console.error("Failed to remove from cart:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    } else {
-      // Remove from local cart
-      setCart((prev: CartItem[]) => {
-        const existing = prev.find(
-          (item: CartItem) => item.productId === productId
-        );
-        if (!existing) return prev;
-        if (existing.quantity <= 1) {
-          return prev.filter((item: CartItem) => item.productId !== productId);
-        } else {
-          return prev.map((item: CartItem) =>
-            item.productId === productId
-              ? { ...item, quantity: item.quantity - 1 }
-              : item
-          );
-        }
-      });
-    }
-  };
-
-  const removeItem = async (productId: number) => {
-    if (user) {
-      // Remove entire item from backend cart
-      setIsLoading(true);
-      try {
-        await httpClient.patch("/api/cart/", {
-          productId: productId,
-          quantity: 0,
-        });
+      } else {
+        // Remove entire item from local cart
         setCart((prev: CartItem[]) =>
           prev.filter((item: CartItem) => item.productId !== productId)
         );
-      } catch (error) {
-        console.error("Failed to remove item from cart:", error);
-      } finally {
-        setIsLoading(false);
       }
-    } else {
-      // Remove entire item from local cart
-      setCart((prev: CartItem[]) =>
-        prev.filter((item: CartItem) => item.productId !== productId)
-      );
-    }
-  };
+    },
+    [user, cart]
+  );
 
-  const clearCart = async () => {
+  const clearCart = useCallback(async () => {
     if (user) {
       // Clear backend cart
       setIsLoading(true);
+      const previousCart = [...cart]; // Move outside try block
       try {
-        await httpClient.delete("/api/cart/");
+        // Optimistic update
         setCart([]);
+
+        await httpClient.delete("/api/cart/");
       } catch (error) {
         console.error("Failed to clear cart:", error);
+        // Revert optimistic update on error
+        setCart(previousCart);
       } finally {
         setIsLoading(false);
       }
@@ -396,21 +448,36 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
       // Clear local cart
       setCart([]);
     }
-  };
+  }, [user, cart]);
+
+  // Memoize the context value to prevent unnecessary re-renders
+  const contextValue = useMemo(
+    () => ({
+      cart,
+      addToCart,
+      removeFromCart,
+      removeItem,
+      clearCart,
+      isLoading,
+      mergeConflicts,
+      lastMergeSummary,
+    }),
+    [
+      cart,
+      addToCart,
+      removeFromCart,
+      removeItem,
+      clearCart,
+      isLoading,
+      mergeConflicts,
+      lastMergeSummary,
+    ]
+  );
 
   return React.createElement(
     CartContext.Provider,
     {
-      value: {
-        cart,
-        addToCart,
-        removeFromCart,
-        removeItem,
-        clearCart,
-        isLoading,
-        mergeConflicts,
-        lastMergeSummary,
-      },
+      value: contextValue,
     },
     children
   );

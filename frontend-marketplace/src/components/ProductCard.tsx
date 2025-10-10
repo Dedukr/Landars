@@ -1,5 +1,5 @@
 "use client";
-import React, { memo, useCallback } from "react";
+import React, { memo, useCallback, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 interface Product {
@@ -27,12 +27,21 @@ const ProductCard = memo<ProductCardProps>(
     const { cart, addToCart, removeFromCart } = useCart();
     const { isInWishlist, addToWishlist, removeFromWishlist } = useWishlist();
 
-    // Get cart quantity for this product
-    const cartItem = cart.find((item) => item.productId === product.id);
+    // Memoize cart item lookup to prevent unnecessary recalculations
+    const cartItem = useMemo(
+      () => cart.find((item) => item.productId === product.id),
+      [cart, product.id]
+    );
     const cartQuantity = cartItem?.quantity || 0;
 
+    // Memoize wishlist status
+    const inWishlist = useMemo(
+      () => isInWishlist(product.id),
+      [isInWishlist, product.id]
+    );
+
     const handleWishlistClick = useCallback(() => {
-      if (isInWishlist(product.id)) {
+      if (inWishlist) {
         removeFromWishlist(product.id);
       } else {
         addToWishlist(product.id);
@@ -41,7 +50,7 @@ const ProductCard = memo<ProductCardProps>(
       onWishlistToggle?.(product.id);
     }, [
       product.id,
-      isInWishlist,
+      inWishlist,
       removeFromWishlist,
       addToWishlist,
       onWishlistToggle,
@@ -77,7 +86,7 @@ const ProductCard = memo<ProductCardProps>(
         {/* Wishlist Heart Icon - positioned in top-right corner */}
         <div className="absolute top-3 right-3 z-10">
           <WishlistButton
-            isInWishlist={isInWishlist(product.id)}
+            isInWishlist={inWishlist}
             onToggle={handleWishlistClick}
           />
         </div>
