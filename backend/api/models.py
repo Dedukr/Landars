@@ -216,6 +216,25 @@ class Order(models.Model):
             return f"{address.address_line + ', ' if address.address_line else ''}{address.address_line2 + ', ' if address.address_line2 else ''}{address.city + ', ' if address.city else ''}{address.postal_code if address.postal_code else ''}"
         return "No Address"
 
+    def add_item_safely(self, product, quantity):
+        """
+        Safely add an item to the order, merging quantities if the item already exists.
+        Returns the OrderItem instance.
+        """
+        from django.db import transaction
+
+        with transaction.atomic():
+            order_item, created = OrderItem.objects.select_for_update().get_or_create(
+                order=self, product=product, defaults={"quantity": quantity}
+            )
+
+            if not created:
+                # Item already exists, update quantity
+                order_item.quantity += quantity
+                order_item.save()
+
+            return order_item
+
 
 # OrderItem model
 class OrderItem(models.Model):

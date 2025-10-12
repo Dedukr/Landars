@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("api", "0020_alter_order_options_order_discount_and_more"),
+        ("api", "0019_order_delivery_fee_manual"),
     ]
 
     operations = [
