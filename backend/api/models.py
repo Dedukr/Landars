@@ -5,6 +5,7 @@ from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.utils import timezone
 
 
 # ProductCategory model
@@ -152,6 +153,9 @@ class Order(models.Model):
         max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0)]
     )
     order_date = models.DateField(auto_now_add=True, null=True)
+    created_at = models.DateTimeField(
+        auto_now_add=True, help_text="Exact timestamp when order was created"
+    )
     status = models.CharField(
         max_length=50,
         choices=[
@@ -225,6 +229,11 @@ class OrderItem(models.Model):
         null=False,
     )
 
+    class Meta:
+        # Prevent duplicate items in the same order
+        unique_together = ("order", "product")
+        verbose_name_plural = "Order Items"
+
     def __str__(self):
         return f"{self.product.name if self.product else 'Deleted product'} - {self.quantity}"
 
@@ -240,5 +249,5 @@ class OrderItem(models.Model):
             "product_id": self.product.id,
             "product_name": self.product.name,
             "quantity": self.quantity,
-            "total_price": str(self.total_price()),
+            "total_price": str(self.get_total_price()),
         }

@@ -40,3 +40,17 @@ Thumbs.db
 # Build output
 build/
 dist/
+
+# playwright-report/
+.playwright-mcp/
+
+# Frontend directories (should only exist on front branch)
+frontend-marketplace/
+node_modules/
+.next/
+*.tsbuildinfo
+
+# Database backups and data
+db_backups/
+db_data/
+*.sql

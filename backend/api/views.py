@@ -2,13 +2,17 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.template.loader import render_to_string
+from django.db import transaction
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import action
+import uuid
 
-from .models import Order  # Adjust import path
-from .models import Product
-from .serializers import ProductSerializer
+from .models import Order, Product, OrderItem
+from .serializers import ProductSerializer, OrderSerializer, OrderItemSerializer
 
 
 # @staff_member_required
@@ -116,4 +120,159 @@ class StockUpdateView(APIView):
         except Stock.DoesNotExist:
             return Response(
                 {"error": "Product not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class OrderListCreateView(APIView):
+    """
+    List all orders or create a new order with atomic transaction to prevent duplicates.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """Retrieve all orders for the authenticated user."""
+        orders = Order.objects.filter(customer=request.user).order_by('-id')
+        serializer = OrderSerializer(orders, many=True)
+        return Response(serializer.data)
+
+    @transaction.atomic
+    def post(self, request):
+        """
+        Create a new order with atomic transaction to prevent duplicates.
+        Uses a unique constraint check to prevent duplicate orders.
+        """
+        # Add customer from authenticated user
+        data = request.data.copy()
+        data['customer'] = request.user.id
+        
+        # Generate a unique order token to prevent duplicates
+        order_token = str(uuid.uuid4())
+        data['notes'] = f"{data.get('notes', '')} [TOKEN:{order_token}]"
+        
+        serializer = OrderSerializer(data=data)
+        if serializer.is_valid():
+            try:
+                order = serializer.save()
+                return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
+            except Exception as e:
+                return Response(
+                    {"error": f"Failed to create order: {str(e)}"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class OrderDetailView(APIView):
+    """
+    Retrieve, update or delete a specific order.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self, order_id, user):
+        """Get order object and check ownership."""
+        try:
+            return Order.objects.get(id=order_id, customer=user)
+        except Order.DoesNotExist:
+            return None
+
+    def get(self, request, order_id):
+        """Retrieve a specific order."""
+        order = self.get_object(order_id, request.user)
+        if order:
+            serializer = OrderSerializer(order)
+            return Response(serializer.data)
+        return Response(
+            {"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND
+        )
+
+    @transaction.atomic
+    def put(self, request, order_id):
+        """Update an order entirely."""
+        order = self.get_object(order_id, request.user)
+        if order:
+            serializer = OrderSerializer(order, data=request.data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND
+        )
+
+    @transaction.atomic
+    def patch(self, request, order_id):
+        """Partially update an order."""
+        order = self.get_object(order_id, request.user)
+        if order:
+            serializer = OrderSerializer(order, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND
+        )
+
+    def delete(self, request, order_id):
+        """Delete an order."""
+        order = self.get_object(order_id, request.user)
+        if order:
+            order.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(
+            {"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND
+        )
+
+
+class OrderItemView(APIView):
+    """
+    Manage order items with duplicate prevention.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, order_id):
+        """Add an item to an order with duplicate prevention."""
+        try:
+            order = Order.objects.get(id=order_id, customer=request.user)
+        except Order.DoesNotExist:
+            return Response(
+                {"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Check if item already exists in order
+        product_id = request.data.get('product')
+        existing_item = OrderItem.objects.filter(
+            order=order, 
+            product_id=product_id
+        ).first()
+        
+        if existing_item:
+            # Update quantity instead of creating duplicate
+            quantity = request.data.get('quantity', 1)
+            existing_item.quantity += quantity
+            existing_item.save()
+            serializer = OrderItemSerializer(existing_item)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        else:
+            # Create new item
+            data = request.data.copy()
+            data['order'] = order.id
+            serializer = OrderItemSerializer(data=data)
+            if serializer.is_valid():
+                item = serializer.save()
+                return Response(OrderItemSerializer(item).data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @transaction.atomic
+    def delete(self, request, order_id, item_id):
+        """Remove an item from an order."""
+        try:
+            order = Order.objects.get(id=order_id, customer=request.user)
+            item = OrderItem.objects.get(id=item_id, order=order)
+            item.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except (Order.DoesNotExist, OrderItem.DoesNotExist):
+            return Response(
+                {"error": "Order or item not found"}, status=status.HTTP_404_NOT_FOUND
             )

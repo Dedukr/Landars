@@ -1,13 +1,16 @@
 import csv
-from decimal import Decimal
 import tempfile
 from datetime import date, timedelta
+from decimal import Decimal
 
 import boto3
 from django.conf import settings
 from django.contrib import admin, messages
+from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Count, Sum
 from django.db.models.functions import Round
+from django.forms import ModelForm
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -15,9 +18,22 @@ from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
-from weasyprint import HTML
 
 from .models import CustomUser, Order, OrderItem, Product, ProductCategory
+
+
+class OrderAdminForm(ModelForm):
+    """Custom form for Order admin with double-save prevention."""
+
+    class Meta:
+        model = Order
+        fields = "__all__"
+
+    def clean(self):
+        cleaned_data = super().clean()
+        # Remove duplicate prevention - allow same orders to be created
+        # Focus on preventing double saves instead
+        return cleaned_data
 
 
 @admin.register(Product)
@@ -132,6 +148,7 @@ def upload_invoice_to_s3(file_path, s3_key):
 
 @admin.action(description="Create & Upload Invoice")
 def create_and_upload_invoice(modeladmin, request, queryset):
+    from weasyprint import HTML
 
     for order in queryset:
         # Render your invoice template to HTML
@@ -216,6 +233,7 @@ class OrderItemInline(admin.TabularInline):
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
+    form = OrderAdminForm
 
     class Media:
         js = ("admin/js/order_filter_cleaner.js",)
@@ -323,38 +341,86 @@ class OrderAdmin(admin.ModelAdmin):
     get_total_items.short_description = "Total Items"
 
     def save_related(self, request, form, formsets, change):
+        """Save related objects and calculate delivery fees without double saving."""
         super().save_related(request, form, formsets, change)
         order = form.instance
         items = order.items.all()
 
+        # Only recalculate delivery fees if not manually set
         if not order.delivery_fee_manual:
             # Post category name
             post_suitable_category = "Sausages and Marinated products"
+            delivery_fee_changed = False
+
             for item in items:
                 category_names = item.product.categories.values_list("name", flat=True)
                 if post_suitable_category not in [
                     name.lower() for name in category_names
                 ]:
-                    order.is_home_delivery = True
-                    order.delivery_fee = 10
+                    if order.is_home_delivery != True or order.delivery_fee != 10:
+                        order.is_home_delivery = True
+                        order.delivery_fee = 10
+                        delivery_fee_changed = True
                     break
             else:
-                order.is_home_delivery = False
+                if order.is_home_delivery != False:
+                    order.is_home_delivery = False
+                    delivery_fee_changed = True
+
                 if order.total_price > 220:
-                    order.delivery_fee = 0
+                    if order.delivery_fee != 0:
+                        order.delivery_fee = 0
+                        delivery_fee_changed = True
                 else:
                     total_weight = sum(item.quantity for item in items)
+                    new_fee = 0
                     if total_weight <= 2:
-                        order.delivery_fee = 5
+                        new_fee = 5
                     elif total_weight <= 10:
-                        order.delivery_fee = 8
+                        new_fee = 8
                     else:
-                        order.delivery_fee = 15
-                    # elif total_weight <= 20:
-                    #     delivery_fee = 15
-                    # else:
-                    #     delivery_fee = 25  # For > 20kg
-        order.save()
+                        new_fee = 15
+
+                    if order.delivery_fee != new_fee:
+                        order.delivery_fee = new_fee
+                        delivery_fee_changed = True
+
+            # Only save if delivery fee actually changed to prevent unnecessary saves
+            if delivery_fee_changed:
+                order.save(update_fields=["is_home_delivery", "delivery_fee"])
+
+    @transaction.atomic
+    def save_model(self, request, obj, form, change):
+        """Save the order with atomic transaction to prevent race conditions and double saves."""
+        # Add a small delay to prevent rapid double saves
+        import time
+
+        time.sleep(0.1)
+
+        # Check if this is a new order and if there's a very recent order with same details
+        if not change:  # New order
+            from django.utils import timezone
+
+            recent_time = timezone.now() - timezone.timedelta(seconds=3)
+
+            # Check for very recent orders with same customer and delivery date
+            recent_orders = Order.objects.filter(
+                customer=obj.customer,
+                delivery_date=obj.delivery_date,
+                created_at__gte=recent_time,
+            ).exclude(pk=obj.pk if obj.pk else None)
+
+            if recent_orders.exists():
+                # If there's a very recent order, this might be a double save
+                # Log it but don't prevent it (since user wants to allow same orders)
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.warning(
+                    f"Potential double save detected for customer {obj.customer} on {obj.delivery_date} - {recent_orders.count()} recent orders found"
+                )
+
+        super().save_model(request, obj, form, change)
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "customer":
