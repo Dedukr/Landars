@@ -23,6 +23,11 @@ services:
     volumes:
       - static_volume:/backend/static
       - /etc/ssl/landarsfood:/etc/ssl/landarsfood:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   static_volume:
