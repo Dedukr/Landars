@@ -56,15 +56,3 @@ db_backups_base/
 
 # Cookies
 cookies.txt
-
-# Backup files
-*.tgz
-*.bundle
-*.tar
-*.zip
-*.gz
-git-backup-*
-repo-backup-*
-
-# Empty directories
-migrations_backup/
