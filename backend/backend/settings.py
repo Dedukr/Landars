@@ -25,7 +25,8 @@ load_dotenv(os.path.join(BASE_DIR, "../.env"))
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-+c6w+lxtf*1xscm)4_f#6e5n+xsz4=@r-&08__hli=b!%7v-=9"
+
+SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-+c6w+lxtf*1xscm)4_f#6e5n+xsz4=@r-&08__hli=b!%7v-=9")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "True") == "True"
@@ -78,22 +79,10 @@ ROOT_URLCONF = "backend.urls"
 # Allow Django to append trailing slashes for API consistency
 APPEND_SLASH = False
 # CORS settings
-CORS_ALLOWED_ORIGINS = (
-    os.getenv(
-        "CORS_ALLOWED_ORIGINS", "http://localhost:3000,https://localhost:3000"
-    ).split(",")
-    if os.getenv("CORS_ALLOWED_ORIGINS")
-    else ["http://localhost:3000", "https://localhost:3000"]
-)
-CSRF_TRUSTED_ORIGINS = (
-    os.getenv(
-        "CSRF_TRUSTED_ORIGINS", "http://localhost:3000,https://localhost:3000"
-    ).split(",")
-    if os.getenv("CSRF_TRUSTED_ORIGINS")
-    else ["http://localhost:3000", "https://localhost:3000"]
-)
+CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,https://localhost:3000").split(",")
+CSRF_TRUSTED_ORIGINS =os.getenv("CSRF_TRUSTED_ORIGINS", "http://localhost:3000,https://localhost:3000").split(",")
 
-# Additional CORS settings for proper functionality
+# Additional CORS settings for proper functionality``
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_HEADERS = True
 CORS_ALLOWED_HEADERS = [
