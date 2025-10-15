@@ -172,7 +172,8 @@ class Order(models.Model):
     class Meta:
         verbose_name_plural = "Orders"
         # ordering = ["-delivery_date"]
-        # Duplicate prevention is handled at application level with 3-second time window
+        # Prevent exact duplicate orders (same customer, delivery date, and notes)
+        unique_together = ("customer", "delivery_date", "notes")
 
     def __str__(self):
         return f"Order #{self.id} by {self.customer}"

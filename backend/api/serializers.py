@@ -92,6 +92,30 @@ class OrderSerializer(serializers.ModelSerializer):
             "total_items",
         ]
 
+    def validate(self, data):
+        """Validate order data and check for duplicates."""
+        # Check for exact duplicate orders
+        if self.instance is None:  # Only for new orders
+            customer = data.get("customer")
+            delivery_date = data.get("delivery_date")
+            notes = data.get("notes", "")
+
+            if customer and delivery_date:
+                existing_order = Order.objects.filter(
+                    customer=customer, delivery_date=delivery_date, notes=notes
+                ).first()
+
+                if existing_order:
+                    raise serializers.ValidationError(
+                        {
+                            "non_field_errors": [
+                                "An identical order already exists for this customer, delivery date, and notes."
+                            ]
+                        }
+                    )
+
+        return data
+
     def get_total_price(self, obj):
         return obj.total_price
 

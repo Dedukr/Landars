@@ -1,3 +1,34 @@
+// Simple double-click prevention for order forms
+document.addEventListener("DOMContentLoaded", function () {
+  // Find all save buttons in order forms
+  const saveButtons = document.querySelectorAll(
+    'input[type="submit"][name="_save"], input[type="submit"][name="_addanother"], input[type="submit"][name="_continue"]'
+  );
+
+  saveButtons.forEach(function (button) {
+    button.addEventListener("click", function (e) {
+      // Simple double-click prevention
+      if (this.disabled) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+
+      // Disable button to prevent double-clicking
+      this.disabled = true;
+      this.value = "Saving...";
+      this.style.opacity = "0.6";
+
+      // Re-enable after 5 seconds as safety measure
+      setTimeout(function () {
+        button.disabled = false;
+        button.value = button.getAttribute("data-original-value") || "Save";
+        button.style.opacity = "1";
+      }, 5000);
+    });
+  });
+});
+
 document.addEventListener("DOMContentLoaded", function () {
   var filterContainers = document.querySelectorAll(
     // "#changelist-filter, .toplinks"
