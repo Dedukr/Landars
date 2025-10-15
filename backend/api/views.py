@@ -107,20 +107,7 @@ class ProductDetail(APIView):
             return None
 
 
-class StockUpdateView(APIView):
-    def patch(self, request, product_id):
-        """Update stock for a specific product."""
-        try:
-            stock = Stock.objects.get(product_id=product_id)
-            stock.quantity += int(request.data.get("quantity", 0))
-            stock.save()
-            return Response(
-                {"message": "Stock updated successfully."}, status=status.HTTP_200_OK
-            )
-        except Stock.DoesNotExist:
-            return Response(
-                {"error": "Product not found."}, status=status.HTTP_404_NOT_FOUND
-            )
+# StockUpdateView removed - Stock model was deleted
 
 
 class OrderListCreateView(APIView):
@@ -140,19 +127,35 @@ class OrderListCreateView(APIView):
     def post(self, request):
         """
         Create a new order with atomic transaction to prevent duplicates.
-        Uses a unique constraint check to prevent duplicate orders.
+        Uses intelligent duplicate detection based on order content.
         """
         # Add customer from authenticated user
         data = request.data.copy()
         data["customer"] = request.user.id
 
-        # Generate a unique order token to prevent duplicates
-        order_token = str(uuid.uuid4())
-        data["notes"] = f"{data.get('notes', '')} [TOKEN:{order_token}]"
-
         serializer = OrderSerializer(data=data)
         if serializer.is_valid():
             try:
+                # Create the order instance to check for duplicates
+                order_data = serializer.validated_data
+                temp_order = Order(**order_data)
+
+                # Check for recent orders from the same customer
+                duplicate_orders = temp_order.check_for_duplicate_orders(
+                    time_window_seconds=3
+                )
+
+                if duplicate_orders:
+                    return Response(
+                        {
+                            "error": "Duplicate submission detected",
+                            "message": f"An order was created by this user within the last 3 seconds. Please wait before creating another order.",
+                            "recent_orders": len(duplicate_orders),
+                        },
+                        status=status.HTTP_409_CONFLICT,
+                    )
+
+                # No duplicates found, create the order
                 order = serializer.save()
                 return Response(
                     OrderSerializer(order).data, status=status.HTTP_201_CREATED

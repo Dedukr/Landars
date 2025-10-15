@@ -7,6 +7,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Track form submissions to prevent double submissions
   const submittedForms = new Set();
+  const submissionTimestamps = new Map();
 
   saveButtons.forEach(function (button) {
     // Store original button values
@@ -15,13 +16,18 @@ document.addEventListener("DOMContentLoaded", function () {
     button.addEventListener("click", function (e) {
       const form = button.closest("form");
       const formId = form ? form.action + form.innerHTML.length : "unknown";
+      const now = Date.now();
 
-      // Check if this form was already submitted
+      // Check if this form was already submitted recently (within 3 seconds)
       if (submittedForms.has(formId)) {
-        e.preventDefault();
-        e.stopPropagation();
-        console.log("Preventing duplicate form submission");
-        return false;
+        const lastSubmission = submissionTimestamps.get(formId);
+        if (now - lastSubmission < 3000) {
+          e.preventDefault();
+          e.stopPropagation();
+          console.log("Preventing duplicate form submission - too recent");
+          alert("Please wait, the form is already being submitted...");
+          return false;
+        }
       }
 
       // Disable the button to prevent double-clicking
@@ -31,24 +37,28 @@ document.addEventListener("DOMContentLoaded", function () {
         return false;
       }
 
-      // Mark form as submitted
+      // Mark form as submitted with timestamp
       submittedForms.add(formId);
+      submissionTimestamps.set(formId, now);
 
       // Disable all save buttons in this form
       const formButtons = form.querySelectorAll('input[type="submit"]');
       formButtons.forEach(function (btn) {
         btn.disabled = true;
         btn.value = "Saving...";
+        btn.style.opacity = "0.6";
       });
 
-      // Re-enable after 10 seconds as a safety measure (increased from 5)
+      // Re-enable after 15 seconds as a safety measure
       setTimeout(function () {
         formButtons.forEach(function (btn) {
           btn.disabled = false;
           btn.value = btn.getAttribute("data-original-value") || "Save";
+          btn.style.opacity = "1";
         });
         submittedForms.delete(formId);
-      }, 10000);
+        submissionTimestamps.delete(formId);
+      }, 15000);
     });
   });
 

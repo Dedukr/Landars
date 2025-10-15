@@ -292,7 +292,7 @@ class OrderAdmin(admin.ModelAdmin):
                 "is_home_delivery",
             ]
             if not request.user.has_perm("account.change_customuser"):
-                return fields[0].replace("customer", "customer_name")
+                fields[0] = "customer_name"
         fields += [
             "delivery_fee_manual",
             "delivery_fee",
@@ -324,11 +324,9 @@ class OrderAdmin(admin.ModelAdmin):
         return obj.customer.name if obj.customer else "No Customer"
 
     def customer_phone(self, obj):
-        return (
-            obj.customer.profile.phone
-            if obj.customer and obj.customer.profile
-            else "No Phone"
-        )
+        if obj.customer and hasattr(obj.customer, "profile") and obj.customer.profile:
+            return obj.customer.profile.phone or "No Phone"
+        return "No Phone"
 
     def get_total_price(self, obj):
         return obj.total_price
@@ -351,74 +349,78 @@ class OrderAdmin(admin.ModelAdmin):
             # Post category name
             post_suitable_category = "Sausages and Marinated products"
             delivery_fee_changed = False
+            new_delivery_fee = order.delivery_fee
+            new_is_home_delivery = order.is_home_delivery
 
             for item in items:
                 category_names = item.product.categories.values_list("name", flat=True)
                 if post_suitable_category not in [
                     name.lower() for name in category_names
                 ]:
-                    if order.is_home_delivery != True or order.delivery_fee != 10:
-                        order.is_home_delivery = True
-                        order.delivery_fee = 10
+                    if new_is_home_delivery != True or new_delivery_fee != 10:
+                        new_is_home_delivery = True
+                        new_delivery_fee = 10
                         delivery_fee_changed = True
                     break
             else:
-                if order.is_home_delivery != False:
-                    order.is_home_delivery = False
+                if new_is_home_delivery != False:
+                    new_is_home_delivery = False
                     delivery_fee_changed = True
 
                 if order.total_price > 220:
-                    if order.delivery_fee != 0:
-                        order.delivery_fee = 0
+                    if new_delivery_fee != 0:
+                        new_delivery_fee = 0
                         delivery_fee_changed = True
                 else:
                     total_weight = sum(item.quantity for item in items)
-                    new_fee = 0
                     if total_weight <= 2:
-                        new_fee = 5
+                        new_delivery_fee = 5
                     elif total_weight <= 10:
-                        new_fee = 8
+                        new_delivery_fee = 8
                     else:
-                        new_fee = 15
+                        new_delivery_fee = 15
 
-                    if order.delivery_fee != new_fee:
-                        order.delivery_fee = new_fee
+                    if order.delivery_fee != new_delivery_fee:
                         delivery_fee_changed = True
 
             # Only save if delivery fee actually changed to prevent unnecessary saves
             if delivery_fee_changed:
+                # Update the fields without triggering another save
+                order.is_home_delivery = new_is_home_delivery
+                order.delivery_fee = new_delivery_fee
+                # Use update_fields to prevent triggering signals or other save methods
                 order.save(update_fields=["is_home_delivery", "delivery_fee"])
 
     @transaction.atomic
     def save_model(self, request, obj, form, change):
         """Save the order with atomic transaction to prevent race conditions and double saves."""
-        # Add a small delay to prevent rapid double saves
-        import time
-
-        time.sleep(0.1)
-
-        # Check if this is a new order and if there's a very recent order with same details
+        # Check for duplicate orders based on creation time
         if not change:  # New order
-            from django.utils import timezone
+            import logging
 
-            recent_time = timezone.now() - timezone.timedelta(seconds=3)
+            from django.contrib import messages
 
-            # Check for very recent orders with same customer and delivery date
-            recent_orders = Order.objects.filter(
-                customer=obj.customer,
-                delivery_date=obj.delivery_date,
-                created_at__gte=recent_time,
-            ).exclude(pk=obj.pk if obj.pk else None)
+            # Check for recent orders from the same customer
+            duplicate_orders = obj.check_for_duplicate_orders(time_window_seconds=3)
 
-            if recent_orders.exists():
-                # If there's a very recent order, this might be a double save
-                # Log it but don't prevent it (since user wants to allow same orders)
-                import logging
-
+            if duplicate_orders:
                 logger = logging.getLogger(__name__)
                 logger.warning(
-                    f"Potential double save detected for customer {obj.customer} on {obj.delivery_date} - {recent_orders.count()} recent orders found"
+                    f"Potential duplicate order detected for customer {obj.customer} - {len(duplicate_orders)} recent orders found within 3 seconds"
                 )
+
+                # Show a simple warning message
+                messages.warning(
+                    request,
+                    f"⚠️ Warning: {len(duplicate_orders)} order(s) created by {obj.customer} within the last 3 seconds. This might be a duplicate submission.",
+                )
+
+        # Use select_for_update to prevent race conditions
+        if obj.pk:
+            try:
+                obj = Order.objects.select_for_update().get(pk=obj.pk)
+            except Order.DoesNotExist:
+                pass
 
         super().save_model(request, obj, form, change)
 
