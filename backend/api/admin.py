@@ -351,28 +351,7 @@ class OrderAdmin(admin.ModelAdmin):
 
     @transaction.atomic
     def save_model(self, request, obj, form, change):
-        """Save the order with atomic transaction to prevent race conditions and double saves."""
-        # Check for duplicate orders based on creation time
-        if not change:  # New order
-            import logging
-
-            from django.contrib import messages
-
-            # Check for recent orders from the same customer
-            duplicate_orders = obj.check_for_duplicate_orders(time_window_seconds=3)
-
-            if duplicate_orders:
-                logger = logging.getLogger(__name__)
-                logger.warning(
-                    f"Potential duplicate order detected for customer {obj.customer} - {len(duplicate_orders)} recent orders found within 3 seconds"
-                )
-
-                # Show a simple warning message
-                messages.warning(
-                    request,
-                    f"⚠️ Warning: {len(duplicate_orders)} order(s) created by {obj.customer} within the last 3 seconds. This might be a duplicate submission.",
-                )
-
+        """Save the order with atomic transaction to prevent race conditions."""
         # Use select_for_update to prevent race conditions
         if obj.pk:
             try:

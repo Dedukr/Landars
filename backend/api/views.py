@@ -136,26 +136,7 @@ class OrderListCreateView(APIView):
         serializer = OrderSerializer(data=data)
         if serializer.is_valid():
             try:
-                # Create the order instance to check for duplicates
-                order_data = serializer.validated_data
-                temp_order = Order(**order_data)
-
-                # Check for recent orders from the same customer
-                duplicate_orders = temp_order.check_for_duplicate_orders(
-                    time_window_seconds=3
-                )
-
-                if duplicate_orders:
-                    return Response(
-                        {
-                            "error": "Duplicate submission detected",
-                            "message": f"An order was created by this user within the last 3 seconds. Please wait before creating another order.",
-                            "recent_orders": len(duplicate_orders),
-                        },
-                        status=status.HTTP_409_CONFLICT,
-                    )
-
-                # No duplicates found, create the order
+                # Create the order
                 order = serializer.save()
                 return Response(
                     OrderSerializer(order).data, status=status.HTTP_201_CREATED
