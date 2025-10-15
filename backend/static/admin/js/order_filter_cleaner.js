@@ -84,7 +84,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   });
 
-  // Add duplicate prevention warning
+  // Add duplicate prevention warning (simplified to avoid DOM interference)
   const customerField = document.querySelector('select[name="customer"]');
   const deliveryDateField = document.querySelector(
     'input[name="delivery_date"]'
@@ -92,35 +92,21 @@ document.addEventListener("DOMContentLoaded", function () {
   const notesField = document.querySelector('textarea[name="notes"]');
 
   if (customerField && deliveryDateField) {
+    let warningShown = false;
+    
     function checkForDuplicates() {
       const customer = customerField.value;
       const deliveryDate = deliveryDateField.value;
       const notes = notesField ? notesField.value : "";
 
-      if (customer && deliveryDate) {
-        // Show a warning if we detect potential duplicate
-        const existingWarning = document.getElementById("duplicate-warning");
-        if (existingWarning) {
-          existingWarning.remove();
-        }
-
-        // Create warning element
-        const warning = document.createElement("div");
-        warning.id = "duplicate-warning";
-        warning.style.cssText =
-          "background-color: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 10px; margin: 10px 0; border-radius: 4px;";
-        warning.innerHTML =
-          "⚠️ <strong>Duplicate Check:</strong> Make sure this order is not a duplicate of an existing order. The system will prevent exact duplicates.";
-
-        // Insert warning after the form
-        const form = document.querySelector("form");
-        if (form) {
-          form.insertBefore(warning, form.firstChild);
-        }
+      if (customer && deliveryDate && !warningShown) {
+        // Only show warning once and in a less intrusive way
+        console.log("⚠️ Duplicate Check: Make sure this order is not a duplicate of an existing order. The system will prevent exact duplicates.");
+        warningShown = true;
       }
     }
 
-    // Check on field changes
+    // Check on field changes (but only once)
     customerField.addEventListener("change", checkForDuplicates);
     deliveryDateField.addEventListener("change", checkForDuplicates);
     if (notesField) {
