@@ -24,7 +24,7 @@ from .models import Order, OrderItem, Product, ProductCategories
 
 
 class OrderAdminForm(ModelForm):
-    """Custom form for Order admin with double-save prevention."""
+    """Custom form for Order admin."""
 
     class Meta:
         model = Order
@@ -239,10 +239,7 @@ class OrderAdmin(admin.ModelAdmin):
     form = OrderAdminForm
 
     class Media:
-        js = (
-            "admin/js/order_filter_cleaner.js",
-            "admin/js/order_duplicate_prevention.js",
-        )
+        js = ("admin/js/order_filter_cleaner.js",)
 
     actions = [
         create_and_upload_invoice,
@@ -352,16 +349,8 @@ class OrderAdmin(admin.ModelAdmin):
         # Use the model method to calculate and update delivery fees
         order.update_delivery_fee_and_home_status()
 
-    @transaction.atomic
     def save_model(self, request, obj, form, change):
-        """Save the order with atomic transaction to prevent race conditions."""
-        # Use select_for_update to prevent race conditions
-        if obj.pk:
-            try:
-                obj = Order.objects.select_for_update().get(pk=obj.pk)
-            except Order.DoesNotExist:
-                pass
-
+        """Save the order normally without additional save-prevention logic."""
         super().save_model(request, obj, form, change)
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):

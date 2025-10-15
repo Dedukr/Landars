@@ -21,8 +21,8 @@ services:
     depends_on:
       - backend
     volumes:
-      - static_volume:/backend/static
       - /etc/ssl/landarsfood:/etc/ssl/landarsfood:ro
+      - static_volume:/backend/static:ro
     logging:
       driver: "json-file"
       options:
