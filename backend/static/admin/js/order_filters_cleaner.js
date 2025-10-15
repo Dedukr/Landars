@@ -66,8 +66,8 @@ document.addEventListener("DOMContentLoaded", function () {
           });
           // Always remove delivery_date__* params, even if future_date already exists
           if (changed) {
-            e.preventDefault();
-            window.location = url.pathname + url.search;
+            // Do not prevent default navigation
+            link.setAttribute("href", url.pathname + url.search);
           }
         }
       }

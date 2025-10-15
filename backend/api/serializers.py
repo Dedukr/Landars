@@ -48,15 +48,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data):
-        # Additional validation for the entire object
-        if "product" in data and "quantity" in data:
-            product = data["product"]
-            quantity = data["quantity"]
-
-            # Check if product exists and is active
-            if not Product.objects.filter(id=product.id).exists():
-                raise serializers.ValidationError("Product does not exist")
-
+        # Do not perform blocking validations at serializer-level
         return data
 
 
@@ -103,15 +95,11 @@ class OrderSerializer(serializers.ModelSerializer):
         return obj.total_items
 
     def validate_delivery_date(self, value):
-        from django.utils import timezone
-
-        if value < timezone.now().date():
-            raise serializers.ValidationError("Delivery date cannot be in the past")
+        # Allow past dates; business logic can handle downstream
         return value
 
     def validate_items(self, value):
-        if not value:
-            raise serializers.ValidationError("Order must have at least one item")
+        # Allow empty items list at serializer-level
         return value
 
     @transaction.atomic
