@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import boto3
+from account.models import CustomUser
 from django.conf import settings
 from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
@@ -19,7 +20,7 @@ from django.utils.translation import gettext_lazy as _
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 
-from .models import CustomUser, Order, OrderItem, Product, ProductCategories
+from .models import Order, OrderItem, Product, ProductCategories
 
 
 class OrderAdminForm(ModelForm):
