@@ -93,26 +93,7 @@ class OrderSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, data):
-        """Validate order data and check for duplicates."""
-        # Check for exact duplicate orders
-        if self.instance is None:  # Only for new orders
-            customer = data.get("customer")
-            delivery_date = data.get("delivery_date")
-
-            if customer and delivery_date:
-                existing_order = Order.objects.filter(
-                    customer=customer, delivery_date=delivery_date
-                ).first()
-
-                if existing_order:
-                    raise serializers.ValidationError(
-                        {
-                            "non_field_errors": [
-                                "An order already exists for this customer and delivery date."
-                            ]
-                        }
-                    )
-
+        """Basic validation only; duplicate-prevention removed."""
         return data
 
     def get_total_price(self, obj):
@@ -138,20 +119,9 @@ class OrderSerializer(serializers.ModelSerializer):
         items_data = validated_data.pop("items")
         order = Order.objects.create(**validated_data)
 
-        # Create order items with duplicate prevention
+        # Create order items without duplicate merging
         for item_data in items_data:
-            product = item_data["product"]
-            quantity = item_data["quantity"]
-
-            # Use get_or_create to prevent duplicates
-            order_item, created = OrderItem.objects.get_or_create(
-                order=order, product=product, defaults={"quantity": quantity}
-            )
-
-            if not created:
-                # Item already exists, update quantity
-                order_item.quantity += quantity
-                order_item.save()
+            OrderItem.objects.create(order=order, **item_data)
 
         # Calculate and update delivery fee and home status
         order.update_delivery_fee_and_home_status()
@@ -169,25 +139,10 @@ class OrderSerializer(serializers.ModelSerializer):
 
         # Update order items if provided
         if items_data is not None:
-            # Clear existing items and create new ones with duplicate prevention
+            # Replace items exactly as provided (no merging)
             instance.items.all().delete()
-
-            # Group items by product to handle duplicates
-            product_quantities = {}
             for item_data in items_data:
-                product = item_data["product"]
-                quantity = item_data["quantity"]
-
-                if product in product_quantities:
-                    product_quantities[product] += quantity
-                else:
-                    product_quantities[product] = quantity
-
-            # Create items with merged quantities
-            for product, total_quantity in product_quantities.items():
-                OrderItem.objects.create(
-                    order=instance, product=product, quantity=total_quantity
-                )
+                OrderItem.objects.create(order=instance, **item_data)
 
         # Calculate and update delivery fee and home status
         instance.update_delivery_fee_and_home_status()

@@ -111,9 +111,7 @@ class ProductDetail(APIView):
 
 
 class OrderListCreateView(APIView):
-    """
-    List all orders or create a new order with atomic transaction to prevent duplicates.
-    """
+    """List all orders or create a new order."""
 
     permission_classes = [IsAuthenticated]
 
@@ -123,12 +121,8 @@ class OrderListCreateView(APIView):
         serializer = OrderSerializer(orders, many=True)
         return Response(serializer.data)
 
-    @transaction.atomic
     def post(self, request):
-        """
-        Create a new order with atomic transaction to prevent duplicates.
-        Uses intelligent duplicate detection based on order content.
-        """
+        """Create a new order."""
         # Add customer from authenticated user
         data = request.data.copy()
         data["customer"] = request.user.id
@@ -205,15 +199,12 @@ class OrderDetailView(APIView):
 
 
 class OrderItemView(APIView):
-    """
-    Manage order items with duplicate prevention.
-    """
+    """Manage order items."""
 
     permission_classes = [IsAuthenticated]
 
-    @transaction.atomic
     def post(self, request, order_id):
-        """Add an item to an order with duplicate prevention."""
+        """Add an item to an order."""
         try:
             order = Order.objects.select_for_update().get(
                 id=order_id, customer=request.user
@@ -241,21 +232,9 @@ class OrderItemView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Use get_or_create with select_for_update to prevent race conditions
-        existing_item, created = OrderItem.objects.select_for_update().get_or_create(
-            order=order, product=product, defaults={"quantity": quantity}
-        )
-
-        if not created:
-            # Item already exists, update quantity
-            existing_item.quantity += quantity
-            existing_item.save()
-            serializer = OrderItemSerializer(existing_item)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        else:
-            # New item created
-            serializer = OrderItemSerializer(existing_item)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        item = OrderItem.objects.create(order=order, product=product, quantity=quantity)
+        serializer = OrderItemSerializer(item)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @transaction.atomic
     def delete(self, request, order_id, item_id):

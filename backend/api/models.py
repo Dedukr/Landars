@@ -172,8 +172,7 @@ class Order(models.Model):
     class Meta:
         verbose_name_plural = "Orders"
         # ordering = ["-delivery_date"]
-        # Prevent exact duplicate orders (same customer and delivery date only)
-        unique_together = ("customer", "delivery_date")
+        # Duplicate-prevention removed
 
     def __str__(self):
         return f"Order #{self.id} by {self.customer}"
@@ -329,8 +328,7 @@ class OrderItem(models.Model):
     )
 
     class Meta:
-        # Prevent duplicate items in the same order
-        unique_together = ("order", "product")
+        # Duplicate-prevention removed
         verbose_name_plural = "Order Items"
 
     def __str__(self):
