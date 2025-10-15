@@ -5,6 +5,7 @@ from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.utils import timezone
 
 
 # ProductCategory model
@@ -44,7 +45,7 @@ class ProductCategory(models.Model):
 
     def get_products(self):
         """Get all products in this category."""
-        return Product.objects.filter(category=self.name)
+        return Product.objects.filter(categories__name=self.name)
 
     def get_product_count(self):
         """Get the count of products in this category."""
@@ -88,7 +89,7 @@ class Product(models.Model):
             "categories": self.get_categories,
             "description": self.description,
             "price": str(self.price),
-            "image_url": self.image.url if self.image else None,  # Include S3 image URL
+            # image_url removed since image field is commented out
         }
 
     # def get_product_stock(self):
@@ -152,6 +153,9 @@ class Order(models.Model):
         max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0)]
     )
     order_date = models.DateField(auto_now_add=True, null=True)
+    created_at = models.DateTimeField(
+        auto_now_add=True, help_text="Exact timestamp when order was created"
+    )
     status = models.CharField(
         max_length=50,
         choices=[
@@ -168,6 +172,7 @@ class Order(models.Model):
     class Meta:
         verbose_name_plural = "Orders"
         # ordering = ["-delivery_date"]
+        # Duplicate prevention is handled at application level with 3-second time window
 
     def __str__(self):
         return f"Order #{self.id} by {self.customer}"
@@ -177,10 +182,10 @@ class Order(models.Model):
         """Calculate the total items price."""
         result = 0
         for item in self.items.all():
-            if not (item.get_total_price() == ""):
-                result += item.get_total_price()
+            total_price = item.get_total_price()
+            if total_price and total_price != "":
+                result += total_price
         return result
-        # return sum(item.get_total_price() if item.get_total_price() for item in self.items.all())
 
     @property
     def total_price(self):
@@ -200,7 +205,7 @@ class Order(models.Model):
             "order_id": self.id,
             "customer": self.customer,
             "delivery_date": self.delivery_date.strftime("%Y-%m-%d"),
-            "total_price": self.get_total_price(),
+            "total_price": self.total_price,
             "items": [item.get_item_details() for item in self.items.all()],
         }
 
@@ -211,6 +216,46 @@ class Order(models.Model):
             address = profile.address
             return f"{address.address_line + ', ' if address.address_line else ''}{address.address_line2 + ', ' if address.address_line2 else ''}{address.city + ', ' if address.city else ''}{address.postal_code if address.postal_code else ''}"
         return "No Address"
+
+    def add_item_safely(self, product, quantity):
+        """
+        Safely add an item to the order, merging quantities if the item already exists.
+        Returns the OrderItem instance.
+        """
+        from django.db import transaction
+
+        with transaction.atomic():
+            order_item, created = OrderItem.objects.select_for_update().get_or_create(
+                order=self, product=product, defaults={"quantity": quantity}
+            )
+
+            if not created:
+                # Item already exists, update quantity
+                order_item.quantity += quantity
+                order_item.save()
+
+            return order_item
+
+    def check_for_duplicate_orders(self, time_window_seconds=3):
+        """
+        Check if there are orders created by the same user within the time window.
+        Returns a list of recent orders from the same customer.
+        """
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        if not self.customer:
+            return []
+
+        # Get recent orders for the same customer within the time window
+        recent_time = timezone.now() - timedelta(seconds=time_window_seconds)
+        recent_orders = Order.objects.filter(
+            customer=self.customer,
+            created_at__gte=recent_time,
+        ).exclude(pk=self.pk if self.pk else None)
+
+        return recent_orders
 
 
 # OrderItem model
@@ -224,6 +269,11 @@ class OrderItem(models.Model):
         blank=False,
         null=False,
     )
+
+    class Meta:
+        # Prevent duplicate items in the same order
+        unique_together = ("order", "product")
+        verbose_name_plural = "Order Items"
 
     def __str__(self):
         return f"{self.product.name if self.product else 'Deleted product'} - {self.quantity}"
@@ -240,5 +290,5 @@ class OrderItem(models.Model):
             "product_id": self.product.id,
             "product_name": self.product.name,
             "quantity": self.quantity,
-            "total_price": str(self.total_price()),
+            "total_price": str(self.get_total_price()),
         }

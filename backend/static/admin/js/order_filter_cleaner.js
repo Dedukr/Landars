@@ -1,3 +1,134 @@
+// Prevent duplicate order submissions
+document.addEventListener("DOMContentLoaded", function () {
+  // Find all save buttons in order forms
+  const saveButtons = document.querySelectorAll(
+    'input[type="submit"][name="_save"], input[type="submit"][name="_addanother"], input[type="submit"][name="_continue"]'
+  );
+
+  // Track form submissions to prevent double submissions
+  const submittedForms = new Set();
+  const submissionTimestamps = new Map();
+
+  saveButtons.forEach(function (button) {
+    // Store original button values
+    button.setAttribute("data-original-value", button.value);
+
+    button.addEventListener("click", function (e) {
+      const form = button.closest("form");
+      const formId = form ? form.action + form.innerHTML.length : "unknown";
+      const now = Date.now();
+
+      // Check if this form was already submitted recently (within 3 seconds)
+      if (submittedForms.has(formId)) {
+        const lastSubmission = submissionTimestamps.get(formId);
+        if (now - lastSubmission < 3000) {
+          e.preventDefault();
+          e.stopPropagation();
+          console.log("Preventing duplicate form submission - too recent");
+          alert("Please wait, the form is already being submitted...");
+          return false;
+        }
+      }
+
+      // Disable the button to prevent double-clicking
+      if (this.disabled) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+
+      // Mark form as submitted with timestamp
+      submittedForms.add(formId);
+      submissionTimestamps.set(formId, now);
+
+      // Disable all save buttons in this form
+      const formButtons = form.querySelectorAll('input[type="submit"]');
+      formButtons.forEach(function (btn) {
+        btn.disabled = true;
+        btn.value = "Saving...";
+        btn.style.opacity = "0.6";
+      });
+
+      // Re-enable after 15 seconds as a safety measure
+      setTimeout(function () {
+        formButtons.forEach(function (btn) {
+          btn.disabled = false;
+          btn.value = btn.getAttribute("data-original-value") || "Save";
+          btn.style.opacity = "1";
+        });
+        submittedForms.delete(formId);
+        submissionTimestamps.delete(formId);
+      }, 15000);
+    });
+  });
+
+  // Add form-level submission prevention
+  const forms = document.querySelectorAll("form");
+  forms.forEach(function (form) {
+    let isSubmitting = false;
+
+    form.addEventListener("submit", function (e) {
+      if (isSubmitting) {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log("Preventing duplicate form submission at form level");
+        return false;
+      }
+
+      isSubmitting = true;
+
+      // Reset flag after 15 seconds as safety measure
+      setTimeout(function () {
+        isSubmitting = false;
+      }, 15000);
+    });
+  });
+
+  // Add duplicate prevention warning
+  const customerField = document.querySelector('select[name="customer"]');
+  const deliveryDateField = document.querySelector(
+    'input[name="delivery_date"]'
+  );
+  const notesField = document.querySelector('textarea[name="notes"]');
+
+  if (customerField && deliveryDateField) {
+    function checkForDuplicates() {
+      const customer = customerField.value;
+      const deliveryDate = deliveryDateField.value;
+      const notes = notesField ? notesField.value : "";
+
+      if (customer && deliveryDate) {
+        // Show a warning if we detect potential duplicate
+        const existingWarning = document.getElementById("duplicate-warning");
+        if (existingWarning) {
+          existingWarning.remove();
+        }
+
+        // Create warning element
+        const warning = document.createElement("div");
+        warning.id = "duplicate-warning";
+        warning.style.cssText =
+          "background-color: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 10px; margin: 10px 0; border-radius: 4px;";
+        warning.innerHTML =
+          "⚠️ <strong>Duplicate Check:</strong> Make sure this order is not a duplicate of an existing order. The system will prevent exact duplicates.";
+
+        // Insert warning after the form
+        const form = document.querySelector("form");
+        if (form) {
+          form.insertBefore(warning, form.firstChild);
+        }
+      }
+    }
+
+    // Check on field changes
+    customerField.addEventListener("change", checkForDuplicates);
+    deliveryDateField.addEventListener("change", checkForDuplicates);
+    if (notesField) {
+      notesField.addEventListener("input", checkForDuplicates);
+    }
+  }
+});
+
 document.addEventListener("DOMContentLoaded", function () {
   var filterContainers = document.querySelectorAll(
     // "#changelist-filter, .toplinks"
