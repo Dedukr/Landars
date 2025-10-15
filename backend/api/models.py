@@ -299,6 +299,73 @@ class Order(models.Model):
         else:
             return False, Decimal("15")
 
+    def calculate_delivery_fee_and_home_status_from_items(self, items_data):
+        """
+        Calculate delivery fee and home delivery status using a list of items
+        that may not yet be persisted. Each item in items_data must include
+        keys: "product" (Product instance or id) and "quantity" (Decimal/float).
+        """
+        from decimal import Decimal
+
+        if self.delivery_fee_manual:
+            return self.is_home_delivery, self.delivery_fee
+
+        # Normalize items to (Product instance, quantity)
+        product_ids = []
+        normalized = []
+        for item in items_data or []:
+            product = item.get("product")
+            quantity = item.get("quantity")
+            if not product or not quantity:
+                continue
+            if isinstance(product, int):
+                product_ids.append(product)
+                normalized.append((product, quantity))
+            else:
+                normalized.append((product, quantity))
+
+        # Fetch missing Product instances in bulk
+        if product_ids:
+            from .models import Product as ProductModel
+
+            id_to_product = {
+                p.id: p for p in ProductModel.objects.filter(id__in=product_ids)
+            }
+            normalized = [
+                (id_to_product.get(p) if isinstance(p, int) else p, q)
+                for p, q in normalized
+                if (id_to_product.get(p) if isinstance(p, int) else p) is not None
+            ]
+
+        if not normalized:
+            return True, Decimal("10")
+
+        # Determine if any item is not in the post-suitable category
+        post_category = "Sausages and Marinated products"
+        has_non_post_items = any(
+            prod
+            and post_category.lower()
+            not in [
+                name.lower() for name in prod.categories.values_list("name", flat=True)
+            ]
+            for prod, _ in normalized
+        )
+        if has_non_post_items:
+            return True, Decimal("10")
+
+        # All items are post-suitable. Compute total price and weight.
+        total_price = sum((prod.price * q) for prod, q in normalized if prod)
+        if total_price > Decimal("220"):
+            return False, Decimal("0")
+
+        total_weight = sum(float(q) for _, q in normalized)
+        if total_weight <= 2:
+            return False, Decimal("5")
+        elif total_weight <= 10:
+            return False, Decimal("8")
+        else:
+            return False, Decimal("15")
+
     def update_delivery_fee_and_home_status(self):
         """Update delivery fee and home status if not manually set."""
         if not self.delivery_fee_manual:
@@ -328,8 +395,8 @@ class OrderItem(models.Model):
     )
 
     class Meta:
-        # Duplicate-prevention removed
         verbose_name_plural = "Order Items"
+        unique_together = ("order", "product")
 
     def __str__(self):
         return f"{self.product.name if self.product else 'Deleted product'} - {self.quantity}"

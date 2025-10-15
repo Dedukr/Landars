@@ -105,14 +105,25 @@ class OrderSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def create(self, validated_data):
         items_data = validated_data.pop("items")
+        # Create order instance but delay finalizing delivery fields until items are known
         order = Order.objects.create(**validated_data)
 
-        # Create order items without duplicate merging
+        # Persist items
         for item_data in items_data:
             OrderItem.objects.create(order=order, **item_data)
 
-        # Calculate and update delivery fee and home status
-        order.update_delivery_fee_and_home_status()
+        # Compute delivery fields from provided items and save once if needed
+        if not order.delivery_fee_manual:
+            is_home_delivery, delivery_fee = (
+                order.calculate_delivery_fee_and_home_status_from_items(items_data)
+            )
+            if (
+                order.is_home_delivery != is_home_delivery
+                or order.delivery_fee != delivery_fee
+            ):
+                order.is_home_delivery = is_home_delivery
+                order.delivery_fee = delivery_fee
+                order.save(update_fields=["is_home_delivery", "delivery_fee"])
 
         return order
 
@@ -120,19 +131,38 @@ class OrderSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         items_data = validated_data.pop("items", None)
 
-        # Update order fields
+        # Update basic fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
-        instance.save()
 
-        # Update order items if provided
+        # If items provided, replace them
         if items_data is not None:
-            # Replace items exactly as provided (no merging)
             instance.items.all().delete()
             for item_data in items_data:
                 OrderItem.objects.create(order=instance, **item_data)
 
-        # Calculate and update delivery fee and home status
-        instance.update_delivery_fee_and_home_status()
+        # Compute delivery fields from current or provided items, then save once
+        if not instance.delivery_fee_manual:
+            if items_data is not None:
+                compute_source = items_data
+            else:
+                # Build compute source from current DB items
+                compute_source = [
+                    {"product": i.product, "quantity": i.quantity}
+                    for i in instance.items.all()
+                ]
 
+            is_home_delivery, delivery_fee = (
+                instance.calculate_delivery_fee_and_home_status_from_items(
+                    compute_source
+                )
+            )
+            if (
+                instance.is_home_delivery != is_home_delivery
+                or instance.delivery_fee != delivery_fee
+            ):
+                instance.is_home_delivery = is_home_delivery
+                instance.delivery_fee = delivery_fee
+
+        instance.save()
         return instance

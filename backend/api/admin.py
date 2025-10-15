@@ -341,17 +341,40 @@ class OrderAdmin(admin.ModelAdmin):
 
     get_total_items.short_description = "Total Items"
 
+    def save_model(self, request, obj, form, change):
+        """Compute delivery fields before saving to avoid a second save."""
+        # If inlines are also present, we still compute based on current DB items;
+        # final adjustment is done in save_related once items are persisted if needed.
+        if not obj.delivery_fee_manual:
+            compute_source = [
+                {"product": i.product, "quantity": i.quantity} for i in obj.items.all()
+            ]
+            is_home_delivery, delivery_fee = (
+                obj.calculate_delivery_fee_and_home_status_from_items(compute_source)
+            )
+            obj.is_home_delivery = is_home_delivery
+            obj.delivery_fee = delivery_fee
+        super().save_model(request, obj, form, change)
+
     def save_related(self, request, form, formsets, change):
-        """Save related objects and calculate delivery fees without double saving."""
+        """After saving inlines, compute once and save only if values changed."""
         super().save_related(request, form, formsets, change)
         order = form.instance
-
-        # Use the model method to calculate and update delivery fees
-        order.update_delivery_fee_and_home_status()
-
-    def save_model(self, request, obj, form, change):
-        """Save the order normally without additional save-prevention logic."""
-        super().save_model(request, obj, form, change)
+        if not order.delivery_fee_manual:
+            compute_source = [
+                {"product": i.product, "quantity": i.quantity}
+                for i in order.items.all()
+            ]
+            is_home_delivery, delivery_fee = (
+                order.calculate_delivery_fee_and_home_status_from_items(compute_source)
+            )
+            if (
+                order.is_home_delivery != is_home_delivery
+                or order.delivery_fee != delivery_fee
+            ):
+                order.is_home_delivery = is_home_delivery
+                order.delivery_fee = delivery_fee
+                order.save(update_fields=["is_home_delivery", "delivery_fee"])
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "customer":
