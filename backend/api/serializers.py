@@ -98,18 +98,17 @@ class OrderSerializer(serializers.ModelSerializer):
         if self.instance is None:  # Only for new orders
             customer = data.get("customer")
             delivery_date = data.get("delivery_date")
-            notes = data.get("notes", "")
 
             if customer and delivery_date:
                 existing_order = Order.objects.filter(
-                    customer=customer, delivery_date=delivery_date, notes=notes
+                    customer=customer, delivery_date=delivery_date
                 ).first()
 
                 if existing_order:
                     raise serializers.ValidationError(
                         {
                             "non_field_errors": [
-                                "An identical order already exists for this customer, delivery date, and notes."
+                                "An order already exists for this customer and delivery date."
                             ]
                         }
                     )

@@ -239,7 +239,10 @@ class OrderAdmin(admin.ModelAdmin):
     form = OrderAdminForm
 
     class Media:
-        js = ("admin/js/order_filter_cleaner.js",)
+        js = (
+            "admin/js/order_filter_cleaner.js",
+            "admin/js/order_duplicate_prevention.js",
+        )
 
     actions = [
         create_and_upload_invoice,
