@@ -342,54 +342,9 @@ class OrderAdmin(admin.ModelAdmin):
         """Save related objects and calculate delivery fees without double saving."""
         super().save_related(request, form, formsets, change)
         order = form.instance
-        items = order.items.all()
 
-        # Only recalculate delivery fees if not manually set
-        if not order.delivery_fee_manual:
-            # Post category name
-            post_suitable_category = "Sausages and Marinated products"
-            delivery_fee_changed = False
-            new_delivery_fee = order.delivery_fee
-            new_is_home_delivery = order.is_home_delivery
-
-            for item in items:
-                category_names = item.product.categories.values_list("name", flat=True)
-                if post_suitable_category not in [
-                    name.lower() for name in category_names
-                ]:
-                    if new_is_home_delivery != True or new_delivery_fee != 10:
-                        new_is_home_delivery = True
-                        new_delivery_fee = 10
-                        delivery_fee_changed = True
-                    break
-            else:
-                if new_is_home_delivery != False:
-                    new_is_home_delivery = False
-                    delivery_fee_changed = True
-
-                if order.total_price > 220:
-                    if new_delivery_fee != 0:
-                        new_delivery_fee = 0
-                        delivery_fee_changed = True
-                else:
-                    total_weight = sum(item.quantity for item in items)
-                    if total_weight <= 2:
-                        new_delivery_fee = 5
-                    elif total_weight <= 10:
-                        new_delivery_fee = 8
-                    else:
-                        new_delivery_fee = 15
-
-                    if order.delivery_fee != new_delivery_fee:
-                        delivery_fee_changed = True
-
-            # Only save if delivery fee actually changed to prevent unnecessary saves
-            if delivery_fee_changed:
-                # Update the fields without triggering another save
-                order.is_home_delivery = new_is_home_delivery
-                order.delivery_fee = new_delivery_fee
-                # Use update_fields to prevent triggering signals or other save methods
-                order.save(update_fields=["is_home_delivery", "delivery_fee"])
+        # Use the model method to calculate and update delivery fees
+        order.update_delivery_fee_and_home_status()
 
     @transaction.atomic
     def save_model(self, request, obj, form, change):

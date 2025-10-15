@@ -6,13 +6,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0012_alter_order_is_home_delivery'),
+        ("api", "0011_alter_order_delivery_date"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='order',
-            name='is_home_delivery',
-            field=models.BooleanField(default=True, verbose_name='Home Delivery'),
+            model_name="order",
+            name="is_home_delivery",
+            field=models.BooleanField(default=True, verbose_name="Home Delivery"),
         ),
     ]

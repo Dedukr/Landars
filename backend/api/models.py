@@ -257,6 +257,63 @@ class Order(models.Model):
 
         return recent_orders
 
+    def calculate_delivery_fee_and_home_status(self):
+        """
+        Calculate delivery fee and home delivery status based on order items.
+        Returns a tuple (is_home_delivery, delivery_fee).
+        """
+        from decimal import Decimal
+
+        if self.delivery_fee_manual:
+            return self.is_home_delivery, self.delivery_fee
+
+        items = self.items.all()
+        if not items.exists():
+            return True, Decimal("10")
+
+        # Check if any item is NOT in post-suitable category
+        post_category = "Sausages and Marinated products"
+        has_non_post_items = any(
+            item.product
+            and post_category.lower()
+            not in [
+                name.lower()
+                for name in item.product.categories.values_list("name", flat=True)
+            ]
+            for item in items
+        )
+
+        if has_non_post_items:
+            return True, Decimal("10")  # Home delivery for non-post items
+
+        # All items are post-suitable
+        if self.total_price > 220:
+            return False, Decimal("0")  # Free delivery for high-value orders
+
+        # Calculate fee based on weight
+        total_weight = sum(float(item.quantity) for item in items)
+        if total_weight <= 2:
+            return False, Decimal("5")
+        elif total_weight <= 10:
+            return False, Decimal("8")
+        else:
+            return False, Decimal("15")
+
+    def update_delivery_fee_and_home_status(self):
+        """Update delivery fee and home status if not manually set."""
+        if not self.delivery_fee_manual:
+            is_home_delivery, delivery_fee = (
+                self.calculate_delivery_fee_and_home_status()
+            )
+
+            if (
+                self.is_home_delivery != is_home_delivery
+                or self.delivery_fee != delivery_fee
+            ):
+                self.is_home_delivery = is_home_delivery
+                self.delivery_fee = delivery_fee
+                self.save(update_fields=["is_home_delivery", "delivery_fee"])
+
 
 # OrderItem model
 class OrderItem(models.Model):

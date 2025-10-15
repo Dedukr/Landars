@@ -6,13 +6,16 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0018_rename_category_product_categories'),
+        ("api", "0014_alter_product_options_alter_product_unique_together_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='order',
-            name='delivery_fee_manual',
-            field=models.BooleanField(default=False, help_text='Check to set the delivery fee manually. Uncheck to auto-calculate.'),
+            model_name="order",
+            name="delivery_fee_manual",
+            field=models.BooleanField(
+                default=False,
+                help_text="Check to set the delivery fee manually. Uncheck to auto-calculate.",
+            ),
         ),
     ]

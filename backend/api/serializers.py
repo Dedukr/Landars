@@ -17,7 +17,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "description",
             "price",
             "image",
-            "categories",   
+            "categories",
             "stock_quantity",
         ]
 
@@ -138,6 +138,9 @@ class OrderSerializer(serializers.ModelSerializer):
                 order_item.quantity += quantity
                 order_item.save()
 
+        # Calculate and update delivery fee and home status
+        order.update_delivery_fee_and_home_status()
+
         return order
 
     @transaction.atomic
@@ -170,5 +173,8 @@ class OrderSerializer(serializers.ModelSerializer):
                 OrderItem.objects.create(
                     order=instance, product=product, quantity=total_quantity
                 )
+
+        # Calculate and update delivery fee and home status
+        instance.update_delivery_fee_and_home_status()
 
         return instance

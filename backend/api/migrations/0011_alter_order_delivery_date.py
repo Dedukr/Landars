@@ -6,14 +6,14 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0010_alter_order_invoice_link'),
+        ("api", "0004_remove_product_image"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='order',
-            name='delivery_date',
-            field=models.DateField(default='2025-05-23'),
+            model_name="order",
+            name="delivery_date",
+            field=models.DateField(default="2025-05-23"),
             preserve_default=False,
         ),
     ]
