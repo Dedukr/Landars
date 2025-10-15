@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("api", "0021_order_created_at"),
+        ("api", "0004_order_created_at"),
     ]
 
     operations = [
@@ -33,7 +33,8 @@ class Migration(migrations.Migration):
             model_name="order",
             name="delivery_fee_manual",
             field=models.BooleanField(
-                default=False, help_text="Check to set the delivery fee manually"
+                default=False,
+                help_text="Check to set the delivery fee manually. Uncheck to auto-calculate.",
             ),
         ),
         migrations.AlterField(

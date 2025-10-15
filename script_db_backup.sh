@@ -17,10 +17,10 @@
 
 # For production.
 # This script is intended to be run in a production environment and should not be used in development.
-CONTAINER=landars-backend-1
-DB_PATH_IN_CONTAINER=/backend/db/db.sqlite3
-DB_PATH_ON_HOST=/home/dedmac/web/Landars/backend/db/db.sqlite3
-BACKUP_DIR_ON_HOST=/home/dedmac/web/Landars/db_backups
+CONTAINER="landars-backend-1"
+DB_PATH_IN_CONTAINER="/backend/db/db.sqlite3"
+DB_PATH_ON_HOST="/home/dedmac/web/Landars/backend/db/db.sqlite3"
+BACKUP_DIR_ON_HOST="/home/dedmac/web/Landars/db_backups"
 DATE=$(date +"%Y-%m-%d_%H-%M-%S")
 FILENAME="db_backup_$DATE.sqlite3"
 

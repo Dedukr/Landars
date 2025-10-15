@@ -9,7 +9,7 @@ from django.utils import timezone
 
 
 # ProductCategory model
-class ProductCategory(models.Model):
+class ProductCategories(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     parent = models.ForeignKey(
@@ -30,7 +30,7 @@ class ProductCategory(models.Model):
         #     return f"{self.parent.name} → {self.name}"
         return self.name
 
-    def get_category_details(self):
+    def get_categories_details(self):
         return {
             "id": self.id,
             "name": self.name,
@@ -60,7 +60,7 @@ class ProductCategory(models.Model):
 class Product(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
-    categories = models.ManyToManyField(ProductCategory, related_name="products")
+    categories = models.ManyToManyField(ProductCategories, related_name="products")
     price = models.DecimalField(
         max_digits=10, decimal_places=2, validators=[MinValueValidator(0)]
     )

@@ -19,7 +19,7 @@ from django.utils.translation import gettext_lazy as _
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 
-from .models import CustomUser, Order, OrderItem, Product, ProductCategory
+from .models import CustomUser, Order, OrderItem, Product, ProductCategories
 
 
 class OrderAdminForm(ModelForm):
@@ -56,7 +56,7 @@ class ProductAdmin(admin.ModelAdmin):
     def formfield_for_manytomany(self, db_field, request, **kwargs):
         if db_field.name == "categories":
             # Only categories that are not parents (i.e., that are leaf nodes)
-            kwargs["queryset"] = ProductCategory.objects.filter(
+            kwargs["queryset"] = ProductCategories.objects.filter(
                 subcategories__isnull=True
             ).order_by("parent__name", "name")
         return super().formfield_for_manytomany(db_field, request, **kwargs)
@@ -76,13 +76,15 @@ class ProductAdmin(admin.ModelAdmin):
             instance.categories.add(*to_add)
 
 
-class ParentCategoryFilter(admin.SimpleListFilter):
+class ParentCategoriesFilter(admin.SimpleListFilter):
     title = _("Parent Category")
     parameter_name = "parent_category"
 
     def lookups(self, request, model_admin):
         # Only show parents that have subcategories
-        parents = ProductCategory.objects.filter(subcategories__isnull=False).distinct()
+        parents = ProductCategories.objects.filter(
+            subcategories__isnull=False
+        ).distinct()
         return [(parent.id, parent.name) for parent in parents]
 
     def queryset(self, request, queryset):
@@ -91,10 +93,10 @@ class ParentCategoryFilter(admin.SimpleListFilter):
         return queryset
 
 
-@admin.register(ProductCategory)
+@admin.register(ProductCategories)
 class ProductCategoryAdmin(admin.ModelAdmin):
     list_display = ["name", "description", "parent"]
-    list_filter = [ParentCategoryFilter]
+    list_filter = [ParentCategoriesFilter]
     search_fields = ["name"]
     ordering = ["parent__name", "name"]
 
@@ -406,6 +408,7 @@ class OrderAdmin(admin.ModelAdmin):
 
     def export_orders_pdf(self, request, queryset):
         html_string = render_to_string("orders.html", {"orders": queryset})
+        from weasyprint import HTML
 
         # Generate PDF from HTML
         with tempfile.NamedTemporaryFile(delete=True) as output:

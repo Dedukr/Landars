@@ -16,7 +16,7 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name="ProductCategory",
+            name="ProductCategories",
             fields=[
                 (
                     "id",
@@ -36,7 +36,7 @@ class Migration(migrations.Migration):
                         null=True,
                         on_delete=django.db.models.deletion.CASCADE,
                         related_name="subcategories",
-                        to="api.productcategory",
+                        to="api.productcategories",
                     ),
                 ),
             ],
@@ -58,6 +58,10 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 ("name", models.CharField(max_length=255)),
+                ("categories", models.ManyToManyField(
+                        related_name="products", to="api.productcategories"
+                    ),
+                ),
                 ("description", models.TextField(blank=True, null=True)),
                 (
                     "price",
@@ -87,7 +91,10 @@ class Migration(migrations.Migration):
                 ),
                 ("notes", models.CharField(blank=True, max_length=200, null=True)),
                 ("delivery_date", models.DateField()),
-                ("is_home_delivery", models.BooleanField(default=True, verbose_name="Home Delivery")),
+                (
+                    "is_home_delivery",
+                    models.BooleanField(default=True, verbose_name="Home Delivery"),
+                ),
                 (
                     "delivery_fee_manual",
                     models.BooleanField(
@@ -126,7 +133,10 @@ class Migration(migrations.Migration):
                         max_length=50,
                     ),
                 ),
-                ("invoice_link", models.CharField(blank=True, max_length=200, null=True)),
+                (
+                    "invoice_link",
+                    models.CharField(blank=True, max_length=200, null=True),
+                ),
                 (
                     "customer",
                     models.ForeignKey(
@@ -182,12 +192,5 @@ class Migration(migrations.Migration):
                     ),
                 ),
             ],
-        ),
-        migrations.AddField(
-            model_name="product",
-            name="categories",
-            field=models.ManyToManyField(
-                related_name="products", to="api.productcategory"
-            ),
         ),
     ]

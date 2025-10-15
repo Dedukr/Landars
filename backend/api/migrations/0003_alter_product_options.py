@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0013_alter_order_is_home_delivery'),
+        ("api", "0002_alter_order_delivery_date"),
     ]
 
     operations = [
@@ -17,14 +17,5 @@ class Migration(migrations.Migration):
         migrations.AlterUniqueTogether(
             name='product',
             unique_together=set(),
-        ),
-        migrations.RemoveField(
-            model_name='product',
-            name='category',
-        ),
-        migrations.AddField(
-            model_name='product',
-            name='category',
-            field=models.ManyToManyField(related_name='products', to='api.productcategory'),
         ),
     ]
