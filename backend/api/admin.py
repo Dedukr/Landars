@@ -342,32 +342,30 @@ class OrderAdmin(admin.ModelAdmin):
     get_total_items.short_description = "Total Items"
 
     def save_model(self, request, obj, form, change):
-        """Compute delivery fields before saving to avoid a second save."""
-        # If inlines are also present, we still compute based on current DB items;
-        # final adjustment is done in save_related once items are persisted if needed.
-        if not obj.delivery_fee_manual:
-            compute_source = [
-                {"product": i.product, "quantity": i.quantity} for i in obj.items.all()
-            ]
-            is_home_delivery, delivery_fee = (
-                obj.calculate_delivery_fee_and_home_status_from_items(compute_source)
-            )
-            obj.is_home_delivery = is_home_delivery
-            obj.delivery_fee = delivery_fee
+        """Save the order without calculating delivery fees here to avoid double save."""
+        # Don't calculate delivery fees in save_model to prevent double save
+        # This will be handled in save_related after inlines are processed
         super().save_model(request, obj, form, change)
 
     def save_related(self, request, form, formsets, change):
-        """After saving inlines, compute once and save only if values changed."""
+        """Calculate delivery fields after saving inlines and save only once."""
         super().save_related(request, form, formsets, change)
         order = form.instance
+
+        # Only calculate delivery fees if not manually set
         if not order.delivery_fee_manual:
+            # Build compute source from current items after inlines are saved
             compute_source = [
                 {"product": i.product, "quantity": i.quantity}
                 for i in order.items.all()
             ]
+
+            # Calculate delivery fee and home status
             is_home_delivery, delivery_fee = (
                 order.calculate_delivery_fee_and_home_status_from_items(compute_source)
             )
+
+            # Only save if values have changed to prevent unnecessary saves
             if (
                 order.is_home_delivery != is_home_delivery
                 or order.delivery_fee != delivery_fee

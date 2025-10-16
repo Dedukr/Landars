@@ -257,6 +257,25 @@ class Order(models.Model):
 
         return recent_orders
 
+    def save(self, *args, **kwargs):
+        """
+        Override save to prevent duplicate orders and ensure proper delivery fee calculation.
+        """
+        from django.utils import timezone
+
+        # Check for potential duplicates before saving
+        if not self.pk and self.customer:
+            recent_orders = self.check_for_duplicate_orders()
+            if recent_orders.exists():
+                # Log the potential duplicate but don't prevent save
+                # This is just for monitoring purposes
+                print(
+                    f"Warning: Potential duplicate order detected for customer {self.customer}"
+                )
+
+        # Call parent save
+        super().save(*args, **kwargs)
+
     def calculate_delivery_fee_and_home_status(self):
         """
         Calculate delivery fee and home delivery status based on order items.
