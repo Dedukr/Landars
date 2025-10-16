@@ -244,6 +244,60 @@ input:focus {
   box-shadow: 0 0 0 3px rgba(184, 149, 106, 0.1);
 }
 
+/* Input field styling for both light and dark modes */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+.auth-input {
+  background-color: var(--card-bg) !important;
+  color: var(--foreground) !important;
+  border-color: var(--sidebar-border) !important;
+}
+
+input[type="text"]::placeholder,
+input[type="email"]::placeholder,
+input[type="password"]::placeholder,
+.auth-input::placeholder {
+  color: var(--foreground);
+  opacity: 0.6;
+}
+
+/* Dark mode specific input styling */
+.dark input[type="text"],
+.dark input[type="email"],
+.dark input[type="password"],
+.dark .auth-input {
+  background-color: var(--card-bg) !important;
+  color: var(--foreground) !important;
+  border-color: var(--sidebar-border) !important;
+}
+
+.dark input[type="text"]::placeholder,
+.dark input[type="email"]::placeholder,
+.dark input[type="password"]::placeholder,
+.dark .auth-input::placeholder {
+  color: var(--foreground);
+  opacity: 0.6;
+}
+
+/* Light mode specific input styling */
+.light input[type="text"],
+.light input[type="email"],
+.light input[type="password"],
+.light .auth-input {
+  background-color: var(--card-bg) !important;
+  color: var(--foreground) !important;
+  border-color: var(--sidebar-border) !important;
+}
+
+.light input[type="text"]::placeholder,
+.light input[type="email"]::placeholder,
+.light input[type="password"]::placeholder,
+.light .auth-input::placeholder {
+  color: var(--foreground);
+  opacity: 0.6;
+}
+
 /* Auth page specific styles */
 .auth-container {
   background: var(--background);

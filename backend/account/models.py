@@ -55,6 +55,7 @@ class Address(models.Model):
     def __str__(self):
         return f"{self.postal_code}" or "No Address"
 
+
 class Profile(models.Model):
     user = models.OneToOneField(
         CustomUser, on_delete=models.CASCADE, related_name="profile"

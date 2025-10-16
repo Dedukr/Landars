@@ -41,12 +41,14 @@ class ProductSerializer(serializers.ModelSerializer):
         ]
 
     def get_categories(self, obj):
-        """Return only child category names (categories with a parent)."""
-        return [
-            cat.name
-            for cat in obj.categories.all().order_by("parent__name", "name")
-            if cat.parent is not None
-        ]
+        """Return all category names for the product, including parent categories."""
+        categories = []
+        for cat in obj.categories.all().order_by("parent__name", "name"):
+            categories.append(cat.name)
+            # Also include parent category if it exists
+            if cat.parent:
+                categories.append(cat.parent.name)
+        return categories
 
     # def get_stock_quantity(self, obj):
     #     stock = Stock.objects.filter(product=obj).first()
@@ -166,3 +168,88 @@ class CartSerializer(serializers.ModelSerializer):
 
     def get_total_items(self, obj):
         return float(obj.total_items)
+
+
+class OrderItemSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source="product.name", read_only=True)
+    product_price = serializers.DecimalField(
+        source="product.price",
+        max_digits=10,
+        decimal_places=2,
+        min_value=Decimal("0"),
+        read_only=True,
+    )
+    product_image_url = serializers.SerializerMethodField()
+    total_price = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OrderItem
+        fields = [
+            "id",
+            "product",
+            "product_name",
+            "product_price",
+            "product_image_url",
+            "quantity",
+            "total_price",
+        ]
+        read_only_fields = ["id", "total_price"]
+
+    def get_product_image_url(self, obj):
+        # Return the image URL if exists
+        if hasattr(obj.product, "image") and obj.product.image:
+            return obj.product.image.url
+        return None
+
+    def get_total_price(self, obj):
+        return str(obj.get_total_price())
+
+
+class OrderSerializer(serializers.ModelSerializer):
+    items = OrderItemSerializer(many=True, read_only=True)
+    total_price = serializers.SerializerMethodField()
+    total_items = serializers.SerializerMethodField()
+    customer_name = serializers.SerializerMethodField()
+    customer_phone = serializers.SerializerMethodField()
+    customer_address = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Order
+        fields = [
+            "id",
+            "customer",
+            "customer_name",
+            "customer_phone",
+            "customer_address",
+            "notes",
+            "delivery_date",
+            "is_home_delivery",
+            "delivery_fee",
+            "discount",
+            "order_date",
+            "status",
+            "invoice_link",
+            "items",
+            "total_price",
+            "total_items",
+        ]
+        read_only_fields = ["id", "order_date", "total_price", "total_items"]
+
+    def get_total_price(self, obj):
+        return str(obj.total_price)
+
+    def get_total_items(self, obj):
+        return float(obj.total_items)
+
+    def get_customer_name(self, obj):
+        if obj.customer:
+            return obj.customer.name
+        return None
+
+    def get_customer_phone(self, obj):
+        if obj.customer and hasattr(obj.customer, "profile"):
+            return obj.customer.profile.phone if obj.customer.profile else None
+        return None
+
+    def get_customer_address(self, obj):
+        return obj.customer_address

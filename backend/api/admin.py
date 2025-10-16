@@ -391,15 +391,18 @@ class OrderAdmin(admin.ModelAdmin):
         if not order.delivery_fee_manual:
             # Sausage category name
             post_suitable_category = "Sausages and Marinated products"
+            # Check if ALL products are sausages (only sausages)
+            all_products_are_sausages = True
             for item in items:
                 category_names = item.product.categories.values_list("name", flat=True)
                 if post_suitable_category not in [
                     name.lower() for name in category_names
                 ]:
-                    order.is_home_delivery = True
-                    order.delivery_fee = 10
+                    all_products_are_sausages = False
                     break
-            else:
+
+            if all_products_are_sausages:
+                # ALL products are sausages, use post delivery
                 order.is_home_delivery = False
                 if order.total_price > 220:
                     order.delivery_fee = 0
@@ -411,10 +414,10 @@ class OrderAdmin(admin.ModelAdmin):
                         order.delivery_fee = 8
                     else:
                         order.delivery_fee = 15
-                    # elif total_weight <= 20:
-                    #     delivery_fee = 15
-                    # else:
-                    #     delivery_fee = 25  # For > 20kg
+            else:
+                # Mixed products or no sausages, use home delivery
+                order.is_home_delivery = True
+                order.delivery_fee = 10
         order.save()
 
     def get_total_price(self, obj):

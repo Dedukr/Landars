@@ -9,6 +9,7 @@ from .models import (
     Cart,
     CartItem,
     Order,
+    OrderItem,
     Product,
     ProductCategory,
     Wishlist,
@@ -18,6 +19,8 @@ from .serializers import (
     CartItemSerializer,
     CartSerializer,
     CategorySerializer,
+    OrderItemSerializer,
+    OrderSerializer,
     ProductSerializer,
     WishlistItemSerializer,
     WishlistSerializer,
@@ -512,3 +515,320 @@ class CartView(APIView):
             return Response(
                 {"error": "Product not in cart"}, status=status.HTTP_404_NOT_FOUND
             )
+
+
+class OrderListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """Get user's orders with filtering and pagination."""
+        if not request.user.is_authenticated:
+            return Response(
+                {"error": "Authentication required"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # Get user's orders
+        orders = Order.objects.filter(customer=request.user).prefetch_related(
+            "items__product"
+        )
+
+        # Filtering
+        status_filter = request.query_params.get("status")
+        if status_filter:
+            orders = orders.filter(status=status_filter)
+
+        # Date filtering
+        date_from = request.query_params.get("date_from")
+        date_to = request.query_params.get("date_to")
+        if date_from:
+            orders = orders.filter(order_date__gte=date_from)
+        if date_to:
+            orders = orders.filter(order_date__lte=date_to)
+
+        # Sorting
+        sort = request.query_params.get("sort", "-order_date")
+        if sort in [
+            "order_date",
+            "-order_date",
+            "delivery_date",
+            "-delivery_date",
+            "total_price",
+            "-total_price",
+        ]:
+            orders = orders.order_by(sort)
+
+        # Pagination
+        limit = int(request.query_params.get("limit", 20))
+        offset = int(request.query_params.get("offset", 0))
+
+        total_count = orders.count()
+        orders = orders[offset : offset + limit]
+
+        serializer = OrderSerializer(orders, many=True)
+
+        response_data = {
+            "results": serializer.data,
+            "count": total_count,
+            "next": (
+                f"?limit={limit}&offset={offset + limit}"
+                if offset + limit < total_count
+                else None
+            ),
+            "previous": (
+                f"?limit={limit}&offset={max(0, offset - limit)}"
+                if offset > 0
+                else None
+            ),
+            "limit": limit,
+            "offset": offset,
+        }
+
+        return Response(response_data)
+
+    def post(self, request):
+        """Create a new order from cart items."""
+        if not request.user.is_authenticated:
+            return Response(
+                {"error": "Authentication required"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        try:
+            # Get user's cart
+            cart = Cart.objects.get(user=request.user)
+            cart_items = cart.items.all()
+
+            if not cart_items.exists():
+                return Response(
+                    {"error": "Cart is empty"}, status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Create order with automatic delivery type and fee calculation
+            order_data = {
+                "customer": request.user,
+                "notes": request.data.get("notes", ""),
+                "delivery_date": request.data.get("delivery_date"),
+                "discount": request.data.get("discount", 0),
+                "status": "pending",
+            }
+
+            order = Order.objects.create(**order_data)
+
+            # Create order items from cart items
+            for cart_item in cart_items:
+                OrderItem.objects.create(
+                    order=order, product=cart_item.product, quantity=cart_item.quantity
+                )
+
+            # Apply automatic delivery type and fee calculation (same as admin logic)
+            self._calculate_delivery_type_and_fee(order)
+
+            # Clear the cart
+            cart.items.all().delete()
+
+            serializer = OrderSerializer(order)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        except Cart.DoesNotExist:
+            return Response(
+                {"error": "Cart not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    def _calculate_delivery_type_and_fee(self, order):
+        """
+        Calculate delivery type and fee automatically based on cart contents.
+        Implements the same logic as OrderAdmin.save_related method.
+        """
+        items = order.items.all()
+
+        if not order.delivery_fee_manual:
+            # Sausage category name
+            post_suitable_category = "Sausages and Marinated products"
+            # Check if ALL products are sausages (only sausages)
+            all_products_are_sausages = True
+            for item in items:
+                category_names = item.product.categories.values_list("name", flat=True)
+                if post_suitable_category not in [
+                    name.lower() for name in category_names
+                ]:
+                    all_products_are_sausages = False
+                    break
+
+            if all_products_are_sausages:
+                # ALL products are sausages, use post delivery
+                order.is_home_delivery = False
+                if order.total_price > 220:
+                    order.delivery_fee = 0
+                else:
+                    total_weight = sum(item.quantity for item in items)
+                    if total_weight <= 2:
+                        order.delivery_fee = 5
+                    elif total_weight <= 10:
+                        order.delivery_fee = 8
+                    else:
+                        order.delivery_fee = 15
+            else:
+                # Mixed products or no sausages, use home delivery
+                order.is_home_delivery = True
+                order.delivery_fee = 10
+        order.save()
+
+
+class OrderDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, order_id):
+        """Get a specific order by ID."""
+        if not request.user.is_authenticated:
+            return Response(
+                {"error": "Authentication required"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        try:
+            order = Order.objects.prefetch_related("items__product").get(
+                id=order_id, customer=request.user
+            )
+            serializer = OrderSerializer(order)
+            return Response(serializer.data)
+
+        except Order.DoesNotExist:
+            return Response(
+                {"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+    def patch(self, request, order_id):
+        """Update order status (limited to certain statuses for customers)."""
+        if not request.user.is_authenticated:
+            return Response(
+                {"error": "Authentication required"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        try:
+            order = Order.objects.get(id=order_id, customer=request.user)
+
+            # Only allow customers to cancel orders
+            new_status = request.data.get("status")
+            if new_status == "cancelled" and order.status in ["pending", "paid"]:
+                order.status = new_status
+                order.save()
+                serializer = OrderSerializer(order)
+                return Response(serializer.data)
+            else:
+                return Response(
+                    {"error": "Cannot update order status"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        except Order.DoesNotExist:
+            return Response(
+                {"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class UserOrdersView(APIView):
+    """View for loading past orders of a specific user (admin functionality)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, user_id):
+        """Get all orders for a specific user."""
+        # Check if the requesting user is staff/admin
+        if not request.user.is_staff:
+            return Response(
+                {"error": "Permission denied. Admin access required."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            # Get the target user
+            from django.contrib.auth import get_user_model
+
+            User = get_user_model()
+            target_user = User.objects.get(id=user_id)
+
+            # Get user's orders with filtering and pagination
+            orders = Order.objects.filter(customer=target_user).prefetch_related(
+                "items__product"
+            )
+
+            # Filtering
+            status_filter = request.query_params.get("status")
+            if status_filter:
+                orders = orders.filter(status=status_filter)
+
+            # Date filtering
+            date_from = request.query_params.get("date_from")
+            date_to = request.query_params.get("date_to")
+            if date_from:
+                orders = orders.filter(order_date__gte=date_from)
+            if date_to:
+                orders = orders.filter(order_date__lte=date_to)
+
+            # Delivery date filtering
+            delivery_date_from = request.query_params.get("delivery_date_from")
+            delivery_date_to = request.query_params.get("delivery_date_to")
+            if delivery_date_from:
+                orders = orders.filter(delivery_date__gte=delivery_date_from)
+            if delivery_date_to:
+                orders = orders.filter(delivery_date__lte=delivery_date_to)
+
+            # Sorting
+            sort = request.query_params.get("sort", "-order_date")
+            if sort in [
+                "order_date",
+                "-order_date",
+                "delivery_date",
+                "-delivery_date",
+                "total_price",
+                "-total_price",
+            ]:
+                orders = orders.order_by(sort)
+
+            # Pagination
+            limit = int(request.query_params.get("limit", 20))
+            offset = int(request.query_params.get("offset", 0))
+
+            total_count = orders.count()
+            orders = orders[offset : offset + limit]
+
+            serializer = OrderSerializer(orders, many=True)
+
+            response_data = {
+                "results": serializer.data,
+                "count": total_count,
+                "next": (
+                    f"?limit={limit}&offset={offset + limit}"
+                    if offset + limit < total_count
+                    else None
+                ),
+                "previous": (
+                    f"?limit={limit}&offset={max(0, offset - limit)}"
+                    if offset > 0
+                    else None
+                ),
+                "limit": limit,
+                "offset": offset,
+                "user": {
+                    "id": target_user.id,
+                    "name": (
+                        target_user.name
+                        if hasattr(target_user, "name")
+                        else target_user.username
+                    ),
+                    "email": target_user.email,
+                },
+            }
+
+            return Response(response_data)
+
+        except User.DoesNotExist:
+            return Response(
+                {"error": "User not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

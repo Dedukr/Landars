@@ -1,131 +1,61 @@
 "use client";
-import React, { useEffect, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useCart } from "@/contexts/CartContext";
-import { useWishlist } from "@/contexts/WishlistContext";
 import CheckoutProgress from "@/components/CheckoutProgress";
-
-interface Product {
-  id: number;
-  name: string;
-  price: string;
-  image_url?: string | null;
-  description?: string;
-  categories?: string[];
-}
+import CartItemsList from "@/components/CartItemsList";
+import CartRecommendations from "@/components/CartRecommendations";
+import DeliveryFeeInfo from "@/components/DeliveryFeeInfo";
+import { useCartOptimized } from "@/hooks/useCartOptimized";
+import { useCartItems } from "@/hooks/useCartItems";
+import { useDeliveryFee } from "@/hooks/useDeliveryFee";
 
 export default function CartPage() {
-  const { cart, addToCart, removeFromCart, removeItem, clearCart, isLoading } =
-    useCart();
-  const { addToWishlist } = useWishlist();
-  const [products, setProducts] = useState<Product[]>([]);
-  const [productsLoading, setProductsLoading] = useState(false);
+  const {
+    products,
+    loading: productsLoading,
+    stats,
+    recommendations,
+    clearCart,
+    cart,
+  } = useCartOptimized();
+  const {
+    filteredProducts,
+    removingIds,
+    removeItem,
+    decreaseQuantity,
+    increaseQuantity,
+  } = useCartItems(products);
+  const { addToCart } = useCart();
   const [couponCode, setCouponCode] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
   const [savedItems, setSavedItems] = useState<number[]>([]);
-  const [recommendations, setRecommendations] = useState<Product[]>([]);
 
-  useEffect(() => {
-    async function fetchProducts() {
-      if (cart.length === 0) {
-        setProducts([]);
-        return;
-      }
+  const discount = appliedCoupon ? stats.subtotal * 0.1 : 0; // 10% discount for demo
 
-      setProductsLoading(true);
-      try {
-        // Fetch products individually since we don't have a bulk endpoint
-        const productPromises = cart.map(async (item) => {
-          try {
-            const res = await fetch(`/api/products/${item.productId}/`);
-            if (res.ok) {
-              return await res.json();
-            }
-            console.warn(`Product ${item.productId} not found`);
-            return null;
-          } catch (error) {
-            console.error(`Failed to fetch product ${item.productId}:`, error);
-            return null;
-          }
-        });
+  // Convert products to CartProduct format for delivery fee calculation
+  const cartProducts = filteredProducts.map((product) => ({
+    id: product.id,
+    name: product.name,
+    price: parseFloat(product.price),
+    categories: product.categories || [],
+    quantity: cart.find((item) => item.productId === product.id)?.quantity || 0,
+  }));
 
-        const productResults = await Promise.all(productPromises);
-        setProducts(productResults.filter(Boolean));
-      } catch (error) {
-        console.error("Failed to fetch products:", error);
-        setProducts([]);
-      } finally {
-        setProductsLoading(false);
-      }
-    }
-    fetchProducts();
-  }, [cart]);
+  // Dynamic delivery fee calculation
+  const {
+    deliveryCalculation,
+    deliveryBreakdown,
+    totalPrice: calculatedTotal,
+  } = useDeliveryFee({
+    products: cartProducts,
+    subtotal: stats.subtotal,
+    discount: discount,
+  });
 
-  const fetchRecommendations = useCallback(async () => {
-    try {
-      // Get categories from cart items
-      const cartCategories = products
-        .filter((p) => p && p.categories)
-        .flatMap((p) => p.categories || [])
-        .filter((cat, index, arr) => arr.indexOf(cat) === index); // Remove duplicates
-
-      // Get cart product IDs to exclude
-      const cartProductIds = cart.map((item) => item.productId);
-
-      // Build query parameters
-      const params = new URLSearchParams();
-      params.append("limit", "4");
-
-      if (cartProductIds.length > 0) {
-        params.append("exclude", cartProductIds.join(","));
-      }
-
-      if (cartCategories.length > 0) {
-        params.append("categories", cartCategories.join(","));
-      }
-
-      const res = await fetch(`/api/products/?${params.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.results && Array.isArray(data.results)) {
-          setRecommendations(data.results.slice(0, 4));
-        } else {
-          setRecommendations([]);
-        }
-      }
-    } catch (error) {
-      console.error("Failed to fetch recommendations:", error);
-      setRecommendations([]);
-    }
-  }, [products, cart]);
-
-  useEffect(() => {
-    // Fetch recommendations when cart has items and products are loaded
-    if (cart.length > 0 && products.length > 0) {
-      fetchRecommendations();
-    }
-  }, [cart, products, fetchRecommendations]);
-
-  function getProduct(productId: number) {
-    return products.find((p) => p && p.id === productId);
-  }
-
-  function getItemTotal(productId: number, quantity: number) {
-    const product = getProduct(productId);
-    if (!product) return 0;
-    return parseFloat(product.price) * quantity;
-  }
-
-  const subtotal = cart.reduce(
-    (sum, item) => sum + getItemTotal(item.productId, item.quantity),
-    0
-  );
-
-  const shipping = subtotal > 50 ? 0 : 4.99; // Free shipping over £50
-  const tax = subtotal * 0.2; // 20% VAT
-  const discount = appliedCoupon ? subtotal * 0.1 : 0; // 10% discount for demo
-  const total = subtotal + shipping + tax - discount;
+  // Use calculated total instead of stats.total
+  const total = calculatedTotal;
 
   const handleApplyCoupon = () => {
     if (couponCode.toLowerCase() === "save10") {
@@ -138,19 +68,22 @@ export default function CartPage() {
     setAppliedCoupon(null);
   };
 
-  const handleSaveForLater = async (productId: number) => {
-    try {
-      await addToWishlist(productId);
-    } finally {
+  const handleSaveForLater = useCallback(
+    (productId: number) => {
       setSavedItems((prev) => [...prev, productId]);
       removeItem(productId);
-    }
-  };
+    },
+    [removeItem]
+  );
 
   const handleMoveToCart = (productId: number) => {
     setSavedItems((prev) => prev.filter((id) => id !== productId));
     addToCart(productId, 1);
   };
+
+  function getProduct(productId: number) {
+    return products.find((p) => p && p.id === productId);
+  }
 
   return (
     <div className="min-h-screen" style={{ background: "var(--background)" }}>
@@ -161,7 +94,7 @@ export default function CartPage() {
             className="text-3xl font-bold"
             style={{ color: "var(--foreground)" }}
           >
-            Shopping Cart - IMPROVED VERSION
+            Shopping Cart
           </h1>
           <p
             className="mt-2"
@@ -234,157 +167,15 @@ export default function CartPage() {
             <div className="lg:grid lg:grid-cols-12 lg:gap-x-12 lg:items-start">
               {/* Cart Items */}
               <div className="lg:col-span-8">
-                <div
-                  className="rounded-lg shadow-sm overflow-hidden"
-                  style={{
-                    background: "var(--card-bg)",
-                    border: "1px solid var(--sidebar-border)",
-                  }}
-                >
-                  <div
-                    className="px-6 py-4"
-                    style={{ borderBottom: "1px solid var(--sidebar-border)" }}
-                  >
-                    <h2
-                      className="text-lg font-medium"
-                      style={{ color: "var(--foreground)" }}
-                    >
-                      Cart Items
-                    </h2>
-                  </div>
-                  <div style={{ borderTop: "1px solid var(--sidebar-border)" }}>
-                    {cart.map((item) => {
-                      const product = getProduct(item.productId);
-                      if (!product) {
-                        return null; // Skip items without product data
-                      }
-                      return (
-                        <div key={item.productId} className="p-6">
-                          <div className="flex items-center space-x-4">
-                            <div className="flex-shrink-0">
-                              {product?.image_url ? (
-                                <Image
-                                  src={product.image_url}
-                                  alt={product.name}
-                                  width={80}
-                                  height={80}
-                                  className="w-20 h-20 object-cover rounded-lg"
-                                />
-                              ) : (
-                                <div className="w-20 h-20 bg-gray-100 rounded-lg flex items-center justify-center">
-                                  <span className="text-2xl">🍎</span>
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <h3
-                                className="text-lg font-medium"
-                                style={{ color: "var(--foreground)" }}
-                              >
-                                {product?.name || "Product"}
-                              </h3>
-                              {product?.description && (
-                                <p
-                                  className="text-sm mt-1 line-clamp-2"
-                                  style={{
-                                    color: "var(--foreground)",
-                                    opacity: 0.6,
-                                  }}
-                                >
-                                  {product.description}
-                                </p>
-                              )}
-                              <div className="mt-2 flex items-center space-x-4">
-                                <div className="flex items-center space-x-2">
-                                  <button
-                                    onClick={() =>
-                                      removeFromCart(item.productId)
-                                    }
-                                    disabled={isLoading || item.quantity <= 1}
-                                    className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                  >
-                                    <svg
-                                      className="w-4 h-4"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M20 12H4"
-                                      />
-                                    </svg>
-                                  </button>
-                                  <span className="w-8 text-center font-medium">
-                                    {item.quantity}
-                                  </span>
-                                  <button
-                                    onClick={() => addToCart(item.productId, 1)}
-                                    disabled={isLoading}
-                                    className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                  >
-                                    <svg
-                                      className="w-4 h-4"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                                      />
-                                    </svg>
-                                  </button>
-                                </div>
-                                <div
-                                  className="text-sm"
-                                  style={{
-                                    color: "var(--foreground)",
-                                    opacity: 0.6,
-                                  }}
-                                >
-                                  £{product?.price} each
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex flex-col items-end space-y-2">
-                              <div
-                                className="text-lg font-semibold"
-                                style={{ color: "var(--foreground)" }}
-                              >
-                                £
-                                {getItemTotal(
-                                  item.productId,
-                                  item.quantity
-                                ).toFixed(2)}
-                              </div>
-                              <div className="flex space-x-2">
-                                <button
-                                  onClick={() =>
-                                    handleSaveForLater(item.productId)
-                                  }
-                                  className="text-sm text-blue-600 hover:text-blue-800"
-                                >
-                                  Save for later
-                                </button>
-                                <button
-                                  onClick={() => removeItem(item.productId)}
-                                  className="text-sm text-red-600 hover:text-red-800"
-                                >
-                                  Remove
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                <CartItemsList
+                  products={filteredProducts}
+                  cart={cart}
+                  removingIds={removingIds}
+                  onRemove={removeItem}
+                  onDecreaseQuantity={decreaseQuantity}
+                  onIncreaseQuantity={increaseQuantity}
+                  onSaveForLater={handleSaveForLater}
+                />
 
                 {/* Saved for Later */}
                 {savedItems.length > 0 && (
@@ -478,73 +269,7 @@ export default function CartPage() {
                 )}
 
                 {/* Recommendations */}
-                {recommendations.length > 0 && (
-                  <div
-                    className="mt-6 rounded-lg shadow-sm overflow-hidden"
-                    style={{
-                      background: "var(--card-bg)",
-                      border: "1px solid var(--sidebar-border)",
-                    }}
-                  >
-                    <div
-                      className="px-6 py-4"
-                      style={{
-                        borderBottom: "1px solid var(--sidebar-border)",
-                      }}
-                    >
-                      <h2
-                        className="text-lg font-medium"
-                        style={{ color: "var(--foreground)" }}
-                      >
-                        You might also like
-                      </h2>
-                    </div>
-                    <div className="p-6">
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {recommendations.map((product) => (
-                          <div key={product.id} className="text-center">
-                            <div className="aspect-square mb-2">
-                              {product.image_url ? (
-                                <Image
-                                  src={product.image_url}
-                                  alt={product.name}
-                                  width={120}
-                                  height={120}
-                                  className="w-full h-full object-cover rounded-lg"
-                                />
-                              ) : (
-                                <div className="w-full h-full bg-gray-100 rounded-lg flex items-center justify-center">
-                                  <span className="text-2xl">🍎</span>
-                                </div>
-                              )}
-                            </div>
-                            <h3
-                              className="text-sm font-medium truncate"
-                              style={{ color: "var(--foreground)" }}
-                            >
-                              {product.name}
-                            </h3>
-                            <p
-                              className="text-sm"
-                              style={{
-                                color: "var(--foreground)",
-                                opacity: 0.6,
-                              }}
-                            >
-                              £{product.price}
-                            </p>
-                            <button
-                              onClick={() => addToCart(product.id, 1)}
-                              className="mt-2 w-full px-3 py-1 text-xs font-medium text-blue-600 border border-blue-600 rounded hover:bg-blue-50"
-                            >
-                              Add to cart
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
+                <CartRecommendations recommendations={recommendations} />
               </div>
 
               {/* Order Summary */}
@@ -568,6 +293,70 @@ export default function CartPage() {
                     </h2>
                   </div>
                   <div className="p-6 space-y-4">
+                    {/* Delivery Type Information */}
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+                      <div className="flex items-center">
+                        <div className="flex-shrink-0">
+                          <span className="text-lg mr-2">
+                            {deliveryCalculation.isHomeDelivery ? "🏠" : "📦"}
+                          </span>
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-medium text-blue-800">
+                            {deliveryBreakdown.type}
+                          </h4>
+                          <p className="text-sm text-blue-700">
+                            {deliveryBreakdown.reasoning}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Delivery Fee Information */}
+                    <DeliveryFeeInfo />
+
+                    {/* Delivery Date - Based on Order Model */}
+                    <div className="space-y-2">
+                      <label
+                        htmlFor="deliveryDate"
+                        className="block text-sm font-medium"
+                        style={{ color: "var(--foreground)" }}
+                      >
+                        Delivery Date
+                      </label>
+                      <input
+                        type="date"
+                        id="deliveryDate"
+                        min={new Date().toISOString().split("T")[0]}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        style={{
+                          background: "var(--card-bg)",
+                          color: "var(--foreground)",
+                        }}
+                      />
+                    </div>
+
+                    {/* Order Notes - Based on Order Model */}
+                    <div className="space-y-2">
+                      <label
+                        htmlFor="orderNotes"
+                        className="block text-sm font-medium"
+                        style={{ color: "var(--foreground)" }}
+                      >
+                        Order Notes (Optional)
+                      </label>
+                      <textarea
+                        id="orderNotes"
+                        rows={3}
+                        placeholder="Any special instructions for your order..."
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        style={{
+                          background: "var(--card-bg)",
+                          color: "var(--foreground)",
+                        }}
+                      />
+                    </div>
+
                     {/* Coupon Code */}
                     <div>
                       <label
@@ -622,7 +411,7 @@ export default function CartPage() {
                       )}
                     </div>
 
-                    {/* Price Breakdown */}
+                    {/* Order Summary - Matching Order Model */}
                     <div className="space-y-3">
                       <div className="flex justify-between text-sm">
                         <span
@@ -634,41 +423,58 @@ export default function CartPage() {
                           className="font-medium"
                           style={{ color: "var(--foreground)" }}
                         >
-                          £{subtotal.toFixed(2)}
+                          £{stats.subtotal.toFixed(2)}
                         </span>
                       </div>
+
+                      {/* Dynamic Delivery Fee - Based on Order Model Logic */}
                       <div className="flex justify-between text-sm">
                         <span
                           style={{ color: "var(--foreground)", opacity: 0.7 }}
                         >
-                          Shipping
+                          Delivery Fee
                         </span>
                         <span
                           className="font-medium"
                           style={{ color: "var(--foreground)" }}
                         >
-                          {shipping === 0 ? "Free" : `£${shipping.toFixed(2)}`}
+                          {deliveryBreakdown.isFree
+                            ? "Free"
+                            : `£${deliveryCalculation.deliveryFee.toFixed(2)}`}
                         </span>
                       </div>
-                      <div className="flex justify-between text-sm">
-                        <span
-                          style={{ color: "var(--foreground)", opacity: 0.7 }}
+
+                      {/* Delivery Fee Breakdown */}
+                      {deliveryCalculation.deliveryFee > 0 && (
+                        <div
+                          className="text-xs"
+                          style={{ color: "var(--foreground)", opacity: 0.6 }}
                         >
-                          Tax (VAT)
-                        </span>
-                        <span
-                          className="font-medium"
-                          style={{ color: "var(--foreground)" }}
-                        >
-                          £{tax.toFixed(2)}
-                        </span>
-                      </div>
+                          {deliveryBreakdown.reasoning}
+                          {deliveryBreakdown.hasSausages && (
+                            <span>
+                              {" "}
+                              • Weight: {deliveryBreakdown.weight.toFixed(1)}kg
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Discount - Based on Order Model */}
                       {discount > 0 && (
                         <div className="flex justify-between text-sm text-green-600">
                           <span>Discount</span>
                           <span>-£{discount.toFixed(2)}</span>
                         </div>
                       )}
+
+                      {/* Total - Order Model Calculation: sum_price + delivery_fee - discount 
+                          Based on Order.total_price = sum_price + delivery_fee - discount
+                          Admin logic: 
+                          - Sausages: is_home_delivery=False, weight-based fees (≤2kg=£5, ≤10kg=£8, >10kg=£15)
+                          - Other products: is_home_delivery=True, delivery_fee=£10
+                          - Free delivery if total > £220
+                      */}
                       <div
                         className="pt-3"
                         style={{ borderTop: "1px solid var(--sidebar-border)" }}
@@ -727,9 +533,7 @@ export default function CartPage() {
                     {/* Action Buttons */}
                     <div className="space-y-3 pt-4">
                       <button className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors">
-                        Proceed to Checkout (
-                        {cart.reduce((sum, item) => sum + item.quantity, 0)}{" "}
-                        items)
+                        Proceed to Checkout ({stats.totalItems} items)
                       </button>
                       <button
                         className="w-full bg-red-600 text-white py-2 px-4 rounded hover:bg-red-700 transition-colors"

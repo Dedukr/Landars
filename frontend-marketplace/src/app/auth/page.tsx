@@ -200,12 +200,7 @@ function AuthForm() {
                   type="text"
                   autoComplete="name"
                   required={isSignUp}
-                  className="mt-1 appearance-none relative block w-full px-3 py-2 border rounded-md focus:outline-none focus:z-10 sm:text-sm"
-                  style={{
-                    borderColor: "var(--sidebar-border)",
-                    backgroundColor: "var(--card-bg)",
-                    color: "var(--foreground)",
-                  }}
+                  className="mt-1 appearance-none relative block w-full px-3 py-2 border rounded-md focus:outline-none focus:z-10 sm:text-sm auth-input"
                   placeholder="Your full name"
                   value={formData.name}
                   onChange={handleChange}
@@ -226,12 +221,7 @@ function AuthForm() {
                 type="email"
                 autoComplete="email"
                 required
-                className="mt-1 appearance-none relative block w-full px-3 py-2 border rounded-md focus:outline-none focus:z-10 sm:text-sm"
-                style={{
-                  borderColor: "var(--sidebar-border)",
-                  backgroundColor: "var(--card-bg)",
-                  color: "var(--foreground)",
-                }}
+                className="mt-1 appearance-none relative block w-full px-3 py-2 border rounded-md focus:outline-none focus:z-10 sm:text-sm auth-input"
                 placeholder="Email address"
                 value={formData.email}
                 onChange={handleChange}
@@ -252,12 +242,7 @@ function AuthForm() {
                   type={showPassword ? "text" : "password"}
                   autoComplete={isSignUp ? "new-password" : "current-password"}
                   required
-                  className="mt-1 appearance-none relative block w-full px-3 py-2 border rounded-md focus:outline-none focus:z-10 sm:text-sm"
-                  style={{
-                    borderColor: "var(--sidebar-border)",
-                    backgroundColor: "var(--card-bg)",
-                    color: "var(--foreground)",
-                  }}
+                  className="mt-1 appearance-none relative block w-full px-3 py-2 border rounded-md focus:outline-none focus:z-10 sm:text-sm auth-input"
                   placeholder={
                     isSignUp
                       ? "Password (min 8 characters, letters and numbers)"
@@ -335,12 +320,7 @@ function AuthForm() {
                     type={showConfirmPassword ? "text" : "password"}
                     autoComplete="new-password"
                     required={isSignUp}
-                    className="mt-1 appearance-none relative block w-full px-3 py-2 border rounded-md focus:outline-none focus:z-10 sm:text-sm"
-                    style={{
-                      borderColor: "var(--sidebar-border)",
-                      backgroundColor: "var(--card-bg)",
-                      color: "var(--foreground)",
-                    }}
+                    className="mt-1 appearance-none relative block w-full px-3 py-2 border rounded-md focus:outline-none focus:z-10 sm:text-sm auth-input"
                     placeholder="Confirm password"
                     value={formData.confirmPassword}
                     onChange={handleChange}
@@ -404,7 +384,17 @@ function AuthForm() {
           </div>
 
           {error && (
-            <div className="text-sm text-center" style={{ color: "#ef4444" }}>
+            <div
+              className="text-sm text-center"
+              style={{
+                color: "var(--foreground)",
+                backgroundColor: "rgba(239, 68, 68, 0.1)",
+                border: "1px solid rgba(239, 68, 68, 0.3)",
+                borderRadius: "0.5rem",
+                padding: "0.75rem",
+                marginTop: "0.5rem",
+              }}
+            >
               {error}
             </div>
           )}
@@ -413,7 +403,25 @@ function AuthForm() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="w-full py-3 px-4 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              style={{
+                backgroundColor: "var(--primary)",
+                color: "var(--card-bg)",
+                border: "1px solid var(--primary)",
+              }}
+              onMouseEnter={(e) => {
+                if (!loading) {
+                  e.currentTarget.style.backgroundColor =
+                    "var(--primary-hover)";
+                  e.currentTarget.style.borderColor = "var(--primary-hover)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!loading) {
+                  e.currentTarget.style.backgroundColor = "var(--primary)";
+                  e.currentTarget.style.borderColor = "var(--primary)";
+                }
+              }}
             >
               {loading
                 ? isSignUp
