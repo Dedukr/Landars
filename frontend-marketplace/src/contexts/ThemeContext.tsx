@@ -51,7 +51,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (metaThemeColor) {
       metaThemeColor.setAttribute(
         "content",
-        newResolvedTheme === "dark" ? "#1a1a1a" : "#f5e6cc"
+        newResolvedTheme === "dark" ? "#121212" : "#f5e6cc"
       );
     }
   }, [theme]);

@@ -62,19 +62,24 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ product }) => {
                 Object.entries(product.specifications).map(([key, value]) => (
                   <div
                     key={key}
-                    className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-800"
+                    className="flex justify-between py-2"
+                    style={{ borderBottom: "1px solid var(--sidebar-border)" }}
                   >
-                    <span className="font-medium text-gray-700 dark:text-gray-300 capitalize">
+                    <span
+                      className="font-medium capitalize"
+                      style={{ color: "var(--muted-foreground)" }}
+                    >
                       {key.replace(/_/g, " ")}
                     </span>
-                    <span className="text-gray-900 dark:text-gray-100">
-                      {value}
-                    </span>
+                    <span style={{ color: "var(--foreground)" }}>{value}</span>
                   </div>
                 ))}
               {(!product.specifications ||
                 Object.keys(product.specifications).length === 0) && (
-                <div className="col-span-2 text-gray-500 dark:text-gray-400 text-center py-8">
+                <div
+                  className="col-span-2 text-center py-8"
+                  style={{ color: "var(--muted-foreground)" }}
+                >
                   No specifications available
                 </div>
               )}
@@ -88,58 +93,112 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ product }) => {
             {product.nutrition_info ? (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {product.nutrition_info.calories && (
-                  <div className="text-center p-4 bg-orange-50 dark:bg-orange-950 rounded-lg">
-                    <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">
+                  <div
+                    className="text-center p-4 rounded-lg"
+                    style={{
+                      background: "var(--sidebar-bg)",
+                      border: "1px solid var(--sidebar-border)",
+                    }}
+                  >
+                    <div
+                      className="text-2xl font-bold"
+                      style={{ color: "var(--accent)" }}
+                    >
                       {product.nutrition_info.calories}
                     </div>
-                    <div className="text-sm text-orange-700 dark:text-orange-300">
+                    <div
+                      className="text-sm"
+                      style={{ color: "var(--muted-foreground)" }}
+                    >
                       Calories
                     </div>
                   </div>
                 )}
                 {product.nutrition_info.protein && (
-                  <div className="text-center p-4 bg-blue-50 dark:bg-blue-950 rounded-lg">
-                    <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                  <div
+                    className="text-center p-4 rounded-lg"
+                    style={{
+                      background: "var(--sidebar-bg)",
+                      border: "1px solid var(--sidebar-border)",
+                    }}
+                  >
+                    <div
+                      className="text-2xl font-bold"
+                      style={{ color: "var(--accent)" }}
+                    >
                       {product.nutrition_info.protein}g
                     </div>
-                    <div className="text-sm text-blue-700 dark:text-blue-300">
+                    <div
+                      className="text-sm"
+                      style={{ color: "var(--muted-foreground)" }}
+                    >
                       Protein
                     </div>
                   </div>
                 )}
                 {product.nutrition_info.carbs && (
-                  <div className="text-center p-4 bg-green-50 dark:bg-green-950 rounded-lg">
-                    <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                  <div
+                    className="text-center p-4 rounded-lg"
+                    style={{
+                      background: "var(--sidebar-bg)",
+                      border: "1px solid var(--sidebar-border)",
+                    }}
+                  >
+                    <div
+                      className="text-2xl font-bold"
+                      style={{ color: "var(--accent)" }}
+                    >
                       {product.nutrition_info.carbs}g
                     </div>
-                    <div className="text-sm text-green-700 dark:text-green-300">
+                    <div
+                      className="text-sm"
+                      style={{ color: "var(--muted-foreground)" }}
+                    >
                       Carbs
                     </div>
                   </div>
                 )}
                 {product.nutrition_info.fat && (
-                  <div className="text-center p-4 bg-purple-50 dark:bg-purple-950 rounded-lg">
-                    <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                  <div
+                    className="text-center p-4 rounded-lg"
+                    style={{
+                      background: "var(--sidebar-bg)",
+                      border: "1px solid var(--sidebar-border)",
+                    }}
+                  >
+                    <div
+                      className="text-2xl font-bold"
+                      style={{ color: "var(--accent)" }}
+                    >
                       {product.nutrition_info.fat}g
                     </div>
-                    <div className="text-sm text-purple-700 dark:text-purple-300">
+                    <div
+                      className="text-sm"
+                      style={{ color: "var(--muted-foreground)" }}
+                    >
                       Fat
                     </div>
                   </div>
                 )}
               </div>
             ) : (
-              <div className="text-gray-500 dark:text-gray-400 text-center py-8">
+              <div
+                className="text-center py-8"
+                style={{ color: "var(--muted-foreground)" }}
+              >
                 No nutrition information available
               </div>
             )}
 
             {product.ingredients && product.ingredients.length > 0 && (
               <div>
-                <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                <h4
+                  className="font-semibold mb-2"
+                  style={{ color: "var(--foreground)" }}
+                >
                   Ingredients
                 </h4>
-                <p className="text-gray-700 dark:text-gray-300">
+                <p style={{ color: "var(--muted-foreground)" }}>
                   {product.ingredients.join(", ")}
                 </p>
               </div>
@@ -152,7 +211,10 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ product }) => {
           <div className="space-y-4">
             {product.allergens && product.allergens.length > 0 ? (
               <div className="space-y-3">
-                <div className="flex items-center space-x-2 text-red-600 dark:text-red-400">
+                <div
+                  className="flex items-center space-x-2"
+                  style={{ color: "var(--destructive)" }}
+                >
                   <ExclamationTriangleIcon className="w-5 h-5" />
                   <span className="font-medium">Contains allergens:</span>
                 </div>
@@ -160,7 +222,11 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ product }) => {
                   {product.allergens.map((allergen, index) => (
                     <span
                       key={index}
-                      className="px-3 py-1 bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-200 rounded-full text-sm font-medium"
+                      className="px-3 py-1 rounded-full text-sm font-medium"
+                      style={{
+                        background: "var(--destructive)",
+                        color: "white",
+                      }}
                     >
                       {allergen}
                     </span>
@@ -168,7 +234,10 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ product }) => {
                 </div>
               </div>
             ) : (
-              <div className="flex items-center space-x-2 text-green-600 dark:text-green-400">
+              <div
+                className="flex items-center space-x-2"
+                style={{ color: "var(--success)" }}
+              >
                 <ShieldCheckIcon className="w-5 h-5" />
                 <span className="font-medium">No known allergens</span>
               </div>
@@ -181,11 +250,14 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ product }) => {
           <div className="space-y-4">
             {product.storage_instructions && (
               <div>
-                <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2 flex items-center">
+                <h4
+                  className="font-semibold mb-2 flex items-center"
+                  style={{ color: "var(--foreground)" }}
+                >
                   <ShieldCheckIcon className="w-5 h-5 mr-2" />
                   Storage Instructions
                 </h4>
-                <p className="text-gray-700 dark:text-gray-300">
+                <p style={{ color: "var(--muted-foreground)" }}>
                   {product.storage_instructions}
                 </p>
               </div>
@@ -193,18 +265,24 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ product }) => {
 
             {product.shelf_life && (
               <div>
-                <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2 flex items-center">
+                <h4
+                  className="font-semibold mb-2 flex items-center"
+                  style={{ color: "var(--foreground)" }}
+                >
                   <ClockIcon className="w-5 h-5 mr-2" />
                   Shelf Life
                 </h4>
-                <p className="text-gray-700 dark:text-gray-300">
+                <p style={{ color: "var(--muted-foreground)" }}>
                   {product.shelf_life}
                 </p>
               </div>
             )}
 
             {!product.storage_instructions && !product.shelf_life && (
-              <div className="text-gray-500 dark:text-gray-400 text-center py-8">
+              <div
+                className="text-center py-8"
+                style={{ color: "var(--muted-foreground)" }}
+              >
                 No storage information available
               </div>
             )}
@@ -217,9 +295,16 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ product }) => {
   };
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800">
+    <div
+      className="rounded-lg shadow-sm"
+      style={{
+        background: "var(--card-bg)",
+        border: "1px solid var(--sidebar-border)",
+        boxShadow: "var(--card-shadow)",
+      }}
+    >
       {/* Tab Navigation */}
-      <div className="border-b border-gray-200 dark:border-gray-800">
+      <div style={{ borderBottom: "1px solid var(--sidebar-border)" }}>
         <nav className="flex space-x-8 px-6" aria-label="Tabs">
           {tabs.map((tab) => {
             const Icon = tab.icon;
@@ -227,11 +312,28 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ product }) => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 transition-colors ${
-                  activeTab === tab.id
-                    ? "border-blue-500 text-blue-600 dark:text-blue-400"
-                    : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600"
-                }`}
+                className="py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 transition-colors"
+                style={{
+                  borderBottomColor:
+                    activeTab === tab.id ? "var(--primary)" : "transparent",
+                  color:
+                    activeTab === tab.id
+                      ? "var(--primary)"
+                      : "var(--muted-foreground)",
+                }}
+                onMouseEnter={(e) => {
+                  if (activeTab !== tab.id) {
+                    e.currentTarget.style.color = "var(--foreground)";
+                    e.currentTarget.style.borderBottomColor =
+                      "var(--sidebar-border)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (activeTab !== tab.id) {
+                    e.currentTarget.style.color = "var(--muted-foreground)";
+                    e.currentTarget.style.borderBottomColor = "transparent";
+                  }
+                }}
               >
                 <Icon className="w-4 h-4" />
                 <span>{tab.label}</span>

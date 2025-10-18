@@ -326,7 +326,10 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
               handleWishlistClick();
             }}
             className="w-8 h-8 flex items-center justify-center rounded-full shadow-lg hover:scale-110 transition-all duration-200"
-            style={{ background: "white" }}
+            style={{
+              background: "white",
+              border: "1px solid rgba(0, 0, 0, 0.1)",
+            }}
             aria-label={inWishlist ? "Remove from wishlist" : "Add to wishlist"}
           >
             <span className="text-xl leading-none block">
@@ -347,8 +350,13 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
                 className="absolute top-2 left-2 px-2 py-0.5 rounded text-xs font-medium"
                 style={{
                   background:
-                    product.stock_quantity > 0 ? "#E6F7EE" : "#FCE8E6",
-                  color: product.stock_quantity > 0 ? "#15803d" : "#b91c1c",
+                    product.stock_quantity > 0
+                      ? "rgba(22, 163, 74, 0.1)"
+                      : "rgba(220, 38, 38, 0.1)",
+                  color:
+                    product.stock_quantity > 0
+                      ? "var(--success)"
+                      : "var(--destructive)",
                 }}
               >
                 {product.stock_quantity > 0 ? "In stock" : "Out of stock"}

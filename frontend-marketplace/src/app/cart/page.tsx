@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useCart } from "@/contexts/CartContext";
 import CheckoutProgress from "@/components/CheckoutProgress";
 import CartItemsList from "@/components/CartItemsList";
-import CartRecommendations from "@/components/CartRecommendations";
+import ProductRecommendations from "@/components/ProductRecommendations";
 import DeliveryFeeInfo from "@/components/DeliveryFeeInfo";
 import { useCartOptimized } from "@/hooks/useCartOptimized";
 import { useCartItems } from "@/hooks/useCartItems";
@@ -16,7 +16,6 @@ export default function CartPage() {
     products,
     loading: productsLoading,
     stats,
-    recommendations,
     clearCart,
     cart,
   } = useCartOptimized();
@@ -138,7 +137,17 @@ export default function CartPage() {
             </p>
             <Link
               href="/"
-              className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-colors"
+              style={{
+                background: "var(--primary)",
+                color: "white",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "var(--primary-hover)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "var(--primary)";
+              }}
             >
               <svg
                 className="w-5 h-5"
@@ -220,7 +229,10 @@ export default function CartPage() {
                                     className="w-15 h-15 object-cover rounded-lg"
                                   />
                                 ) : (
-                                  <div className="w-15 h-15 bg-gray-100 rounded-lg flex items-center justify-center">
+                                  <div
+                                    className="w-15 h-15 rounded-lg flex items-center justify-center"
+                                    style={{ background: "var(--sidebar-bg)" }}
+                                  >
                                     <span className="text-lg">🍎</span>
                                   </div>
                                 )}
@@ -245,7 +257,14 @@ export default function CartPage() {
                               <div className="flex space-x-2">
                                 <button
                                   onClick={() => handleMoveToCart(productId)}
-                                  className="text-sm text-blue-600 hover:text-blue-800"
+                                  className="text-sm"
+                                  style={{ color: "var(--primary)" }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.opacity = "0.8";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.opacity = "1";
+                                  }}
                                 >
                                   Move to cart
                                 </button>
@@ -255,7 +274,14 @@ export default function CartPage() {
                                       prev.filter((id) => id !== productId)
                                     )
                                   }
-                                  className="text-sm text-red-600 hover:text-red-800"
+                                  className="text-sm"
+                                  style={{ color: "var(--destructive)" }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.opacity = "0.8";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.opacity = "1";
+                                  }}
                                 >
                                   Remove
                                 </button>
@@ -269,7 +295,15 @@ export default function CartPage() {
                 )}
 
                 {/* Recommendations */}
-                <CartRecommendations recommendations={recommendations} />
+                <ProductRecommendations
+                  excludeProducts={filteredProducts}
+                  limit={4}
+                  title="You might also like"
+                  showWishlist={false}
+                  showQuickAdd={true}
+                  gridCols={{ default: 2, md: 4 }}
+                  className="mt-6"
+                />
               </div>
 
               {/* Order Summary */}
@@ -294,7 +328,13 @@ export default function CartPage() {
                   </div>
                   <div className="p-6 space-y-4">
                     {/* Delivery Type Information */}
-                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+                    <div
+                      className="p-3 rounded-md"
+                      style={{
+                        background: "var(--info-bg)",
+                        border: "1px solid var(--info-border)",
+                      }}
+                    >
                       <div className="flex items-center">
                         <div className="flex-shrink-0">
                           <span className="text-lg mr-2">
@@ -302,10 +342,16 @@ export default function CartPage() {
                           </span>
                         </div>
                         <div>
-                          <h4 className="text-sm font-medium text-blue-800">
+                          <h4
+                            className="text-sm font-medium"
+                            style={{ color: "var(--info-text)" }}
+                          >
                             {deliveryBreakdown.type}
                           </h4>
-                          <p className="text-sm text-blue-700">
+                          <p
+                            className="text-sm"
+                            style={{ color: "var(--info-text)", opacity: 0.8 }}
+                          >
                             {deliveryBreakdown.reasoning}
                           </p>
                         </div>
@@ -328,10 +374,11 @@ export default function CartPage() {
                         type="date"
                         id="deliveryDate"
                         min={new Date().toISOString().split("T")[0]}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:border-transparent"
                         style={{
                           background: "var(--card-bg)",
                           color: "var(--foreground)",
+                          border: "1px solid var(--sidebar-border)",
                         }}
                       />
                     </div>
@@ -349,10 +396,11 @@ export default function CartPage() {
                         id="orderNotes"
                         rows={3}
                         placeholder="Any special instructions for your order..."
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:border-transparent"
                         style={{
                           background: "var(--card-bg)",
                           color: "var(--foreground)",
+                          border: "1px solid var(--sidebar-border)",
                         }}
                       />
                     </div>
@@ -367,12 +415,19 @@ export default function CartPage() {
                         Coupon Code
                       </label>
                       {appliedCoupon ? (
-                        <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-md">
+                        <div
+                          className="flex items-center justify-between p-3 rounded-md"
+                          style={{
+                            background: "var(--success-bg)",
+                            border: "1px solid var(--success-border)",
+                          }}
+                        >
                           <div className="flex items-center">
                             <svg
-                              className="w-5 h-5 text-green-500 mr-2"
+                              className="w-5 h-5 mr-2"
                               fill="currentColor"
                               viewBox="0 0 20 20"
+                              style={{ color: "var(--success)" }}
                             >
                               <path
                                 fillRule="evenodd"
@@ -380,13 +435,23 @@ export default function CartPage() {
                                 clipRule="evenodd"
                               />
                             </svg>
-                            <span className="text-sm font-medium text-green-800">
+                            <span
+                              className="text-sm font-medium"
+                              style={{ color: "var(--success-text)" }}
+                            >
                               {appliedCoupon} applied
                             </span>
                           </div>
                           <button
                             onClick={handleRemoveCoupon}
-                            className="text-sm text-green-600 hover:text-green-800"
+                            className="text-sm"
+                            style={{ color: "var(--success)" }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.opacity = "0.8";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.opacity = "1";
+                            }}
                           >
                             Remove
                           </button>
@@ -399,11 +464,28 @@ export default function CartPage() {
                             value={couponCode}
                             onChange={(e) => setCouponCode(e.target.value)}
                             placeholder="Enter coupon code"
-                            className="flex-1 px-3 py-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="flex-1 px-3 py-2 rounded-l-md focus:outline-none focus:ring-2 focus:border-transparent"
+                            style={{
+                              background: "var(--card-bg)",
+                              color: "var(--foreground)",
+                              border: "1px solid var(--sidebar-border)",
+                            }}
                           />
                           <button
                             onClick={handleApplyCoupon}
-                            className="px-4 py-2 bg-gray-600 text-white rounded-r-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                            className="px-4 py-2 rounded-r-md focus:outline-none focus:ring-2"
+                            style={{
+                              background: "var(--primary)",
+                              color: "white",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background =
+                                "var(--primary-hover)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background =
+                                "var(--primary)";
+                            }}
                           >
                             Apply
                           </button>
@@ -462,7 +544,10 @@ export default function CartPage() {
 
                       {/* Discount - Based on Order Model */}
                       {discount > 0 && (
-                        <div className="flex justify-between text-sm text-green-600">
+                        <div
+                          className="flex justify-between text-sm"
+                          style={{ color: "var(--success)" }}
+                        >
                           <span>Discount</span>
                           <span>-£{discount.toFixed(2)}</span>
                         </div>
@@ -532,18 +617,52 @@ export default function CartPage() {
 
                     {/* Action Buttons */}
                     <div className="space-y-3 pt-4">
-                      <button className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors">
+                      <button
+                        className="w-full py-3 px-4 rounded-lg font-semibold transition-colors"
+                        style={{
+                          background: "var(--primary)",
+                          color: "white",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background =
+                            "var(--primary-hover)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "var(--primary)";
+                        }}
+                      >
                         Proceed to Checkout ({stats.totalItems} items)
                       </button>
                       <button
-                        className="w-full bg-red-600 text-white py-2 px-4 rounded hover:bg-red-700 transition-colors"
+                        className="w-full py-2 px-4 rounded transition-colors"
+                        style={{
+                          background: "var(--destructive)",
+                          color: "white",
+                        }}
                         onClick={clearCart}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.opacity = "0.8";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.opacity = "1";
+                        }}
                       >
                         Clear Cart
                       </button>
                       <Link
                         href="/"
-                        className="block w-full text-center py-2 px-4 border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+                        className="block w-full text-center py-2 px-4 rounded transition-colors"
+                        style={{
+                          border: "1px solid var(--sidebar-border)",
+                          color: "var(--foreground)",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background =
+                            "var(--sidebar-bg)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "transparent";
+                        }}
                       >
                         Continue Shopping
                       </Link>

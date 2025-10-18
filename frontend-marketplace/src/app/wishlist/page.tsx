@@ -1,18 +1,20 @@
 "use client";
 import React, { useState, useCallback, useMemo } from "react";
 import Link from "next/link";
+import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
 import { SortOption } from "@/components/SortList";
 import WishlistStats from "@/components/WishlistStats";
 import WishlistSearchAndFilter from "@/components/WishlistSearchAndFilter";
 import WishlistBulkActions from "@/components/WishlistBulkActions";
 import WishlistItemsList from "@/components/WishlistItemsList";
-import WishlistRecommendations from "@/components/WishlistRecommendations";
+import ProductRecommendations from "@/components/ProductRecommendations";
 import { useWishlistOptimized } from "@/hooks/useWishlistOptimized";
 import { useWishlistItems } from "@/hooks/useWishlistItems";
 
 export default function WishlistPage() {
-  const { products, loading, stats, recommendations, clearWishlist, wishlist } =
+  const { user } = useAuth();
+  const { products, loading, stats, clearWishlist, wishlist } =
     useWishlistOptimized();
   const { filteredProducts, removingIds, removeItem } =
     useWishlistItems(products);
@@ -131,16 +133,67 @@ export default function WishlistPage() {
       });
   }, [filteredProducts, searchQuery, filterCategory, sortBy]);
 
+  if (!user) {
+    return (
+      <div className="min-h-screen" style={{ background: "var(--background)" }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="text-center py-16">
+            <div className="mb-6 text-8xl">🔐</div>
+            <h2
+              className="text-2xl font-bold mb-4"
+              style={{ color: "var(--foreground)" }}
+            >
+              Please sign in to view your wishlist
+            </h2>
+            <p
+              className="mb-8 max-w-md mx-auto"
+              style={{ color: "var(--foreground)", opacity: 0.7 }}
+            >
+              You need to be signed in to access your wishlist and save your
+              favorite products.
+            </p>
+            <Link
+              href="/auth"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-colors"
+              style={{
+                background: "var(--primary)",
+                color: "white",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "var(--primary-hover)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "var(--primary)";
+              }}
+            >
+              Sign In
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen" style={{ background: "var(--background)" }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="animate-pulse">
-            <div className="h-8 bg-gray-200 rounded w-1/4 mb-4"></div>
-            <div className="h-4 bg-gray-200 rounded w-1/2 mb-8"></div>
+            <div
+              className="h-8 rounded w-1/4 mb-4"
+              style={{ background: "var(--sidebar-bg)" }}
+            ></div>
+            <div
+              className="h-4 rounded w-1/2 mb-8"
+              style={{ background: "var(--sidebar-bg)" }}
+            ></div>
             <div className="space-y-4">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="h-32 bg-gray-200 rounded"></div>
+                <div
+                  key={i}
+                  className="h-32 rounded"
+                  style={{ background: "var(--sidebar-bg)" }}
+                ></div>
               ))}
             </div>
           </div>
@@ -307,7 +360,15 @@ export default function WishlistPage() {
             </div>
 
             {/* Recommendations */}
-            <WishlistRecommendations recommendations={recommendations} />
+            <ProductRecommendations
+              excludeProducts={filteredProducts}
+              limit={4}
+              title="You might also like"
+              showWishlist={false}
+              showQuickAdd={true}
+              gridCols={{ default: 2, md: 4 }}
+              className="mt-6"
+            />
 
             {/* Continue Shopping */}
             <div className="mt-8 text-center">

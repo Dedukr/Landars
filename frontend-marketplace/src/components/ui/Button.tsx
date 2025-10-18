@@ -81,16 +81,12 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         "active:scale-[0.98]",
       ],
       destructive: [
-        "bg-red-600 text-white",
-        "hover:bg-red-700",
-        "focus:ring-red-500",
+        "text-white",
         "shadow-sm hover:shadow-md",
         "active:scale-[0.98]",
       ],
       success: [
-        "bg-green-600 text-white",
-        "hover:bg-green-700",
-        "focus:ring-green-500",
+        "text-white",
         "shadow-sm hover:shadow-md",
         "active:scale-[0.98]",
       ],
@@ -157,6 +153,25 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       );
     }
 
+    // Get dynamic styles for destructive and success variants
+    const getVariantStyles = () => {
+      if (variant === "destructive") {
+        return {
+          background: "var(--destructive)",
+          "--hover-bg": "rgba(220, 38, 38, 0.8)",
+          "--focus-ring": "var(--destructive)",
+        };
+      }
+      if (variant === "success") {
+        return {
+          background: "var(--success)",
+          "--hover-bg": "rgba(22, 163, 74, 0.8)",
+          "--focus-ring": "var(--success)",
+        };
+      }
+      return {};
+    };
+
     return (
       <button
         className={cn(
@@ -166,6 +181,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           widthStyles,
           className
         )}
+        style={getVariantStyles()}
         ref={ref}
         disabled={disabled || loading}
         {...props}

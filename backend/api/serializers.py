@@ -43,11 +43,19 @@ class ProductSerializer(serializers.ModelSerializer):
     def get_categories(self, obj):
         """Return all category names for the product, including parent categories."""
         categories = []
+        category_names = set()  # Track what we've already added to prevent duplicates
+
         for cat in obj.categories.all().order_by("parent__name", "name"):
-            categories.append(cat.name)
-            # Also include parent category if it exists
-            if cat.parent:
+            # Add the category itself if not already added
+            if cat.name not in category_names:
+                categories.append(cat.name)
+                category_names.add(cat.name)
+
+            # Add parent category if it exists and not already added
+            if cat.parent and cat.parent.name not in category_names:
                 categories.append(cat.parent.name)
+                category_names.add(cat.parent.name)
+
         return categories
 
     # def get_stock_quantity(self, obj):

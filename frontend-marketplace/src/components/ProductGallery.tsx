@@ -31,8 +31,13 @@ const ProductGallery: React.FC<ProductGalleryProps> = ({
 
   if (images.length === 0) {
     return (
-      <div className="aspect-square bg-gray-100 dark:bg-gray-900 rounded-lg flex items-center justify-center">
-        <span className="text-6xl text-gray-300 dark:text-gray-700">🍎</span>
+      <div
+        className="aspect-square rounded-lg flex items-center justify-center"
+        style={{ background: "var(--sidebar-bg)" }}
+      >
+        <span className="text-6xl" style={{ color: "var(--muted-foreground)" }}>
+          🍎
+        </span>
       </div>
     );
   }
@@ -40,7 +45,13 @@ const ProductGallery: React.FC<ProductGalleryProps> = ({
   return (
     <div className="space-y-4">
       {/* Main Image */}
-      <div className="relative aspect-square bg-white dark:bg-gray-900 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-800">
+      <div
+        className="relative aspect-square rounded-lg overflow-hidden"
+        style={{
+          background: "var(--card-bg)",
+          border: "1px solid var(--sidebar-border)",
+        }}
+      >
         <div
           className="relative w-full h-full cursor-zoom-in"
           onMouseMove={handleMouseMove}
@@ -63,8 +74,14 @@ const ProductGallery: React.FC<ProductGalleryProps> = ({
           {/* Zoom overlay */}
           {isZoomed && (
             <div className="absolute inset-0 bg-black bg-opacity-20 flex items-center justify-center">
-              <div className="bg-white dark:bg-gray-900 bg-opacity-90 rounded-full p-2">
-                <MagnifyingGlassIcon className="w-6 h-6 text-gray-600 dark:text-gray-300" />
+              <div
+                className="bg-opacity-90 rounded-full p-2"
+                style={{ background: "var(--card-bg)" }}
+              >
+                <MagnifyingGlassIcon
+                  className="w-6 h-6"
+                  style={{ color: "var(--foreground)" }}
+                />
               </div>
             </div>
           )}
@@ -78,11 +95,25 @@ const ProductGallery: React.FC<ProductGalleryProps> = ({
             <button
               key={index}
               onClick={() => onImageSelect(index)}
-              className={`aspect-square rounded-lg overflow-hidden border-2 transition-all ${
-                selectedImage === index
-                  ? "border-blue-500 ring-2 ring-blue-200 dark:ring-blue-900"
-                  : "border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
-              }`}
+              className="aspect-square rounded-lg overflow-hidden border-2 transition-all"
+              style={{
+                borderColor:
+                  selectedImage === index
+                    ? "var(--primary)"
+                    : "var(--sidebar-border)",
+                boxShadow:
+                  selectedImage === index ? "0 0 0 2px var(--primary)" : "none",
+              }}
+              onMouseEnter={(e) => {
+                if (selectedImage !== index) {
+                  e.currentTarget.style.borderColor = "var(--foreground)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (selectedImage !== index) {
+                  e.currentTarget.style.borderColor = "var(--sidebar-border)";
+                }
+              }}
             >
               <Image
                 src={image}
@@ -102,9 +133,13 @@ const ProductGallery: React.FC<ProductGalleryProps> = ({
           <div className="relative max-w-4xl max-h-full">
             <button
               onClick={() => setIsZoomed(false)}
-              className="absolute top-4 right-4 z-10 bg-white dark:bg-gray-900 bg-opacity-90 rounded-full p-2 hover:bg-opacity-100 transition-colors"
+              className="absolute top-4 right-4 z-10 bg-opacity-90 rounded-full p-2 hover:bg-opacity-100 transition-colors"
+              style={{ background: "var(--card-bg)" }}
             >
-              <XMarkIcon className="w-6 h-6 text-gray-600 dark:text-gray-300" />
+              <XMarkIcon
+                className="w-6 h-6"
+                style={{ color: "var(--foreground)" }}
+              />
             </button>
             <div className="relative w-full h-full">
               <Image

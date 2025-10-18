@@ -10,7 +10,14 @@ export default function CheckoutProgress({
   steps,
 }: CheckoutProgressProps) {
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-8">
+    <div
+      className="rounded-lg shadow-sm p-6 mb-8"
+      style={{
+        background: "var(--card-bg)",
+        border: "1px solid var(--sidebar-border)",
+        boxShadow: "var(--card-shadow)",
+      }}
+    >
       <div className="flex items-center justify-between">
         {steps.map((step, index) => {
           const stepNumber = index + 1;
@@ -21,13 +28,18 @@ export default function CheckoutProgress({
             <div key={step} className="flex items-center">
               <div className="flex items-center">
                 <div
-                  className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                    isCompleted
-                      ? "bg-green-500 text-white"
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium"
+                  style={{
+                    background: isCompleted
+                      ? "var(--success)"
                       : isCurrent
-                      ? "bg-blue-500 text-white"
-                      : "bg-gray-200 text-gray-500"
-                  }`}
+                      ? "var(--primary)"
+                      : "var(--sidebar-bg)",
+                    color:
+                      isCompleted || isCurrent
+                        ? "white"
+                        : "var(--muted-foreground)",
+                  }}
                 >
                   {isCompleted ? (
                     <svg
@@ -47,13 +59,14 @@ export default function CheckoutProgress({
                 </div>
                 <div className="ml-3">
                   <p
-                    className={`text-sm font-medium ${
-                      isCurrent
-                        ? "text-blue-600"
+                    className="text-sm font-medium"
+                    style={{
+                      color: isCurrent
+                        ? "var(--primary)"
                         : isCompleted
-                        ? "text-green-600"
-                        : "text-gray-500"
-                    }`}
+                        ? "var(--success)"
+                        : "var(--muted-foreground)",
+                    }}
                   >
                     {step}
                   </p>
@@ -61,9 +74,12 @@ export default function CheckoutProgress({
               </div>
               {index < steps.length - 1 && (
                 <div
-                  className={`hidden sm:block w-16 h-0.5 mx-4 ${
-                    isCompleted ? "bg-green-500" : "bg-gray-200"
-                  }`}
+                  className="hidden sm:block w-16 h-0.5 mx-4"
+                  style={{
+                    background: isCompleted
+                      ? "var(--success)"
+                      : "var(--sidebar-border)",
+                  }}
                 />
               )}
             </div>

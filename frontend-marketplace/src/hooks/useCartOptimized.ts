@@ -1,7 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useCart } from "@/contexts/CartContext";
-import { httpClient } from "@/utils/httpClient";
 
 interface Product {
   id: number;
@@ -16,7 +15,6 @@ export const useCartOptimized = () => {
   const { cart, clearCart } = useCart();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [recommendations, setRecommendations] = useState<Product[]>([]);
 
   // Memoized stats calculation
   const calculateStats = useCallback(
@@ -37,43 +35,6 @@ export const useCartOptimized = () => {
         tax,
         total,
       };
-    },
-    [cart]
-  );
-
-  // Memoized recommendations fetch
-  const fetchRecommendations = useCallback(
-    async (cartProducts: Product[]) => {
-      try {
-        // Get categories from cart items
-        const cartCategories = cartProducts
-          .filter((p) => p && p.categories)
-          .flatMap((p) => p.categories || [])
-          .filter((cat, index, arr) => arr.indexOf(cat) === index); // Remove duplicates
-
-        // Get cart product IDs to exclude
-        const cartProductIds = cart.map((item) => item.productId);
-
-        // Build query parameters
-        const params = new URLSearchParams();
-        params.append("limit", "4");
-
-        if (cartProductIds.length > 0) {
-          params.append("exclude", cartProductIds.join(","));
-        }
-
-        if (cartCategories.length > 0) {
-          params.append("categories", cartCategories.join(","));
-        }
-
-        const allProducts = await httpClient.getProducts<Product>(
-          `/api/products/?${params.toString()}`
-        );
-
-        setRecommendations(allProducts.slice(0, 4));
-      } catch (error) {
-        console.error("Error fetching recommendations:", error);
-      }
     },
     [cart]
   );
@@ -107,9 +68,6 @@ export const useCartOptimized = () => {
         const productResults = await Promise.all(productPromises);
         const validProducts = productResults.filter(Boolean);
         setProducts(validProducts);
-
-        // Fetch recommendations
-        fetchRecommendations(validProducts);
       } catch (error) {
         console.error("Error fetching products:", error);
         setProducts([]);
@@ -118,7 +76,7 @@ export const useCartOptimized = () => {
       }
     }
     fetchInitialProducts();
-  }, [cart, fetchRecommendations]); // Include dependencies
+  }, [cart]); // Include dependencies
 
   // Handle cart changes to sync products with context
   useEffect(() => {
@@ -132,10 +90,9 @@ export const useCartOptimized = () => {
       // Only update if the filtered list is different
       if (filteredProducts.length !== products.length) {
         setProducts(filteredProducts);
-        fetchRecommendations(filteredProducts);
       }
     }
-  }, [cart, products, fetchRecommendations]);
+  }, [cart, products]);
 
   // Memoized stats
   const stats = useMemo(() => {
@@ -146,7 +103,6 @@ export const useCartOptimized = () => {
     products,
     loading,
     stats,
-    recommendations,
     clearCart,
     cart,
   };

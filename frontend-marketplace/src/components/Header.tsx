@@ -286,13 +286,30 @@ export default function Header() {
               <div className="hidden lg:flex items-center gap-2">
                 <Link
                   href="/auth?mode=signin"
-                  className="text-gray-700 hover:text-blue-600 transition-colors"
+                  className="transition-colors"
+                  style={{ color: "var(--foreground)" }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = "var(--primary)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = "var(--foreground)";
+                  }}
                 >
                   Sign In
                 </Link>
                 <Link
                   href="/auth?mode=signup"
-                  className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
+                  className="px-4 py-2 rounded transition-colors"
+                  style={{
+                    background: "var(--primary)",
+                    color: "white",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "var(--primary-hover)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "var(--primary)";
+                  }}
                 >
                   Sign Up
                 </Link>
@@ -398,14 +415,35 @@ export default function Header() {
                   <Link
                     href="/auth?mode=signin"
                     onClick={() => setMobileMenuOpen(false)}
-                    className="block w-full text-center py-2 px-4 border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+                    className="block w-full text-center py-2 px-4 rounded transition-colors"
+                    style={{
+                      border: "1px solid var(--sidebar-border)",
+                      color: "var(--foreground)",
+                      background: "var(--card-bg)",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "var(--sidebar-bg)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "var(--card-bg)";
+                    }}
                   >
                     Sign In
                   </Link>
                   <Link
                     href="/auth?mode=signup"
                     onClick={() => setMobileMenuOpen(false)}
-                    className="block w-full text-center py-2 px-4 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                    className="block w-full text-center py-2 px-4 rounded transition-colors"
+                    style={{
+                      background: "var(--primary)",
+                      color: "white",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "var(--primary-hover)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "var(--primary)";
+                    }}
                   >
                     Sign Up
                   </Link>

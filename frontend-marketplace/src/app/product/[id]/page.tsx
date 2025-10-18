@@ -3,12 +3,14 @@ import React, { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useCart } from "@/contexts/CartContext";
 import { useWishlist } from "@/contexts/WishlistContext";
+import { useCartItems } from "@/hooks/useCartItems";
+import { useWishlistItems } from "@/hooks/useWishlistItems";
 import { useAuth } from "@/contexts/AuthContext";
 import SignInPopup from "@/components/SignInPopup";
 import Breadcrumb from "@/components/Breadcrumb";
 import ProductGallery from "@/components/ProductGallery";
-import ProductDetails from "@/components/ProductDetails";
-import RelatedProducts from "@/components/RelatedProducts";
+// import ProductDetails from "@/components/ProductDetails";
+import ProductRecommendations from "@/components/ProductRecommendations";
 import LoadingSpinner from "@/components/LoadingSpinner";
 
 interface Product {
@@ -38,19 +40,6 @@ interface Product {
   shelf_life?: string;
 }
 
-// interface Review {
-//   id: number;
-//   user: {
-//     name: string;
-//     avatar?: string;
-//   };
-//   rating: number;
-//   title: string;
-//   comment: string;
-//   date: string;
-//   verified: boolean;
-// }
-
 export default function ProductPage() {
   const params = useParams();
   const router = useRouter();
@@ -59,6 +48,7 @@ export default function ProductPage() {
   const { user } = useAuth();
 
   const [product, setProduct] = useState<Product | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +56,30 @@ export default function ProductPage() {
   const [selectedImage, setSelectedImage] = useState(0);
   const [quantity, setQuantity] = useState(1);
 
+  // Get cart and wishlist items with full product details
+  const { filteredProducts: cartItems } = useCartItems(products);
+  const { filteredProducts: wishlistItems } = useWishlistItems(products);
+
   const productId = params.id;
+
+  // Fetch all products for cart and wishlist hooks
+  useEffect(() => {
+    async function fetchProducts() {
+      try {
+        const response = await fetch("/api/products/");
+        if (response.ok) {
+          const data = await response.json();
+          const fetchedProducts = Array.isArray(data)
+            ? data
+            : data.results || [];
+          setProducts(fetchedProducts);
+        }
+      } catch (error) {
+        console.error("Error fetching products:", error);
+      }
+    }
+    fetchProducts();
+  }, []);
 
   useEffect(() => {
     async function fetchProduct() {
@@ -125,17 +138,33 @@ export default function ProductPage() {
 
   if (error || !product) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ background: "var(--background)" }}
+      >
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-red-600 mb-4">
+          <h1
+            className="text-2xl font-bold mb-4"
+            style={{ color: "var(--destructive)" }}
+          >
             Product Not Found
           </h1>
-          <p className="text-gray-600 mb-4">
+          <p className="mb-4" style={{ color: "var(--muted-foreground)" }}>
             {error || "The product you're looking for doesn't exist."}
           </p>
           <button
             onClick={() => router.back()}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="px-6 py-2 rounded-lg transition-colors"
+            style={{
+              background: "var(--primary)",
+              color: "white",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "var(--primary-hover)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "var(--primary)";
+            }}
           >
             Go Back
           </button>
@@ -153,7 +182,13 @@ export default function ProductPage() {
       style={{ background: "var(--background)" }}
     >
       {/* Breadcrumb Navigation */}
-      <div className="bg-white dark:bg-gray-900 border-b dark:border-gray-800">
+      <div
+        className="border-b"
+        style={{
+          background: "var(--card-bg)",
+          borderColor: "var(--sidebar-border)",
+        }}
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <Breadcrumb
             items={[
@@ -182,22 +217,34 @@ export default function ProductPage() {
           <div className="space-y-6">
             {/* Product Header */}
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+              <h1
+                className="text-3xl font-bold mb-2"
+                style={{ color: "var(--foreground)" }}
+              >
                 {product.name}
               </h1>
             </div>
 
             {/* Price */}
-            <div className="text-3xl font-bold text-green-600 dark:text-green-400">
+            <div
+              className="text-3xl font-bold"
+              style={{ color: "var(--success)" }}
+            >
               £{product.price}
             </div>
 
             {/* Description */}
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+              <h3
+                className="text-lg font-semibold mb-2"
+                style={{ color: "var(--foreground)" }}
+              >
                 Description
               </h3>
-              <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
+              <p
+                className="leading-relaxed"
+                style={{ color: "var(--muted-foreground)" }}
+              >
                 {product.description}
               </p>
             </div>
@@ -206,34 +253,59 @@ export default function ProductPage() {
             <div className="space-y-4">
               <div className="flex items-center space-x-4">
                 <label
-                  htmlFor="quantity"
-                  className="text-sm font-medium text-gray-700 dark:text-gray-300"
+                  className="text-sm font-medium"
+                  style={{ color: "var(--foreground)" }}
                 >
                   Quantity:
                 </label>
-                <div className="flex items-center border border-gray-300 dark:border-gray-700 rounded-lg">
+                <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleQuantityChange(quantity - 1)}
                     disabled={quantity <= 1}
-                    className="px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{
+                      border: "1px solid var(--sidebar-border)",
+                      background: "var(--card-bg)",
+                      color: "var(--foreground)",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!e.currentTarget.disabled) {
+                        e.currentTarget.style.background = "var(--sidebar-bg)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!e.currentTarget.disabled) {
+                        e.currentTarget.style.background = "var(--card-bg)";
+                      }
+                    }}
                   >
                     -
                   </button>
-                  <input
-                    type="number"
-                    id="quantity"
-                    value={quantity}
-                    onChange={(e) =>
-                      handleQuantityChange(parseInt(e.target.value) || 1)
-                    }
-                    min="1"
-                    max={99}
-                    className="w-16 text-center border-0 focus:ring-0 bg-transparent text-gray-900 dark:text-gray-100"
-                  />
+                  <span
+                    className="min-w-[2rem] text-center font-medium text-sm"
+                    style={{ color: "var(--foreground)" }}
+                  >
+                    {quantity}
+                  </span>
                   <button
                     onClick={() => handleQuantityChange(quantity + 1)}
                     disabled={quantity >= 99}
-                    className="px-3 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{
+                      border: "1px solid var(--sidebar-border)",
+                      background: "var(--card-bg)",
+                      color: "var(--foreground)",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!e.currentTarget.disabled) {
+                        e.currentTarget.style.background = "var(--sidebar-bg)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!e.currentTarget.disabled) {
+                        e.currentTarget.style.background = "var(--card-bg)";
+                      }
+                    }}
                   >
                     +
                   </button>
@@ -243,13 +315,33 @@ export default function ProductPage() {
               <div className="flex space-x-4">
                 <button
                   onClick={handleAddToCart}
-                  className="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors"
+                  className="flex-1 px-6 py-3 rounded-lg font-semibold transition-colors"
+                  style={{
+                    background: "var(--success)",
+                    color: "white",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "rgba(22, 163, 74, 0.8)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "var(--success)";
+                  }}
                 >
                   Add to Cart
                 </button>
                 <button
                   onClick={handleWishlistClick}
-                  className="px-4 py-3 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  className="px-4 py-3 rounded-lg transition-colors"
+                  style={{
+                    border: "1px solid var(--sidebar-border)",
+                    background: "var(--card-bg)",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "var(--sidebar-bg)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "var(--card-bg)";
+                  }}
                   title={
                     isInWishlist(product.id)
                       ? "Remove from wishlist"
@@ -263,14 +355,27 @@ export default function ProductPage() {
               </div>
 
               {cartQuantity > 0 && (
-                <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-900 rounded-lg p-4">
+                <div
+                  className="rounded-lg p-4"
+                  style={{
+                    background: "var(--info-bg)",
+                    border: "1px solid var(--info-border)",
+                  }}
+                >
                   <div className="flex items-center justify-between">
-                    <span className="text-blue-800 dark:text-blue-200">
+                    <span style={{ color: "var(--info-text)" }}>
                       {cartQuantity} in your cart
                     </span>
                     <button
                       onClick={() => removeFromCart(product.id)}
-                      className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm underline"
+                      className="text-sm underline"
+                      style={{ color: "var(--info-text)" }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.opacity = "0.8";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.opacity = "1";
+                      }}
                     >
                       Remove
                     </button>
@@ -280,11 +385,23 @@ export default function ProductPage() {
             </div>
 
             {/* Key Features */}
-            <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
-              <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
+            <div
+              className="rounded-lg p-4"
+              style={{
+                background: "var(--sidebar-bg)",
+                border: "1px solid var(--sidebar-border)",
+              }}
+            >
+              <h3
+                className="font-semibold mb-2"
+                style={{ color: "var(--foreground)" }}
+              >
                 Key Features
               </h3>
-              <ul className="space-y-1 text-sm text-gray-700 dark:text-gray-300">
+              <ul
+                className="space-y-1 text-sm"
+                style={{ color: "var(--muted-foreground)" }}
+              >
                 <li>• Fresh, locally sourced ingredients</li>
                 <li>• Sustainable packaging</li>
                 <li>• Free delivery on orders over £25</li>
@@ -295,15 +412,20 @@ export default function ProductPage() {
         </div>
 
         {/* Product Details Tabs */}
-        <div className="mt-12">
+        {/* <div className="mt-12">
           <ProductDetails product={product} />
-        </div>
+        </div> */}
 
         {/* Related Products */}
         <div className="mt-12">
-          <RelatedProducts
-            categoryId={product.category?.id}
-            currentProductId={product.id}
+          <ProductRecommendations
+            excludeProducts={[product, ...cartItems, ...wishlistItems]}
+            limit={4}
+            title="You might also like"
+            showWishlist={false}
+            showQuickAdd={true}
+            gridCols={{ default: 2, md: 4 }}
+            className="mt-6"
           />
         </div>
       </div>

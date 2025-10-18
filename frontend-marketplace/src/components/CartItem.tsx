@@ -67,7 +67,10 @@ const CartItem = memo<CartItemProps>(
                 className="w-20 h-20 object-cover rounded-lg"
               />
             ) : (
-              <div className="w-20 h-20 bg-gray-100 rounded-lg flex items-center justify-center">
+              <div
+                className="w-20 h-20 rounded-lg flex items-center justify-center"
+                style={{ background: "var(--sidebar-bg)" }}
+              >
                 <span className="text-2xl">🍎</span>
               </div>
             )}
@@ -95,7 +98,22 @@ const CartItem = memo<CartItemProps>(
                 <button
                   onClick={() => onDecreaseQuantity(product.id)}
                   disabled={quantity <= 1}
-                  className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{
+                    border: "1px solid var(--sidebar-border)",
+                    background: "var(--card-bg)",
+                    color: "var(--foreground)",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!e.currentTarget.disabled) {
+                      e.currentTarget.style.background = "var(--sidebar-bg)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!e.currentTarget.disabled) {
+                      e.currentTarget.style.background = "var(--card-bg)";
+                    }
+                  }}
                 >
                   <svg
                     className="w-4 h-4"
@@ -114,7 +132,18 @@ const CartItem = memo<CartItemProps>(
                 <span className="w-8 text-center font-medium">{quantity}</span>
                 <button
                   onClick={() => onIncreaseQuantity(product.id)}
-                  className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                  className="w-8 h-8 rounded-full flex items-center justify-center"
+                  style={{
+                    border: "1px solid var(--sidebar-border)",
+                    background: "var(--card-bg)",
+                    color: "var(--foreground)",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "var(--sidebar-bg)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "var(--card-bg)";
+                  }}
                 >
                   <svg
                     className="w-4 h-4"
@@ -152,13 +181,27 @@ const CartItem = memo<CartItemProps>(
             <div className="flex space-x-2">
               <button
                 onClick={handleSaveForLater}
-                className="text-sm text-blue-600 hover:text-blue-800"
+                className="text-sm"
+                style={{ color: "var(--primary)" }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.opacity = "0.8";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.opacity = "1";
+                }}
               >
                 Save for later
               </button>
               <button
                 onClick={() => onRemove(product.id)}
-                className="text-sm text-red-600 hover:text-red-800"
+                className="text-sm"
+                style={{ color: "var(--destructive)" }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.opacity = "0.8";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.opacity = "1";
+                }}
               >
                 Remove
               </button>

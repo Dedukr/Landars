@@ -40,13 +40,18 @@ export const WishlistButton: React.FC<WishlistButtonProps> = ({
         w-10 h-10 p-0 rounded-full
         ${
           isInWishlist
-            ? "text-red-500 hover:text-red-600 hover:bg-red-50"
-            : "text-gray-500 hover:text-red-500 hover:bg-red-50"
+            ? "text-red-500 hover:text-red-600"
+            : "text-gray-500 hover:text-red-500"
         }
         transition-all duration-200
         hover:scale-110
         active:scale-95
       `}
+      style={{
+        background: "white",
+        border: "1px solid rgba(0, 0, 0, 0.1)",
+        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.1)",
+      }}
       title={isInWishlist ? "Remove from wishlist" : "Add to wishlist"}
       {...props}
     />

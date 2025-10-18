@@ -28,7 +28,6 @@ export const useWishlistOptimized = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<WishlistStatsData | null>(null);
-  const [recommendations, setRecommendations] = useState<Product[]>([]);
 
   // Memoized stats calculation
   const calculateStats = useCallback((products: Product[]) => {
@@ -50,35 +49,6 @@ export const useWishlistOptimized = () => {
     setStats(newStats);
     return newStats;
   }, []);
-
-  // Memoized recommendations fetch
-  const fetchRecommendations = useCallback(
-    async (wishlistProducts: Product[]) => {
-      try {
-        // Get categories from wishlist items
-        const categories = [
-          ...new Set(wishlistProducts.flatMap((p) => p.categories || [])),
-        ];
-
-        if (categories.length > 0) {
-          // Build query parameters with exclude and categories
-          const params = new URLSearchParams();
-          params.append("categories", categories.join(","));
-          params.append("exclude", wishlist.join(","));
-          params.append("limit", "6");
-
-          const allProducts = await httpClient.getProducts<Product>(
-            `/api/products/?${params.toString()}`
-          );
-
-          setRecommendations(allProducts.slice(0, 6));
-        }
-      } catch (error) {
-        console.error("Error fetching recommendations:", error);
-      }
-    },
-    [wishlist]
-  );
 
   // Initial products fetch - only run once on mount
   useEffect(() => {
@@ -106,7 +76,6 @@ export const useWishlistOptimized = () => {
         calculateStats(wishlistProducts);
 
         // Fetch recommendations
-        fetchRecommendations(wishlistProducts);
       } catch (error) {
         console.error("Error fetching products:", error);
         setProducts([]);
@@ -115,7 +84,7 @@ export const useWishlistOptimized = () => {
       }
     }
     fetchInitialProducts();
-  }, [wishlist, calculateStats, fetchRecommendations]); // Include dependencies
+  }, [wishlist, calculateStats]); // Include dependencies
 
   // Handle wishlist changes to sync products with context
   useEffect(() => {
@@ -129,10 +98,9 @@ export const useWishlistOptimized = () => {
       if (filteredProducts.length !== products.length) {
         setProducts(filteredProducts);
         calculateStats(filteredProducts);
-        fetchRecommendations(filteredProducts);
       }
     }
-  }, [wishlist, products, calculateStats, fetchRecommendations]);
+  }, [wishlist, products, calculateStats]);
 
   // Memoized filtered and sorted products
   const filteredAndSortedProducts = useMemo(() => {
@@ -143,7 +111,6 @@ export const useWishlistOptimized = () => {
     products: filteredAndSortedProducts,
     loading,
     stats,
-    recommendations,
     clearWishlist,
     wishlist,
   };

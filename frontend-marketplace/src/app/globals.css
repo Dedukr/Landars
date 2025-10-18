@@ -67,24 +67,42 @@
   --sort-arrow-color: #ffffff; /* white arrow for visibility */
   --sort-selected-bg: var(--primary);
   --sort-selected-fg: #ffffff;
+  --muted-foreground: #6b7280; /* muted text for secondary content */
+  --destructive: #dc2626; /* red for errors */
+  --success: #16a34a; /* green for success states */
+  --info-bg: #eff6ff; /* light blue background for info */
+  --info-border: #bfdbfe; /* light blue border for info */
+  --info-text: #1e40af; /* dark blue text for info */
+  --success-bg: #f0fdf4; /* light green background for success */
+  --success-border: #bbf7d0; /* light green border for success */
+  --success-text: #166534; /* dark green text for success */
 }
 
-/* Dark theme (explicit) */
+/* Dark theme (explicit) - Improved muted colors */
 .dark {
-  --background: #0f0f0f; /* deeper dark base */
-  --foreground: #eae6df; /* soft warm light text */
-  --primary: #caa977; /* brand gold, slightly muted */
-  --primary-hover: #b99760; /* darker gold for hover */
-  --sidebar-bg: #171717; /* elevated panel */
-  --sidebar-border: #2a2a2a; /* subtle separation */
-  --card-bg: #141414; /* card background */
-  --card-shadow: 0 8px 26px rgba(0, 0, 0, 0.45);
-  --accent: #caa977; /* align accent to primary in dark */
-  --sort-bg: #2a2520; /* darker beige sort background */
+  --background: #121212; /* softer dark base instead of pure black */
+  --foreground: #e5e5e5; /* off-white text to reduce eye strain */
+  --primary: #a68b5b; /* muted gold - 30% less saturated */
+  --primary-hover: #8f7a4f; /* darker muted gold for hover */
+  --sidebar-bg: #1e1e1e; /* elevated panel with subtle warmth */
+  --sidebar-border: #333333; /* subtle separation with better contrast */
+  --card-bg: #1a1a1a; /* card background with slight elevation */
+  --card-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  --accent: #a68b5b; /* align accent to primary in dark */
+  --sort-bg: #2a2a2a; /* neutral dark sort background */
   --sort-border-radius: 9999px; /* elliptical sort button */
-  --sort-arrow-color: #ffffff; /* make sort arrow white in dark mode */
-  --sort-selected-bg: var(--accent); /* beige selected option in dark */
-  --sort-selected-fg: #1a1a1a; /* dark text on beige */
+  --sort-arrow-color: #e5e5e5; /* off-white arrow for better visibility */
+  --sort-selected-bg: var(--accent); /* muted gold selected option */
+  --sort-selected-fg: #1a1a1a; /* dark text on muted gold */
+  --muted-foreground: #a0a0a0; /* muted text for secondary content */
+  --destructive: #dc2626; /* muted red for errors */
+  --success: #16a34a; /* muted green for success states */
+  --info-bg: #1e3a8a; /* dark blue background for info */
+  --info-border: #3b82f6; /* blue border for info */
+  --info-text: #dbeafe; /* light blue text for info */
+  --success-bg: #14532d; /* dark green background for success */
+  --success-border: #22c55e; /* green border for success */
+  --success-text: #dcfce7; /* light green text for success */
 }
 
 @theme inline {
@@ -97,17 +115,26 @@
 /* System preference fallback (only when no explicit theme is set) */
 @media (prefers-color-scheme: dark) {
   :root:not(.light):not(.dark) {
-    /* Dark fallback tuned to brand */
-    --background: #0f0f0f;
-    --foreground: #eae6df;
-    --primary: #caa977;
-    --primary-hover: #b99760;
-    --sidebar-bg: #171717;
-    --sidebar-border: #2a2a2a;
-    --card-bg: #141414;
-    --card-shadow: 0 8px 26px rgba(0, 0, 0, 0.45);
-    --accent: #caa977;
-    --sort-bg: #2a2520;
+    /* Dark fallback with muted colors */
+    --background: #121212; /* softer dark base */
+    --foreground: #e5e5e5; /* off-white text */
+    --primary: #a68b5b; /* muted gold */
+    --primary-hover: #8f7a4f; /* darker muted gold */
+    --sidebar-bg: #1e1e1e; /* elevated panel */
+    --sidebar-border: #333333; /* subtle separation */
+    --card-bg: #1a1a1a; /* card background */
+    --card-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+    --accent: #a68b5b; /* muted gold accent */
+    --sort-bg: #2a2a2a; /* neutral dark sort background */
+    --muted-foreground: #a0a0a0; /* muted text */
+    --destructive: #dc2626; /* muted red */
+    --success: #16a34a; /* muted green */
+    --info-bg: #1e3a8a; /* dark blue background for info */
+    --info-border: #3b82f6; /* blue border for info */
+    --info-text: #dbeafe; /* light blue text for info */
+    --success-bg: #14532d; /* dark green background for success */
+    --success-border: #22c55e; /* green border for success */
+    --success-text: #dcfce7; /* light green text for success */
   }
 }
 
@@ -133,6 +160,15 @@ body {
   font-family: Arial, Helvetica, sans-serif;
   transition: background-color 0.3s ease, color 0.3s ease;
   font-size: 0.85em; /* 15% reduction (100% - 15% = 85%) */
+}
+
+/* Button hover effects for destructive and success variants */
+button[style*="--destructive"]:hover {
+  background: var(--hover-bg, rgba(220, 38, 38, 0.8)) !important;
+}
+
+button[style*="--success"]:hover {
+  background: var(--hover-bg, rgba(22, 163, 74, 0.8)) !important;
 }
 
 header {
