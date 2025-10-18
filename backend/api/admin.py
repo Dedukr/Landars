@@ -228,10 +228,51 @@ class OrderItemInline(admin.TabularInline):
     readonly_fields = ["get_total_price"]
     autocomplete_fields = ["product"]
 
-    # def get_total_price(self, obj):
-    #     return round(obj.product.price * obj.quantity, 2)
+    def get_total_price(self, obj):
+        if obj and obj.product and obj.quantity:
+            return round(obj.product.price * obj.quantity, 2)
+        return "0.00"
 
-    # get_total_price.short_description = "Total Price"
+    get_total_price.short_description = "Total Price"
+
+    def save_formset(self, request, form, formset, change):
+        """Override to handle duplicate order items by merging quantities."""
+        if formset.is_valid():
+            instances = formset.save(commit=False)
+            merged_items = []
+
+            for instance in instances:
+                if instance.pk:  # Existing item - just save
+                    instance.save()
+                else:  # New item - check for duplicates
+                    try:
+                        # Try to get existing item with same order and product
+                        existing_item = OrderItem.objects.get(
+                            order=instance.order, product=instance.product
+                        )
+                        # Merge quantities
+                        old_quantity = existing_item.quantity
+                        existing_item.quantity += instance.quantity
+                        existing_item.save()
+                        merged_items.append(
+                            f"{existing_item.product.name}: {old_quantity} + {instance.quantity} = {existing_item.quantity}"
+                        )
+                        # Delete the new instance since we merged it
+                        instance.delete()
+                    except OrderItem.DoesNotExist:
+                        # No duplicate exists, save normally
+                        instance.save()
+
+            # Delete any items marked for deletion
+            for obj in formset.deleted_objects:
+                obj.delete()
+
+            # Show success message if items were merged
+            if merged_items:
+                messages.success(
+                    request,
+                    f"Order items merged successfully: {', '.join(merged_items)}",
+                )
 
 
 @admin.register(Order)

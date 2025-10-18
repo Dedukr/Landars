@@ -232,7 +232,8 @@ class OrderItemView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        item = OrderItem.objects.create(order=order, product=product, quantity=quantity)
+        # Use the safe method that handles duplicates by merging quantities
+        item = order.add_item_safely(product, quantity)
         serializer = OrderItemSerializer(item)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
