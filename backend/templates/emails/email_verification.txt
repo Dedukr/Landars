@@ -1,0 +1,20 @@
+Hello {{ user_name }},
+
+Welcome to Landars Food! We're excited to have you join our platform.
+
+To complete your registration and start using your account, please verify your email address by clicking the link below:
+
+{{ verification_url }}
+
+This link will expire in 24 hours for security reasons.
+
+If you didn't create an account with Landars Food, please ignore this email.
+
+Need help? Contact us at support@landarsfood.com
+
+Best regards,
+The Landars Food Team
+
+---
+This email was sent to {{ user_email }}.
+© {{ current_year }} Landars Food. All rights reserved.

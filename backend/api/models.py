@@ -140,7 +140,7 @@ class Order(models.Model):
         CustomUser, on_delete=models.SET_NULL, related_name="orders", null=True
     )
     notes = models.CharField(max_length=200, blank=True, null=True)
-    delivery_date = models.DateField()
+    delivery_date = models.DateField(null=True, blank=True)
     is_home_delivery = models.BooleanField(default=True, verbose_name="Home Delivery")
     delivery_fee_manual = models.BooleanField(
         default=False,
@@ -200,7 +200,9 @@ class Order(models.Model):
         return {
             "order_id": self.id,
             "customer": self.customer,
-            "delivery_date": self.delivery_date.strftime("%Y-%m-%d"),
+            "delivery_date": (
+                self.delivery_date.strftime("%Y-%m-%d") if self.delivery_date else None
+            ),
             "total_price": self.get_total_price(),
             "items": [item.get_item_details() for item in self.items.all()],
         }

@@ -20,7 +20,7 @@ interface Order {
   customer_phone?: string;
   customer_address?: string;
   notes?: string;
-  delivery_date: string;
+  delivery_date: string | null;
   is_home_delivery: boolean;
   delivery_fee: string;
   discount: string;
@@ -167,7 +167,7 @@ export default function OrderCard({
               Delivery Date
             </p>
             <p className="text-sm" style={{ color: "var(--foreground)" }}>
-              {formatDate(order.delivery_date)}
+              {order.delivery_date ? formatDate(order.delivery_date) : "Not specified"}
             </p>
           </div>
           <div>
@@ -374,7 +374,7 @@ export default function OrderCard({
                   style={{ color: "var(--foreground)", opacity: 0.7 }}
                 >
                   <span className="font-medium">Date:</span>{" "}
-                  {formatDate(order.delivery_date)}
+                  {order.delivery_date ? formatDate(order.delivery_date) : "Not specified"}
                 </p>
                 {order.customer_address && (
                   <p

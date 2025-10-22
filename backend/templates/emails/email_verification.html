@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify Your Email - Landars Food</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333333;
+            background-color: #f8f9fa;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 40px 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            color: #ffffff;
+            margin: 0;
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        .content {
+            padding: 40px 30px;
+        }
+
+        .greeting {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+
+        .message {
+            font-size: 16px;
+            margin-bottom: 30px;
+            color: #555555;
+        }
+
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #ffffff;
+            text-decoration: none;
+            padding: 16px 32px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 16px;
+            text-align: center;
+            margin: 20px 0;
+            transition: transform 0.2s ease;
+        }
+
+        .cta-button:hover {
+            transform: translateY(-2px);
+        }
+
+        .security-info {
+            background-color: #f8f9fa;
+            border-left: 4px solid #28a745;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .security-info h3 {
+            margin: 0 0 10px 0;
+            color: #28a745;
+            font-size: 16px;
+        }
+
+        .security-info p {
+            margin: 0;
+            font-size: 14px;
+            color: #666666;
+        }
+
+        .footer {
+            background-color: #f8f9fa;
+            padding: 30px;
+            text-align: center;
+            border-top: 1px solid #e9ecef;
+        }
+
+        .footer p {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #666666;
+        }
+
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        .expiry-warning {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+
+        .welcome-icon {
+            text-align: center;
+            margin: 30px 0;
+        }
+
+        .welcome-icon div {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+
+        .welcome-icon svg {
+            width: 40px;
+            height: 40px;
+            color: #ffffff;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                margin: 0;
+                border-radius: 0;
+            }
+
+            .header,
+            .content,
+            .footer {
+                padding: 20px;
+            }
+
+            .header h1 {
+                font-size: 24px;
+            }
+
+            .cta-button {
+                display: block;
+                width: 100%;
+                box-sizing: border-box;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎉 Welcome to Landars Food!</h1>
+            <p style="color: #ffffff; margin: 10px 0 0 0; font-size: 16px;">Please verify your email address</p>
+        </div>
+
+        <div class="content">
+            <div class="welcome-icon">
+                <div>
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z">
+                        </path>
+                    </svg>
+                </div>
+            </div>
+
+            <div class="greeting">Hello {{ user_name }},</div>
+
+            <div class="message">
+                Welcome to Landars Food! We're excited to have you join our platform.
+                To complete your registration and start using your account, please verify your email address.
+            </div>
+
+            <div style="text-align: center;">
+                <a href="{{ verification_url }}" class="cta-button">Verify My Email Address</a>
+            </div>
+
+            <div class="expiry-warning">
+                <strong>⏰ Important:</strong> This verification link will expire in 24 hours for security reasons.
+            </div>
+
+            <div class="security-info">
+                <h3>🛡️ Security Information</h3>
+                <p>
+                    If you didn't create an account with Landars Food, please ignore this email.
+                    Your account will not be activated without email verification.
+                </p>
+            </div>
+
+            <div class="message">
+                <strong>Alternative method:</strong> If the button doesn't work, copy and paste this link into your
+                browser:
+                <br><br>
+                <a href="{{ verification_url }}" style="color: #667eea; word-break: break-all;">{{ verification_url
+                    }}</a>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p><strong>Landars Food Team</strong></p>
+            <p>
+                Need help? Contact us at
+                <a href="mailto:support@landarsfood.com">support@landarsfood.com</a>
+            </p>
+            <p style="font-size: 12px; color: #999999;">
+                This email was sent to {{ user_email }}.
+                <br>© {{ current_year }} Landars Food. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+
+</html>

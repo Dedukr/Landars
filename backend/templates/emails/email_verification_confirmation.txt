@@ -1,0 +1,20 @@
+Hello {{ user_name }},
+
+Great news! Your email address has been successfully verified.
+
+Your Landars Food account is now fully activated and you can start using all our features.
+
+You can now:
+- Browse our food marketplace
+- Place orders
+- Manage your profile
+- And much more!
+
+Welcome to the Landars Food community!
+
+Best regards,
+The Landars Food Team
+
+---
+This email was sent to {{ user_email }}.
+© {{ current_year }} Landars Food. All rights reserved.

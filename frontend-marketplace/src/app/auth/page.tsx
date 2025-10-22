@@ -4,15 +4,18 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
 import { httpClient } from "@/utils/httpClient";
+import { EmailInput } from "@/components/ui/EmailInput";
 
 interface AuthResponse {
-  access: string;
-  refresh: string;
+  access?: string;
+  refresh?: string;
   user: {
     id: number;
     name: string;
     email: string;
   };
+  email_verification_required?: boolean;
+  message?: string;
 }
 
 function AuthForm() {
@@ -25,20 +28,77 @@ function AuthForm() {
     confirmPassword: "",
   });
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
+  const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
+  const [forgotPasswordSuccess, setForgotPasswordSuccess] = useState(false);
+  const [forgotPasswordCooldown, setForgotPasswordCooldown] = useState(0);
+  const [forgotPasswordWarning, setForgotPasswordWarning] = useState("");
+  const [forgotPasswordError, setForgotPasswordError] = useState("");
+  const [showCreateAccountSuggestion, setShowCreateAccountSuggestion] =
+    useState(false);
   const router = useRouter();
   const { login } = useAuth();
 
   useEffect(() => {
     const mode = searchParams.get("mode");
+    const email = searchParams.get("email");
+    const verified = searchParams.get("verified");
+
     if (mode === "signup") {
       setIsSignUp(true);
     } else if (mode === "signin") {
       setIsSignUp(false);
     }
+
+    // Handle email prefilling from verification
+    if (email) {
+      setFormData((prev) => ({ ...prev, email: decodeURIComponent(email) }));
+
+      // Show success message if coming from verification
+      if (verified === "true") {
+        setSuccessMessage("Email verified successfully! You can now sign in.");
+      }
+    }
   }, [searchParams]);
+
+  // Handle forgotPassword query parameter to auto-open forgot password modal
+  useEffect(() => {
+    const forgotPassword = searchParams.get("forgotPassword");
+    if (forgotPassword === "true") {
+      setShowForgotPassword(true);
+      // Clean up the URL by removing the query parameter
+      const url = new URL(window.location.href);
+      url.searchParams.delete("forgotPassword");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, [searchParams]);
+
+  // Countdown timer effect for forgot password cooldown
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+
+    if (forgotPasswordCooldown > 0) {
+      interval = setInterval(() => {
+        setForgotPasswordCooldown((prev) => {
+          if (prev <= 1) {
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [forgotPasswordCooldown]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -93,9 +153,21 @@ function AuthForm() {
           }
         );
 
-        // Handle JWT tokens
-        login({ access: data.access, refresh: data.refresh }, data.user);
-        router.push("/");
+        // Check if email verification is required
+        if (data.email_verification_required) {
+          setError(""); // Clear any previous errors
+          setSuccessMessage(
+            `Registration successful! Please check your email (${formData.email}) for a verification link to activate your account.`
+          );
+          // Don't log in yet - wait for email verification
+          return;
+        }
+
+        // Handle JWT tokens for immediate login (if verification not required)
+        if (data.access && data.refresh) {
+          login({ access: data.access, refresh: data.refresh }, data.user);
+          router.push("/");
+        }
       } catch (error: unknown) {
         // Display error message from server
         const errorMessage =
@@ -111,35 +183,214 @@ function AuthForm() {
     } else {
       // Sign in logic
       try {
-        const data = await httpClient.post<AuthResponse>("/api/auth/login/", {
-          email: formData.email,
-          password: formData.password,
-        });
+        const data = await httpClient.post<AuthResponse>(
+          "/api/auth/login/",
+          {
+            email: formData.email,
+            password: formData.password,
+          },
+          { skipAuth: true }
+        );
 
-        // Handle JWT tokens
-        login({ access: data.access, refresh: data.refresh }, data.user);
-        router.push("/");
+        // Check if email verification is required
+        if (data.email_verification_required) {
+          setError(""); // Clear any previous errors
+          setSuccessMessage(
+            `Please verify your email address (${formData.email}) before logging in. Check your email for a verification link.`
+          );
+          return;
+        }
+
+        // Handle JWT tokens for successful login
+        if (data.access && data.refresh) {
+          login({ access: data.access, refresh: data.refresh }, data.user);
+          router.push("/");
+        }
       } catch (error: unknown) {
-        const errorMessage =
-          error instanceof Error ? error.message : "Login failed";
+        // Enhanced error handling for login
+        let errorMessage = "Login failed";
+        let showCreateAccountSuggestion = false;
+
+        if (error && typeof error === "object" && "response" in error) {
+          const response = (
+            error as {
+              response: {
+                data?: {
+                  error?: string;
+                  detail?: string;
+                  non_field_errors?: string | string[];
+                  suggestion?: string;
+                };
+                status?: number;
+              };
+            }
+          ).response;
+
+          if (response && response.data) {
+            const data = response.data;
+
+            // Handle different error response formats
+            if (data.error) {
+              errorMessage = data.error;
+            } else if (data.detail) {
+              errorMessage = data.detail;
+            } else if (data.non_field_errors) {
+              if (Array.isArray(data.non_field_errors)) {
+                errorMessage = data.non_field_errors.join(", ");
+              } else {
+                errorMessage = data.non_field_errors;
+              }
+            }
+
+            // Check if backend suggests creating an account
+            if (data.suggestion === "create_account") {
+              showCreateAccountSuggestion = true;
+            }
+          }
+        } else if (error instanceof Error) {
+          errorMessage = error.message;
+        }
+
         setError(errorMessage);
-        // Login error occurred
+
+        // Show create account suggestion if appropriate
+        if (
+          showCreateAccountSuggestion ||
+          errorMessage.includes("Would you like to create an account")
+        ) {
+          setShowCreateAccountSuggestion(true);
+        }
       }
     }
 
     setLoading(false);
   };
 
+  const handleForgotPassword = async () => {
+    if (forgotPasswordCooldown > 0 || forgotPasswordLoading) return;
+
+    try {
+      setForgotPasswordLoading(true);
+      setForgotPasswordError("");
+      setForgotPasswordWarning("");
+      setShowCreateAccountSuggestion(false);
+
+      if (!forgotPasswordEmail.trim()) {
+        setForgotPasswordError("Email is required");
+        return;
+      }
+
+      const response = await httpClient.post<{
+        message?: string;
+        warning?: string;
+        error?: string;
+        cooldown_total?: number;
+        cooldown_remaining?: number;
+        next_request_allowed_in?: number;
+        suggestion?: string;
+      }>(
+        "/api/auth/password-reset/",
+        {
+          email: forgotPasswordEmail.trim(),
+        },
+        { skipAuth: true }
+      );
+
+      if (response.message) {
+        setForgotPasswordSuccess(true);
+
+        // Set cooldown if provided
+        if (response.cooldown_total) {
+          setForgotPasswordCooldown(response.next_request_allowed_in || 60);
+        }
+
+        setForgotPasswordEmail("");
+        setTimeout(() => {
+          setShowForgotPassword(false);
+          setForgotPasswordSuccess(false);
+        }, 3000);
+      } else if (response.error) {
+        setForgotPasswordError(response.error);
+        if (response.suggestion === "create_account") {
+          setShowCreateAccountSuggestion(true);
+        }
+        // Handle cooldown from successful response
+        if (response.cooldown_remaining) {
+          setForgotPasswordCooldown(response.cooldown_remaining);
+        }
+      } else if (response.warning) {
+        setForgotPasswordWarning(response.warning);
+        if (response.suggestion === "create_account") {
+          setShowCreateAccountSuggestion(true);
+        }
+      }
+    } catch (err: unknown) {
+      console.error("Failed to request password reset:", err);
+
+      let errorMessage = "Failed to send password reset email";
+
+      if (err && typeof err === "object" && "response" in err) {
+        const response = (
+          err as {
+            response: {
+              data?: {
+                error?: string;
+                warning?: string;
+                cooldown_remaining?: number;
+                suggestion?: string;
+              };
+              status?: number;
+            };
+          }
+        ).response;
+
+        if (response && response.data) {
+          const data = response.data;
+
+          if (data.cooldown_remaining) {
+            setForgotPasswordCooldown(data.cooldown_remaining);
+            errorMessage =
+              data.error ||
+              `Please wait ${data.cooldown_remaining} seconds before requesting another reset link.`;
+          } else if (data.warning) {
+            setForgotPasswordWarning(data.warning);
+            if (data.suggestion === "create_account") {
+              setShowCreateAccountSuggestion(true);
+            }
+            return; // Don't set error for warnings
+          } else if (data.error) {
+            errorMessage = data.error;
+            // Show create account suggestion if the error suggests it
+            if (data.suggestion === "create_account") {
+              setShowCreateAccountSuggestion(true);
+            }
+            // Handle cooldown from error response
+            if (data.cooldown_remaining) {
+              setForgotPasswordCooldown(data.cooldown_remaining);
+            }
+          }
+        }
+      }
+
+      setForgotPasswordError(errorMessage);
+    } finally {
+      setForgotPasswordLoading(false);
+    }
+  };
+
   const toggleMode = () => {
     const newMode = !isSignUp;
     setIsSignUp(newMode);
+    // Preserve email when switching from sign-in to sign-up
+    const preservedEmail = newMode ? formData.email : "";
     setFormData({
       name: "",
-      email: "",
+      email: preservedEmail,
       password: "",
       confirmPassword: "",
     });
     setError("");
+    setSuccessMessage("");
     // Update URL to reflect the new mode
     const newUrl = newMode ? "/auth?mode=signup" : "/auth?mode=signin";
     router.replace(newUrl);
@@ -210,21 +461,29 @@ function AuthForm() {
             <div>
               <label
                 htmlFor="email"
-                className="block text-sm font-medium"
+                className="block text-sm font-medium mb-2"
                 style={{ color: "var(--foreground)" }}
               >
                 Email Address
               </label>
-              <input
+              <EmailInput
                 id="email"
                 name="email"
-                type="email"
-                autoComplete="email"
-                required
-                className="mt-1 appearance-none relative block w-full px-3 py-2 border rounded-md focus:outline-none focus:z-10 sm:text-sm auth-input"
-                placeholder="Email address"
                 value={formData.email}
-                onChange={handleChange}
+                onChange={(email) => {
+                  setFormData((prev) => ({ ...prev, email }));
+                  // You can also track validation state if needed
+                }}
+                placeholder="Email address"
+                required
+                showSuggestions={false}
+                validationOptions={{
+                  allowDisposable: false,
+                  checkTypos: true,
+                  validateOnChange: true,
+                  validateOnBlur: true,
+                }}
+                className="auth-input"
               />
             </div>
             <div>
@@ -383,6 +642,23 @@ function AuthForm() {
             )}
           </div>
 
+          {/* Forgot Password Link - Only show on sign-in */}
+          {!isSignUp && (
+            <div className="text-right">
+              <button
+                type="button"
+                onClick={() => {
+                  setForgotPasswordEmail(formData.email); // Pre-fill with current email
+                  setShowForgotPassword(true);
+                }}
+                className="text-sm font-medium hover:opacity-80 transition-opacity"
+                style={{ color: "var(--primary)" }}
+              >
+                Forgot your password?
+              </button>
+            </div>
+          )}
+
           {error && (
             <div
               className="text-sm text-center"
@@ -395,7 +671,63 @@ function AuthForm() {
                 marginTop: "0.5rem",
               }}
             >
-              {error}
+              {error.includes("create an account") ? (
+                <div>
+                  No account found with this email address. Would you like to{" "}
+                  <button
+                    onClick={() => {
+                      setIsSignUp(true);
+                      setError("");
+                      setShowCreateAccountSuggestion(false);
+                    }}
+                    className="text-sm font-medium underline transition-all duration-200 hover:opacity-80 hover:scale-105 hover:shadow-sm cursor-pointer"
+                    style={{
+                      color: "var(--primary)",
+                      textDecoration: "underline",
+                      textUnderlineOffset: "2px",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = "var(--primary-hover)";
+                      e.currentTarget.style.textDecorationThickness = "2px";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = "var(--primary)";
+                      e.currentTarget.style.textDecorationThickness = "1px";
+                    }}
+                  >
+                    create an account
+                  </button>
+                  ?
+                </div>
+              ) : (
+                error
+              )}
+            </div>
+          )}
+
+          {successMessage && (
+            <div
+              className="text-sm text-center"
+              style={{
+                color: "var(--foreground)",
+                backgroundColor: "rgba(34, 197, 94, 0.1)",
+                border: "1px solid rgba(34, 197, 94, 0.3)",
+                borderRadius: "0.5rem",
+                padding: "0.75rem",
+                marginTop: "0.5rem",
+              }}
+            >
+              {successMessage}
+              {successMessage.includes("verify your email") && (
+                <div className="mt-2">
+                  <button
+                    onClick={() => router.push("/resend-verification")}
+                    className="text-blue-600 hover:text-blue-700 underline text-xs"
+                  >
+                    Resend verification email
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -433,6 +765,329 @@ function AuthForm() {
             </button>
           </div>
         </form>
+
+        {/* Forgot Password Modal */}
+        {showForgotPassword && (
+          <div
+            className="fixed inset-0 flex items-center justify-center z-50"
+            style={{
+              background: "rgba(0, 0, 0, 0.4)",
+              backdropFilter: "blur(4px)",
+              paddingTop: "80px", // Ensure it doesn't cover header
+              paddingBottom: "20px",
+            }}
+          >
+            <div
+              className="w-full max-w-md mx-4 rounded-xl shadow-lg border"
+              style={{
+                background: "var(--card-bg)",
+                borderColor: "var(--sidebar-border)",
+                boxShadow: "var(--card-shadow)",
+              }}
+            >
+              {/* Modal Header */}
+              <div
+                className="flex justify-between items-center p-6 border-b"
+                style={{ borderColor: "var(--sidebar-border)" }}
+              >
+                <h3
+                  className="text-xl font-semibold"
+                  style={{ color: "var(--foreground)" }}
+                >
+                  Reset Your Password
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowForgotPassword(false);
+                    setForgotPasswordEmail("");
+                    setForgotPasswordError("");
+                    setForgotPasswordSuccess(false);
+                    setForgotPasswordWarning("");
+                    setShowCreateAccountSuggestion(false);
+                  }}
+                  className="p-2 rounded-lg hover:opacity-70 transition-opacity"
+                  style={{
+                    color: "var(--muted-foreground)",
+                    background: "transparent",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "var(--sidebar-bg)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "transparent";
+                  }}
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="p-6">
+                {forgotPasswordSuccess ? (
+                  <div className="text-center">
+                    <div className="mb-6">
+                      <div
+                        className="w-16 h-16 mx-auto rounded-full flex items-center justify-center"
+                        style={{ background: "var(--success-bg)" }}
+                      >
+                        <svg
+                          className="w-8 h-8"
+                          style={{ color: "var(--success)" }}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M5 13l4 4L19 7"
+                          />
+                        </svg>
+                      </div>
+                    </div>
+                    <h4
+                      className="text-lg font-semibold mb-3"
+                      style={{ color: "var(--foreground)" }}
+                    >
+                      Check Your Email
+                    </h4>
+                    <p
+                      className="text-sm leading-relaxed"
+                      style={{ color: "var(--muted-foreground)" }}
+                    >
+                      If the email exists, a password reset link has been sent
+                      to your email address.
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <p
+                      className="text-sm mb-6 leading-relaxed"
+                      style={{ color: "var(--muted-foreground)" }}
+                    >
+                      Enter your email address and we&apos;ll send you a link to
+                      reset your password.
+                    </p>
+
+                    <div className="space-y-6">
+                      <div>
+                        <label
+                          htmlFor="forgot-email"
+                          className="block text-sm font-medium mb-2"
+                          style={{ color: "var(--foreground)" }}
+                        >
+                          Email Address
+                        </label>
+                        <input
+                          id="forgot-email"
+                          type="email"
+                          value={forgotPasswordEmail}
+                          onChange={(e) =>
+                            setForgotPasswordEmail(e.target.value)
+                          }
+                          placeholder="Enter your email address"
+                          required
+                          className="w-full px-4 py-3 rounded-lg border focus:outline-none focus:ring-2 transition-colors"
+                          style={{
+                            backgroundColor: "var(--background)",
+                            borderColor: "var(--border)",
+                            color: "var(--foreground)",
+                          }}
+                        />
+                      </div>
+
+                      {/* Error Message */}
+                      {forgotPasswordError && (
+                        <div
+                          className="p-4 rounded-lg border"
+                          style={{
+                            backgroundColor: "rgba(239, 68, 68, 0.1)",
+                            borderColor: "rgba(239, 68, 68, 0.3)",
+                          }}
+                        >
+                          <div className="flex items-start">
+                            <div className="flex-shrink-0">
+                              <svg
+                                className="w-5 h-5"
+                                style={{ color: "var(--destructive)" }}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                />
+                              </svg>
+                            </div>
+                            <div className="ml-3">
+                              <p
+                                className="text-sm font-medium"
+                                style={{ color: "var(--destructive)" }}
+                              >
+                                {forgotPasswordError}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Warning Message */}
+                      {forgotPasswordWarning && (
+                        <div
+                          className="p-4 rounded-lg border"
+                          style={{
+                            backgroundColor: "rgba(251, 191, 36, 0.1)",
+                            borderColor: "rgba(251, 191, 36, 0.3)",
+                          }}
+                        >
+                          <div className="flex items-start">
+                            <div className="flex-shrink-0">
+                              <svg
+                                className="w-5 h-5"
+                                style={{ color: "var(--warning)" }}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+                                />
+                              </svg>
+                            </div>
+                            <div className="ml-3">
+                              <p
+                                className="text-sm font-medium"
+                                style={{ color: "var(--warning)" }}
+                              >
+                                {forgotPasswordWarning}
+                              </p>
+                              {showCreateAccountSuggestion && (
+                                <div className="mt-2">
+                                  <button
+                                    onClick={() => {
+                                      setShowForgotPassword(false);
+                                      setIsSignUp(true);
+                                      setForgotPasswordError("");
+                                      setForgotPasswordWarning("");
+                                      setShowCreateAccountSuggestion(false);
+                                    }}
+                                    className="text-sm font-medium hover:opacity-80 transition-opacity"
+                                    style={{ color: "var(--primary)" }}
+                                  >
+                                    Create an account instead →
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex space-x-3">
+                        <button
+                          onClick={handleForgotPassword}
+                          disabled={
+                            forgotPasswordLoading || forgotPasswordCooldown > 0
+                          }
+                          className="flex-1 py-3 px-4 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          style={{
+                            backgroundColor:
+                              forgotPasswordCooldown > 0
+                                ? "var(--muted)"
+                                : "var(--primary)",
+                            color: "var(--card-bg)",
+                            border: "1px solid transparent",
+                          }}
+                          onMouseEnter={(e) => {
+                            if (
+                              !forgotPasswordLoading &&
+                              forgotPasswordCooldown === 0
+                            ) {
+                              e.currentTarget.style.backgroundColor =
+                                "var(--primary-hover)";
+                              e.currentTarget.style.borderColor =
+                                "var(--primary-hover)";
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (
+                              !forgotPasswordLoading &&
+                              forgotPasswordCooldown === 0
+                            ) {
+                              e.currentTarget.style.backgroundColor =
+                                "var(--primary)";
+                              e.currentTarget.style.borderColor =
+                                "var(--primary)";
+                            }
+                          }}
+                        >
+                          {forgotPasswordLoading
+                            ? "Sending..."
+                            : forgotPasswordCooldown > 0
+                            ? `Resend in ${forgotPasswordCooldown}s`
+                            : "Send Reset Link"}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowForgotPassword(false);
+                            setForgotPasswordEmail("");
+                            setForgotPasswordError("");
+                            setForgotPasswordWarning("");
+                            setShowCreateAccountSuggestion(false);
+                          }}
+                          className="flex-1 py-3 px-4 rounded-lg font-semibold border transition-colors"
+                          style={{
+                            borderColor: "var(--sidebar-border)",
+                            color: "var(--foreground)",
+                            background: "transparent",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background =
+                              "var(--sidebar-bg)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = "transparent";
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+
+                      {forgotPasswordCooldown > 0 && (
+                        <p
+                          className="mt-2 text-xs text-center"
+                          style={{ color: "var(--muted-foreground)" }}
+                        >
+                          Please wait {forgotPasswordCooldown} seconds before
+                          requesting another reset link
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

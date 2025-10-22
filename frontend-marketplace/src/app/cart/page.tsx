@@ -170,7 +170,7 @@ export default function CartPage() {
             {/* Checkout Progress */}
             <CheckoutProgress
               currentStep={1}
-              steps={["Cart", "Shipping", "Payment", "Review"]}
+              steps={["Cart", "Shipping & Payment", "Review"]}
             />
 
             <div className="lg:grid lg:grid-cols-12 lg:gap-x-12 lg:items-start">
@@ -362,7 +362,7 @@ export default function CartPage() {
                     <DeliveryFeeInfo />
 
                     {/* Delivery Date - Based on Order Model */}
-                    <div className="space-y-2">
+                    {/* <div className="space-y-2">
                       <label
                         htmlFor="deliveryDate"
                         className="block text-sm font-medium"
@@ -381,7 +381,7 @@ export default function CartPage() {
                           border: "1px solid var(--sidebar-border)",
                         }}
                       />
-                    </div>
+                    </div> */}
 
                     {/* Order Notes - Based on Order Model */}
                     <div className="space-y-2">
@@ -617,8 +617,9 @@ export default function CartPage() {
 
                     {/* Action Buttons */}
                     <div className="space-y-3 pt-4">
-                      <button
-                        className="w-full py-3 px-4 rounded-lg font-semibold transition-colors"
+                      <Link
+                        href="/checkout"
+                        className="block w-full py-3 px-4 rounded-lg font-semibold transition-colors text-center"
                         style={{
                           background: "var(--primary)",
                           color: "white",
@@ -632,7 +633,7 @@ export default function CartPage() {
                         }}
                       >
                         Proceed to Checkout ({stats.totalItems} items)
-                      </button>
+                      </Link>
                       <button
                         className="w-full py-2 px-4 rounded transition-colors"
                         style={{

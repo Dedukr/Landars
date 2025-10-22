@@ -19,7 +19,7 @@ interface Order {
   customer_phone?: string;
   customer_address?: string;
   notes?: string;
-  delivery_date: string;
+  delivery_date: string | null;
   is_home_delivery: boolean;
   delivery_fee: string;
   discount: string;

@@ -24,8 +24,8 @@
 # - Cross-platform compatibility
 #
 # Usage:
-#   chmod +x ultimate_backup.sh
-#   ./ultimate_backup.sh [command] [options]
+#   chmod +x pg_backup.sh
+#   ./pg_backup.sh [command] [options]
 #
 #########################################################################
 

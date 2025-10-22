@@ -1,6 +1,27 @@
 // CSRF token utility functions
-// API configuration
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+// API configuration - derive from URL_BASE
+const getApiBaseUrl = () => {
+  const urlBase =
+    process.env.URL_BASE ||
+    process.env.NEXT_PUBLIC_API_BASE_URL ||
+    "https://localhost";
+
+  // If NEXT_PUBLIC_API_BASE_URL is explicitly set, use it
+  if (process.env.NEXT_PUBLIC_API_BASE_URL) {
+    return process.env.NEXT_PUBLIC_API_BASE_URL;
+  }
+
+  // Otherwise, derive from URL_BASE
+  if (urlBase.includes("localhost")) {
+    return "http://localhost:8000";
+  }
+
+  // Extract domain from URL_BASE and use port 8000
+  const domain = urlBase.replace(/^https?:\/\//, "").split(":")[0];
+  return `http://${domain}:8000`;
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 let csrfToken: string | null = null;
 

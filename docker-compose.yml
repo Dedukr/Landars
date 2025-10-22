@@ -67,8 +67,14 @@ services:
     build:
       context: ./frontend-marketplace
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+        - URL_BASE=${URL_BASE}
     ports:
       - "3000:3000"
+    environment:
+      - URL_BASE=${URL_BASE}
+      - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
     depends_on:
       - backend
     restart: unless-stopped

@@ -26,7 +26,9 @@ load_dotenv(os.path.join(BASE_DIR, "../.env"))
 
 # SECURITY WARNING: keep the secret key used in production secret!
 
-SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-+c6w+lxtf*1xscm)4_f#6e5n+xsz4=@r-&08__hli=b!%7v-=9")
+SECRET_KEY = os.getenv(
+    "SECRET_KEY", "django-insecure-+c6w+lxtf*1xscm)4_f#6e5n+xsz4=@r-&08__hli=b!%7v-=9"
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "True") == "True"
@@ -78,9 +80,13 @@ if DEBUG:
 ROOT_URLCONF = "backend.urls"
 # Allow Django to append trailing slashes for API consistency
 APPEND_SLASH = False
-# CORS settings
-CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,https://localhost:3000").split(",")
-CSRF_TRUSTED_ORIGINS =os.getenv("CSRF_TRUSTED_ORIGINS", "http://localhost:3000,https://localhost:3000").split(",")
+# CORS settings - derive from URL_BASE
+URL_BASE = os.getenv("URL_BASE", "https://localhost")
+
+cors_origins = f"http://{URL_BASE}:3000,https://{URL_BASE}:3000"
+
+CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", cors_origins).split(",")
+CSRF_TRUSTED_ORIGINS = os.getenv("CSRF_TRUSTED_ORIGINS", cors_origins).split(",")
 
 # Additional CORS settings for proper functionality``
 CORS_ALLOW_CREDENTIALS = True
@@ -249,6 +255,11 @@ except ValueError as e:
 
 AUTH_USER_MODEL = "account.CustomUser"
 
+# Authentication backends
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",
+]
+
 AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
@@ -319,6 +330,57 @@ BUSINESS_INFO = {
 }
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Email Configuration
+EMAIL_BACKEND = os.getenv(
+    "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
+)
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True") == "True"
+EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "False") == "True"
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@landarsfood.com")
+
+# Email settings for better deliverability
+EMAIL_TIMEOUT = 30
+EMAIL_USE_LOCALTIME = True
+EMAIL_SUBJECT_PREFIX = os.getenv("EMAIL_SUBJECT_PREFIX", "[Landars Food] ")
+SERVER_EMAIL = os.getenv("SERVER_EMAIL", DEFAULT_FROM_EMAIL)
+ADMINS = []  # e.g., [("Ops", "ops@example.com")]
+
+# Password Reset Settings
+PASSWORD_RESET_TIMEOUT = 900  # 15 minutes in seconds (enhanced security)
+PASSWORD_RESET_COOLDOWN = 60  # 1 minute cooldown between requests
+
+# Rate limiting for password reset
+PASSWORD_RESET_RATE_LIMIT = "5/hour"  # 5 requests per hour per IP
+PASSWORD_RESET_EMAIL_RATE_LIMIT = "3/hour"
+
+# Email Verification Settings
+EMAIL_VERIFICATION_TIMEOUT = 86400  # 24 hours in seconds
+EMAIL_VERIFICATION_COOLDOWN = 60  # 1 minute cooldown between resend requests
+EMAIL_VERIFICATION_RATE_LIMIT = "5/hour"  # 5 verification requests per hour per IP
+EMAIL_VERIFICATION_RESEND_RATE_LIMIT = "3/hour"  # 3 resend requests per hour per IP
+
+
+# Frontend URL for email verification links - derive from URL_BASE
+def get_frontend_url():
+    """Get frontend URL from URL_BASE environment variable"""
+    url_base = os.getenv("URL_BASE", "https://localhost")
+    if url_base.startswith("https://"):
+        base_domain = url_base.replace("https://", "")
+        return f"http://{base_domain}"
+    elif url_base.startswith("http://"):
+        base_domain = url_base.replace("http://", "")
+        return f"http://{base_domain}"
+    else:
+        # Fallback to localhost if URL_BASE doesn't have protocol
+        return "http://localhost:3000"
+
+
+FRONTEND_URL = os.getenv("FRONTEND_URL", get_frontend_url())
 
 # Simple logging configuration
 LOGGING = {
