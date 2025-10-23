@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
 import { httpClient } from "@/utils/httpClient";
 import { EmailInput } from "@/components/ui/EmailInput";
+import EmailVerificationPopup from "@/components/EmailVerificationPopup";
 
 interface AuthResponse {
   access?: string;
@@ -41,6 +42,10 @@ function AuthForm() {
   const [forgotPasswordError, setForgotPasswordError] = useState("");
   const [showCreateAccountSuggestion, setShowCreateAccountSuggestion] =
     useState(false);
+  const [showEmailVerificationPopup, setShowEmailVerificationPopup] =
+    useState(false);
+  const [verificationEmail, setVerificationEmail] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
   const router = useRouter();
   const { login } = useAuth();
 
@@ -100,6 +105,33 @@ function AuthForm() {
     };
   }, [forgotPasswordCooldown]);
 
+  // Resend cooldown timer
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+
+    if (resendCooldown > 0) {
+      interval = setInterval(() => {
+        setResendCooldown((prev) => {
+          const newValue = prev <= 1 ? 0 : prev - 1;
+          return newValue;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [resendCooldown]);
+
+  // Clear error when countdown reaches 0 (for any remaining cooldown-related errors)
+  useEffect(() => {
+    if (resendCooldown === 0 && error && error.includes("Please wait")) {
+      setError("");
+    }
+  }, [resendCooldown, error]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
       ...formData,
@@ -156,9 +188,9 @@ function AuthForm() {
         // Check if email verification is required
         if (data.email_verification_required) {
           setError(""); // Clear any previous errors
-          setSuccessMessage(
-            `Registration successful! Please check your email (${formData.email}) for a verification link to activate your account.`
-          );
+          setVerificationEmail(formData.email);
+          setShowEmailVerificationPopup(true);
+          setLoading(false); // Re-enable the button
           // Don't log in yet - wait for email verification
           return;
         }
@@ -198,6 +230,7 @@ function AuthForm() {
           setSuccessMessage(
             `Please verify your email address (${formData.email}) before logging in. Check your email for a verification link.`
           );
+          setLoading(false); // Re-enable the button
           return;
         }
 
@@ -721,11 +754,88 @@ function AuthForm() {
               {successMessage.includes("verify your email") && (
                 <div className="mt-2">
                   <button
-                    onClick={() => router.push("/resend-verification")}
-                    className="text-blue-600 hover:text-blue-700 underline text-xs"
+                    onClick={async () => {
+                      if (resendCooldown > 0) return;
+
+                      try {
+                        await httpClient.post(
+                          "/api/auth/resend-verification/",
+                          {
+                            email: formData.email,
+                          }
+                        );
+                        setSuccessMessage(
+                          "Verification email sent! Please check your inbox."
+                        );
+                      } catch (error: unknown) {
+                        // Check if it's a cooldown error
+                        if (
+                          error &&
+                          typeof error === "object" &&
+                          "response" in error
+                        ) {
+                          const response = (
+                            error as {
+                              response: {
+                                data?: {
+                                  cooldown_remaining?: number;
+                                  error?: string;
+                                };
+                                status?: number;
+                              };
+                            }
+                          ).response;
+
+                          if (response?.data?.cooldown_remaining) {
+                            setResendCooldown(response.data.cooldown_remaining);
+                            // Don't set error message for cooldown - let countdown display handle it
+                          } else if (response?.data?.error) {
+                            setError(response.data.error);
+                          } else {
+                            setError(
+                              "Failed to resend verification email. Please try again."
+                            );
+                          }
+                        } else {
+                          setError(
+                            "Failed to resend verification email. Please try again."
+                          );
+                        }
+                      }
+                    }}
+                    disabled={resendCooldown > 0}
+                    className="text-blue-600 hover:text-blue-700 underline text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Resend verification email
                   </button>
+
+                  {/* Countdown display */}
+                  {resendCooldown > 0 && (
+                    <div
+                      className="mt-2 text-xs text-center"
+                      style={{ color: "var(--accent)" }}
+                    >
+                      <div className="flex items-center justify-center space-x-1">
+                        <svg
+                          className="w-3 h-3 animate-spin"
+                          style={{ color: "var(--accent)" }}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
+                        </svg>
+                        <span>
+                          Resend available in {resendCooldown} seconds
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1042,8 +1152,6 @@ function AuthForm() {
                         >
                           {forgotPasswordLoading
                             ? "Sending..."
-                            : forgotPasswordCooldown > 0
-                            ? `Resend in ${forgotPasswordCooldown}s`
                             : "Send Reset Link"}
                         </button>
                         <button
@@ -1088,6 +1196,14 @@ function AuthForm() {
             </div>
           </div>
         )}
+
+        {/* Email Verification Popup */}
+        <EmailVerificationPopup
+          isOpen={showEmailVerificationPopup}
+          onClose={() => setShowEmailVerificationPopup(false)}
+          userEmail={verificationEmail}
+          userName={formData.name}
+        />
       </div>
     </div>
   );

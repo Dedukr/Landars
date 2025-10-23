@@ -80,11 +80,11 @@ if DEBUG:
 ROOT_URLCONF = "backend.urls"
 # Allow Django to append trailing slashes for API consistency
 APPEND_SLASH = False
-# CORS settings - derive from URL_BASE
+# CORS settings - derive from URL_BASE for email links
 URL_BASE = os.getenv("URL_BASE", "https://localhost")
 
-cors_origins = f"http://{URL_BASE}:3000,https://{URL_BASE}:3000"
-
+# Generate CORS origins from URL_BASE
+cors_origins = f"{URL_BASE}:3000"
 CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", cors_origins).split(",")
 CSRF_TRUSTED_ORIGINS = os.getenv("CSRF_TRUSTED_ORIGINS", cors_origins).split(",")
 
@@ -368,16 +368,7 @@ EMAIL_VERIFICATION_RESEND_RATE_LIMIT = "3/hour"  # 3 resend requests per hour pe
 # Frontend URL for email verification links - derive from URL_BASE
 def get_frontend_url():
     """Get frontend URL from URL_BASE environment variable"""
-    url_base = os.getenv("URL_BASE", "https://localhost")
-    if url_base.startswith("https://"):
-        base_domain = url_base.replace("https://", "")
-        return f"http://{base_domain}"
-    elif url_base.startswith("http://"):
-        base_domain = url_base.replace("http://", "")
-        return f"http://{base_domain}"
-    else:
-        # Fallback to localhost if URL_BASE doesn't have protocol
-        return "http://localhost:3000"
+    return os.getenv("URL_BASE", "https://localhost")
 
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", get_frontend_url())

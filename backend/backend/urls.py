@@ -20,6 +20,8 @@ from django.http import JsonResponse
 from django.urls import include, path
 from django.views.decorators.http import require_http_methods
 
+from . import health_checks
+
 
 @require_http_methods(["GET"])
 def health_check(request):
@@ -44,6 +46,14 @@ urlpatterns = [
     path("api/", include("api.urls")),
     path("api/auth/", include("account.urls")),
     path("health/", health_check, name="health_check"),
+    path(
+        "health/comprehensive/",
+        health_checks.comprehensive_health_check,
+        name="comprehensive_health_check",
+    ),
+    path(
+        "health/simple/", health_checks.simple_health_check, name="simple_health_check"
+    ),
     path(
         "api-auth/", include("rest_framework.urls")
     ),  # Uncomment if you want to use the browsable API authentication

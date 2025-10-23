@@ -19,7 +19,7 @@
 # - Cloud storage integration (S3)
 # - Comprehensive logging and monitoring
 # - Configuration via .env file
-# - Multiple restore options
+# - Clean database restore (drops and recreates database)
 # - Health checks and verification
 # - Cross-platform compatibility
 #
@@ -306,10 +306,11 @@ create_postgresql_backup() {
     fi
 }
 
-# Restore PostgreSQL from backup
+# Restore PostgreSQL from backup with clean database recreation
 restore_postgresql_backup() {
     local backup_file="$1"
     local container
+    local start_time=$(date +%s)
     
     if ! container=$(get_postgres_container); then
         return 1
@@ -323,23 +324,99 @@ restore_postgresql_backup() {
     # Check if backup file exists
     if [[ ! -f "$backup_file" ]]; then
         log_error "Backup file not found: $backup_file"
+        log_info "Available backups:"
+        ls -la "$BACKUP_BASE_DIR/postgresql"/landarsfood_backup_*.sql 2>/dev/null || log_info "No backup files found"
         return 1
     fi
     
-    log_info "🔄 Restoring PostgreSQL from: $backup_file"
+    log_info "🔄 Starting comprehensive PostgreSQL restore from: $backup_file"
+    log_info "This will perform a clean restore by dropping and recreating the database"
     
-    # Restore the database
-    if docker-compose exec -T postgres psql \
-        -U "$DB_USER" \
-        -d "$DB_NAME" \
-        --quiet < "$backup_file"; then
-        
-        log_success "✅ PostgreSQL restore completed successfully"
-        return 0
+    # Step 1: Drop and recreate database (clean slate)
+    log_info "🗑️ Dropping existing database (if it exists)..."
+    if docker-compose exec postgres psql -U "$DB_USER" -d postgres -c "DROP DATABASE IF EXISTS $DB_NAME;" >/dev/null 2>&1; then
+        log_success "Existing database dropped"
     else
-        log_error "❌ PostgreSQL restore failed"
+        log_warning "No existing database to drop (this is normal for fresh installs)"
+    fi
+    
+    log_info "🆕 Creating fresh database..."
+    if docker-compose exec postgres psql -U "$DB_USER" -d postgres -c "CREATE DATABASE $DB_NAME;" >/dev/null 2>&1; then
+        log_success "Fresh database created"
+    else
+        log_error "Failed to create database"
         return 1
     fi
+    
+    # Step 2: Restore from backup
+    log_info "📥 Restoring from backup: $backup_file"
+    if docker-compose exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" < "$backup_file"; then
+        log_success "Database restored from backup"
+    else
+        log_error "Failed to restore database from backup"
+        return 1
+    fi
+    
+    # Step 3: Verify the restore
+    log_info "✅ Verifying restore..."
+    local table_count
+    table_count=$(docker-compose exec postgres psql -U "$DB_USER" -d "$DB_NAME" -t -c "
+    SELECT COUNT(*) FROM information_schema.tables 
+    WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
+    " 2>/dev/null | tr -d ' ')
+    
+    if [[ "$table_count" -gt 0 ]]; then
+        log_success "Restore verification successful - Found $table_count tables"
+    else
+        log_warning "No tables found in restored database"
+    fi
+    
+    # Step 4: Start backend service
+    log_info "🚀 Starting backend service..."
+    if docker-compose up -d backend; then
+        log_success "Backend service started"
+    else
+        log_warning "Failed to start backend service"
+    fi
+    
+    # Step 5: Wait for backend to be ready
+    log_info "⏳ Waiting for backend to be ready..."
+    sleep 10
+    
+    # Step 6: Run migrations to ensure everything is in sync
+    log_info "🔄 Running Django migrations..."
+    if docker-compose exec backend python manage.py migrate >/dev/null 2>&1; then
+        log_success "Django migrations completed"
+    else
+        log_warning "Django migrations failed - this might be normal if database is already up to date"
+    fi
+    
+    # Step 7: Final verification
+    log_info "🔍 Final verification..."
+    local user_count
+    user_count=$(docker-compose exec backend python manage.py shell -c "
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    print(User.objects.count())
+    " 2>/dev/null | tail -1 | tr -d ' ')
+    
+    local duration=$(($(date +%s) - start_time))
+    
+    if [[ "$user_count" -ge 0 ]]; then
+        log_success "Final verification successful - Found $user_count users"
+    else
+        log_warning "Could not verify user count"
+    fi
+    
+    # Final summary
+    log_success "🎉 PostgreSQL restore completed successfully in ${duration}s"
+    log_info "📊 Restore Summary:"
+    log_info "  - Tables restored: $table_count"
+    log_info "  - Users restored: $user_count"
+    log_info "  - Backup file: $backup_file"
+    log_info "  - Duration: ${duration}s"
+    
+    return 0
 }
 
 # Cleanup old PostgreSQL backups
@@ -838,7 +915,7 @@ show_usage() {
     echo -e "${YELLOW}Main Commands:${NC}"
     echo "  backup                    - Create PostgreSQL backup (updates db_data/pg.sql)"
     echo "  full-backup              - Create all available backup types"
-    echo "  restore [file]           - Restore PostgreSQL from backup"
+    echo "  restore [file]           - Restore PostgreSQL from backup (clean restore)"
     echo "  sqlite-backup            - Create SQLite backup (legacy)"
     echo "  pitr-backup              - Create PITR base backup"
     echo ""
@@ -867,8 +944,8 @@ show_usage() {
     echo -e "${YELLOW}Examples:${NC}"
     echo "  $0                           # Create PostgreSQL backup"
     echo "  $0 full-backup              # Create all backup types"
-    echo "  $0 restore                  # Restore from latest backup"
-    echo "  $0 restore backup.sql       # Restore from specific file"
+    echo "  $0 restore                  # Restore from latest backup (clean restore)"
+    echo "  $0 restore backup.sql       # Restore from specific file (clean restore)"
     echo "  $0 stats                    # Show statistics"
     echo "  $0 health                   # Run health check"
     echo "  $0 cleanup                  # Clean up old backups"

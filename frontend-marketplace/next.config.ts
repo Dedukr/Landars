@@ -9,15 +9,11 @@ const nextConfig: NextConfig = {
   async rewrites() {
     // Get backend URL from environment variables
     const getBackendUrl = () => {
-      const urlBase = process.env.URL_BASE || "https://localhost";
       if (process.env.NODE_ENV === "development") {
-        // For development, use localhost with port 8000
-        if (urlBase.includes("localhost")) {
-          return "http://localhost:8000/api/:path*/";
-        }
-        // Extract domain from URL_BASE and use port 8000
-        const domain = urlBase.replace(/^https?:\/\//, "").split(":")[0];
-        return `http://${domain}:8000/api/:path*/`;
+        // For development, use NEXT_PUBLIC_API_BASE_URL or fallback to https://localhost
+        const apiBaseUrl =
+          process.env.NEXT_PUBLIC_API_BASE_URL || "https://localhost";
+        return `${apiBaseUrl}/api/:path*/`;
       } else {
         // For production, use Docker service name
         return "http://backend:8000/api/:path*/";

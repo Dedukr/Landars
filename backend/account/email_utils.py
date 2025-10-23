@@ -134,13 +134,13 @@ def send_email_verification_email(
 
 
 def send_email_verification_confirmation_email(
-    *, to_email: str, user_name: str, dashboard_url: str
+    *, to_email: str, user_name: str, home_url: str
 ) -> None:
     """Send email verification confirmation email"""
     context = {
         "user_name": user_name,
         "user_email": to_email,
-        "dashboard_url": dashboard_url,
+        "home_url": home_url,
         "current_year": timezone.now().year,
     }
 

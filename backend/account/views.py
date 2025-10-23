@@ -20,15 +20,19 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .email_utils import (
+    send_email_verification_confirmation_email,
+    send_email_verification_email,
     send_password_reset_confirmation_email,
     send_password_reset_email,
 )
 from .email_validators import validate_email_comprehensive, validate_email_field
 from .models import (
+    Address,
     CustomUser,
     EmailVerificationToken,
     PasswordResetToken,
     PaymentInformation,
+    Profile,
 )
 from .serializers import PaymentInformationListSerializer, PaymentInformationSerializer
 
@@ -156,21 +160,14 @@ def register(request):
         )
 
         # Send verification email
-        from .email_utils import send_email_verification_email
 
         # Use URL_BASE configuration for consistent URL generation
         url_base = getattr(settings, "URL_BASE", "https://localhost")
+        home_url = url_base  # Use URL_BASE directly as home_url
 
-        # Extract base domain and construct frontend URL
-        if url_base.startswith("https://"):
-            base_domain = url_base.replace("https://", "")
-            frontend_url = f"http://{base_domain}:3000"
-        elif url_base.startswith("http://"):
-            base_domain = url_base.replace("http://", "")
-            frontend_url = f"http://{base_domain}:3000"
-        else:
-            # Fallback to localhost if URL_BASE doesn't have protocol
-            frontend_url = "http://localhost:3000"
+        # Extract base domain and construct frontend URL for verification
+
+        frontend_url = url_base
 
         verification_url = (
             f"{frontend_url}/verify-email?token={verification_token.token}"
@@ -480,7 +477,6 @@ def update_profile(request):
         user.save()
 
         # Get or create profile
-        from .models import Address, Profile
 
         profile, created = Profile.objects.get_or_create(user=user)
 
@@ -656,23 +652,10 @@ def request_password_reset(request):
 
             # Send reset email with HTML template
             # Use URL_BASE configuration for consistent URL generation
-            from django.conf import settings
-
             url_base = getattr(settings, "URL_BASE", "https://localhost")
 
-            # Extract base domain and construct frontend URL
-            if url_base.startswith("https://"):
-                base_domain = url_base.replace("https://", "")
-                frontend_url = f"http://{base_domain}:3000"
-            elif url_base.startswith("http://"):
-                base_domain = url_base.replace("http://", "")
-                frontend_url = f"http://{base_domain}:3000"
-            else:
-                # Fallback to localhost if URL_BASE doesn't have protocol
-                frontend_url = "http://localhost:3000"
-
-            reset_url = f"{frontend_url}/reset-password?token={reset_token.token}"
-            login_url = f"{frontend_url}/auth"
+            reset_url = f"{url_base}/reset-password?token={reset_token.token}"
+            login_url = f"{url_base}/auth"
 
             try:
                 # Centralized SMTP utility handles connection reuse and templating
@@ -1074,26 +1057,12 @@ def verify_email(request):
 
         # Send confirmation email
         # Use URL_BASE configuration for consistent URL generation
-        from django.conf import settings
-
-        from .email_utils import send_email_verification_confirmation_email
 
         url_base = getattr(settings, "URL_BASE", "https://localhost")
+        home_url = url_base  # Use URL_BASE directly as home_url
 
-        # Extract base domain and construct frontend URL
-        if url_base.startswith("https://"):
-            base_domain = url_base.replace("https://", "")
-            frontend_url = f"http://{base_domain}:3000"
-        elif url_base.startswith("http://"):
-            base_domain = url_base.replace("http://", "")
-            frontend_url = f"http://{base_domain}:3000"
-        else:
-            # Fallback to localhost if URL_BASE doesn't have protocol
-            frontend_url = "http://localhost:3000"
-
-        dashboard_url = f"{frontend_url}/dashboard"
         send_email_verification_confirmation_email(
-            to_email=user.email, user_name=user.name, dashboard_url=dashboard_url
+            to_email=user.email, user_name=user.name, home_url=home_url
         )
 
         # Log successful verification
@@ -1224,8 +1193,6 @@ def resend_verification_email(request):
 
             # Send verification email with HTML template
             # Use URL_BASE configuration for consistent URL generation
-            from django.conf import settings
-
             url_base = getattr(settings, "URL_BASE", "https://localhost")
 
             # Extract base domain and construct frontend URL
@@ -1245,8 +1212,6 @@ def resend_verification_email(request):
 
             try:
                 # Centralized SMTP utility handles connection reuse and templating
-                from .email_utils import send_email_verification_email
-
                 send_email_verification_email(
                     to_email=user.email,
                     user_name=user.name,
