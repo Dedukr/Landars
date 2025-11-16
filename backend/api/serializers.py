@@ -157,6 +157,7 @@ class CartItemSerializer(serializers.ModelSerializer):
 class CartSerializer(serializers.ModelSerializer):
     items = CartItemSerializer(many=True, read_only=True)
     total_price = serializers.SerializerMethodField()
+    sum_price = serializers.SerializerMethodField()
     total_items = serializers.SerializerMethodField()
 
     class Meta:
@@ -164,6 +165,12 @@ class CartSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "items",
+            "notes",
+            "delivery_date",
+            "is_home_delivery",
+            "delivery_fee",
+            "discount",
+            "sum_price",
             "total_price",
             "total_items",
             "created_at",
@@ -173,6 +180,9 @@ class CartSerializer(serializers.ModelSerializer):
 
     def get_total_price(self, obj):
         return str(obj.total_price)
+
+    def get_sum_price(self, obj):
+        return str(obj.sum_price)
 
     def get_total_items(self, obj):
         return float(obj.total_items)
@@ -237,6 +247,8 @@ class OrderSerializer(serializers.ModelSerializer):
             "order_date",
             "status",
             "invoice_link",
+            "payment_intent_id",
+            "payment_status",
             "items",
             "total_price",
             "total_items",

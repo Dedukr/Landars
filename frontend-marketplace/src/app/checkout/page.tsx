@@ -4,14 +4,16 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
 import CheckoutProgress from "@/components/CheckoutProgress";
-import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { httpClient } from "@/utils/httpClient";
-import { useCartOptimized } from "@/hooks/useCartOptimized";
-import { useDeliveryFee } from "@/hooks/useDeliveryFee";
 import DeliveryFeeInfo from "@/components/DeliveryFeeInfo";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import StripeProvider from "@/components/StripeProvider";
+import StripePaymentForm from "@/components/StripePaymentForm";
+import { Button } from "@/components/ui/Button";
+import OrderReviewItem from "@/components/OrderReviewItem";
+import DiscountDisplay from "@/components/cart/DiscountDisplay";
 
 interface ShippingFormData {
   firstName: string;
@@ -22,17 +24,11 @@ interface ShippingFormData {
   address_line2: string;
   city: string;
   postal_code: string;
-  delivery_date: string;
   notes: string;
+  saveShippingInfo: boolean;
 }
 
-interface PaymentFormData {
-  cardNumber: string;
-  expiryDate: string;
-  cvv: string;
-  cardholderName: string;
-  savePayment: boolean;
-}
+// Payment form data is now handled by Stripe Elements
 
 interface ProfileData {
   user: {
@@ -51,16 +47,90 @@ interface ProfileData {
   } | null;
 }
 
+interface OrderItem {
+  id: number;
+  product?: {
+    id: number;
+    name: string;
+    price: string;
+    image_url?: string | null;
+    description?: string;
+  };
+  product_name?: string;
+  product_price?: string;
+  product_image_url?: string | null;
+  quantity: number;
+  total_price?: string;
+  get_total_price?: string;
+}
+
+interface CartData {
+  id: number;
+  items: Array<{
+    id: number;
+    product: number;
+    product_name: string;
+    product_price: string;
+    quantity: string;
+    total_price: string;
+    added_date: string;
+  }>;
+  notes?: string;
+  delivery_date?: string | null;
+  is_home_delivery?: boolean;
+  delivery_fee?: string;
+  discount?: string;
+  sum_price?: string;
+  total_price?: string;
+  total_items?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface OrderDetails {
+  id: number;
+  customer?: {
+    id: number;
+    name: string;
+    email: string;
+  };
+  customer_name?: string;
+  customer_phone?: string;
+  customer_address?: string;
+  notes?: string;
+  delivery_date?: string | null;
+  is_home_delivery?: boolean;
+  delivery_fee?: string;
+  discount?: string;
+  order_date?: string;
+  status?: string;
+  invoice_link?: string;
+  items?: OrderItem[];
+  sum_price?: string;
+  total_price?: string;
+  total_items?: number;
+  paymentIntent?: {
+    id: string;
+    status: string;
+    amount: number;
+    currency: string;
+  };
+  shippingInfo?: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    address_line: string;
+    address_line2: string;
+    city: string;
+    postal_code: string;
+  };
+}
+
 export default function CheckoutPage() {
   const router = useRouter();
   const { user, token } = useAuth();
-  const { cart } = useCart();
-  const {
-    products,
-    loading: productsLoading,
-    stats,
-    clearCart,
-  } = useCartOptimized();
+  const { cart, clearCart } = useCart();
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -69,17 +139,25 @@ export default function CheckoutPage() {
     }
   }, [user, token, router]);
 
-  // Redirect if cart is empty
-  useEffect(() => {
-    if (cart.length === 0 && !productsLoading) {
-      router.push("/cart");
-    }
-  }, [cart.length, productsLoading, router]);
-
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [, setProfileData] = useState<ProfileData | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [checkoutStep] = useState<1 | 2 | 3>(2); // 1=Cart, 2=Shipping & Payment, 3=Review
+  const [orderDetails] = useState<OrderDetails | null>(null);
+  const [cartData, setCartData] = useState<CartData | null>(null);
+
+  // Redirect if cart is empty (but not if we're showing order review)
+  useEffect(() => {
+    if (
+      cart.length === 0 &&
+      checkoutStep !== 3 &&
+      !orderDetails
+    ) {
+      router.push("/cart");
+    }
+  }, [cart.length, router, checkoutStep, orderDetails]);
 
   // Form states
   const [shippingForm, setShippingForm] = useState<ShippingFormData>({
@@ -91,37 +169,101 @@ export default function CheckoutPage() {
     address_line2: "",
     city: "",
     postal_code: "",
-    delivery_date: "",
     notes: "",
+    saveShippingInfo: false,
   });
 
-  const [paymentForm, setPaymentForm] = useState<PaymentFormData>({
-    cardNumber: "",
-    expiryDate: "",
-    cvv: "",
-    cardholderName: "",
-    savePayment: false,
-  });
+  // Payment form is now handled by Stripe Elements
 
-  // Convert products to CartProduct format for delivery fee calculation
-  const cartProducts = products.map((product) => ({
-    id: product.id,
-    name: product.name,
-    price: parseFloat(product.price),
-    categories: product.categories || [],
-    quantity: cart.find((item) => item.productId === product.id)?.quantity || 0,
-  }));
+  // Fetch cart data with metadata
+  const fetchCartData = useCallback(async () => {
+    if (!user) return;
 
-  // Dynamic delivery fee calculation
-  const {
-    deliveryCalculation,
-    deliveryBreakdown,
-    totalPrice: calculatedTotal,
-  } = useDeliveryFee({
-    products: cartProducts,
-    subtotal: stats.subtotal,
-    discount: 0, // No discount applied yet
-  });
+    try {
+      const data = await httpClient.get<CartData>("/api/cart/");
+      setCartData(data);
+
+      // Pre-populate notes from cart if available
+      if (data.notes && !shippingForm.notes) {
+        setShippingForm((prev) => ({
+          ...prev,
+          notes: data.notes || "",
+        }));
+      }
+    } catch (error) {
+      console.error("Failed to fetch cart data:", error);
+    }
+  }, [user, shippingForm.notes]);
+
+  // Fetch cart data when component mounts and user is available
+  useEffect(() => {
+    if (user) {
+      fetchCartData();
+    }
+  }, [user, fetchCartData]);
+
+  // Save/update all cart information when entering checkout
+  // This ensures cart metadata is synced before order creation
+  useEffect(() => {
+    if (user && cartData && checkoutStep === 2 && cart.length > 0) {
+      const updateCartInfo = async () => {
+        try {
+          const updates: {
+            recalculate_delivery?: boolean;
+            notes?: string;
+          } = {};
+          let needsUpdate = false;
+
+          // Ensure delivery fee is calculated and saved
+          const currentDeliveryFee = cartData.delivery_fee ? parseFloat(cartData.delivery_fee) : 0;
+          if (!cartData.delivery_fee || currentDeliveryFee === 0) {
+            updates.recalculate_delivery = true;
+            needsUpdate = true;
+          }
+
+          // Ensure notes are saved (if they exist in shipping form but not in cart)
+          if (shippingForm.notes && shippingForm.notes !== cartData.notes) {
+            updates.notes = shippingForm.notes;
+            needsUpdate = true;
+          }
+
+          // Update cart if any changes are needed
+          if (needsUpdate) {
+            await httpClient.put("/api/cart/", updates);
+            await fetchCartData();
+          }
+        } catch (error) {
+          console.error("Failed to update cart information:", error);
+        }
+      };
+
+      updateCartInfo();
+    }
+  }, [user, cartData, checkoutStep, cart.length, shippingForm.notes, fetchCartData]);
+
+  // All values come from cart model - single source of truth
+  const cartSubtotal = cartData?.sum_price ? parseFloat(cartData.sum_price) : 0;
+  const cartDiscount = cartData?.discount ? parseFloat(cartData.discount) : 0;
+  const cartDeliveryFee = cartData?.delivery_fee ? parseFloat(cartData.delivery_fee) : 0;
+  const cartIsHomeDelivery = cartData?.is_home_delivery ?? true;
+  const cartTotal = cartData?.total_price ? parseFloat(cartData.total_price) : 0;
+  const cartTotalItems = cartData?.total_items ?? cart.length;
+
+  // Helper function to get delivery type display text
+  const getDeliveryTypeText = () => {
+    return cartIsHomeDelivery ? "Home Delivery" : "Post Delivery";
+  };
+
+  // Helper function to get delivery fee reasoning (simplified for display)
+  const getDeliveryFeeReasoning = () => {
+    if (cartDeliveryFee === 0) {
+      return "Free delivery";
+    }
+    if (cartIsHomeDelivery) {
+      return "Standard home delivery fee";
+    }
+    return "Post delivery fee based on weight";
+  };
 
   // Fetch user profile data
   const fetchProfileData = useCallback(async () => {
@@ -143,8 +285,8 @@ export default function CheckoutPage() {
         address_line2: data.address?.address_line2 || "",
         city: data.address?.city || "",
         postal_code: data.address?.postal_code || "",
-        delivery_date: "",
         notes: "",
+        saveShippingInfo: false,
       });
     } catch (error) {
       console.error("Failed to fetch profile:", error);
@@ -157,124 +299,136 @@ export default function CheckoutPage() {
     fetchProfileData();
   }, [fetchProfileData]);
 
-  // Form validation
-  const validateForm = (): boolean => {
+
+  // Update cart notes when user changes them
+  const updateCartNotes = useCallback(
+    async (notes: string) => {
+      if (!user) return;
+
+      try {
+        await httpClient.put("/api/cart/", {
+          notes: notes,
+        });
+        // Refetch cart data to get updated values
+        await fetchCartData();
+      } catch (error) {
+        console.error("Failed to update cart notes:", error);
+      }
+    },
+    [user, fetchCartData]
+  );
+
+  // Update notes in cart when shipping form notes change (debounced)
+  useEffect(() => {
+    if (!user || !cartData) return;
+
+    const timeoutId = setTimeout(() => {
+      if (shippingForm.notes !== cartData.notes) {
+        updateCartNotes(shippingForm.notes);
+      }
+    }, 500); // Debounce by 500ms
+
+    return () => clearTimeout(timeoutId);
+  }, [shippingForm.notes, user, cartData, updateCartNotes]);
+
+  // Create payment intent when component mounts - using cart total
+  const createPaymentIntent = useCallback(async () => {
+    if (!user || cartTotal <= 0) return;
+
+    try {
+      const response = await httpClient.post<{
+        client_secret: string;
+        payment_intent_id: string;
+      }>("/api/payments/create-payment-intent/", {
+        amount: Math.round(cartTotal * 100), // Convert to cents
+        currency: "gbp",
+        metadata: {
+          user_id: user.id.toString(),
+          order_type: "food_delivery",
+        },
+      });
+
+      setClientSecret(response.client_secret);
+    } catch (error) {
+      console.error("Failed to create payment intent:", error);
+      setErrors({ payment: "Failed to initialize payment. Please try again." });
+    }
+  }, [user, cartTotal]);
+
+  useEffect(() => {
+    if (user && cartTotal > 0 && cartData) {
+      createPaymentIntent();
+    }
+  }, [user, cartTotal, cartData, createPaymentIntent]);
+
+  // Form validation for shipping fields
+  const validateShippingForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    // Shipping validation
+    // Required field validation
     if (!shippingForm.firstName.trim()) {
       newErrors.firstName = "First name is required";
     }
+
     if (!shippingForm.lastName.trim()) {
       newErrors.lastName = "Last name is required";
     }
+
     if (!shippingForm.email.trim()) {
-      newErrors.email = "Email is required";
+      newErrors.email = "Email address is required";
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(shippingForm.email)) {
       newErrors.email = "Please enter a valid email address";
     }
+
     if (!shippingForm.phone.trim()) {
       newErrors.phone = "Phone number is required";
+    } else if (
+      !/^[\+]?[0-9\s\-\(\)]{10,}$/.test(shippingForm.phone.replace(/\s/g, ""))
+    ) {
+      newErrors.phone = "Please enter a valid phone number";
     }
+
     if (!shippingForm.address_line.trim()) {
-      newErrors.address_line = "Address is required";
+      newErrors.address_line = "Address line 1 is required";
     }
+
     if (!shippingForm.city.trim()) {
       newErrors.city = "City is required";
     }
+
     if (!shippingForm.postal_code.trim()) {
       newErrors.postal_code = "Postal code is required";
-    }
-    if (!shippingForm.delivery_date) {
-      newErrors.delivery_date = "Delivery date is required";
-    } else {
-      const selectedDate = new Date(shippingForm.delivery_date);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      if (selectedDate < today) {
-        newErrors.delivery_date = "Delivery date cannot be in the past";
-      }
-    }
-
-    // Payment validation
-    if (!paymentForm.cardNumber.trim()) {
-      newErrors.cardNumber = "Card number is required";
     } else if (
-      !/^\d{4}\s?\d{4}\s?\d{4}\s?\d{4}$/.test(
-        paymentForm.cardNumber.replace(/\s/g, "")
+      !/^[A-Z]{1,2}[0-9]{1,2}[A-Z]?[0-9][A-Z]{2}$/i.test(
+        shippingForm.postal_code.replace(/\s/g, "")
       )
     ) {
-      newErrors.cardNumber = "Please enter a valid card number";
-    }
-    if (!paymentForm.expiryDate.trim()) {
-      newErrors.expiryDate = "Expiry date is required";
-    } else if (!/^(0[1-9]|1[0-2])\/\d{2}$/.test(paymentForm.expiryDate)) {
-      newErrors.expiryDate = "Please enter a valid expiry date (MM/YY)";
-    }
-    if (!paymentForm.cvv.trim()) {
-      newErrors.cvv = "CVV is required";
-    } else if (!/^\d{3,4}$/.test(paymentForm.cvv)) {
-      newErrors.cvv = "Please enter a valid CVV";
-    }
-    if (!paymentForm.cardholderName.trim()) {
-      newErrors.cardholderName = "Cardholder name is required";
+      newErrors.postal_code = "Please enter a valid UK postal code";
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // Format card number with spaces
-  const formatCardNumber = (value: string) => {
-    const cleaned = value.replace(/\s/g, "");
-    const formatted = cleaned.replace(/(\d{4})(?=\d)/g, "$1 ");
-    return formatted.slice(0, 19); // Max 16 digits + 3 spaces
-  };
+  // Card formatting is now handled by Stripe Elements
 
-  // Format expiry date
-  const formatExpiryDate = (value: string) => {
-    const cleaned = value.replace(/\D/g, "");
-    if (cleaned.length >= 2) {
-      return cleaned.slice(0, 2) + "/" + cleaned.slice(2, 4);
-    }
-    return cleaned;
-  };
-
-  // Handle form submission
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!validateForm()) {
-      return;
-    }
-
+  // Handle payment success
+  const handlePaymentSuccess = async (paymentIntent: {
+    id: string;
+    status: string;
+    amount: number;
+    currency: string;
+  }) => {
     setSubmitting(true);
     try {
-      // Save payment method if checkbox is checked
-      if (paymentForm.savePayment) {
-        try {
-          const paymentData = {
-            card_number: paymentForm.cardNumber.replace(/\s/g, ""), // Remove spaces
-            expiry_month: parseInt(paymentForm.expiryDate.split("/")[0]),
-            expiry_year: parseInt("20" + paymentForm.expiryDate.split("/")[1]), // Convert YY to 20YY
-            cvv: paymentForm.cvv,
-            cardholder_name: paymentForm.cardholderName,
-            is_default: true, // This will be the default payment method
-          };
-
-          await httpClient.post("/api/auth/payment-methods/", paymentData);
-          console.log("Payment method saved successfully");
-        } catch (paymentError) {
-          console.error("Failed to save payment method:", paymentError);
-          // Don't block the order if payment saving fails
-        }
-      }
-
-      // Create order
+      // Create order with payment intent ID, using cart values (single source of truth)
       const orderData = {
-        notes: shippingForm.notes,
-        delivery_date: shippingForm.delivery_date,
-        discount: 0,
+        notes: cartData?.notes || shippingForm.notes,
+        discount: cartData?.discount || "0",
+        delivery_fee: cartData?.delivery_fee || "0",
+        is_home_delivery: cartData?.is_home_delivery ?? true,
+        payment_intent_id: paymentIntent.id,
+        payment_status: "paid",
       };
 
       const order = await httpClient.post<{ id: number }>(
@@ -282,20 +436,49 @@ export default function CheckoutPage() {
         orderData
       );
 
-      // Clear cart
-      clearCart();
+      // Save shipping information if checkbox is checked
+      if (shippingForm.saveShippingInfo) {
+        try {
+          await httpClient.put("/api/auth/profile/update/", {
+            name: `${shippingForm.firstName} ${shippingForm.lastName}`.trim(),
+            phone: shippingForm.phone,
+            address: {
+              address_line: shippingForm.address_line,
+              address_line2: shippingForm.address_line2,
+              city: shippingForm.city,
+              postal_code: shippingForm.postal_code,
+            },
+          });
+        } catch (profileError) {
+          console.error("Failed to save shipping information:", profileError);
+          // Don't block the order if profile saving fails
+        }
+      }
 
-      // Redirect to order confirmation
+      // Clear cart context (backend already deleted the cart instance)
+      clearCart();
+      
+      // Redirect to order detail page for successful confirmation
       router.push(`/orders/${order.id}`);
     } catch (error) {
       console.error("Order creation failed:", error);
-      setErrors({ submit: "Failed to create order. Please try again." });
+      setErrors({
+        submit:
+          "Payment succeeded but order creation failed. Please contact support.",
+      });
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (loading || productsLoading) {
+  // Handle payment error
+  const handlePaymentError = (error: string) => {
+    setErrors({ payment: error });
+  };
+
+  // No outer form submit; payment handled by StripePaymentForm
+
+  if (loading || !cartData) {
     return (
       <div
         className="min-h-screen flex items-center justify-center"
@@ -306,7 +489,8 @@ export default function CheckoutPage() {
     );
   }
 
-  if (cart.length === 0) {
+  // Don't redirect if we're showing the review step with order details
+  if (cart.length === 0 && checkoutStep !== 3 && !orderDetails) {
     return null; // Will redirect
   }
 
@@ -331,207 +515,454 @@ export default function CheckoutPage() {
 
         {/* Checkout Progress */}
         <CheckoutProgress
-          currentStep={2}
+          currentStep={checkoutStep}
           steps={["Cart", "Shipping & Payment", "Review"]}
         />
 
-        <form
-          onSubmit={handleSubmit}
-          className="lg:grid lg:grid-cols-12 lg:gap-x-12 lg:items-start"
-        >
-          {/* Shipping & Payment Forms */}
-          <div className="lg:col-span-8 space-y-8">
-            {/* Shipping Information */}
-            <div
-              className="rounded-lg shadow-sm p-6"
-              style={{
-                background: "var(--card-bg)",
-                border: "1px solid var(--sidebar-border)",
-              }}
-            >
-              <h2
-                className="text-xl font-semibold mb-6"
-                style={{ color: "var(--foreground)" }}
+        {checkoutStep === 2 ? (
+          <div className="lg:grid lg:grid-cols-12 lg:gap-x-12 lg:items-start">
+            {/* Shipping & Payment Forms */}
+            <div className="lg:col-span-8 space-y-8">
+              {/* Shipping Information */}
+              <div
+                className="rounded-lg shadow-sm p-6"
+                style={{
+                  background: "var(--card-bg)",
+                  border: "1px solid var(--sidebar-border)",
+                }}
               >
-                Shipping Information
-              </h2>
+                <h2
+                  className="text-xl font-semibold mb-6"
+                  style={{ color: "var(--foreground)" }}
+                >
+                  Shipping Information
+                </h2>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <Input
-                  label="First Name *"
-                  value={shippingForm.firstName}
-                  onChange={(e) =>
-                    setShippingForm({
-                      ...shippingForm,
-                      firstName: e.target.value,
-                    })
-                  }
-                  error={errors.firstName}
-                  fullWidth
-                />
-                <Input
-                  label="Last Name *"
-                  value={shippingForm.lastName}
-                  onChange={(e) =>
-                    setShippingForm({
-                      ...shippingForm,
-                      lastName: e.target.value,
-                    })
-                  }
-                  error={errors.lastName}
-                  fullWidth
-                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <Input
+                    label="First Name *"
+                    value={shippingForm.firstName}
+                    onChange={(e) =>
+                      setShippingForm({
+                        ...shippingForm,
+                        firstName: e.target.value,
+                      })
+                    }
+                    error={errors.firstName}
+                    fullWidth
+                  />
+                  <Input
+                    label="Last Name *"
+                    value={shippingForm.lastName}
+                    onChange={(e) =>
+                      setShippingForm({
+                        ...shippingForm,
+                        lastName: e.target.value,
+                      })
+                    }
+                    error={errors.lastName}
+                    fullWidth
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                  <Input
+                    label="Email Address *"
+                    type="email"
+                    value={shippingForm.email}
+                    onChange={(e) =>
+                      setShippingForm({
+                        ...shippingForm,
+                        email: e.target.value,
+                      })
+                    }
+                    error={errors.email}
+                    fullWidth
+                  />
+                  <Input
+                    label="Phone Number *"
+                    type="tel"
+                    value={shippingForm.phone}
+                    onChange={(e) =>
+                      setShippingForm({
+                        ...shippingForm,
+                        phone: e.target.value,
+                      })
+                    }
+                    error={errors.phone}
+                    fullWidth
+                  />
+                </div>
+
+                <div className="mt-6">
+                  <Input
+                    label="Address Line 1 *"
+                    value={shippingForm.address_line}
+                    onChange={(e) =>
+                      setShippingForm({
+                        ...shippingForm,
+                        address_line: e.target.value,
+                      })
+                    }
+                    error={errors.address_line}
+                    fullWidth
+                  />
+                </div>
+
+                <div className="mt-6">
+                  <Input
+                    label="Address Line 2"
+                    value={shippingForm.address_line2}
+                    onChange={(e) =>
+                      setShippingForm({
+                        ...shippingForm,
+                        address_line2: e.target.value,
+                      })
+                    }
+                    fullWidth
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                  <Input
+                    label="City *"
+                    value={shippingForm.city}
+                    onChange={(e) =>
+                      setShippingForm({ ...shippingForm, city: e.target.value })
+                    }
+                    error={errors.city}
+                    fullWidth
+                  />
+                  <Input
+                    label="Postal Code *"
+                    value={shippingForm.postal_code}
+                    onChange={(e) =>
+                      setShippingForm({
+                        ...shippingForm,
+                        postal_code: e.target.value,
+                      })
+                    }
+                    error={errors.postal_code}
+                    fullWidth
+                  />
+                </div>
+
+                <div className="mt-6">
+                  <Textarea
+                    label="Delivery Notes (Optional)"
+                    value={shippingForm.notes}
+                    onChange={(e) =>
+                      setShippingForm({
+                        ...shippingForm,
+                        notes: e.target.value,
+                      })
+                    }
+                    placeholder="Any special instructions for delivery..."
+                    fullWidth
+                  />
+                </div>
+
+                <div className="mt-6">
+                  <label className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      checked={shippingForm.saveShippingInfo}
+                      onChange={(e) =>
+                        setShippingForm({
+                          ...shippingForm,
+                          saveShippingInfo: e.target.checked,
+                        })
+                      }
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span
+                      className="text-sm"
+                      style={{ color: "var(--foreground)" }}
+                    >
+                      Save shipping information for future purchases
+                    </span>
+                  </label>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-                <Input
-                  label="Email Address *"
-                  type="email"
-                  value={shippingForm.email}
-                  onChange={(e) =>
-                    setShippingForm({ ...shippingForm, email: e.target.value })
-                  }
-                  error={errors.email}
-                  fullWidth
-                />
-                <Input
-                  label="Phone Number *"
-                  type="tel"
-                  value={shippingForm.phone}
-                  onChange={(e) =>
-                    setShippingForm({ ...shippingForm, phone: e.target.value })
-                  }
-                  error={errors.phone}
-                  fullWidth
-                />
-              </div>
+              {/* Payment Information */}
+              <div
+                className="rounded-lg shadow-sm p-6"
+                style={{
+                  background: "var(--card-bg)",
+                  border: "1px solid var(--sidebar-border)",
+                }}
+              >
+                <h2
+                  className="text-xl font-semibold mb-6"
+                  style={{ color: "var(--foreground)" }}
+                >
+                  Payment Information
+                </h2>
 
-              <div className="mt-6">
-                <Input
-                  label="Address Line 1 *"
-                  value={shippingForm.address_line}
-                  onChange={(e) =>
-                    setShippingForm({
-                      ...shippingForm,
-                      address_line: e.target.value,
-                    })
-                  }
-                  error={errors.address_line}
-                  fullWidth
-                />
-              </div>
+                {clientSecret ? (
+                  <StripeProvider clientSecret={clientSecret}>
+                    <StripePaymentForm
+                      onPaymentSuccess={handlePaymentSuccess}
+                      onPaymentError={handlePaymentError}
+                      totalAmount={cartTotal}
+                      isProcessing={submitting}
+                      onValidationRequired={validateShippingForm}
+                      billingDetails={{
+                        name: `${shippingForm.firstName} ${shippingForm.lastName}`.trim(),
+                        email: shippingForm.email,
+                        phone: shippingForm.phone,
+                        address: {
+                          line1: shippingForm.address_line,
+                          line2: shippingForm.address_line2,
+                          city: shippingForm.city,
+                          postal_code: shippingForm.postal_code,
+                        },
+                      }}
+                    />
+                  </StripeProvider>
+                ) : (
+                  <div className="flex items-center justify-center py-8">
+                    <LoadingSpinner />
+                    <span
+                      className="ml-3"
+                      style={{ color: "var(--foreground)" }}
+                    >
+                      Initializing secure payment...
+                    </span>
+                  </div>
+                )}
 
-              <div className="mt-6">
-                <Input
-                  label="Address Line 2"
-                  value={shippingForm.address_line2}
-                  onChange={(e) =>
-                    setShippingForm({
-                      ...shippingForm,
-                      address_line2: e.target.value,
-                    })
-                  }
-                  fullWidth
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-                <Input
-                  label="City *"
-                  value={shippingForm.city}
-                  onChange={(e) =>
-                    setShippingForm({ ...shippingForm, city: e.target.value })
-                  }
-                  error={errors.city}
-                  fullWidth
-                />
-                <Input
-                  label="Postal Code *"
-                  value={shippingForm.postal_code}
-                  onChange={(e) =>
-                    setShippingForm({
-                      ...shippingForm,
-                      postal_code: e.target.value,
-                    })
-                  }
-                  error={errors.postal_code}
-                  fullWidth
-                />
-              </div>
-
-              <div className="mt-6">
-                <Input
-                  label="Delivery Date *"
-                  type="date"
-                  value={shippingForm.delivery_date}
-                  onChange={(e) =>
-                    setShippingForm({
-                      ...shippingForm,
-                      delivery_date: e.target.value,
-                    })
-                  }
-                  error={errors.delivery_date}
-                  min={new Date().toISOString().split("T")[0]}
-                  fullWidth
-                />
-              </div>
-
-              <div className="mt-6">
-                <Textarea
-                  label="Delivery Notes (Optional)"
-                  value={shippingForm.notes}
-                  onChange={(e) =>
-                    setShippingForm({ ...shippingForm, notes: e.target.value })
-                  }
-                  placeholder="Any special instructions for delivery..."
-                  fullWidth
-                />
+                {errors.payment && (
+                  <div
+                    className="mt-4 p-3 rounded-md"
+                    style={{
+                      background: "var(--destructive-bg)",
+                      border: "1px solid var(--destructive-border)",
+                    }}
+                  >
+                    <p
+                      className="text-sm"
+                      style={{ color: "var(--destructive)" }}
+                    >
+                      {errors.payment}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Payment Information */}
+            {/* Order Summary */}
+            <div className="mt-8 lg:mt-0 lg:col-span-4">
+              <div
+                className="rounded-lg shadow-sm"
+                style={{
+                  background: "var(--card-bg)",
+                  border: "1px solid var(--sidebar-border)",
+                }}
+              >
+                <div
+                  className="px-6 py-4"
+                  style={{ borderBottom: "1px solid var(--sidebar-border)" }}
+                >
+                  <h2
+                    className="text-lg font-medium"
+                    style={{ color: "var(--foreground)" }}
+                  >
+                    Order Summary
+                  </h2>
+                </div>
+
+                <div className="p-6 space-y-4">
+                  {/* Delivery Type Information */}
+                  <div
+                    className="p-3 rounded-md"
+                    style={{
+                      background: "var(--info-bg)",
+                      border: "1px solid var(--info-border)",
+                    }}
+                  >
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <span className="text-lg mr-2">
+                          {cartIsHomeDelivery ? "🏠" : "📦"}
+                        </span>
+                      </div>
+                      <div>
+                        <h4
+                          className="text-sm font-medium"
+                          style={{ color: "var(--info-text)" }}
+                        >
+                          {getDeliveryTypeText()}
+                        </h4>
+                        <p
+                          className="text-sm"
+                          style={{ color: "var(--info-text)", opacity: 0.8 }}
+                        >
+                          {getDeliveryFeeReasoning()}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Delivery Fee Information */}
+                  <DeliveryFeeInfo />
+
+                  {/* Order Summary */}
+                  <div className="space-y-3">
+                    {/* Items Breakdown */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span
+                          style={{ color: "var(--foreground)", opacity: 0.7 }}
+                        >
+                          Subtotal ({cartTotalItems} items)
+                        </span>
+                        <span
+                          className="font-medium"
+                          style={{ color: "var(--foreground)" }}
+                        >
+                          £{cartSubtotal.toFixed(2)}
+                        </span>
+                      </div>
+
+                      {/* Individual Items - from cart model */}
+                      <div className="ml-4 space-y-1">
+                        {cartData?.items?.map((item) => {
+                          const quantity = parseFloat(item.quantity);
+                          const itemPrice = parseFloat(item.product_price);
+                          const itemTotal = itemPrice * quantity;
+
+                          return (
+                            <div
+                              key={item.id}
+                              className="flex justify-between text-xs"
+                            >
+                              <span
+                                style={{
+                                  color: "var(--foreground)",
+                                  opacity: 0.6,
+                                }}
+                              >
+                                {item.product_name} × {quantity}
+                              </span>
+                              <span
+                                style={{
+                                  color: "var(--foreground)",
+                                  opacity: 0.6,
+                                }}
+                              >
+                                £{itemTotal.toFixed(2)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between text-sm">
+                      <span
+                        style={{ color: "var(--foreground)", opacity: 0.7 }}
+                      >
+                        Delivery Fee
+                      </span>
+                      <span
+                        className="font-medium"
+                        style={{ color: "var(--foreground)" }}
+                      >
+                        {cartDeliveryFee === 0
+                          ? "Free"
+                          : `£${cartDeliveryFee.toFixed(2)}`}
+                      </span>
+                    </div>
+
+                    {cartDeliveryFee > 0 && (
+                      <div
+                        className="text-xs"
+                        style={{ color: "var(--foreground)", opacity: 0.6 }}
+                      >
+                        {getDeliveryFeeReasoning()}
+                      </div>
+                    )}
+
+                    {/* Discount - Display from cart */}
+                    {cartDiscount > 0 && (
+                      <DiscountDisplay discount={cartDiscount} />
+                    )}
+
+                    <div
+                      className="pt-3"
+                      style={{ borderTop: "1px solid var(--sidebar-border)" }}
+                    >
+                      <div className="flex justify-between text-lg font-semibold">
+                        <span style={{ color: "var(--foreground)" }}>
+                          Total
+                        </span>
+                        <span style={{ color: "var(--foreground)" }}>
+                          £{cartTotal.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Trust Signals */}
+                  <div
+                    className="pt-4"
+                    style={{ borderTop: "1px solid var(--sidebar-border)" }}
+                  >
+                    <div
+                      className="flex items-center space-x-4 text-sm"
+                      style={{ color: "var(--foreground)", opacity: 0.7 }}
+                    >
+                      <div className="flex items-center">
+                        <svg
+                          className="w-4 h-4 mr-1"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        Secure checkout
+                      </div>
+                      <div className="flex items-center">
+                        <svg
+                          className="w-4 h-4 mr-1"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        VAT included
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : checkoutStep === 3 && orderDetails ? (
+          /* Review Section */
+          <div className="max-w-6xl mx-auto space-y-8">
+            {/* Success Message */}
             <div
-              className="rounded-lg shadow-sm p-6"
+              className="p-6 rounded-lg"
               style={{
-                background: "var(--card-bg)",
-                border: "1px solid var(--sidebar-border)",
+                background: "var(--success-bg)",
+                border: "1px solid var(--success-border)",
               }}
             >
-              <h2
-                className="text-xl font-semibold mb-6"
-                style={{ color: "var(--foreground)" }}
-              >
-                Payment Information
-              </h2>
-
-              {/* Trust Signals */}
-              <div
-                className="flex items-center justify-center space-x-6 mb-6 p-4 rounded-lg"
-                style={{ background: "var(--info-bg)" }}
-              >
-                <div className="flex items-center space-x-2">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
                   <svg
-                    className="w-5 h-5"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                    style={{ color: "var(--success)" }}
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  <span
-                    className="text-sm font-medium"
-                    style={{ color: "var(--info-text)" }}
-                  >
-                    SSL Secured
-                  </span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <svg
-                    className="w-5 h-5"
+                    className="w-10 h-10"
                     fill="currentColor"
                     viewBox="0 0 20 20"
                     style={{ color: "var(--success)" }}
@@ -542,302 +973,562 @@ export default function CheckoutPage() {
                       clipRule="evenodd"
                     />
                   </svg>
-                  <span
-                    className="text-sm font-medium"
-                    style={{ color: "var(--info-text)" }}
-                  >
-                    PCI Compliant
-                  </span>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <svg
-                    className="w-5 h-5"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                    style={{ color: "var(--success)" }}
+                <div className="ml-4">
+                  <h3
+                    className="text-2xl font-bold"
+                    style={{ color: "var(--success-text)" }}
                   >
-                    <path
-                      fillRule="evenodd"
-                      d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  <span
-                    className="text-sm font-medium"
-                    style={{ color: "var(--info-text)" }}
+                    Order Placed Successfully!
+                  </h3>
+                  <p
+                    className="mt-1 text-base"
+                    style={{ color: "var(--success-text)", opacity: 0.9 }}
                   >
-                    256-bit Encryption
-                  </span>
-                </div>
-              </div>
-
-              <div className="space-y-6">
-                <Input
-                  label="Card Number *"
-                  value={paymentForm.cardNumber}
-                  onChange={(e) =>
-                    setPaymentForm({
-                      ...paymentForm,
-                      cardNumber: formatCardNumber(e.target.value),
-                    })
-                  }
-                  error={errors.cardNumber}
-                  placeholder="1234 5678 9012 3456"
-                  fullWidth
-                />
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <Input
-                    label="Expiry Date *"
-                    value={paymentForm.expiryDate}
-                    onChange={(e) =>
-                      setPaymentForm({
-                        ...paymentForm,
-                        expiryDate: formatExpiryDate(e.target.value),
-                      })
-                    }
-                    error={errors.expiryDate}
-                    placeholder="MM/YY"
-                    fullWidth
-                  />
-                  <Input
-                    label="CVV *"
-                    value={paymentForm.cvv}
-                    onChange={(e) =>
-                      setPaymentForm({ ...paymentForm, cvv: e.target.value })
-                    }
-                    error={errors.cvv}
-                    placeholder="123"
-                    type="password"
-                    fullWidth
-                  />
-                </div>
-
-                <Input
-                  label="Cardholder Name *"
-                  value={paymentForm.cardholderName}
-                  onChange={(e) =>
-                    setPaymentForm({
-                      ...paymentForm,
-                      cardholderName: e.target.value,
-                    })
-                  }
-                  error={errors.cardholderName}
-                  fullWidth
-                />
-
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="savePayment"
-                    checked={paymentForm.savePayment}
-                    onChange={(e) =>
-                      setPaymentForm({
-                        ...paymentForm,
-                        savePayment: e.target.checked,
-                      })
-                    }
-                    className="rounded border-gray-300"
-                  />
-                  <label
-                    htmlFor="savePayment"
-                    className="text-sm"
-                    style={{ color: "var(--foreground)" }}
-                  >
-                    Save payment method for future purchases
-                  </label>
+                    Thank you for your order #{orderDetails.id}. We&apos;ll send
+                    you a confirmation email shortly.
+                  </p>
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Order Summary */}
-          <div className="mt-8 lg:mt-0 lg:col-span-4">
-            <div
-              className="rounded-lg shadow-sm sticky top-8"
-              style={{
-                background: "var(--card-bg)",
-                border: "1px solid var(--sidebar-border)",
-              }}
-            >
-              <div
-                className="px-6 py-4"
-                style={{ borderBottom: "1px solid var(--sidebar-border)" }}
-              >
-                <h2
-                  className="text-lg font-medium"
-                  style={{ color: "var(--foreground)" }}
-                >
-                  Order Summary
-                </h2>
-              </div>
-
-              <div className="p-6 space-y-4">
-                {/* Delivery Type Information */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* Main Content */}
+              <div className="lg:col-span-2 space-y-6">
+                {/* Order Items */}
                 <div
-                  className="p-3 rounded-md"
+                  className="rounded-lg shadow-sm overflow-hidden"
                   style={{
-                    background: "var(--info-bg)",
-                    border: "1px solid var(--info-border)",
+                    background: "var(--card-bg)",
+                    border: "1px solid var(--sidebar-border)",
                   }}
                 >
-                  <div className="flex items-center">
-                    <div className="flex-shrink-0">
-                      <span className="text-lg mr-2">
-                        {deliveryCalculation.isHomeDelivery ? "🏠" : "📦"}
-                      </span>
+                  <div
+                    className="px-6 py-4"
+                    style={{ borderBottom: "1px solid var(--sidebar-border)" }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <h2
+                        className="text-lg font-medium"
+                        style={{ color: "var(--foreground)" }}
+                      >
+                        Order Items (
+                        {orderDetails.total_items ||
+                          orderDetails.items?.length ||
+                          0}{" "}
+                        items)
+                      </h2>
+                      <p
+                        className="text-sm"
+                        style={{ color: "var(--foreground)", opacity: 0.7 }}
+                      >
+                        Order #{orderDetails.id}
+                      </p>
+                    </div>
+                  </div>
+                  <div style={{ borderTop: "1px solid var(--sidebar-border)" }}>
+                    {orderDetails.items?.map((item) => {
+                      // Format price - ensure it's always formatted with 2 decimals
+                      const productPrice =
+                        item.product_price || item.product?.price || "0.00";
+                      const totalPrice =
+                        item.total_price ||
+                        item.get_total_price ||
+                        (
+                          parseFloat(productPrice) *
+                          parseFloat(item.quantity.toString())
+                        ).toFixed(2);
+
+                      // Ensure totalPrice is formatted correctly
+                      const formattedTotalPrice =
+                        typeof totalPrice === "string"
+                          ? parseFloat(totalPrice).toFixed(2)
+                          : Number(totalPrice).toFixed(2);
+
+                      return (
+                        <OrderReviewItem
+                          key={item.id}
+                          product={{
+                            id: item.product?.id || item.id,
+                            name:
+                              item.product_name ||
+                              item.product?.name ||
+                              "Product",
+                            price: productPrice,
+                            image_url:
+                              item.product_image_url ||
+                              item.product?.image_url ||
+                              null,
+                            description: item.product?.description,
+                          }}
+                          quantity={parseFloat(item.quantity.toString())}
+                          totalPrice={formattedTotalPrice}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Customer Information */}
+                <div
+                  className="rounded-lg shadow-sm p-6"
+                  style={{
+                    background: "var(--card-bg)",
+                    border: "1px solid var(--sidebar-border)",
+                  }}
+                >
+                  <h2
+                    className="text-xl font-semibold mb-6"
+                    style={{ color: "var(--foreground)" }}
+                  >
+                    Customer Information
+                  </h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <p
+                        className="text-sm font-medium mb-1"
+                        style={{ color: "var(--foreground)", opacity: 0.7 }}
+                      >
+                        Name
+                      </p>
+                      <p
+                        className="text-base"
+                        style={{ color: "var(--foreground)" }}
+                      >
+                        {orderDetails.shippingInfo?.firstName || ""}{" "}
+                        {orderDetails.shippingInfo?.lastName || ""}
+                        {!orderDetails.shippingInfo?.firstName &&
+                          orderDetails.customer_name}
+                      </p>
                     </div>
                     <div>
-                      <h4
-                        className="text-sm font-medium"
-                        style={{ color: "var(--info-text)" }}
-                      >
-                        {deliveryBreakdown.type}
-                      </h4>
                       <p
-                        className="text-sm"
-                        style={{ color: "var(--info-text)", opacity: 0.8 }}
+                        className="text-sm font-medium mb-1"
+                        style={{ color: "var(--foreground)", opacity: 0.7 }}
                       >
-                        {deliveryBreakdown.reasoning}
+                        Email
+                      </p>
+                      <p
+                        className="text-base"
+                        style={{ color: "var(--foreground)" }}
+                      >
+                        {orderDetails.shippingInfo?.email ||
+                          orderDetails.customer?.email ||
+                          ""}
+                      </p>
+                    </div>
+                    <div>
+                      <p
+                        className="text-sm font-medium mb-1"
+                        style={{ color: "var(--foreground)", opacity: 0.7 }}
+                      >
+                        Phone
+                      </p>
+                      <p
+                        className="text-base"
+                        style={{ color: "var(--foreground)" }}
+                      >
+                        {orderDetails.shippingInfo?.phone ||
+                          orderDetails.customer_phone ||
+                          ""}
+                      </p>
+                    </div>
+                    <div>
+                      <p
+                        className="text-sm font-medium mb-1"
+                        style={{ color: "var(--foreground)", opacity: 0.7 }}
+                      >
+                        Order Date
+                      </p>
+                      <p
+                        className="text-base"
+                        style={{ color: "var(--foreground)" }}
+                      >
+                        {orderDetails.order_date
+                          ? new Date(
+                              orderDetails.order_date
+                            ).toLocaleDateString("en-GB", {
+                              day: "numeric",
+                              month: "long",
+                              year: "numeric",
+                            })
+                          : new Date().toLocaleDateString()}
                       </p>
                     </div>
                   </div>
                 </div>
 
-                {/* Delivery Fee Information */}
-                <DeliveryFeeInfo />
-
-                {/* Order Summary */}
-                <div className="space-y-3">
-                  <div className="flex justify-between text-sm">
-                    <span style={{ color: "var(--foreground)", opacity: 0.7 }}>
-                      Subtotal ({stats.totalItems} items)
-                    </span>
-                    <span
-                      className="font-medium"
+                {/* Shipping Address */}
+                <div
+                  className="rounded-lg shadow-sm p-6"
+                  style={{
+                    background: "var(--card-bg)",
+                    border: "1px solid var(--sidebar-border)",
+                  }}
+                >
+                  <h2
+                    className="text-xl font-semibold mb-6"
+                    style={{ color: "var(--foreground)" }}
+                  >
+                    Delivery Address
+                  </h2>
+                  <div className="space-y-2">
+                    <p
+                      className="text-base"
                       style={{ color: "var(--foreground)" }}
                     >
-                      £{stats.subtotal.toFixed(2)}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between text-sm">
-                    <span style={{ color: "var(--foreground)", opacity: 0.7 }}>
-                      Delivery Fee
-                    </span>
-                    <span
-                      className="font-medium"
+                      {orderDetails.shippingInfo?.firstName}{" "}
+                      {orderDetails.shippingInfo?.lastName}
+                    </p>
+                    <p
+                      className="text-base"
                       style={{ color: "var(--foreground)" }}
                     >
-                      {deliveryBreakdown.isFree
-                        ? "Free"
-                        : `£${deliveryCalculation.deliveryFee.toFixed(2)}`}
-                    </span>
-                  </div>
-
-                  {deliveryCalculation.deliveryFee > 0 && (
-                    <div
-                      className="text-xs"
-                      style={{ color: "var(--foreground)", opacity: 0.6 }}
-                    >
-                      {deliveryBreakdown.reasoning}
-                      {deliveryBreakdown.hasSausages && (
-                        <span>
-                          {" "}
-                          • Weight: {deliveryBreakdown.weight.toFixed(1)}kg
-                        </span>
+                      {orderDetails.shippingInfo?.address_line}
+                      {orderDetails.shippingInfo?.address_line2 && (
+                        <>
+                          <br />
+                          {orderDetails.shippingInfo.address_line2}
+                        </>
                       )}
+                    </p>
+                    <p
+                      className="text-base"
+                      style={{ color: "var(--foreground)" }}
+                    >
+                      {orderDetails.shippingInfo?.city}
+                      {orderDetails.shippingInfo?.postal_code &&
+                        `, ${orderDetails.shippingInfo.postal_code}`}
+                    </p>
+                  </div>
+
+                  {orderDetails.delivery_date && (
+                    <div
+                      className="mt-6 pt-6 border-t"
+                      style={{ borderColor: "var(--sidebar-border)" }}
+                    >
+                      <p
+                        className="text-sm font-medium mb-1"
+                        style={{ color: "var(--foreground)", opacity: 0.7 }}
+                      >
+                        Estimated Delivery Date
+                      </p>
+                      <p
+                        className="text-base"
+                        style={{ color: "var(--foreground)" }}
+                      >
+                        {new Date(
+                          orderDetails.delivery_date
+                        ).toLocaleDateString("en-GB", {
+                          day: "numeric",
+                          month: "long",
+                          year: "numeric",
+                        })}
+                      </p>
                     </div>
                   )}
 
-                  <div
-                    className="pt-3"
-                    style={{ borderTop: "1px solid var(--sidebar-border)" }}
+                  {orderDetails.notes && (
+                    <div
+                      className="mt-6 pt-6 border-t"
+                      style={{ borderColor: "var(--sidebar-border)" }}
+                    >
+                      <p
+                        className="text-sm font-medium mb-1"
+                        style={{ color: "var(--foreground)", opacity: 0.7 }}
+                      >
+                        Special Instructions
+                      </p>
+                      <p
+                        className="text-base"
+                        style={{ color: "var(--foreground)" }}
+                      >
+                        {orderDetails.notes}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Payment Information */}
+                <div
+                  className="rounded-lg shadow-sm p-6"
+                  style={{
+                    background: "var(--card-bg)",
+                    border: "1px solid var(--sidebar-border)",
+                  }}
+                >
+                  <h2
+                    className="text-xl font-semibold mb-6"
+                    style={{ color: "var(--foreground)" }}
                   >
-                    <div className="flex justify-between text-lg font-semibold">
-                      <span style={{ color: "var(--foreground)" }}>Total</span>
-                      <span style={{ color: "var(--foreground)" }}>
-                        £{calculatedTotal.toFixed(2)}
+                    Payment Information
+                  </h2>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <p
+                        className="text-sm font-medium"
+                        style={{ color: "var(--foreground)", opacity: 0.7 }}
+                      >
+                        Payment Method
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <svg
+                          className="w-5 h-5"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                          style={{ color: "var(--primary)" }}
+                        >
+                          <path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z" />
+                          <path
+                            fillRule="evenodd"
+                            d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        <p
+                          className="text-base font-medium"
+                          style={{ color: "var(--foreground)" }}
+                        >
+                          Card Payment (Stripe)
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p
+                        className="text-sm font-medium"
+                        style={{ color: "var(--foreground)", opacity: 0.7 }}
+                      >
+                        Payment Status
+                      </p>
+                      <span
+                        className="px-3 py-1 rounded-full text-sm font-medium"
+                        style={{
+                          background: "var(--success-bg)",
+                          color: "var(--success-text)",
+                        }}
+                      >
+                        ✓ Paid
                       </span>
                     </div>
-                  </div>
-                </div>
-
-                {/* Trust Signals */}
-                <div
-                  className="pt-4"
-                  style={{ borderTop: "1px solid var(--sidebar-border)" }}
-                >
-                  <div
-                    className="flex items-center space-x-4 text-sm"
-                    style={{ color: "var(--foreground)", opacity: 0.7 }}
-                  >
-                    <div className="flex items-center">
-                      <svg
-                        className="w-4 h-4 mr-1"
-                        fill="currentColor"
-                        viewBox="0 0 20 20"
-                      >
-                        <path
-                          fillRule="evenodd"
-                          d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                      Secure checkout
-                    </div>
-                    <div className="flex items-center">
-                      <svg
-                        className="w-4 h-4 mr-1"
-                        fill="currentColor"
-                        viewBox="0 0 20 20"
-                      >
-                        <path
-                          fillRule="evenodd"
-                          d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                      30-day returns
-                    </div>
-                  </div>
-                </div>
-
-                {/* Submit Button */}
-                <div className="pt-4">
-                  {errors.submit && (
-                    <div
-                      className="mb-4 p-3 rounded-md"
-                      style={{
-                        background: "var(--destructive-bg)",
-                        border: "1px solid var(--destructive-border)",
-                      }}
-                    >
+                    <div className="flex items-center justify-between">
                       <p
-                        className="text-sm"
-                        style={{ color: "var(--destructive)" }}
+                        className="text-sm font-medium"
+                        style={{ color: "var(--foreground)", opacity: 0.7 }}
                       >
-                        {errors.submit}
+                        Payment Intent ID
+                      </p>
+                      <p
+                        className="text-xs font-mono"
+                        style={{ color: "var(--foreground)", opacity: 0.7 }}
+                      >
+                        {orderDetails.paymentIntent?.id?.substring(0, 20)}...
                       </p>
                     </div>
-                  )}
+                  </div>
+                </div>
+              </div>
 
-                  <Button
-                    type="submit"
-                    size="lg"
-                    fullWidth
-                    loading={submitting}
-                    disabled={submitting}
+              {/* Sidebar - Order Summary & Actions */}
+              <div className="lg:col-span-1">
+                <div
+                  className="rounded-lg shadow-sm p-6 sticky top-8"
+                  style={{
+                    background: "var(--card-bg)",
+                    border: "1px solid var(--sidebar-border)",
+                  }}
+                >
+                  <h2
+                    className="text-lg font-semibold mb-6"
+                    style={{ color: "var(--foreground)" }}
                   >
-                    {submitting
-                      ? "Processing..."
-                      : `Complete Order - £${calculatedTotal.toFixed(2)}`}
-                  </Button>
+                    Order Summary
+                  </h2>
+
+                  <div className="space-y-4">
+                    <div className="flex justify-between text-sm">
+                      <span
+                        style={{ color: "var(--foreground)", opacity: 0.7 }}
+                      >
+                        Subtotal
+                      </span>
+                      <span
+                        className="font-medium"
+                        style={{ color: "var(--foreground)" }}
+                      >
+                        £
+                        {orderDetails.sum_price
+                          ? parseFloat(orderDetails.sum_price).toFixed(2)
+                          : (
+                              orderDetails.items?.reduce((sum, item) => {
+                                const price = parseFloat(
+                                  item.total_price ||
+                                    item.get_total_price ||
+                                    "0"
+                                );
+                                return sum + price;
+                              }, 0) || 0
+                            ).toFixed(2)}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between text-sm">
+                      <span
+                        style={{ color: "var(--foreground)", opacity: 0.7 }}
+                      >
+                        Delivery Fee
+                      </span>
+                      <span
+                        className="font-medium"
+                        style={{ color: "var(--foreground)" }}
+                      >
+                        {parseFloat(orderDetails.delivery_fee || "0") === 0
+                          ? "Free"
+                          : `£${parseFloat(
+                              orderDetails.delivery_fee || "0"
+                            ).toFixed(2)}`}
+                      </span>
+                    </div>
+
+                    {parseFloat(orderDetails.discount || "0") > 0 && (
+                      <div
+                        className="flex justify-between text-sm"
+                        style={{ color: "var(--success)" }}
+                      >
+                        <span>Discount</span>
+                        <span>
+                          -£
+                          {parseFloat(orderDetails.discount || "0").toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+
+                    <div
+                      className="pt-4"
+                      style={{ borderTop: "1px solid var(--sidebar-border)" }}
+                    >
+                      <div className="flex justify-between text-lg font-semibold">
+                        <span style={{ color: "var(--foreground)" }}>
+                          Total
+                        </span>
+                        <span style={{ color: "var(--foreground)" }}>
+                          £
+                          {parseFloat(orderDetails.total_price || "0").toFixed(
+                            2
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="mt-6 space-y-3">
+                    <Button onClick={() => router.push("/")} fullWidth>
+                      Continue Shopping
+                    </Button>
+
+                    <Button
+                      onClick={() => router.push("/orders")}
+                      variant="outline"
+                      fullWidth
+                    >
+                      View All Orders
+                    </Button>
+
+                    {orderDetails.invoice_link && (
+                      <Button
+                        onClick={() =>
+                          window.open(orderDetails.invoice_link, "_blank")
+                        }
+                        variant="ghost"
+                        fullWidth
+                      >
+                        Download Invoice
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Order Status */}
+                  <div
+                    className="mt-6 p-4 rounded-lg"
+                    style={{ background: "var(--info-bg)" }}
+                  >
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <span className="text-lg mr-2">
+                          {orderDetails.status === "paid" ? "✅" : "⏳"}
+                        </span>
+                      </div>
+                      <div>
+                        <h4
+                          className="text-sm font-medium"
+                          style={{ color: "var(--info-text)" }}
+                        >
+                          Order Status:{" "}
+                          {orderDetails.status
+                            ? orderDetails.status.charAt(0).toUpperCase() +
+                              orderDetails.status.slice(1)
+                            : "Pending"}
+                        </h4>
+                        <p
+                          className="text-sm mt-1"
+                          style={{ color: "var(--info-text)", opacity: 0.8 }}
+                        >
+                          {orderDetails.status === "paid"
+                            ? "Payment confirmed, preparing for delivery"
+                            : "Your order is being processed"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Trust Signals */}
+                  <div
+                    className="mt-6 pt-6"
+                    style={{ borderTop: "1px solid var(--sidebar-border)" }}
+                  >
+                    <div className="flex flex-col space-y-3 text-sm">
+                      <div className="flex items-center">
+                        <svg
+                          className="w-4 h-4 mr-2"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                          style={{ color: "var(--success)" }}
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        <span
+                          style={{ color: "var(--foreground)", opacity: 0.7 }}
+                        >
+                          Secure Payment
+                        </span>
+                      </div>
+                      <div className="flex items-center">
+                        <svg
+                          className="w-4 h-4 mr-2"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                          style={{ color: "var(--success)" }}
+                        >
+                          <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
+                          <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
+                        </svg>
+                        <span
+                          style={{ color: "var(--foreground)", opacity: 0.7 }}
+                        >
+                          Confirmation Email Sent
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </form>
+        ) : null}
       </div>
     </div>
   );

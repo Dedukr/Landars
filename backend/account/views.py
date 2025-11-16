@@ -175,6 +175,10 @@ def register(request):
         send_email_verification_email(
             to_email=email, user_name=name, verification_url=verification_url
         )
+        # Set email_sent_at timestamp after successfully sending the email
+        # This ensures cooldown starts when email is sent, not when button is pressed
+        verification_token.email_sent_at = timezone.now()
+        verification_token.save(update_fields=["email_sent_at"])
 
         # Log successful registration
         logger.info(
@@ -1121,16 +1125,18 @@ def resend_verification_email(request):
             logger.info(f"Email validation warning for {email}: {warning_message}")
 
         # Check for recent verification requests to prevent abuse
+        # Only check tokens where email was actually sent (email_sent_at is not null)
         cooldown_seconds = getattr(settings, "EMAIL_VERIFICATION_COOLDOWN", 60)
         recent_requests = EmailVerificationToken.objects.filter(
             user__email=email,
-            created_at__gte=timezone.now() - timedelta(seconds=cooldown_seconds),
-        ).order_by("-created_at")
+            email_sent_at__isnull=False,
+            email_sent_at__gte=timezone.now() - timedelta(seconds=cooldown_seconds),
+        ).order_by("-email_sent_at")
 
         if recent_requests.exists():
             latest_request = recent_requests.first()
             time_since_request = (
-                timezone.now() - latest_request.created_at
+                timezone.now() - latest_request.email_sent_at
             ).total_seconds()
             remaining_cooldown = cooldown_seconds - time_since_request
 
@@ -1217,12 +1223,17 @@ def resend_verification_email(request):
                     user_name=user.name,
                     verification_url=verification_url,
                 )
+                # Set email_sent_at timestamp after successfully sending the email
+                # This ensures cooldown starts when email is sent, not when button is pressed
+                verification_token.email_sent_at = timezone.now()
+                verification_token.save(update_fields=["email_sent_at"])
                 logger.info(f"Email verification email sent to: {email}")
             except Exception as e:
                 logger.error(
                     f"Failed to send email verification email to {email}: {str(e)}"
                 )
                 # Still return success to prevent information leakage
+                # Note: email_sent_at is not set if email fails to send, so cooldown won't apply
 
         # Always return success message regardless of whether user exists
         return Response(

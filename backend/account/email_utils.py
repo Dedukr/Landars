@@ -127,7 +127,7 @@ def send_email_verification_email(
 
     send_templated_email(
         to=[to_email],
-        subject="Verify Your Email Address - Landars Food",
+        subject="Verify Your Email Address",
         template_base="email_verification",
         context=context,
     )
@@ -165,7 +165,7 @@ def send_password_reset_email(*, to_email: str, user_name: str, reset_url: str) 
     with smtp_connection() as conn:
         send_templated_email(
             to=[to_email],
-            subject="Password Reset Request - Landars Food",
+            subject="Password Reset Request",
             template_base="password_reset",
             context=context,
             connection=conn,
@@ -186,7 +186,7 @@ def send_password_reset_confirmation_email(
     with smtp_connection() as conn:
         send_templated_email(
             to=[to_email],
-            subject="Password Reset Confirmation - Landars Food",
+            subject="Password Reset Confirmation",
             template_base="password_reset_confirmation",
             context=context,
             connection=conn,

@@ -1,21 +1,53 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useCart } from "@/contexts/CartContext";
+import { useAuth } from "@/contexts/AuthContext";
 import CheckoutProgress from "@/components/CheckoutProgress";
 import CartItemsList from "@/components/CartItemsList";
 import ProductRecommendations from "@/components/ProductRecommendations";
 import DeliveryFeeInfo from "@/components/DeliveryFeeInfo";
+import SubtotalDisplay from "@/components/cart/SubtotalDisplay";
+import DeliveryFeeDisplay from "@/components/cart/DeliveryFeeDisplay";
+import TotalDisplay from "@/components/cart/TotalDisplay";
+import DiscountDisplay from "@/components/cart/DiscountDisplay";
+import CartItemsCountDisplay from "@/components/cart/CartItemsCountDisplay";
+import CheckoutButton from "@/components/cart/CheckoutButton";
 import { useCartOptimized } from "@/hooks/useCartOptimized";
 import { useCartItems } from "@/hooks/useCartItems";
 import { useDeliveryFee } from "@/hooks/useDeliveryFee";
+import { useCartCalculations } from "@/hooks/useCartCalculations";
+import { httpClient } from "@/utils/httpClient";
+
+interface CartData {
+  id: number;
+  items: Array<{
+    id: number;
+    product: number;
+    product_name: string;
+    product_price: string;
+    quantity: string;
+    total_price: string;
+    added_date: string;
+  }>;
+  notes?: string;
+  delivery_date?: string | null;
+  is_home_delivery?: boolean;
+  delivery_fee?: string;
+  discount?: string;
+  sum_price?: string;
+  total_price?: string;
+  total_items?: number;
+  created_at?: string;
+  updated_at?: string;
+}
 
 export default function CartPage() {
+  const { user } = useAuth();
   const {
     products,
     loading: productsLoading,
-    stats,
     clearCart,
     cart,
   } = useCartOptimized();
@@ -30,17 +62,61 @@ export default function CartPage() {
   const [couponCode, setCouponCode] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
   const [savedItems, setSavedItems] = useState<number[]>([]);
+  const [cartData, setCartData] = useState<CartData | null>(null);
 
-  const discount = appliedCoupon ? stats.subtotal * 0.1 : 0; // 10% discount for demo
+  // Fetch cart data with metadata
+  const fetchCartData = useCallback(async () => {
+    if (!user) return;
 
-  // Convert products to CartProduct format for delivery fee calculation
-  const cartProducts = filteredProducts.map((product) => ({
-    id: product.id,
-    name: product.name,
-    price: parseFloat(product.price),
-    categories: product.categories || [],
-    quantity: cart.find((item) => item.productId === product.id)?.quantity || 0,
-  }));
+    try {
+      const data = await httpClient.get<CartData>("/api/cart/");
+      setCartData(data);
+      
+      // If cart has discount, set applied coupon
+      if (data.discount && parseFloat(data.discount) > 0) {
+        setAppliedCoupon("save10"); // Assume save10 if discount exists
+      }
+    } catch (error) {
+      console.error("Failed to fetch cart data:", error);
+    }
+  }, [user]);
+
+  // Fetch cart data when component mounts
+  useEffect(() => {
+    if (user) {
+      fetchCartData();
+    }
+  }, [user, fetchCartData]);
+
+  // Use optimized cart calculations
+  const { subtotal, totalItems, cartProducts } = useCartCalculations(
+    filteredProducts,
+    cart
+  );
+
+  // Use discount from cart if available, otherwise calculate from applied coupon
+  // If coupon is applied but cart discount doesn't match current subtotal, recalculate
+  const calculatedDiscount = appliedCoupon ? subtotal * 0.1 : 0;
+  const cartDiscount = cartData?.discount ? parseFloat(cartData.discount) : 0;
+  
+  // Update cart discount if coupon is applied and discount doesn't match
+  useEffect(() => {
+    if (appliedCoupon && user && subtotal > 0) {
+      const expectedDiscount = subtotal * 0.1;
+      if (Math.abs(cartDiscount - expectedDiscount) > 0.01) {
+        // Discount needs to be updated
+        httpClient.put("/api/cart/", {
+          discount: expectedDiscount,
+        }).then(() => {
+          fetchCartData();
+        }).catch((error) => {
+          console.error("Failed to update discount:", error);
+        });
+      }
+    }
+  }, [subtotal, appliedCoupon, user, cartDiscount, fetchCartData]);
+  
+  const discount = cartDiscount > 0 ? cartDiscount : calculatedDiscount;
 
   // Dynamic delivery fee calculation
   const {
@@ -49,22 +125,69 @@ export default function CartPage() {
     totalPrice: calculatedTotal,
   } = useDeliveryFee({
     products: cartProducts,
-    subtotal: stats.subtotal,
+    subtotal: subtotal,
     discount: discount,
   });
 
   // Use calculated total instead of stats.total
   const total = calculatedTotal;
 
-  const handleApplyCoupon = () => {
+  // Sync calculated delivery fee to backend cart
+  // This ensures checkout page has the correct delivery fee
+  const cartDeliveryFee = cartData?.delivery_fee ? parseFloat(cartData.delivery_fee) : 0;
+  useEffect(() => {
+    if (user && cartProducts.length > 0 && deliveryCalculation.deliveryFee !== undefined) {
+      const calculatedFee = deliveryCalculation.deliveryFee;
+      // Only update if the values don't match (with small tolerance for floating point)
+      if (Math.abs(cartDeliveryFee - calculatedFee) > 0.01) {
+        httpClient.put("/api/cart/", {
+          delivery_fee: calculatedFee,
+          is_home_delivery: deliveryCalculation.isHomeDelivery,
+          recalculate_delivery: false, // We're setting it explicitly, no need to recalculate
+        }).then(() => {
+          fetchCartData();
+        }).catch((error) => {
+          console.error("Failed to update delivery fee:", error);
+        });
+      }
+    }
+  }, [user, cartProducts.length, deliveryCalculation.deliveryFee, deliveryCalculation.isHomeDelivery, cartDeliveryFee, fetchCartData]);
+
+  const handleApplyCoupon = async () => {
     if (couponCode.toLowerCase() === "save10") {
-      setAppliedCoupon(couponCode);
-      setCouponCode("");
+      const discountAmount = subtotal * 0.1; // 10% discount
+      
+      try {
+        // Save discount to cart
+        await httpClient.put("/api/cart/", {
+          discount: discountAmount,
+        });
+        
+        setAppliedCoupon(couponCode);
+        setCouponCode("");
+        
+        // Refetch cart data to get updated values
+        await fetchCartData();
+      } catch (error) {
+        console.error("Failed to apply coupon:", error);
+      }
     }
   };
 
-  const handleRemoveCoupon = () => {
-    setAppliedCoupon(null);
+  const handleRemoveCoupon = async () => {
+    try {
+      // Remove discount from cart
+      await httpClient.put("/api/cart/", {
+        discount: 0,
+      });
+      
+      setAppliedCoupon(null);
+      
+      // Refetch cart data to get updated values
+      await fetchCartData();
+    } catch (error) {
+      console.error("Failed to remove coupon:", error);
+    }
   };
 
   const handleSaveForLater = useCallback(
@@ -95,12 +218,7 @@ export default function CartPage() {
           >
             Shopping Cart
           </h1>
-          <p
-            className="mt-2"
-            style={{ color: "var(--foreground)", opacity: 0.7 }}
-          >
-            {cart.length} {cart.length === 1 ? "item" : "items"} in your cart
-          </p>
+          <CartItemsCountDisplay totalItems={totalItems} />
         </div>
 
         {productsLoading ? (
@@ -383,28 +501,6 @@ export default function CartPage() {
                       />
                     </div> */}
 
-                    {/* Order Notes - Based on Order Model */}
-                    <div className="space-y-2">
-                      <label
-                        htmlFor="orderNotes"
-                        className="block text-sm font-medium"
-                        style={{ color: "var(--foreground)" }}
-                      >
-                        Order Notes (Optional)
-                      </label>
-                      <textarea
-                        id="orderNotes"
-                        rows={3}
-                        placeholder="Any special instructions for your order..."
-                        className="w-full px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:border-transparent"
-                        style={{
-                          background: "var(--card-bg)",
-                          color: "var(--foreground)",
-                          border: "1px solid var(--sidebar-border)",
-                        }}
-                      />
-                    </div>
-
                     {/* Coupon Code */}
                     <div>
                       <label
@@ -495,63 +591,19 @@ export default function CartPage() {
 
                     {/* Order Summary - Matching Order Model */}
                     <div className="space-y-3">
-                      <div className="flex justify-between text-sm">
-                        <span
-                          style={{ color: "var(--foreground)", opacity: 0.7 }}
-                        >
-                          Subtotal
-                        </span>
-                        <span
-                          className="font-medium"
-                          style={{ color: "var(--foreground)" }}
-                        >
-                          £{stats.subtotal.toFixed(2)}
-                        </span>
-                      </div>
+                      <SubtotalDisplay subtotal={subtotal} />
 
                       {/* Dynamic Delivery Fee - Based on Order Model Logic */}
-                      <div className="flex justify-between text-sm">
-                        <span
-                          style={{ color: "var(--foreground)", opacity: 0.7 }}
-                        >
-                          Delivery Fee
-                        </span>
-                        <span
-                          className="font-medium"
-                          style={{ color: "var(--foreground)" }}
-                        >
-                          {deliveryBreakdown.isFree
-                            ? "Free"
-                            : `£${deliveryCalculation.deliveryFee.toFixed(2)}`}
-                        </span>
-                      </div>
-
-                      {/* Delivery Fee Breakdown */}
-                      {deliveryCalculation.deliveryFee > 0 && (
-                        <div
-                          className="text-xs"
-                          style={{ color: "var(--foreground)", opacity: 0.6 }}
-                        >
-                          {deliveryBreakdown.reasoning}
-                          {deliveryBreakdown.hasSausages && (
-                            <span>
-                              {" "}
-                              • Weight: {deliveryBreakdown.weight.toFixed(1)}kg
-                            </span>
-                          )}
-                        </div>
-                      )}
+                      <DeliveryFeeDisplay
+                        deliveryFee={deliveryCalculation.deliveryFee}
+                        isFree={deliveryBreakdown.isFree}
+                        reasoning={deliveryBreakdown.reasoning}
+                        hasSausages={deliveryBreakdown.hasSausages}
+                        weight={deliveryBreakdown.weight}
+                      />
 
                       {/* Discount - Based on Order Model */}
-                      {discount > 0 && (
-                        <div
-                          className="flex justify-between text-sm"
-                          style={{ color: "var(--success)" }}
-                        >
-                          <span>Discount</span>
-                          <span>-£{discount.toFixed(2)}</span>
-                        </div>
-                      )}
+                      <DiscountDisplay discount={discount} />
 
                       {/* Total - Order Model Calculation: sum_price + delivery_fee - discount 
                           Based on Order.total_price = sum_price + delivery_fee - discount
@@ -560,19 +612,7 @@ export default function CartPage() {
                           - Other products: is_home_delivery=True, delivery_fee=£10
                           - Free delivery if total > £220
                       */}
-                      <div
-                        className="pt-3"
-                        style={{ borderTop: "1px solid var(--sidebar-border)" }}
-                      >
-                        <div className="flex justify-between text-lg font-semibold">
-                          <span style={{ color: "var(--foreground)" }}>
-                            Total
-                          </span>
-                          <span style={{ color: "var(--foreground)" }}>
-                            £{total.toFixed(2)}
-                          </span>
-                        </div>
-                      </div>
+                      <TotalDisplay total={total} />
                     </div>
 
                     {/* Trust Signals */}
@@ -617,23 +657,7 @@ export default function CartPage() {
 
                     {/* Action Buttons */}
                     <div className="space-y-3 pt-4">
-                      <Link
-                        href="/checkout"
-                        className="block w-full py-3 px-4 rounded-lg font-semibold transition-colors text-center"
-                        style={{
-                          background: "var(--primary)",
-                          color: "white",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background =
-                            "var(--primary-hover)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = "var(--primary)";
-                        }}
-                      >
-                        Proceed to Checkout ({stats.totalItems} items)
-                      </Link>
+                      <CheckoutButton totalItems={totalItems} />
                       <button
                         className="w-full py-2 px-4 rounded transition-colors"
                         style={{

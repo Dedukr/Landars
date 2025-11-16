@@ -481,6 +481,89 @@ class CartView(APIView):
                 {"error": "Item not in cart"}, status=status.HTTP_404_NOT_FOUND
             )
 
+    def put(self, request):
+        """Update cart metadata (notes, delivery_fee, discount, is_home_delivery, delivery_date)."""
+        if not request.user.is_authenticated:
+            return Response(
+                {"error": "Authentication required"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        try:
+            cart = Cart.objects.get(user=request.user)
+
+            # Update fields if provided
+            if "notes" in request.data:
+                cart.notes = request.data.get("notes", "")
+            if "delivery_date" in request.data:
+                delivery_date = request.data.get("delivery_date")
+                cart.delivery_date = delivery_date if delivery_date else None
+            if "discount" in request.data:
+                from decimal import Decimal
+
+                cart.discount = Decimal(str(request.data.get("discount", 0)))
+            if "delivery_fee" in request.data:
+                from decimal import Decimal
+
+                cart.delivery_fee = Decimal(str(request.data.get("delivery_fee", 0)))
+            if "is_home_delivery" in request.data:
+                cart.is_home_delivery = request.data.get("is_home_delivery", True)
+
+            # If recalculate_delivery is True, calculate delivery fee and type automatically
+            if request.data.get("recalculate_delivery", False):
+                self._calculate_delivery_type_and_fee(cart)
+
+            cart.save()
+            serializer = CartSerializer(cart)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        except Cart.DoesNotExist:
+            return Response(
+                {"error": "Cart not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    def _calculate_delivery_type_and_fee(self, cart):
+        """
+        Calculate delivery type and fee automatically based on cart contents.
+        Implements the same logic as OrderAdmin.save_related method.
+        """
+        items = cart.items.all()
+
+        if not items.exists():
+            cart.is_home_delivery = True
+            cart.delivery_fee = 0
+            return
+
+        # Sausage category name
+        post_suitable_category = "Sausages and Marinated products"
+        # Check if ALL products are sausages (only sausages)
+        all_products_are_sausages = True
+        for item in items:
+            category_names = item.product.categories.values_list("name", flat=True)
+            if post_suitable_category not in [name.lower() for name in category_names]:
+                all_products_are_sausages = False
+                break
+
+        if all_products_are_sausages:
+            # ALL products are sausages, use post delivery
+            cart.is_home_delivery = False
+            if cart.sum_price > 220:
+                cart.delivery_fee = 0
+            else:
+                total_weight = sum(item.quantity for item in items)
+                if total_weight <= 2:
+                    cart.delivery_fee = 5
+                elif total_weight <= 10:
+                    cart.delivery_fee = 8
+                else:
+                    cart.delivery_fee = 15
+        else:
+            # Mixed products or no sausages, use home delivery
+            cart.is_home_delivery = True
+            cart.delivery_fee = 10
+
     def delete(self, request):
         """Remove a product from cart or clear entire cart."""
         if not request.user.is_authenticated:
@@ -604,14 +687,35 @@ class OrderListView(APIView):
                     {"error": "Cart is empty"}, status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Create order with automatic delivery type and fee calculation
+            # Create order using values from cart (ensure consistency)
+            # Prioritize cart values as the single source of truth - all cart fields are saved to order
             order_data = {
                 "customer": request.user,
-                "notes": request.data.get("notes", ""),
-                "delivery_date": request.data.get("delivery_date"),
-                "discount": request.data.get("discount", 0),
+                "notes": cart.notes or request.data.get("notes", ""),
+                "delivery_date": cart.delivery_date or request.data.get("delivery_date"),
+                "discount": cart.discount or request.data.get("discount", 0),
+                "is_home_delivery": cart.is_home_delivery,
+                "delivery_fee": cart.delivery_fee or request.data.get("delivery_fee", 0),
                 "status": "pending",
             }
+
+            # Handle payment information if provided
+            payment_intent_id = request.data.get("payment_intent_id")
+            payment_status = request.data.get("payment_status")
+            
+            if payment_intent_id:
+                order_data["payment_intent_id"] = payment_intent_id
+            
+            if payment_status:
+                # Map "paid" to "succeeded" for payment_status field (Stripe uses "succeeded")
+                if payment_status == "paid":
+                    order_data["payment_status"] = "succeeded"
+                else:
+                    order_data["payment_status"] = payment_status
+                
+                # If payment is succeeded/paid, update order status
+                if payment_status in ["succeeded", "paid"]:
+                    order_data["status"] = "paid"
 
             order = Order.objects.create(**order_data)
 
@@ -621,11 +725,14 @@ class OrderListView(APIView):
                     order=order, product=cart_item.product, quantity=cart_item.quantity
                 )
 
-            # Apply automatic delivery type and fee calculation (same as admin logic)
-            self._calculate_delivery_type_and_fee(order)
+            # Only recalculate if delivery_fee_manual is False (admin override)
+            # Otherwise use cart values
+            if not order.delivery_fee_manual:
+                self._calculate_delivery_type_and_fee(order)
 
-            # Clear the cart
-            cart.items.all().delete()
+            # Delete the cart instance completely after order is created
+            # This ensures all cart data is transferred to the order
+            cart.delete()
 
             serializer = OrderSerializer(order)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -635,7 +742,15 @@ class OrderListView(APIView):
                 {"error": "Cart not found"}, status=status.HTTP_404_NOT_FOUND
             )
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            import traceback
+            error_details = str(e)
+            # Log the full traceback for debugging
+            print(f"Error creating order: {error_details}")
+            print(traceback.format_exc())
+            return Response(
+                {"error": f"Failed to create order: {error_details}"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
     def _calculate_delivery_type_and_fee(self, order):
         """

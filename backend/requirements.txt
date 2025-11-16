@@ -39,3 +39,5 @@ urllib3==2.4.0
 weasyprint==65.1
 webencodings==0.5.1
 zopfli==0.2.3.post1
+stripe==13.0.1
+django-ses==3.5.0

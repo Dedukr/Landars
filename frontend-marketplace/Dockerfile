@@ -5,8 +5,10 @@ WORKDIR /app
 # Accept build arguments for URL configuration
 ARG NEXT_PUBLIC_API_BASE_URL
 ARG URL_BASE
+ARG NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 ENV URL_BASE=$URL_BASE
+ENV NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=$NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
 
 # Install dependencies and build app in one layer for better caching
 COPY package.json package-lock.json ./

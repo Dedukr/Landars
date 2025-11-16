@@ -258,6 +258,7 @@ class EmailVerificationToken(models.Model):
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.TextField(null=True, blank=True)
     used_at = models.DateTimeField(null=True, blank=True)
+    email_sent_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     class Meta:
         ordering = ["-created_at"]

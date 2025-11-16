@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useCart } from "@/contexts/CartContext";
 
 interface Product {
@@ -12,9 +12,17 @@ interface Product {
 }
 
 export const useCartOptimized = () => {
-  const { cart, clearCart } = useCart();
+  const { cart, clearCart, isLoading: cartIsLoading } = useCart();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const prevProductIdsRef = useRef<string | null>(null);
+
+  // Stable, sorted product id set string to detect only ID changes (not quantities)
+  const cartProductIdsKey = useMemo(() => {
+    if (cart.length === 0) return "";
+    const ids = cart.map((item) => item.productId).sort((a, b) => a - b);
+    return ids.join(",");
+  }, [cart]);
 
   // Memoized stats calculation
   const calculateStats = useCallback(
@@ -39,10 +47,16 @@ export const useCartOptimized = () => {
     [cart]
   );
 
-  // Initial products fetch - only run once on mount
+  // Fetch products only when the SET of product IDs changes (not quantities)
   useEffect(() => {
-    async function fetchInitialProducts() {
-      if (cart.length === 0) {
+    // If cart context is still loading, wait for it
+    if (cartIsLoading) {
+      setLoading(true);
+      return;
+    }
+
+    async function fetchProductsByIds(productIdsKey: string) {
+      if (!productIdsKey) {
         setProducts([]);
         setLoading(false);
         return;
@@ -50,23 +64,23 @@ export const useCartOptimized = () => {
 
       try {
         setLoading(true);
-        // Fetch products individually since we don't have a bulk endpoint
-        const productPromises = cart.map(async (item) => {
+        const ids = productIdsKey.split(",").map((id) => parseInt(id, 10));
+        const productPromises = ids.map(async (productId) => {
           try {
-            const res = await fetch(`/api/products/${item.productId}/`);
+            const res = await fetch(`/api/products/${productId}/`);
             if (res.ok) {
               return await res.json();
             }
-            console.warn(`Product ${item.productId} not found`);
+            console.warn(`Product ${productId} not found`);
             return null;
           } catch (error) {
-            console.error(`Failed to fetch product ${item.productId}:`, error);
+            console.error(`Failed to fetch product ${productId}:`, error);
             return null;
           }
         });
 
         const productResults = await Promise.all(productPromises);
-        const validProducts = productResults.filter(Boolean);
+        const validProducts = productResults.filter(Boolean) as Product[];
         setProducts(validProducts);
       } catch (error) {
         console.error("Error fetching products:", error);
@@ -75,19 +89,22 @@ export const useCartOptimized = () => {
         setLoading(false);
       }
     }
-    fetchInitialProducts();
-  }, [cart]); // Include dependencies
 
-  // Handle cart changes to sync products with context
+    // Always run on initial mount (when prevProductIdsRef.current is null)
+    // or when product IDs actually change
+    if (prevProductIdsRef.current !== cartProductIdsKey) {
+      prevProductIdsRef.current = cartProductIdsKey;
+      fetchProductsByIds(cartProductIdsKey);
+    }
+  }, [cartProductIdsKey, cartIsLoading]);
+
+  // Keep products array aligned with current cart IDs (no loading toggles)
   useEffect(() => {
     if (products.length > 0) {
-      // Filter products based on current cart
-      const cartProductIds = cart.map((item) => item.productId);
+      const cartProductIds = new Set(cart.map((item) => item.productId));
       const filteredProducts = products.filter((p: Product) =>
-        cartProductIds.includes(p.id)
+        cartProductIds.has(p.id)
       );
-
-      // Only update if the filtered list is different
       if (filteredProducts.length !== products.length) {
         setProducts(filteredProducts);
       }

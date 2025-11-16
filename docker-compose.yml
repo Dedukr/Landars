@@ -82,10 +82,10 @@ services:
       args:
         - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
         - URL_BASE=${URL_BASE}
+        - NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}
     ports:
       - "3000:3000"
     environment:
-      - URL_BASE=${URL_BASE}
       - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
     depends_on:
       - backend

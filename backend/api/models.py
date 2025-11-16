@@ -166,6 +166,25 @@ class Order(models.Model):
         max_length=200, blank=True, null=True
     )  # URL to the invoice PDF
 
+    # Stripe payment fields
+    payment_intent_id = models.CharField(
+        max_length=255, blank=True, null=True, help_text="Stripe Payment Intent ID"
+    )
+    payment_status = models.CharField(
+        max_length=50,
+        choices=[
+            ("pending", "Pending"),
+            ("succeeded", "Succeeded"),
+            ("failed", "Failed"),
+            ("canceled", "Canceled"),
+        ],
+        default="pending",
+        help_text="Stripe payment status",
+    )
+    stripe_customer_id = models.CharField(
+        max_length=255, blank=True, null=True, help_text="Stripe Customer ID"
+    )
+
     class Meta:
         verbose_name_plural = "Orders"
         ordering = ["-delivery_date"]
@@ -315,6 +334,15 @@ class Cart(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    notes = models.CharField(max_length=200, blank=True, null=True)
+    delivery_date = models.DateField(null=True, blank=True)
+    is_home_delivery = models.BooleanField(default=True, verbose_name="Home Delivery")
+    delivery_fee = models.DecimalField(
+        max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0)]
+    )
+    discount = models.DecimalField(
+        max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0)]
+    )
 
     class Meta:
         verbose_name_plural = "Carts"
@@ -323,9 +351,14 @@ class Cart(models.Model):
         return f"Cart for {self.user.name}"
 
     @property
-    def total_price(self):
-        """Calculate the total price of all items in the cart."""
+    def sum_price(self):
+        """Calculate the total items price (before delivery fee and discount)."""
         return sum(item.get_total_price() for item in self.items.all())
+
+    @property
+    def total_price(self):
+        """Calculate the total price of the cart including delivery fee and discount."""
+        return self.sum_price + self.delivery_fee - self.discount
 
     @property
     def total_items(self):

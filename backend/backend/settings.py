@@ -302,7 +302,7 @@ STATIC_ROOT = os.path.join(BASE_DIR, "static")
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
-# AWS S3 Configuration
+# AWS Configuration
 
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
@@ -314,8 +314,32 @@ AWS_S3_FILE_OVERWRITE = False
 AWS_DEFAULT_ACL = None
 AWS_QUERYSTRING_AUTH = False
 
+S3_STORAGE_CLASS = os.getenv("S3_STORAGE_CLASS")  # Storage class
+S3_BACKUP_DIR = os.getenv("S3_BACKUP_DIR")   # Directory prefix in S3
+
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND")  
+AWS_SES_REGION_NAME = os.getenv("AWS_SES_REGION_NAME")
+AWS_SES_REGION_ENDPOINT = os.getenv("AWS_SES_REGION_ENDPOINT")
+
+SUPPORT_FROM_EMAIL = os.getenv("SUPPORT_FROM_EMAIL")
+NOREPLY_FROM_EMAIL = os.getenv("NOREPLY_FROM_EMAIL")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL")
+
+# optional: one place to define a standard reply-to for system emails
+SUPPORT_REPLY_TO = os.getenv("SUPPORT_REPLY_TO")
+
+# Email Authentication
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
+
+EMAIL_SUBJECT_PREFIX = os.getenv("EMAIL_SUBJECT_PREFIX")
+
+# Email Delivery Settings
+EMAIL_TIMEOUT = os.getenv("EMAIL_TIMEOUT")
+EMAIL_USE_LOCALTIME = os.getenv("EMAIL_USE_LOCALTIME")
+
 # AWS S3 Media files storage
-DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+DEFAULT_FILE_STORAGE = os.getenv("DEFAULT_FILE_STORAGE")
 MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/"
 
 BUSINESS_INFO = {
@@ -331,25 +355,6 @@ BUSINESS_INFO = {
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
-# Email Configuration
-EMAIL_BACKEND = os.getenv(
-    "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
-)
-EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
-EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True") == "True"
-EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "False") == "True"
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@landarsfood.com")
-
-# Email settings for better deliverability
-EMAIL_TIMEOUT = 30
-EMAIL_USE_LOCALTIME = True
-EMAIL_SUBJECT_PREFIX = os.getenv("EMAIL_SUBJECT_PREFIX", "[Landars Food] ")
-SERVER_EMAIL = os.getenv("SERVER_EMAIL", DEFAULT_FROM_EMAIL)
-ADMINS = []  # e.g., [("Ops", "ops@example.com")]
-
 # Password Reset Settings
 PASSWORD_RESET_TIMEOUT = 900  # 15 minutes in seconds (enhanced security)
 PASSWORD_RESET_COOLDOWN = 60  # 1 minute cooldown between requests
@@ -363,6 +368,11 @@ EMAIL_VERIFICATION_TIMEOUT = 86400  # 24 hours in seconds
 EMAIL_VERIFICATION_COOLDOWN = 60  # 1 minute cooldown between resend requests
 EMAIL_VERIFICATION_RATE_LIMIT = "5/hour"  # 5 verification requests per hour per IP
 EMAIL_VERIFICATION_RESEND_RATE_LIMIT = "3/hour"  # 3 resend requests per hour per IP
+
+# Stripe Configuration
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
+STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
 
 # Frontend URL for email verification links - derive from URL_BASE
