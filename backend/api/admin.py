@@ -359,6 +359,68 @@ class OrderAdmin(admin.ModelAdmin):
         self.request = request  # Save request for later use
         return super().get_queryset(request)
 
+    def _is_single_date_filtered(self, request):
+        """
+        Check if a specific single date is filtered (not a date range).
+        Returns True if:
+        - DateFilter is set to "today"
+        - date_hierarchy has all three parameters (year, month, day)
+        """
+        # Check DateFilter parameter
+        date_filter_value = request.GET.get("future_date")
+        if date_filter_value == "today":
+            return True
+        
+        # Check date_hierarchy parameters (delivery_date__year, delivery_date__month, delivery_date__day)
+        # If all three are present, it's a specific date
+        year = request.GET.get("delivery_date__year")
+        month = request.GET.get("delivery_date__month")
+        day = request.GET.get("delivery_date__day")
+        
+        if year and month and day:
+            return True
+        
+        return False
+
+    def get_list_display(self, request):
+        """
+        Dynamically show delivery_date_order_id instead of id when a specific date is filtered.
+        Show id for wider date ranges.
+        """
+        list_display = list(super().get_list_display(request))
+        
+        is_single_date = self._is_single_date_filtered(request)
+        
+        # If single date is filtered, replace 'id' with 'delivery_date_order_id'
+        if is_single_date:
+            if "id" in list_display:
+                id_index = list_display.index("id")
+                list_display[id_index] = "delivery_date_order_id"
+        else:
+            # For wider ranges, ensure 'id' is shown (it's already in the default list_display)
+            if "delivery_date_order_id" in list_display:
+                delivery_id_index = list_display.index("delivery_date_order_id")
+                list_display[delivery_id_index] = "id"
+        
+        return list_display
+
+    def get_list_display_links(self, request, list_display):
+        """
+        Dynamically update list_display_links based on whether we're showing id or delivery_date_order_id.
+        """
+        links = list(super().get_list_display_links(request, list_display))
+        
+        is_single_date = self._is_single_date_filtered(request)
+        
+        # Replace 'id' with 'delivery_date_order_id' in links if single date is filtered
+        if is_single_date:
+            links = [
+                "delivery_date_order_id" if link == "id" else link
+                for link in links
+            ]
+        
+        return links
+
     def customer_name(self, obj):
         request = getattr(self, "request", None)
         if request and request.user.has_perm("account.change_customuser"):
@@ -441,7 +503,17 @@ class OrderAdmin(admin.ModelAdmin):
     get_invoice.short_description = "Invoice"
 
     def export_orders_pdf(self, request, queryset):
-        html_string = render_to_string("orders.html", {"orders": queryset})
+        # Check if all orders have the same delivery_date
+        delivery_dates = queryset.values_list("delivery_date", flat=True).distinct()
+        use_delivery_date_id = len(delivery_dates) == 1
+        
+        html_string = render_to_string(
+            "orders.html", 
+            {
+                "orders": queryset,
+                "use_delivery_date_id": use_delivery_date_id,  # Flag for template logic
+            }
+        )
         from weasyprint import HTML
 
         # Generate PDF from HTML
@@ -451,7 +523,6 @@ class OrderAdmin(admin.ModelAdmin):
             output.seek(0)
             # Use the delivery date of the first order for the filename
 
-            delivery_dates = queryset.values_list("delivery_date", flat=True).distinct()
             response = HttpResponse(output.read(), content_type="application/pdf")
             response["Content-Disposition"] = (
                 f'attachment; filename="{", ".join(sorted({d.strftime("%d-%b-%Y") for d in delivery_dates}))}_Orders.pdf"'

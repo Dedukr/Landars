@@ -168,13 +168,26 @@ class Order(models.Model):
     invoice_link = models.CharField(
         max_length=200, blank=True, null=True
     )  # URL to the invoice PDF
+    delivery_date_order_id = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Auto-incrementing order ID per delivery date (starts at 1 for each date)",
+    )
 
     class Meta:
         verbose_name_plural = "Orders"
         # ordering = ["-delivery_date"]
         # Duplicate-prevention removed
+        indexes = [
+            models.Index(
+                fields=["delivery_date", "delivery_date_order_id"],
+                name="order_delivery_date_id_idx",
+            ),
+        ]
 
     def __str__(self):
+        if self.delivery_date_order_id:
+            return f"Order #{self.delivery_date_order_id} ({self.delivery_date}) by {self.customer}"
         return f"Order #{self.id} by {self.customer}"
 
     @property
@@ -259,9 +272,39 @@ class Order(models.Model):
 
     def save(self, *args, **kwargs):
         """
-        Override save to prevent duplicate orders and ensure proper delivery fee calculation.
+        Override save to:
+        1. Auto-assign delivery_date_order_id (per delivery_date auto-increment)
+        2. Prevent duplicate orders and ensure proper delivery fee calculation.
+        
+        The delivery_date_order_id is calculated atomically using database locks
+        to ensure thread-safety in concurrent scenarios.
         """
+        from django.db import transaction
         from django.utils import timezone
+
+        # Auto-assign delivery_date_order_id for new orders
+        # Only assign if this is a new order (no pk) and delivery_date is set
+        if not self.pk and self.delivery_date and not self.delivery_date_order_id:
+            with transaction.atomic():
+                # Use select_for_update to lock rows and prevent race conditions
+                # This ensures thread-safety when multiple orders are created
+                # simultaneously for the same delivery_date
+                from django.db.models import Max
+                
+                # Lock all orders with the same delivery_date to prevent concurrent inserts
+                # from getting the same delivery_date_order_id
+                locked_orders = Order.objects.filter(
+                    delivery_date=self.delivery_date
+                ).select_for_update()
+                
+                # Get the maximum delivery_date_order_id for this delivery_date
+                # This query runs within the locked transaction
+                max_order = locked_orders.aggregate(max_id=Max("delivery_date_order_id"))
+                max_id = max_order["max_id"]
+                
+                # If no orders exist for this delivery_date, start at 1
+                # Otherwise, increment by 1
+                self.delivery_date_order_id = (max_id + 1) if max_id else 1
 
         # Check for potential duplicates before saving
         if not self.pk and self.customer:
