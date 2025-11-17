@@ -503,29 +503,39 @@ class OrderAdmin(admin.ModelAdmin):
     get_invoice.short_description = "Invoice"
 
     def export_orders_pdf(self, request, queryset):
-        # Check if all orders have the same delivery_date
-        delivery_dates = queryset.values_list("delivery_date", flat=True).distinct()
-        use_delivery_date_id = len(delivery_dates) == 1
-        
+        orders_qs = queryset.select_related("customer").prefetch_related("items")
+        orders_list = list(orders_qs.order_by("id"))
+
+        if not orders_list:
+            self.message_user(request, "No orders selected.", level=messages.ERROR)
+            return
+
+        # Ensure every selected order shares the same delivery_date
+        unique_delivery_dates = {order.delivery_date for order in orders_list}
+        if len(unique_delivery_dates) != 1:
+            self.message_user(
+                request,
+                "Error: All selected orders must have the same delivery date. Please select orders from one day only.",
+                level=messages.ERROR,
+            )
+            return
+
+        delivery_date = unique_delivery_dates.pop()
         html_string = render_to_string(
             "orders.html", 
             {
-                "orders": queryset,
-                "use_delivery_date_id": use_delivery_date_id,  # Flag for template logic
+                "orders": orders_list,
             }
         )
         from weasyprint import HTML
 
-        # Generate PDF from HTML
         with tempfile.NamedTemporaryFile(delete=True) as output:
             HTML(string=html_string).write_pdf(target=output.name)
-
             output.seek(0)
-            # Use the delivery date of the first order for the filename
-
+            
             response = HttpResponse(output.read(), content_type="application/pdf")
             response["Content-Disposition"] = (
-                f'attachment; filename="{", ".join(sorted({d.strftime("%d-%b-%Y") for d in delivery_dates}))}_Orders.pdf"'
+                f'attachment; filename="{delivery_date.strftime("%d-%b-%Y")}_Orders.pdf"'
             )
             return response
 
