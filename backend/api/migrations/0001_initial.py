@@ -16,75 +16,209 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='Product',
+            name="Product",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=255)),
-                ('description', models.TextField(blank=True, null=True)),
-                ('price', models.DecimalField(decimal_places=2, max_digits=10, validators=[django.core.validators.MinValueValidator(0)])),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("name", models.CharField(max_length=255)),
+                ("description", models.TextField(blank=True, null=True)),
+                (
+                    "price",
+                    models.DecimalField(
+                        decimal_places=2,
+                        max_digits=10,
+                        validators=[django.core.validators.MinValueValidator(0)],
+                    ),
+                ),
             ],
             options={
-                'verbose_name_plural': 'Products',
-                'ordering': ['name'],
+                "verbose_name_plural": "Products",
+                "ordering": ["name"],
             },
         ),
         migrations.CreateModel(
-            name='Order',
+            name="Order",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('notes', models.CharField(blank=True, max_length=200, null=True)),
-                ('delivery_date', models.DateField()),
-                ('is_home_delivery', models.BooleanField(default=True, verbose_name='Home Delivery')),
-                ('delivery_fee_manual', models.BooleanField(default=False, help_text='Check to set the delivery fee manually')),
-                ('delivery_fee', models.DecimalField(decimal_places=2, default=0, max_digits=5, validators=[django.core.validators.MinValueValidator(0)])),
-                ('discount', models.DecimalField(decimal_places=2, default=0, max_digits=5, validators=[django.core.validators.MinValueValidator(0)])),
-                ('order_date', models.DateField(auto_now_add=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True, help_text='Exact timestamp when order was created')),
-                ('status', models.CharField(choices=[('pending', 'Pending'), ('paid', 'Paid'), ('cancelled', 'Cancelled')], default='pending', max_length=50)),
-                ('invoice_link', models.CharField(blank=True, max_length=200, null=True)),
-                ('delivery_date_order_id', models.PositiveIntegerField(blank=True, help_text='Auto-incrementing order ID per delivery date (starts at 1 for each date)', null=True)),
-                ('customer', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='orders', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("notes", models.CharField(blank=True, max_length=200, null=True)),
+                ("delivery_date", models.DateField()),
+                (
+                    "is_home_delivery",
+                    models.BooleanField(default=True, verbose_name="Home Delivery"),
+                ),
+                (
+                    "delivery_fee_manual",
+                    models.BooleanField(
+                        default=False,
+                        help_text="Check to set the delivery fee manually",
+                    ),
+                ),
+                (
+                    "delivery_fee",
+                    models.DecimalField(
+                        decimal_places=2,
+                        default=0,
+                        max_digits=5,
+                        validators=[django.core.validators.MinValueValidator(0)],
+                    ),
+                ),
+                (
+                    "discount",
+                    models.DecimalField(
+                        decimal_places=2,
+                        default=0,
+                        max_digits=5,
+                        validators=[django.core.validators.MinValueValidator(0)],
+                    ),
+                ),
+                ("order_date", models.DateField(auto_now_add=True, null=True)),
+                (
+                    "created_at",
+                    models.DateTimeField(
+                        auto_now_add=True,
+                        help_text="Exact timestamp when order was created",
+                    ),
+                ),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("pending", "Pending"),
+                            ("paid", "Paid"),
+                            ("cancelled", "Cancelled"),
+                        ],
+                        default="pending",
+                        max_length=50,
+                    ),
+                ),
+                (
+                    "invoice_link",
+                    models.CharField(blank=True, max_length=200, null=True),
+                ),
+                (
+                    "delivery_date_order_id",
+                    models.PositiveIntegerField(
+                        blank=True,
+                        help_text="Auto-incrementing order ID per delivery date (starts at 1 for each date)",
+                        null=True,
+                    ),
+                ),
+                (
+                    "customer",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="orders",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'verbose_name_plural': 'Orders',
+                "verbose_name_plural": "Orders",
             },
         ),
         migrations.CreateModel(
-            name='OrderItem',
+            name="OrderItem",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('quantity', models.DecimalField(decimal_places=2, max_digits=10, validators=[django.core.validators.MinValueValidator(0.01)])),
-                ('order', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='items', to='api.order')),
-                ('product', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, to='api.product')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "quantity",
+                    models.DecimalField(
+                        decimal_places=2,
+                        max_digits=10,
+                        validators=[django.core.validators.MinValueValidator(0.01)],
+                    ),
+                ),
+                (
+                    "order",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="items",
+                        to="api.order",
+                    ),
+                ),
+                (
+                    "product",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        to="api.product",
+                    ),
+                ),
             ],
             options={
-                'verbose_name_plural': 'Order Items',
+                "verbose_name_plural": "Order Items",
             },
         ),
         migrations.CreateModel(
-            name='ProductCategories',
+            name="ProductCategories",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=255)),
-                ('description', models.TextField(blank=True, null=True)),
-                ('parent', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='subcategories', to='api.productcategories')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("name", models.CharField(max_length=255)),
+                ("description", models.TextField(blank=True, null=True)),
+                (
+                    "parent",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="subcategories",
+                        to="api.productcategories",
+                    ),
+                ),
             ],
             options={
-                'verbose_name_plural': 'Product Categories',
-                'ordering': ['name'],
+                "verbose_name_plural": "Product Categories",
+                "ordering": ["name"],
             },
         ),
         migrations.AddField(
-            model_name='product',
-            name='categories',
-            field=models.ManyToManyField(related_name='products', to='api.productcategories'),
+            model_name="product",
+            name="categories",
+            field=models.ManyToManyField(
+                related_name="products", to="api.productcategories"
+            ),
         ),
         migrations.AddIndex(
-            model_name='order',
-            index=models.Index(fields=['delivery_date', 'delivery_date_order_id'], name='order_delivery_date_id_idx'),
+            model_name="order",
+            index=models.Index(
+                fields=["delivery_date", "delivery_date_order_id"],
+                name="order_delivery_date_id_idx",
+            ),
         ),
         migrations.AlterUniqueTogether(
-            name='orderitem',
-            unique_together={('order', 'product')},
+            name="orderitem",
+            unique_together={("order", "product")},
         ),
     ]
