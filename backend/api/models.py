@@ -171,6 +171,7 @@ class Order(models.Model):
     delivery_date_order_id = models.PositiveIntegerField(
         null=True,
         blank=True,
+        verbose_name="Order ID",
         help_text="Auto-incrementing order ID per delivery date (starts at 1 for each date)",
     )
 

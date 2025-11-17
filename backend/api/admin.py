@@ -370,16 +370,16 @@ class OrderAdmin(admin.ModelAdmin):
         date_filter_value = request.GET.get("future_date")
         if date_filter_value == "today":
             return True
-        
+
         # Check date_hierarchy parameters (delivery_date__year, delivery_date__month, delivery_date__day)
         # If all three are present, it's a specific date
         year = request.GET.get("delivery_date__year")
         month = request.GET.get("delivery_date__month")
         day = request.GET.get("delivery_date__day")
-        
+
         if year and month and day:
             return True
-        
+
         return False
 
     def get_list_display(self, request):
@@ -388,9 +388,9 @@ class OrderAdmin(admin.ModelAdmin):
         Show id for wider date ranges.
         """
         list_display = list(super().get_list_display(request))
-        
+
         is_single_date = self._is_single_date_filtered(request)
-        
+
         # If single date is filtered, replace 'id' with 'delivery_date_order_id'
         if is_single_date:
             if "id" in list_display:
@@ -401,7 +401,7 @@ class OrderAdmin(admin.ModelAdmin):
             if "delivery_date_order_id" in list_display:
                 delivery_id_index = list_display.index("delivery_date_order_id")
                 list_display[delivery_id_index] = "id"
-        
+
         return list_display
 
     def get_list_display_links(self, request, list_display):
@@ -409,16 +409,15 @@ class OrderAdmin(admin.ModelAdmin):
         Dynamically update list_display_links based on whether we're showing id or delivery_date_order_id.
         """
         links = list(super().get_list_display_links(request, list_display))
-        
+
         is_single_date = self._is_single_date_filtered(request)
-        
+
         # Replace 'id' with 'delivery_date_order_id' in links if single date is filtered
         if is_single_date:
             links = [
-                "delivery_date_order_id" if link == "id" else link
-                for link in links
+                "delivery_date_order_id" if link == "id" else link for link in links
             ]
-        
+
         return links
 
     def customer_name(self, obj):
@@ -522,17 +521,17 @@ class OrderAdmin(admin.ModelAdmin):
 
         delivery_date = unique_delivery_dates.pop()
         html_string = render_to_string(
-            "orders.html", 
+            "orders.html",
             {
                 "orders": orders_list,
-            }
+            },
         )
         from weasyprint import HTML
 
         with tempfile.NamedTemporaryFile(delete=True) as output:
             HTML(string=html_string).write_pdf(target=output.name)
             output.seek(0)
-            
+
             response = HttpResponse(output.read(), content_type="application/pdf")
             response["Content-Disposition"] = (
                 f'attachment; filename="{delivery_date.strftime("%d-%b-%Y")}_Orders.pdf"'
