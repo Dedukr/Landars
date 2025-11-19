@@ -235,45 +235,6 @@ class OrderItemInline(admin.TabularInline):
 
     get_total_price.short_description = "Total Price"
 
-    def save_formset(self, request, form, formset, change):
-        """Override to handle duplicate order items by merging quantities."""
-        if formset.is_valid():
-            instances = formset.save(commit=False)
-            merged_items = []
-
-            for instance in instances:
-                if instance.pk:  # Existing item - just save
-                    instance.save()
-                else:  # New item - check for duplicates
-                    try:
-                        # Try to get existing item with same order and product
-                        existing_item = OrderItem.objects.get(
-                            order=instance.order, product=instance.product
-                        )
-                        # Merge quantities
-                        old_quantity = existing_item.quantity
-                        existing_item.quantity += instance.quantity
-                        existing_item.save()
-                        merged_items.append(
-                            f"{existing_item.product.name}: {old_quantity} + {instance.quantity} = {existing_item.quantity}"
-                        )
-                        # Delete the new instance since we merged it
-                        instance.delete()
-                    except OrderItem.DoesNotExist:
-                        # No duplicate exists, save normally
-                        instance.save()
-
-            # Delete any items marked for deletion
-            for obj in formset.deleted_objects:
-                obj.delete()
-
-            # Show success message if items were merged
-            if merged_items:
-                messages.success(
-                    request,
-                    f"Order items merged successfully: {', '.join(merged_items)}",
-                )
-
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
@@ -448,6 +409,47 @@ class OrderAdmin(admin.ModelAdmin):
         # Don't calculate delivery fees in save_model to prevent double save
         # This will be handled in save_related after inlines are processed
         super().save_model(request, obj, form, change)
+
+    def save_formset(self, request, form, formset, change):
+        """Ensure order items merge duplicates before saving to avoid double creates."""
+        if formset.model is OrderItem:
+            instances = formset.save(commit=False)
+            merged_items = []
+
+            for instance in instances:
+                # Skip empty rows
+                if not instance.product or not instance.quantity:
+                    continue
+
+                instance.order = form.instance
+                if instance.pk:
+                    instance.save()
+                    continue
+
+                existing_item = OrderItem.objects.filter(
+                    order=instance.order, product=instance.product
+                ).first()
+
+                if existing_item:
+                    old_quantity = existing_item.quantity
+                    existing_item.quantity += instance.quantity
+                    existing_item.save()
+                    merged_items.append(
+                        f"{existing_item.product.name}: {old_quantity} + {instance.quantity} = {existing_item.quantity}"
+                    )
+                else:
+                    instance.save()
+
+            for obj in formset.deleted_objects:
+                obj.delete()
+
+            if merged_items:
+                messages.success(
+                    request,
+                    f"Order items merged successfully: {', '.join(merged_items)}",
+                )
+        else:
+            super().save_formset(request, form, formset, change)
 
     def save_related(self, request, form, formsets, change):
         """Calculate delivery fields after saving inlines and save only once."""
