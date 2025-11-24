@@ -153,7 +153,9 @@ export default function OrderDetailPage() {
     );
   }
 
-  const statusInfo = statusConfig[order.status as keyof typeof statusConfig] || statusConfig.pending;
+  const statusInfo =
+    statusConfig[order.status as keyof typeof statusConfig] ||
+    statusConfig.pending;
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-GB", {
       weekday: "long",
@@ -297,9 +299,9 @@ export default function OrderDetailPage() {
                       className="text-sm"
                       style={{ color: "var(--muted-foreground)" }}
                     >
-                      Thank you for your order. We&apos;ve received your payment and
-                      will send you a confirmation email shortly. Your order is
-                      being prepared and will be delivered on{" "}
+                      Thank you for your order. We&apos;ve received your payment
+                      and will send you a confirmation email shortly. Your order
+                      is being prepared and will be delivered on{" "}
                       {order.delivery_date
                         ? formatDate(order.delivery_date)
                         : "the selected date"}
@@ -332,7 +334,8 @@ export default function OrderDetailPage() {
                     color: "var(--foreground)",
                   }}
                 >
-                  {order.total_items} {order.total_items === 1 ? "item" : "items"}
+                  {order.total_items}{" "}
+                  {order.total_items === 1 ? "item" : "items"}
                 </span>
               </div>
 
@@ -340,9 +343,7 @@ export default function OrderDetailPage() {
                 {order.items.map((item) => {
                   // Format price - handle different possible field names
                   const productPrice =
-                    item.product_price ||
-                    item.product?.price ||
-                    "0.00";
+                    item.product_price || item.product?.price || "0.00";
                   const totalPrice =
                     item.total_price ||
                     item.get_total_price ||
@@ -363,9 +364,7 @@ export default function OrderDetailPage() {
                       product={{
                         id: item.product?.id || item.id,
                         name:
-                          item.product_name ||
-                          item.product?.name ||
-                          "Product",
+                          item.product_name || item.product?.name || "Product",
                         price: productPrice,
                         image_url:
                           item.product_image_url ||
@@ -619,16 +618,17 @@ export default function OrderDetailPage() {
                     className="text-sm font-medium"
                     style={{ color: "var(--foreground)" }}
                   >
-                    £{order.sum_price ? parseFloat(order.sum_price || "0").toFixed(2) : (
-                      order.items?.reduce((sum, item) => {
-                        const price = parseFloat(
-                          item.total_price ||
-                            item.get_total_price ||
-                            "0"
-                        );
-                        return sum + price;
-                      }, 0) || 0
-                    ).toFixed(2)}
+                    £
+                    {order.sum_price
+                      ? parseFloat(order.sum_price || "0").toFixed(2)
+                      : (
+                          order.items?.reduce((sum, item) => {
+                            const price = parseFloat(
+                              item.total_price || item.get_total_price || "0"
+                            );
+                            return sum + price;
+                          }, 0) || 0
+                        ).toFixed(2)}
                   </span>
                 </div>
 
