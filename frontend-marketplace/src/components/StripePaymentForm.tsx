@@ -67,7 +67,7 @@ export default function StripePaymentForm({
         {
           elements,
           confirmParams: {
-            return_url: `${window.location.origin}/orders/success`,
+            return_url: `${window.location.origin}/orders`,
           },
           redirect: "if_required",
         }

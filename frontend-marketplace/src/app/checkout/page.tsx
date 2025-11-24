@@ -141,6 +141,7 @@ export default function CheckoutPage() {
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [orderCompleted, setOrderCompleted] = useState(false);
   const [, setProfileData] = useState<ProfileData | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [clientSecret, setClientSecret] = useState<string | null>(null);
@@ -153,11 +154,12 @@ export default function CheckoutPage() {
     if (
       cart.length === 0 &&
       checkoutStep !== 3 &&
-      !orderDetails
+      !orderDetails &&
+      !orderCompleted
     ) {
       router.push("/cart");
     }
-  }, [cart.length, router, checkoutStep, orderDetails]);
+  }, [cart.length, router, checkoutStep, orderDetails, orderCompleted]);
 
   // Form states
   const [shippingForm, setShippingForm] = useState<ShippingFormData>({
@@ -429,6 +431,12 @@ export default function CheckoutPage() {
         is_home_delivery: cartData?.is_home_delivery ?? true,
         payment_intent_id: paymentIntent.id,
         payment_status: "paid",
+        address: {
+          address_line: shippingForm.address_line,
+          address_line2: shippingForm.address_line2,
+          city: shippingForm.city,
+          postal_code: shippingForm.postal_code,
+        },
       };
 
       const order = await httpClient.post<{ id: number }>(
@@ -436,11 +444,14 @@ export default function CheckoutPage() {
         orderData
       );
 
+      setOrderCompleted(true);
+
       // Save shipping information if checkbox is checked
       if (shippingForm.saveShippingInfo) {
         try {
           await httpClient.put("/api/auth/profile/update/", {
             name: `${shippingForm.firstName} ${shippingForm.lastName}`.trim(),
+            email: shippingForm.email,
             phone: shippingForm.phone,
             address: {
               address_line: shippingForm.address_line,

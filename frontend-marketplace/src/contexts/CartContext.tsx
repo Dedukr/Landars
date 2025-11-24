@@ -438,9 +438,20 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
 
         await httpClient.delete("/api/cart/");
       } catch (error) {
-        console.error("Failed to clear cart:", error);
-        // Revert optimistic update on error
-        setCart(previousCart);
+        const status =
+          typeof error === "object" &&
+          error !== null &&
+          "response" in error &&
+          (error as { response?: { status?: number } }).response?.status;
+
+        if (status === 404) {
+          // Cart already removed on the backend (e.g., after checkout). Treat as success.
+          console.warn("Cart already deleted on backend. Skipping revert.");
+        } else {
+          console.error("Failed to clear cart:", error);
+          // Revert optimistic update on error
+          setCart(previousCart);
+        }
       } finally {
         setIsLoading(false);
       }

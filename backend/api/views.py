@@ -1,3 +1,6 @@
+from decimal import Decimal
+
+from account.models import Address
 from django.core.cache import cache
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -689,13 +692,28 @@ class OrderListView(APIView):
 
             # Create order using values from cart (ensure consistency)
             # Prioritize cart values as the single source of truth - all cart fields are saved to order
+            # Convert discount and delivery_fee to Decimal to avoid type errors
+            discount_value = cart.discount or request.data.get("discount", 0)
+            delivery_fee_value = cart.delivery_fee or request.data.get("delivery_fee", 0)
+            
+            # Ensure values are Decimal type
+            if isinstance(discount_value, str):
+                discount_value = Decimal(discount_value) if discount_value else Decimal(0)
+            elif not isinstance(discount_value, Decimal):
+                discount_value = Decimal(str(discount_value))
+            
+            if isinstance(delivery_fee_value, str):
+                delivery_fee_value = Decimal(delivery_fee_value) if delivery_fee_value else Decimal(0)
+            elif not isinstance(delivery_fee_value, Decimal):
+                delivery_fee_value = Decimal(str(delivery_fee_value))
+            
             order_data = {
                 "customer": request.user,
                 "notes": cart.notes or request.data.get("notes", ""),
                 "delivery_date": cart.delivery_date or request.data.get("delivery_date"),
-                "discount": cart.discount or request.data.get("discount", 0),
+                "discount": discount_value,
                 "is_home_delivery": cart.is_home_delivery,
-                "delivery_fee": cart.delivery_fee or request.data.get("delivery_fee", 0),
+                "delivery_fee": delivery_fee_value,
                 "status": "pending",
             }
 
@@ -716,6 +734,18 @@ class OrderListView(APIView):
                 # If payment is succeeded/paid, update order status
                 if payment_status in ["succeeded", "paid"]:
                     order_data["status"] = "paid"
+
+            # Handle address from form data
+            address_data = request.data.get("address")
+            if address_data:
+                # Create a new address instance for this order
+                address = Address.objects.create(
+                    address_line=address_data.get("address_line", ""),
+                    address_line2=address_data.get("address_line2", ""),
+                    city=address_data.get("city", ""),
+                    postal_code=address_data.get("postal_code", ""),
+                )
+                order_data["address"] = address
 
             order = Order.objects.create(**order_data)
 

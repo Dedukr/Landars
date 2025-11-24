@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from account.models import CustomUser
+from account.models import Address, CustomUser
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
@@ -139,6 +139,9 @@ class Order(models.Model):
     customer = models.ForeignKey(
         CustomUser, on_delete=models.SET_NULL, related_name="orders", null=True
     )
+    address = models.ForeignKey(
+        Address, on_delete=models.SET_NULL, related_name="orders", null=True, blank=True
+    )
     notes = models.CharField(max_length=200, blank=True, null=True)
     delivery_date = models.DateField(null=True, blank=True)
     is_home_delivery = models.BooleanField(default=True, verbose_name="Home Delivery")
@@ -205,7 +208,16 @@ class Order(models.Model):
     @property
     def total_price(self):
         """Calculate the total price of the order including discount and delivery fee."""
-        return self.sum_price + self.delivery_fee - self.discount
+        from decimal import Decimal
+
+        # Ensure all values are Decimal type for calculation
+        sum_price = Decimal(str(self.sum_price)) if self.sum_price else Decimal(0)
+        delivery_fee = (
+            Decimal(str(self.delivery_fee)) if self.delivery_fee else Decimal(0)
+        )
+        discount = Decimal(str(self.discount)) if self.discount else Decimal(0)
+
+        return sum_price + delivery_fee - discount
 
     @property
     def total_items(self):
@@ -228,6 +240,10 @@ class Order(models.Model):
 
     @property
     def customer_address(self):
+        # Use order's address if it exists, otherwise fall back to customer's profile address
+        if self.address:
+            address = self.address
+            return f"{address.address_line + ', ' if address.address_line else ''}{address.address_line2 + ', ' if address.address_line2 else ''}{address.city + ', ' if address.city else ''}{address.postal_code if address.postal_code else ''}"
         profile = self.customer.profile if self.customer else None
         if profile and profile.address:
             address = profile.address

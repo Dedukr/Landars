@@ -211,31 +211,16 @@ export default function OrderDetailPage() {
                   Order #{order.id}
                 </h1>
               </div>
-              <div className="flex flex-wrap items-center gap-4 text-sm">
-                <div className="flex items-center gap-2">
-                  <span style={{ color: "var(--muted-foreground)" }}>
-                    Placed on
-                  </span>
-                  <span
-                    className="font-medium"
-                    style={{ color: "var(--foreground)" }}
-                  >
-                    {formatDate(order.order_date)} at {formatTime(order.order_date)}
-                  </span>
-                </div>
-                {order.delivery_date && (
-                  <div className="flex items-center gap-2">
-                    <span style={{ color: "var(--muted-foreground)" }}>
-                      Delivery:
-                    </span>
-                    <span
-                      className="font-medium"
-                      style={{ color: "var(--foreground)" }}
-                    >
-                      {formatDate(order.delivery_date)}
-                    </span>
-                  </div>
-                )}
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span
+                  className="font-medium"
+                  style={{ color: "var(--foreground)" }}
+                >
+                  {formatDate(order.order_date)}
+                </span>
+                <span style={{ color: "var(--muted-foreground)" }}>
+                  order placed.
+                </span>
               </div>
             </div>
 
@@ -601,22 +586,6 @@ export default function OrderDetailPage() {
                         : order.payment_status || "Pending"}
                     </span>
                   </div>
-                  {order.payment_intent_id && (
-                    <div className="flex justify-between items-center">
-                      <span
-                        className="text-sm"
-                        style={{ color: "var(--muted-foreground)" }}
-                      >
-                        Transaction ID
-                      </span>
-                      <span
-                        className="text-xs font-mono"
-                        style={{ color: "var(--muted-foreground)" }}
-                      >
-                        {order.payment_intent_id.slice(0, 20)}...
-                      </span>
-                    </div>
-                  )}
                 </div>
               </div>
             )}
@@ -650,7 +619,16 @@ export default function OrderDetailPage() {
                     className="text-sm font-medium"
                     style={{ color: "var(--foreground)" }}
                   >
-                    £{parseFloat(order.sum_price).toFixed(2)}
+                    £{order.sum_price ? parseFloat(order.sum_price || "0").toFixed(2) : (
+                      order.items?.reduce((sum, item) => {
+                        const price = parseFloat(
+                          item.total_price ||
+                            item.get_total_price ||
+                            "0"
+                        );
+                        return sum + price;
+                      }, 0) || 0
+                    ).toFixed(2)}
                   </span>
                 </div>
 
@@ -820,7 +798,15 @@ export default function OrderDetailPage() {
                       style={{ color: "var(--muted-foreground)" }}
                     >
                       If you have any questions about your order, please contact
-                      our customer support team.
+                      our customer support team at{" "}
+                      <a
+                        href="mailto:support@foodplatform.com"
+                        className="underline"
+                        style={{ color: "var(--accent)" }}
+                      >
+                        support@foodplatform.com
+                      </a>
+                      .
                     </p>
                   </div>
                 </div>

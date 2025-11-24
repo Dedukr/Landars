@@ -336,6 +336,7 @@ class OrderAdmin(admin.ModelAdmin):
         ]
         if obj:
             fields += [
+                "address",
                 "customer_phone",
                 "customer_address",
                 "get_total_items",
@@ -456,6 +457,8 @@ class OrderAdmin(admin.ModelAdmin):
     get_invoice.short_description = "Invoice"
 
     def export_orders_pdf(self, request, queryset):
+        from weasyprint import HTML
+
         html_string = render_to_string("orders.html", {"orders": queryset})
 
         # Generate PDF from HTML

@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from account.serializers import AddressSerializer
 from rest_framework import serializers
 
 from .models import (
@@ -226,10 +227,12 @@ class OrderItemSerializer(serializers.ModelSerializer):
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
     total_price = serializers.SerializerMethodField()
+    sum_price = serializers.SerializerMethodField()
     total_items = serializers.SerializerMethodField()
     customer_name = serializers.SerializerMethodField()
     customer_phone = serializers.SerializerMethodField()
     customer_address = serializers.SerializerMethodField()
+    address = AddressSerializer(read_only=True)
 
     class Meta:
         model = Order
@@ -239,6 +242,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "customer_name",
             "customer_phone",
             "customer_address",
+            "address",
             "notes",
             "delivery_date",
             "is_home_delivery",
@@ -250,10 +254,14 @@ class OrderSerializer(serializers.ModelSerializer):
             "payment_intent_id",
             "payment_status",
             "items",
+            "sum_price",
             "total_price",
             "total_items",
         ]
-        read_only_fields = ["id", "order_date", "total_price", "total_items"]
+        read_only_fields = ["id", "order_date", "sum_price", "total_price", "total_items"]
+
+    def get_sum_price(self, obj):
+        return str(obj.sum_price)
 
     def get_total_price(self, obj):
         return str(obj.total_price)
@@ -272,4 +280,8 @@ class OrderSerializer(serializers.ModelSerializer):
         return None
 
     def get_customer_address(self, obj):
+        # Use order's address if it exists, otherwise fall back to customer's profile address
+        if obj.address:
+            address = obj.address
+            return f"{address.address_line + ', ' if address.address_line else ''}{address.address_line2 + ', ' if address.address_line2 else ''}{address.city + ', ' if address.city else ''}{address.postal_code if address.postal_code else ''}"
         return obj.customer_address
