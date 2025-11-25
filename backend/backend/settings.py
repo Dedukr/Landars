@@ -161,7 +161,7 @@ STATICFILES_STORAGE = "django.contrib.staticfiles.storage.ManifestStaticFilesSto
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
-# AWS S3 Configuration
+# AWS S3 Configuration (for invoices and other files)
 
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
@@ -176,6 +176,19 @@ AWS_QUERYSTRING_AUTH = False
 # AWS S3 Media files storage
 DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
 MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/"
+
+# Cloudflare R2 Configuration (for product images)
+R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID")
+R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
+R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME")
+R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID")
+R2_ENDPOINT_URL = f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL")  # Your R2 custom domain or public URL
+
+# Product Image Settings
+ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"]
+MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB in bytes
+PRESIGNED_URL_EXPIRATION = 300  # 5 minutes
 
 BUSINESS_INFO = {
     "name": os.getenv("BUSINESS_NAME", "My Business name"),

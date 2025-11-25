@@ -3,7 +3,7 @@ from datetime import timedelta
 from account.models import CustomUser
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, MinLengthValidator
 from django.db import models
 from django.utils import timezone
 
@@ -56,6 +56,35 @@ class ProductCategories(models.Model):
         return [product.get_product_details() for product in self.get_products()]
 
 
+# ProductImage model
+class ProductImage(models.Model):
+    product = models.ForeignKey(
+        "Product", related_name="images", on_delete=models.CASCADE
+    )
+    image_url = models.URLField(max_length=500)
+    sort_order = models.PositiveIntegerField(default=0)
+    alt_text = models.CharField(max_length=255, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = "Product Images"
+        ordering = ["sort_order", "created_at"]
+        indexes = [
+            models.Index(fields=["product", "sort_order"]),
+        ]
+
+    def __str__(self):
+        primary_text = " (Primary)" if self.sort_order == 0 else ""
+        return f"{self.product.name} - Image {self.sort_order}{primary_text}"
+    
+    @property
+    def is_primary(self):
+        """The first image (sort_order=0 or lowest) is always the primary image."""
+        first_image = self.product.images.first()
+        return first_image and first_image.id == self.id
+
+
 # Product model
 class Product(models.Model):
     name = models.CharField(max_length=255)
@@ -83,14 +112,20 @@ class Product(models.Model):
         ]
 
     def get_product_details(self):
+        primary_image = self.images.first()  # First image is always primary
         return {
             "id": self.id,
             "name": self.name,
             "categories": self.get_categories,
             "description": self.description,
             "price": str(self.price),
-            # image_url removed since image field is commented out
+            "primary_image": primary_image.image_url if primary_image else None,
         }
+    
+    def get_primary_image(self):
+        """Get the primary image URL or None. The first image (by sort_order) is always primary."""
+        first_image = self.images.first()
+        return first_image.image_url if first_image else None
 
     # def get_product_stock(self):
     #     """Get the stock for this product."""

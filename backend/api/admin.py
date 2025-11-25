@@ -20,7 +20,8 @@ from django.utils.translation import gettext_lazy as _
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 
-from .models import Order, OrderItem, Product, ProductCategories
+from .forms import ProductImageAdminForm, ProductImageInlineForm
+from .models import Order, OrderItem, Product, ProductCategories, ProductImage
 
 
 class OrderAdminForm(ModelForm):
@@ -37,17 +38,97 @@ class OrderAdminForm(ModelForm):
         return cleaned_data
 
 
+class ProductImageInline(admin.TabularInline):
+    model = ProductImage
+    form = ProductImageInlineForm
+    extra = 1
+    fields = ["image_preview", "image_file", "image_url", "sort_order", "alt_text"]
+    readonly_fields = ["image_preview"]
+    ordering = ["sort_order"]
+
+    class Media:
+        css = {
+            'all': ('admin/css/product_image_inline.css',)
+        }
+
+    def image_preview(self, obj):
+        if obj.image_url:
+            # Mark the first image as primary visually with green border
+            is_primary = obj.sort_order == 0 or (obj.product and obj.product.images.first() == obj)
+            border_style = "border: 3px solid #4CAF50;" if is_primary else "border: 1px solid #ddd;"
+            
+            return format_html(
+                '<img src="{}" style="max-width: 100px; max-height: 100px; object-fit: contain; {}; border-radius: 4px; padding: 2px;" />',
+                obj.image_url,
+                border_style
+            )
+        return format_html(
+            '<div style="width: 100px; height: 100px; border: 2px dashed #ccc; border-radius: 4px; '
+            'display: flex; align-items: center; justify-content: center; color: #999; font-size: 11px; text-align: center;">'
+            'No image<br>yet</div>'
+        )
+
+    image_preview.short_description = "Preview"
+
+
+@admin.register(ProductImage)
+class ProductImageAdmin(admin.ModelAdmin):
+    form = ProductImageAdminForm
+    list_display = ["product", "image_preview_thumb", "sort_order", "is_primary_display", "created_at"]
+    list_filter = ["product"]
+    search_fields = ["product__name", "alt_text"]
+    ordering = ["product", "sort_order"]
+    autocomplete_fields = ["product"]
+    
+    fieldsets = (
+        ('Product', {
+            'fields': ('product',)
+        }),
+        ('Image', {
+            'fields': ('image_file', 'image_url', 'alt_text'),
+            'description': 'Upload an image file or provide a URL. If you upload a file, it will be automatically uploaded to R2 storage.'
+        }),
+        ('Display Settings', {
+            'fields': ('sort_order',),
+            'description': 'The first image (sort_order = 0) is automatically the primary image.'
+        }),
+    )
+
+    def image_preview_thumb(self, obj):
+        if obj.image_url:
+            is_primary = obj.is_primary
+            border_color = "#4CAF50" if is_primary else "#ddd"
+            return format_html(
+                '<img src="{}" style="max-width: 50px; max-height: 50px; object-fit: contain; border: 2px solid {}; border-radius: 4px;" />',
+                obj.image_url,
+                border_color
+            )
+        return format_html(
+            '<span style="color: #999; font-size: 11px;">No image</span>'
+        )
+
+    image_preview_thumb.short_description = "Preview"
+    
+    def is_primary_display(self, obj):
+        """Display if this is the primary image (first by sort_order)."""
+        return obj.is_primary
+    
+    is_primary_display.boolean = True
+    is_primary_display.short_description = "Primary"
+
+
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
     list_display = ["name", "price", "get_categories"]
     list_filter = ["categories"]
-    filter_horizontal = ["categories"]  # красиво отображает множественные категории
+    filter_horizontal = ["categories"]
     search_fields = ["name"]
     ordering = ["name"]
+    inlines = [ProductImageInline]
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
-        return qs.prefetch_related("categories").distinct()
+        return qs.prefetch_related("categories", "images").distinct()
 
     def get_readable_categories(self, obj):
         return ", ".join(obj.get_categories)

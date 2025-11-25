@@ -1,5 +1,6 @@
 import uuid
 
+from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db import transaction
 from django.http import HttpResponse, JsonResponse
@@ -12,8 +13,20 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Order, OrderItem, Product
-from .serializers import OrderItemSerializer, OrderSerializer, ProductSerializer
+from .models import Order, OrderItem, Product, ProductImage
+from .r2_storage import (
+    generate_presigned_upload_url,
+    generate_unique_object_key,
+    validate_image_size,
+    validate_image_type,
+)
+from .validators import validate_image_file_extension
+from .serializers import (
+    OrderItemSerializer,
+    OrderSerializer,
+    ProductListSerializer,
+    ProductSerializer,
+)
 
 # @staff_member_required
 # def order_invoice_pdf(request, pk):
@@ -35,25 +48,25 @@ from .serializers import OrderItemSerializer, OrderSerializer, ProductSerializer
 # Create your views here.
 class ProductList(APIView):
     def get(self, request):
-        """Retrieve all products with stock availability."""
-        products = Product.objects.all()
-        serializer = ProductSerializer(products, many=True)
+        """Retrieve all products with only primary images."""
+        products = Product.objects.prefetch_related("images").all()
+        serializer = ProductListSerializer(products, many=True)
         return Response(serializer.data)
 
     def post(self, request):
-        """Create a new product and initialize its stock."""
+        """Create a new product with images."""
         serializer = ProductSerializer(data=request.data)
         if serializer.is_valid():
             product = serializer.save()
-            # Initialize stock for the new product
-            # Stock.objects.create(product=product, quantity=request.data.get("stock", 0))
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(
+                ProductSerializer(product).data, status=status.HTTP_201_CREATED
+            )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ProductDetail(APIView):
     def get(self, request, product_id):
-        """Retrieve a single product by ID."""
+        """Retrieve a single product by ID with all images."""
         product = self.get_object(product_id)
         if product:
             serializer = ProductSerializer(product)
@@ -63,7 +76,7 @@ class ProductDetail(APIView):
         )
 
     def put(self, request, product_id):
-        """Update a product by replacing it entirely."""
+        """Update a product by replacing it entirely, including images."""
         product = self.get_object(product_id)
         if product:
             serializer = ProductSerializer(product, data=request.data)
@@ -76,7 +89,7 @@ class ProductDetail(APIView):
         )
 
     def patch(self, request, product_id):
-        """Partially update a product."""
+        """Partially update a product. If images are included, they replace all existing images."""
         product = self.get_object(product_id)
         if product:
             serializer = ProductSerializer(product, data=request.data, partial=True)
@@ -89,9 +102,10 @@ class ProductDetail(APIView):
         )
 
     def delete(self, request, product_id):
-        """Delete a product."""
+        """Delete a product and all its images."""
         product = self.get_object(product_id)
         if product:
+            # Images are automatically deleted via CASCADE
             product.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
         return Response(
@@ -100,9 +114,9 @@ class ProductDetail(APIView):
 
     @staticmethod
     def get_object(product_id):
-        """Helper method to retrieve a product by ID."""
+        """Helper method to retrieve a product by ID with images prefetched."""
         try:
-            return Product.objects.get(id=product_id)
+            return Product.objects.prefetch_related("images").get(id=product_id)
         except Product.DoesNotExist:
             return None
 
@@ -248,4 +262,104 @@ class OrderItemView(APIView):
         except (Order.DoesNotExist, OrderItem.DoesNotExist):
             return Response(
                 {"error": "Order or item not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class PresignedUploadView(APIView):
+    """
+    Generate presigned URLs for uploading product images to Cloudflare R2.
+    Requires authentication.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        """
+        Generate a presigned URL for uploading an image.
+        
+        Request body:
+        {
+            "filename": "image.jpg",
+            "content_type": "image/jpeg",
+            "product_id": 123  // optional
+            "file_size": 1024000  // optional, in bytes
+        }
+        
+        Response:
+        {
+            "presigned_url": "https://...",
+            "public_url": "https://...",
+            "object_key": "products/...",
+            "required_headers": {
+                "Content-Type": "image/jpeg"
+            }
+        }
+        """
+        filename = request.data.get("filename")
+        content_type = request.data.get("content_type")
+        product_id = request.data.get("product_id")
+        file_size = request.data.get("file_size")
+
+        # Validation
+        if not filename:
+            return Response(
+                {"error": "filename is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not content_type:
+            return Response(
+                {"error": "content_type is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validate file extension
+        try:
+            validate_image_file_extension(filename)
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validate image type
+        if not validate_image_type(content_type):
+            return Response(
+                {
+                    "error": f"Invalid image type. Allowed types: {', '.join(settings.ALLOWED_IMAGE_TYPES)}"
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validate file size if provided
+        if file_size and not validate_image_size(file_size):
+            max_size_mb = settings.MAX_IMAGE_SIZE / (1024 * 1024)
+            return Response(
+                {"error": f"File size exceeds maximum allowed size of {max_size_mb}MB"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validate product exists if product_id is provided
+        if product_id:
+            try:
+                Product.objects.get(id=product_id)
+            except Product.DoesNotExist:
+                return Response(
+                    {"error": "Product not found"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+        try:
+            # Generate unique object key
+            object_key = generate_unique_object_key(filename, product_id)
+
+            # Generate presigned URL
+            upload_data = generate_presigned_upload_url(object_key, content_type)
+
+            return Response(upload_data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to generate presigned URL: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
