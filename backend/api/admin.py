@@ -39,7 +39,7 @@ class OrderAdminForm(ModelForm):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ["name", "base_price", "holiday_fee", "get_price", "get_categories"]
+    list_display = ["name", "get_price", "get_categories"]
     list_filter = ["categories"]
     filter_horizontal = ["categories"]  # красиво отображает множественные категории
     search_fields = ["name"]
