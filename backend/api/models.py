@@ -61,8 +61,18 @@ class Product(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     categories = models.ManyToManyField(ProductCategories, related_name="products")
-    price = models.DecimalField(
-        max_digits=10, decimal_places=2, validators=[MinValueValidator(0)]
+    base_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        help_text="Base price of the product",
+    )
+    holiday_fee = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text="Additional holiday fee applied to the product",
     )
     # image = models.ImageField(
     #     upload_to="products/", blank=True, null=True
@@ -77,6 +87,11 @@ class Product(models.Model):
     def __str__(self):
         return self.name
 
+    @property
+    def price(self):
+        """Calculate final price as base_price + holiday_fee."""
+        return self.base_price + self.holiday_fee
+
     def get_categories(self):
         return [
             cat.name for cat in self.categories.all().order_by("parent__name", "name")
@@ -88,6 +103,8 @@ class Product(models.Model):
             "name": self.name,
             "categories": self.get_categories,
             "description": self.description,
+            "base_price": str(self.base_price),
+            "holiday_fee": str(self.holiday_fee),
             "price": str(self.price),
             # image_url removed since image field is commented out
         }

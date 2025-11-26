@@ -39,15 +39,22 @@ class OrderAdminForm(ModelForm):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ["name", "price", "get_categories"]
+    list_display = ["name", "base_price", "holiday_fee", "get_price", "get_categories"]
     list_filter = ["categories"]
     filter_horizontal = ["categories"]  # красиво отображает множественные категории
     search_fields = ["name"]
     ordering = ["name"]
+    fields = ["name", "description", "base_price", "holiday_fee", "categories"]
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         return qs.prefetch_related("categories").distinct()
+
+    def get_price(self, obj):
+        """Display the calculated final price."""
+        return f"£{obj.price}"
+
+    get_price.short_description = "Final Price"
 
     def get_readable_categories(self, obj):
         return ", ".join(obj.get_categories)
