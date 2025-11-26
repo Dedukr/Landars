@@ -231,7 +231,7 @@ def calculate_total_items(modeladmin, request, queryset):
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
     min_num = 1
-    extra = 0
+    extra = 1
     readonly_fields = ["get_total_price"]
     autocomplete_fields = ["product"]
 
