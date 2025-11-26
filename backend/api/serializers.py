@@ -79,7 +79,7 @@ class ProductSerializer(ProductImageValidationMixin, serializers.ModelSerializer
 
     @transaction.atomic
     def update(self, instance, validated_data):
-        """Update product and replace images."""
+        """Update product and replace images. Old images are deleted from R2 automatically."""
         images_data = validated_data.pop("images", None)
 
         # Update basic product fields
@@ -89,7 +89,7 @@ class ProductSerializer(ProductImageValidationMixin, serializers.ModelSerializer
 
         # Replace images if provided
         if images_data is not None:
-            # Delete existing images
+            # Delete existing images (will also delete from R2 via model's delete method)
             instance.images.all().delete()
 
             # Create new images

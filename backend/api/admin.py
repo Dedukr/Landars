@@ -71,50 +71,50 @@ class ProductImageInline(admin.TabularInline):
     image_preview.short_description = "Preview"
 
 
-@admin.register(ProductImage)
-class ProductImageAdmin(admin.ModelAdmin):
-    form = ProductImageAdminForm
-    list_display = ["product", "image_preview_thumb", "sort_order", "is_primary_display", "created_at"]
-    list_filter = ["product"]
-    search_fields = ["product__name", "alt_text"]
-    ordering = ["product", "sort_order"]
-    autocomplete_fields = ["product"]
+# @admin.register(ProductImage)
+# class ProductImageAdmin(admin.ModelAdmin):
+#     form = ProductImageAdminForm
+#     list_display = ["product", "image_preview_thumb", "sort_order", "is_primary_display", "created_at"]
+#     list_filter = ["product"]
+#     search_fields = ["product__name", "alt_text"]
+#     ordering = ["product", "sort_order"]
+#     autocomplete_fields = ["product"]
     
-    fieldsets = (
-        ('Product', {
-            'fields': ('product',)
-        }),
-        ('Image', {
-            'fields': ('image_file', 'image_url', 'alt_text'),
-            'description': 'Upload an image file or provide a URL. If you upload a file, it will be automatically uploaded to R2 storage.'
-        }),
-        ('Display Settings', {
-            'fields': ('sort_order',),
-            'description': 'The first image (sort_order = 0) is automatically the primary image.'
-        }),
-    )
+#     fieldsets = (
+#         ('Product', {
+#             'fields': ('product',)
+#         }),
+#         ('Image', {
+#             'fields': ('image_file', 'image_url', 'alt_text'),
+#             'description': 'Upload an image file or provide a URL. If you upload a file, it will be automatically uploaded to R2 storage.'
+#         }),
+#         ('Display Settings', {
+#             'fields': ('sort_order',),
+#             'description': 'The first image (sort_order = 0) is automatically the primary image.'
+#         }),
+#     )
 
-    def image_preview_thumb(self, obj):
-        if obj.image_url:
-            is_primary = obj.is_primary
-            border_color = "#4CAF50" if is_primary else "#ddd"
-            return format_html(
-                '<img src="{}" style="max-width: 50px; max-height: 50px; object-fit: contain; border: 2px solid {}; border-radius: 4px;" />',
-                obj.image_url,
-                border_color
-            )
-        return format_html(
-            '<span style="color: #999; font-size: 11px;">No image</span>'
-        )
+#     def image_preview_thumb(self, obj):
+#         if obj.image_url:
+#             is_primary = obj.is_primary
+#             border_color = "#4CAF50" if is_primary else "#ddd"
+#             return format_html(
+#                 '<img src="{}" style="max-width: 50px; max-height: 50px; object-fit: contain; border: 2px solid {}; border-radius: 4px;" />',
+#                 obj.image_url,
+#                 border_color
+#             )
+#         return format_html(
+#             '<span style="color: #999; font-size: 11px;">No image</span>'
+#         )
 
-    image_preview_thumb.short_description = "Preview"
+#     image_preview_thumb.short_description = "Preview"
     
-    def is_primary_display(self, obj):
-        """Display if this is the primary image (first by sort_order)."""
-        return obj.is_primary
+#     def is_primary_display(self, obj):
+#         """Display if this is the primary image (first by sort_order)."""
+#         return obj.is_primary
     
-    is_primary_display.boolean = True
-    is_primary_display.short_description = "Primary"
+#     is_primary_display.boolean = True
+#     is_primary_display.short_description = "Primary"
 
 
 @admin.register(Product)

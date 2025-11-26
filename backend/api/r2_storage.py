@@ -97,15 +97,19 @@ def delete_image_from_r2(object_key):
     Returns:
         bool: True if successful, False otherwise
     """
+    if not object_key:
+        return False
+    
     try:
         r2_client = get_r2_client()
         r2_client.delete_object(
             Bucket=settings.R2_BUCKET_NAME,
             Key=object_key,
         )
+        print(f"Deleted from R2: {object_key}")
         return True
     except Exception as e:
-        print(f"Error deleting image from R2: {e}")
+        print(f"Error deleting image from R2 ({object_key}): {e}")
         return False
 
 

@@ -83,6 +83,36 @@ class ProductImage(models.Model):
         """The first image (sort_order=0 or lowest) is always the primary image."""
         first_image = self.product.images.first()
         return first_image and first_image.id == self.id
+    
+    def delete(self, *args, **kwargs):
+        """
+        Override delete to also remove the image from R2 storage.
+        """
+        # Extract object key from image URL and delete from R2
+        if self.image_url:
+            try:
+                from django.conf import settings
+                from .r2_storage import delete_image_from_r2
+                
+                # Extract the object key from the URL
+                # URL format: https://cdn.example.com/products/123/timestamp_uuid_filename.jpg
+                # We need: products/123/timestamp_uuid_filename.jpg
+                if settings.R2_PUBLIC_URL and self.image_url.startswith(settings.R2_PUBLIC_URL):
+                    # Remove the public URL prefix to get the object key
+                    object_key = self.image_url.replace(f"{settings.R2_PUBLIC_URL}/", "")
+                    
+                    # Delete from R2
+                    deleted = delete_image_from_r2(object_key)
+                    if deleted:
+                        print(f"Successfully deleted image from R2: {object_key}")
+                    else:
+                        print(f"Failed to delete image from R2: {object_key}")
+            except Exception as e:
+                # Don't fail the delete operation if R2 deletion fails
+                print(f"Error deleting image from R2: {e}")
+        
+        # Call the parent delete method
+        super().delete(*args, **kwargs)
 
 
 # Product model
