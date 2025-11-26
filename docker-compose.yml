@@ -1,0 +1,34 @@
+services:
+  backend:
+    image: dedukr/landar-backend:latest
+    build:
+      context: ./backend
+    expose:
+      - "8000"
+    env_file:
+      - ./backend/.env
+    volumes:
+      - static_volume:/backend/static
+      - db_data:/backend/db
+
+  nginx:
+    image: dedukr/landar-nginx:latest
+    build:
+      context: ./nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+    volumes:
+      - /etc/ssl/landarsfood:/etc/ssl/landarsfood:ro
+      - static_volume:/backend/static:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  static_volume:
+  db_data:
