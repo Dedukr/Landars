@@ -8,7 +8,7 @@ from account.models import CustomUser
 from django.conf import settings
 from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Sum
 from django.db.models.functions import Round
 from django.forms import ModelForm
@@ -20,6 +20,7 @@ from django.utils.translation import gettext_lazy as _
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 
+from .forms import OrderItemForm, OrderItemFormSet
 from .models import Order, OrderItem, Product, ProductCategories
 
 
@@ -234,6 +235,8 @@ class OrderItemInline(admin.TabularInline):
     extra = 1
     readonly_fields = ["get_total_price"]
     autocomplete_fields = ["product"]
+    formset = OrderItemFormSet
+    form = OrderItemForm
 
     def get_total_price(self, obj):
         if obj and obj.product and obj.quantity:
@@ -418,44 +421,83 @@ class OrderAdmin(admin.ModelAdmin):
         super().save_model(request, obj, form, change)
 
     def save_formset(self, request, form, formset, change):
-        """Ensure order items merge duplicates before saving to avoid double creates."""
+        """
+        Ensure order items merge duplicates before saving to avoid double creates.
+
+        This method handles the case where a user tries to add a product that already
+        exists in the order. Instead of showing an error, it merges the quantities.
+        """
         if formset.model is OrderItem:
             instances = formset.save(commit=False)
             merged_items = []
 
-            for instance in instances:
-                # Skip empty rows
-                if not instance.product or not instance.quantity:
-                    continue
+            with transaction.atomic():
+                for instance in instances:
+                    # Skip empty rows or invalid data
+                    if not instance.product or not instance.quantity:
+                        continue
 
-                instance.order = form.instance
-                if instance.pk:
-                    instance.save()
-                    continue
+                    # Ensure order is set
+                    instance.order = form.instance
 
-                existing_item = OrderItem.objects.filter(
-                    order=instance.order, product=instance.product
-                ).first()
+                    if instance.pk:
+                        # Existing item - just save it (quantity may have been updated)
+                        instance.save()
+                        continue
 
-                if existing_item:
-                    old_quantity = existing_item.quantity
-                    existing_item.quantity += instance.quantity
-                    existing_item.save()
-                    merged_items.append(
-                        f"{existing_item.product.name}: {old_quantity} + {instance.quantity} = {existing_item.quantity}"
+                    # New item - check if product already exists in database
+                    # Use select_for_update to prevent race conditions
+                    existing_item = (
+                        OrderItem.objects.select_for_update()
+                        .filter(order=instance.order, product=instance.product)
+                        .first()
                     )
-                else:
-                    instance.save()
 
-            for obj in formset.deleted_objects:
-                obj.delete()
+                    if existing_item:
+                        # Merge quantities
+                        old_quantity = existing_item.quantity
+                        existing_item.quantity += instance.quantity
+                        existing_item.save()
+                        merged_items.append(
+                            f"{existing_item.product.name}: {old_quantity} + {instance.quantity} = {existing_item.quantity}"
+                        )
+                    else:
+                        # No existing item, save the new one
+                        try:
+                            instance.save()
+                        except IntegrityError:
+                            # If save fails due to unique constraint (race condition),
+                            # try to merge with the item that was just created
+                            existing_item = OrderItem.objects.filter(
+                                order=instance.order, product=instance.product
+                            ).first()
+                            if existing_item:
+                                old_quantity = existing_item.quantity
+                                existing_item.quantity += instance.quantity
+                                existing_item.save()
+                                merged_items.append(
+                                    f"{existing_item.product.name}: {old_quantity} + {instance.quantity} = {existing_item.quantity}"
+                                )
+                            else:
+                                # Re-raise if we can't find the existing item
+                                # This shouldn't happen, but handle it gracefully
+                                raise IntegrityError(
+                                    f"Could not save order item for product {instance.product.id} "
+                                    f"and could not find existing item to merge."
+                                )
 
+                # Handle deleted items
+                for obj in formset.deleted_objects:
+                    obj.delete()
+
+            # Show success message if items were merged
             if merged_items:
                 messages.success(
                     request,
                     f"Order items merged successfully: {', '.join(merged_items)}",
                 )
         else:
+            # For other formsets, use default behavior
             super().save_formset(request, form, formset, change)
 
     def save_related(self, request, form, formsets, change):
