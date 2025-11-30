@@ -15,10 +15,10 @@ class Migration(migrations.Migration):
             model_name="order",
             name="holiday_fee",
             field=models.DecimalField(
-                decimal_places=2,
+                decimal_places=0,
                 default=0,
                 help_text="Holiday fee percentage (0-100)",
-                max_digits=5,
+                max_digits=3,
                 validators=[
                     django.core.validators.MinValueValidator(0),
                     django.core.validators.MaxValueValidator(100),
