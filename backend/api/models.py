@@ -3,7 +3,7 @@ from datetime import timedelta
 from account.models import CustomUser
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 
@@ -169,6 +169,13 @@ class Order(models.Model):
     discount = models.DecimalField(
         max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0)]
     )
+    holiday_fee = models.DecimalField(
+        max_digits=3,
+        decimal_places=0,
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Holiday fee percentage (0-100)",
+    )
     order_date = models.DateField(auto_now_add=True, null=True)
     created_at = models.DateTimeField(
         auto_now_add=True, help_text="Exact timestamp when order was created"
@@ -220,8 +227,22 @@ class Order(models.Model):
 
     @property
     def total_price(self):
-        """Calculate the total price of the order including discount and delivery fee."""
-        return self.sum_price + self.delivery_fee - self.discount
+        """Calculate the total price of the order including holiday fee, discount and delivery fee."""
+        from decimal import Decimal
+
+        # Calculate holiday fee amount as percentage of sum_price
+        holiday_fee_amount = self.sum_price * (self.holiday_fee / Decimal("100"))
+        # Total = sum_price + holiday_fee + delivery_fee - discount
+        total = self.sum_price + holiday_fee_amount + self.delivery_fee - self.discount
+        # Round to 2 decimal places (consistent with OrderItem.get_total_price pattern)
+        return round(total, 2)
+
+    @property
+    def holiday_fee_amount(self):
+        """Calculate the actual holiday fee amount based on percentage."""
+        from decimal import Decimal
+
+        return self.sum_price * (self.holiday_fee / Decimal("100"))
 
     @property
     def total_items(self):

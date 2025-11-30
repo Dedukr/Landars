@@ -19,12 +19,5 @@ class Migration(migrations.Migration):
                 null=True,
                 verbose_name="Order ID",
             ),
-        ),
-        migrations.AddIndex(
-            model_name="order",
-            index=models.Index(
-                fields=["delivery_date", "delivery_date_order_id"],
-                name="order_delivery_date_id_idx",
-            ),
-        ),
+        )
     ]

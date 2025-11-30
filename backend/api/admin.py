@@ -302,6 +302,7 @@ class OrderAdmin(admin.ModelAdmin):
                 "customer_phone",
                 "customer_address",
                 "get_total_items",
+                "get_holiday_fee_amount",
                 "get_total_price",
                 "get_invoice",
                 "is_home_delivery",
@@ -311,6 +312,7 @@ class OrderAdmin(admin.ModelAdmin):
         fields += [
             "delivery_fee_manual",
             "delivery_fee",
+            "holiday_fee",
             "discount",
         ]
         return fields
@@ -321,6 +323,7 @@ class OrderAdmin(admin.ModelAdmin):
             "customer_phone",
             "customer_address",
             "get_total_items",
+            "get_holiday_fee_amount",
             "get_total_price",
             "get_invoice",
         ]
@@ -413,6 +416,14 @@ class OrderAdmin(admin.ModelAdmin):
         return obj.total_items
 
     get_total_items.short_description = "Total Items"
+
+    def get_holiday_fee_amount(self, obj):
+        """Display holiday fee in actual money value, only if holiday_fee > 0."""
+        if obj.holiday_fee > 0:
+            return f"{obj.holiday_fee_amount:.2f}"
+        return "-"
+
+    get_holiday_fee_amount.short_description = "Holiday Fee (£)"
 
     def save_model(self, request, obj, form, change):
         """Save the order without calculating delivery fees here to avoid double save."""
