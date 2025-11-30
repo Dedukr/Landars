@@ -25,11 +25,4 @@ class Migration(migrations.Migration):
                 ],
             ),
         ),
-        migrations.AddIndex(
-            model_name="order",
-            index=models.Index(
-                fields=["delivery_date", "delivery_date_order_id"],
-                name="order_delivery_date_id_idx",
-            ),
-        ),
     ]
