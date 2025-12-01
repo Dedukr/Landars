@@ -38,6 +38,9 @@ class ProductImageSerializer(serializers.ModelSerializer):
 class ProductSerializer(ProductImageValidationMixin, serializers.ModelSerializer):
     images = ProductImageSerializer(many=True, required=False)
     primary_image = serializers.SerializerMethodField()
+    price = serializers.DecimalField(
+        max_digits=10, decimal_places=2, read_only=True, source="price"
+    )
 
     class Meta:
         model = Product
@@ -45,6 +48,8 @@ class ProductSerializer(ProductImageValidationMixin, serializers.ModelSerializer
             "id",
             "name",
             "description",
+            "base_price",
+            "holiday_fee",
             "price",
             "categories",
             "images",

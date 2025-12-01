@@ -8,7 +8,7 @@ from account.models import CustomUser
 from django.conf import settings
 from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Sum
 from django.db.models.functions import Round
 from django.forms import ModelForm
@@ -20,8 +20,9 @@ from django.utils.translation import gettext_lazy as _
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 
-from .forms import ProductImageAdminForm, ProductImageInlineForm
+from .forms import ProductImageAdminForm, ProductImageInlineForm, OrderItemForm, OrderItemFormSet
 from .models import Order, OrderItem, Product, ProductCategories, ProductImage
+
 
 
 class OrderAdminForm(ModelForm):
@@ -119,16 +120,25 @@ class ProductImageInline(admin.TabularInline):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ["name", "price", "get_categories"]
+    list_display = ["name", "get_price", "get_categories"]
     list_filter = ["categories"]
     filter_horizontal = ["categories"]
     search_fields = ["name"]
     ordering = ["name"]
     inlines = [ProductImageInline]
+    
+    fields = ["name", "description", "base_price", "holiday_fee", "categories"]
+
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         return qs.prefetch_related("categories", "images").distinct()
+
+    def get_price(self, obj):
+        """Display the calculated final price."""
+        return f"£{obj.price}"
+
+    get_price.short_description = "Final Price"
 
     def get_readable_categories(self, obj):
         return ", ".join(obj.get_categories)
@@ -305,9 +315,11 @@ def calculate_total_items(modeladmin, request, queryset):
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
     min_num = 1
-    extra = 0
+    extra = 1
     readonly_fields = ["get_total_price"]
     autocomplete_fields = ["product"]
+    formset = OrderItemFormSet
+    form = OrderItemForm
 
     def get_total_price(self, obj):
         if obj and obj.product and obj.quantity:
@@ -373,6 +385,7 @@ class OrderAdmin(admin.ModelAdmin):
                 "customer_phone",
                 "customer_address",
                 "get_total_items",
+                "get_holiday_fee_amount",
                 "get_total_price",
                 "get_invoice",
                 "is_home_delivery",
@@ -382,6 +395,7 @@ class OrderAdmin(admin.ModelAdmin):
         fields += [
             "delivery_fee_manual",
             "delivery_fee",
+            "holiday_fee",
             "discount",
         ]
         return fields
@@ -392,6 +406,7 @@ class OrderAdmin(admin.ModelAdmin):
             "customer_phone",
             "customer_address",
             "get_total_items",
+            "get_holiday_fee_amount",
             "get_total_price",
             "get_invoice",
         ]
@@ -485,6 +500,14 @@ class OrderAdmin(admin.ModelAdmin):
 
     get_total_items.short_description = "Total Items"
 
+    def get_holiday_fee_amount(self, obj):
+        """Display holiday fee in actual money value, only if holiday_fee > 0."""
+        if obj.holiday_fee > 0:
+            return f"{obj.holiday_fee_amount:.2f}"
+        return "-"
+
+    get_holiday_fee_amount.short_description = "Holiday Fee (£)"
+
     def save_model(self, request, obj, form, change):
         """Save the order without calculating delivery fees here to avoid double save."""
         # Don't calculate delivery fees in save_model to prevent double save
@@ -492,44 +515,83 @@ class OrderAdmin(admin.ModelAdmin):
         super().save_model(request, obj, form, change)
 
     def save_formset(self, request, form, formset, change):
-        """Ensure order items merge duplicates before saving to avoid double creates."""
+        """
+        Ensure order items merge duplicates before saving to avoid double creates.
+
+        This method handles the case where a user tries to add a product that already
+        exists in the order. Instead of showing an error, it merges the quantities.
+        """
         if formset.model is OrderItem:
             instances = formset.save(commit=False)
             merged_items = []
 
-            for instance in instances:
-                # Skip empty rows
-                if not instance.product or not instance.quantity:
-                    continue
+            with transaction.atomic():
+                for instance in instances:
+                    # Skip empty rows or invalid data
+                    if not instance.product or not instance.quantity:
+                        continue
 
-                instance.order = form.instance
-                if instance.pk:
-                    instance.save()
-                    continue
+                    # Ensure order is set
+                    instance.order = form.instance
 
-                existing_item = OrderItem.objects.filter(
-                    order=instance.order, product=instance.product
-                ).first()
+                    if instance.pk:
+                        # Existing item - just save it (quantity may have been updated)
+                        instance.save()
+                        continue
 
-                if existing_item:
-                    old_quantity = existing_item.quantity
-                    existing_item.quantity += instance.quantity
-                    existing_item.save()
-                    merged_items.append(
-                        f"{existing_item.product.name}: {old_quantity} + {instance.quantity} = {existing_item.quantity}"
+                    # New item - check if product already exists in database
+                    # Use select_for_update to prevent race conditions
+                    existing_item = (
+                        OrderItem.objects.select_for_update()
+                        .filter(order=instance.order, product=instance.product)
+                        .first()
                     )
-                else:
-                    instance.save()
 
-            for obj in formset.deleted_objects:
-                obj.delete()
+                    if existing_item:
+                        # Merge quantities
+                        old_quantity = existing_item.quantity
+                        existing_item.quantity += instance.quantity
+                        existing_item.save()
+                        merged_items.append(
+                            f"{existing_item.product.name}: {old_quantity} + {instance.quantity} = {existing_item.quantity}"
+                        )
+                    else:
+                        # No existing item, save the new one
+                        try:
+                            instance.save()
+                        except IntegrityError:
+                            # If save fails due to unique constraint (race condition),
+                            # try to merge with the item that was just created
+                            existing_item = OrderItem.objects.filter(
+                                order=instance.order, product=instance.product
+                            ).first()
+                            if existing_item:
+                                old_quantity = existing_item.quantity
+                                existing_item.quantity += instance.quantity
+                                existing_item.save()
+                                merged_items.append(
+                                    f"{existing_item.product.name}: {old_quantity} + {instance.quantity} = {existing_item.quantity}"
+                                )
+                            else:
+                                # Re-raise if we can't find the existing item
+                                # This shouldn't happen, but handle it gracefully
+                                raise IntegrityError(
+                                    f"Could not save order item for product {instance.product.id} "
+                                    f"and could not find existing item to merge."
+                                )
 
+                # Handle deleted items
+                for obj in formset.deleted_objects:
+                    obj.delete()
+
+            # Show success message if items were merged
             if merged_items:
                 messages.success(
                     request,
                     f"Order items merged successfully: {', '.join(merged_items)}",
                 )
         else:
+            # For other formsets, use default behavior
             super().save_formset(request, form, formset, change)
 
     def save_related(self, request, form, formsets, change):

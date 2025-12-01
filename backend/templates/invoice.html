@@ -563,6 +563,14 @@
                         </tr>
                         <tr>
                             <td>
+                                Delivery order ID
+                            </td>
+                            <td>
+                                {{ order.delivery_date_order_id }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
                                 Date
                             </td>
                             <td>
@@ -613,7 +621,7 @@
                 </div> -->
             </div>
             <div class="flex-horizontal flex-justify pr15 border-box-box-sizing width-100">
-                <div class="width-50">
+                <div class="width-50" style="margin-right: 30px;">
                     <div class="bold font-size-16 text-align-center">
                         <strong>Bill to</strong>
                     </div>
@@ -807,6 +815,24 @@
                         <td colspan="8">
                         </td>
                     </tr>
+                    {% if order.holiday_fee > 0 %}
+                    <tr class="summary-amount">
+                        <td>
+                        </td>
+                        <td colspan="7">
+                            Holiday Fee ({{order.holiday_fee}}%)
+                        </td>
+                        <td class="break-word align-right">
+                            £{{order.holiday_fee_amount|floatformat:2}}
+                        </td>
+                    </tr>
+                    <tr class="summary-amount-border mt30">
+                        <td>
+                        </td>
+                        <td colspan="8">
+                        </td>
+                    </tr>
+                    {% endif %}
                     <tr class="summary-amount">
                         <td>
                         </td>

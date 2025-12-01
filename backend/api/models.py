@@ -3,7 +3,7 @@ from datetime import timedelta
 from account.models import CustomUser
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator, MinLengthValidator
+from django.core.validators import MinValueValidator, MaxValueValidator, MinLengthValidator
 from django.db import models
 from django.utils import timezone
 
@@ -120,8 +120,18 @@ class Product(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     categories = models.ManyToManyField(ProductCategories, related_name="products")
-    price = models.DecimalField(
-        max_digits=10, decimal_places=2, validators=[MinValueValidator(0)]
+    base_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        help_text="Base price of the product",
+    )
+    holiday_fee = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text="Additional holiday fee applied to the product",
     )
     # image = models.ImageField(
     #     upload_to="products/", blank=True, null=True
@@ -136,6 +146,11 @@ class Product(models.Model):
     def __str__(self):
         return self.name
 
+    @property
+    def price(self):
+        """Calculate final price as base_price + holiday_fee."""
+        return self.base_price + self.holiday_fee
+
     def get_categories(self):
         return [
             cat.name for cat in self.categories.all().order_by("parent__name", "name")
@@ -148,6 +163,8 @@ class Product(models.Model):
             "name": self.name,
             "categories": self.get_categories,
             "description": self.description,
+            "base_price": str(self.base_price),
+            "holiday_fee": str(self.holiday_fee),
             "price": str(self.price),
             "primary_image": primary_image.image_url if primary_image else None,
         }
@@ -217,6 +234,13 @@ class Order(models.Model):
     discount = models.DecimalField(
         max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0)]
     )
+    holiday_fee = models.DecimalField(
+        max_digits=3,
+        decimal_places=0,
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Holiday fee percentage (0-100)",
+    )
     order_date = models.DateField(auto_now_add=True, null=True)
     created_at = models.DateTimeField(
         auto_now_add=True, help_text="Exact timestamp when order was created"
@@ -268,8 +292,22 @@ class Order(models.Model):
 
     @property
     def total_price(self):
-        """Calculate the total price of the order including discount and delivery fee."""
-        return self.sum_price + self.delivery_fee - self.discount
+        """Calculate the total price of the order including holiday fee, discount and delivery fee."""
+        from decimal import Decimal
+
+        # Calculate holiday fee amount as percentage of sum_price
+        holiday_fee_amount = self.sum_price * (self.holiday_fee / Decimal("100"))
+        # Total = sum_price + holiday_fee + delivery_fee - discount
+        total = self.sum_price + holiday_fee_amount + self.delivery_fee - self.discount
+        # Round to 2 decimal places (consistent with OrderItem.get_total_price pattern)
+        return round(total, 2)
+
+    @property
+    def holiday_fee_amount(self):
+        """Calculate the actual holiday fee amount based on percentage."""
+        from decimal import Decimal
+
+        return self.sum_price * (self.holiday_fee / Decimal("100"))
 
     @property
     def total_items(self):

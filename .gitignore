@@ -51,6 +51,7 @@ node_modules/
 *.tsbuildinfo
 
 # Database backups and data
-db_backups/
-db_data/
+db_backups/*
+db_data/*
+db/*
 *.sql
