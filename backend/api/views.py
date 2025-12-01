@@ -17,6 +17,7 @@ from .models import Order, OrderItem, Product, ProductImage
 from .r2_storage import (
     generate_presigned_upload_url,
     generate_unique_object_key,
+    upload_compressed_image_to_r2,
     validate_image_size,
     validate_image_type,
 )
@@ -361,5 +362,134 @@ class PresignedUploadView(APIView):
         except Exception as e:
             return Response(
                 {"error": f"Failed to generate presigned URL: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class CompressedImageUploadView(APIView):
+    """
+    Direct image upload endpoint with automatic compression.
+    Accepts multipart/form-data file uploads, compresses them, and uploads to R2.
+    Requires authentication.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        """
+        Upload and compress an image file.
+        
+        Request:
+        - multipart/form-data with 'image' field containing the file
+        - Optional 'product_id' field
+        - Optional 'max_width' field (default: 1920)
+        - Optional 'max_height' field (default: 1920)
+        - Optional 'quality' field (default: 85, range: 1-100)
+        
+        Response:
+        {
+            "public_url": "https://...",
+            "object_key": "products/...",
+            "content_type": "image/jpeg",
+            "original_size": 1024000,
+            "compressed_size": 256000,
+            "compression_ratio": 75.0
+        }
+        """
+        # Check if image file is provided
+        if 'image' not in request.FILES:
+            return Response(
+                {"error": "No image file provided. Use 'image' field in multipart/form-data."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        image_file = request.FILES['image']
+        filename = image_file.name
+        
+        # Validate file extension
+        try:
+            validate_image_file_extension(filename)
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        # Validate content type
+        content_type = image_file.content_type
+        if not validate_image_type(content_type):
+            return Response(
+                {
+                    "error": f"Invalid image type. Allowed types: {', '.join(settings.ALLOWED_IMAGE_TYPES)}"
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        # Validate file size
+        if not validate_image_size(image_file.size):
+            max_size_mb = settings.MAX_IMAGE_SIZE / (1024 * 1024)
+            return Response(
+                {"error": f"File size exceeds maximum allowed size of {max_size_mb}MB"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        # Get optional parameters
+        product_id = request.data.get('product_id')
+        if product_id:
+            try:
+                product_id = int(product_id)
+                # Validate product exists
+                Product.objects.get(id=product_id)
+            except (ValueError, Product.DoesNotExist):
+                return Response(
+                    {"error": "Invalid product_id"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            product_id = None
+        
+        # Get compression parameters
+        try:
+            max_width = int(request.data.get('max_width', 1920))
+            max_height = int(request.data.get('max_height', 1920))
+            quality = int(request.data.get('quality', 85))
+            
+            # Validate quality range
+            if quality < 1 or quality > 100:
+                return Response(
+                    {"error": "Quality must be between 1 and 100"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        except ValueError:
+            return Response(
+                {"error": "Invalid compression parameters. max_width, max_height, and quality must be integers."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        try:
+            # Read file content
+            image_file.seek(0)
+            file_content = image_file.read()
+            
+            # Compress and upload to R2
+            upload_result = upload_compressed_image_to_r2(
+                file_content,
+                filename,
+                product_id=product_id,
+                max_width=max_width,
+                max_height=max_height,
+                quality=quality,
+            )
+            
+            return Response(upload_result, status=status.HTTP_201_CREATED)
+        
+        except ValueError as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to upload image: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )

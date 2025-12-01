@@ -9,6 +9,7 @@ from .models import ProductImage
 from .r2_storage import (
     generate_unique_object_key,
     get_r2_client,
+    upload_compressed_image_to_r2,
     validate_image_size,
     validate_image_type,
 )
@@ -79,33 +80,30 @@ class ProductImageAdminForm(forms.ModelForm):
         instance = super().save(commit=False)
         image_file = self.cleaned_data.get('image_file')
 
-        # If a file was uploaded, upload it to R2 and set the URL
+        # If a file was uploaded, compress and upload it to R2
         if image_file:
             try:
-                # Generate unique object key
+                # Get product ID (required for compression upload)
                 product_id = instance.product.id if instance.product else None
-                object_key = generate_unique_object_key(
-                    image_file.name,
-                    product_id
-                )
+                if not product_id:
+                    raise ValidationError("Product must be set before uploading images.")
 
-                # Upload to R2 with timeout
-                from botocore.config import Config
-                r2_client = get_r2_client()
-                
                 # Reset file pointer and read content
                 image_file.seek(0)
                 file_content = image_file.read()
                 
-                r2_client.put_object(
-                    Bucket=settings.R2_BUCKET_NAME,
-                    Key=object_key,
-                    Body=file_content,
-                    ContentType=image_file.content_type,
+                # Compress and upload to R2
+                upload_result = upload_compressed_image_to_r2(
+                    file_content,
+                    image_file.name,
+                    product_id=product_id,
+                    max_width=1920,
+                    max_height=1920,
+                    quality=85,
                 )
 
-                # Set the public URL
-                instance.image_url = f"{settings.R2_PUBLIC_URL}/{object_key}"
+                # Set the public URL from compressed upload
+                instance.image_url = upload_result['public_url']
 
             except Exception as e:
                 import traceback
@@ -193,25 +191,27 @@ class ProductImageInlineForm(forms.ModelForm):
 
         if image_file:
             try:
+                # Get product ID (required for compression upload)
                 product_id = instance.product.id if instance.product else None
-                object_key = generate_unique_object_key(
-                    image_file.name,
-                    product_id
-                )
+                if not product_id:
+                    raise ValidationError("Product must be set before uploading images.")
 
                 # Reset file pointer and read content
                 image_file.seek(0)
                 file_content = image_file.read()
                 
-                r2_client = get_r2_client()
-                r2_client.put_object(
-                    Bucket=settings.R2_BUCKET_NAME,
-                    Key=object_key,
-                    Body=file_content,
-                    ContentType=image_file.content_type,
+                # Compress and upload to R2
+                upload_result = upload_compressed_image_to_r2(
+                    file_content,
+                    image_file.name,
+                    product_id=product_id,
+                    max_width=1920,
+                    max_height=1920,
+                    quality=85,
                 )
 
-                instance.image_url = f"{settings.R2_PUBLIC_URL}/{object_key}"
+                # Set the public URL from compressed upload
+                instance.image_url = upload_result['public_url']
 
             except Exception as e:
                 import traceback

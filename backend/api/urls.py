@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    CompressedImageUploadView,
     OrderDetailView,
     OrderItemView,
     OrderListCreateView,
@@ -14,8 +15,9 @@ urlpatterns = [
     path("products/", ProductList.as_view(), name="product-list"),
     path("products/<int:product_id>/", ProductDetail.as_view(), name="product-detail"),
     
-    # Image upload endpoint
+    # Image upload endpoints
     path("images/presigned-upload/", PresignedUploadView.as_view(), name="presigned-upload"),
+    path("images/upload/", CompressedImageUploadView.as_view(), name="compressed-upload"),
     
     # Order endpoints
     path("orders/", OrderListCreateView.as_view(), name="order-list-create"),
