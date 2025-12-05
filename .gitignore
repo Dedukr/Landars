@@ -41,18 +41,21 @@ Thumbs.db
 build/
 dist/
 
-# Database backups
+# Database backups  and data
 *.sql
-db_backups/
-wal_archive/
+db_backups/*
+wal_archive/*
 
 # Database data (ensure local data isn't tracked)
-db/
-db_data/
-db_backups_base/
+db_backups_base/*
+db_data/*
+db/*
 
 # Playwright agent files
 .playwright*
 
 # Cookies
 cookies.txt
+
+# playwright-report/
+.playwright-mcp/

@@ -58,4 +58,5 @@ urlpatterns = [
     path(
         "api-auth/", include("rest_framework.urls")
     ),  # Uncomment if you want to use the browsable API authentication
+    path("static/", include("django.contrib.staticfiles.urls")),
 ]

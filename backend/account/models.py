@@ -59,17 +59,15 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         """Validate the model before saving"""
         super().clean()
         if self.email:
+            # Normalize email before validation
+            self.email = self.__class__.objects.normalize_email(self.email)
             # Use the custom validator
             from .validators import validate_unique_email
 
             validate_unique_email(self.email, exclude_user_id=self.pk)
 
     def save(self, *args, **kwargs):
-        # Normalize email before saving
-        if self.email:
-            self.email = self.__class__.objects.normalize_email(self.email)
-
-        # Run full validation
+        # Run full validation (email normalization happens in clean())
         self.full_clean()
         super().save(*args, **kwargs)
 

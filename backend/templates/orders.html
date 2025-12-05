@@ -90,7 +90,7 @@
 <body>
     {% for order in orders %}
     <div class="order">
-        <h2>Order #{{ order.id }}</h2>
+        <h2>Order #{{ order.delivery_date_order_id|default:order.id }}</h2>
         <div class="order-info">
             <p><strong>Name:</strong> {{ order.customer.name }}</p>
             <p><strong>Phone:</strong> {{ order.customer.profile.phone }}</p>

@@ -1,0 +1,66 @@
+/* Custom styling for Product Image inline forms */
+
+/* Style the image upload field */
+.image-upload-field {
+    max-width: 200px;
+    font-size: 12px;
+}
+
+/* Make the URL field less prominent when file upload is available */
+.field-image_url input {
+    background-color: #f9f9f9;
+}
+
+/* Add spacing between preview and upload field */
+.field-image_preview {
+    padding-right: 10px;
+}
+
+/* Style for better inline form layout */
+.inline-related fieldset.module {
+    position: relative;
+}
+
+/* Make file upload button more prominent */
+input[type="file"].image-upload-field {
+    padding: 5px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background-color: #fff;
+}
+
+input[type="file"].image-upload-field:hover {
+    border-color: #417690;
+    background-color: #f0f8ff;
+}
+
+/* Help text styling */
+.field-image_file .help,
+.field-image_url .help {
+    font-size: 11px;
+    color: #666;
+    display: block;
+    margin-top: 3px;
+}
+
+/* Highlight the preview area */
+.field-image_preview img {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Add visual separation between file upload and URL field */
+.field-image_file {
+    border-right: 1px solid #e0e0e0;
+    padding-right: 15px;
+}
+
+/* Responsive adjustments */
+@media screen and (max-width: 768px) {
+    .field-image_file {
+        border-right: none;
+        border-bottom: 1px solid #e0e0e0;
+        padding-bottom: 10px;
+        margin-bottom: 10px;
+    }
+}
+

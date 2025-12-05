@@ -33,11 +33,12 @@ SECRET_KEY = os.getenv(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "True") == "True"
 
-# Allow all hosts in development to avoid DisallowedHost behind proxies/rewrites
-if DEBUG:
-    ALLOWED_HOSTS = ["*"]
-else:
-    ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost").split(",")
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost").split(",")
+
+# Proxy settings for HTTPS behind reverse proxy
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
 
 
 # Application definition
@@ -294,6 +295,7 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, "static")
+STATICFILES_STORAGE = "django.contrib.staticfiles.storage.ManifestStaticFilesStorage"
 
 
 # Default primary key field type
@@ -341,6 +343,19 @@ EMAIL_USE_LOCALTIME = os.getenv("EMAIL_USE_LOCALTIME")
 # AWS S3 Media files storage
 DEFAULT_FILE_STORAGE = os.getenv("DEFAULT_FILE_STORAGE")
 MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/"
+
+# Cloudflare R2 Configuration (for product images)
+R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID")
+R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
+R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME")
+R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID")
+R2_ENDPOINT_URL = f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL")  # Your R2 custom domain or public URL
+
+# Product Image Settings
+ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"]
+MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB in bytes
+PRESIGNED_URL_EXPIRATION = 300  # 5 minutes
 
 BUSINESS_INFO = {
     "name": os.getenv("BUSINESS_NAME", "My Business name"),

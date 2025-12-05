@@ -55,8 +55,10 @@ def validate_unique_email(email, exclude_user_id=None):
     """
     Validator to ensure email uniqueness (case-insensitive).
 
+    Note: Email should already be normalized before calling this validator.
+
     Args:
-        email: The email address to validate
+        email: The email address to validate (should be normalized)
         exclude_user_id: User ID to exclude from uniqueness check (for updates)
 
     Raises:
@@ -65,11 +67,12 @@ def validate_unique_email(email, exclude_user_id=None):
     if not email:
         return
 
-    # Normalize email
-    email = User.objects.normalize_email(email)
+    # Ensure email is normalized (in case it wasn't normalized before)
+    normalized_email = User.objects.normalize_email(email)
 
     # Check for existing user with this email (case-insensitive)
-    queryset = User.objects.filter(email__iexact=email)
+    # Use exact match since emails are normalized in the database
+    queryset = User.objects.filter(email=normalized_email)
     if exclude_user_id:
         queryset = queryset.exclude(pk=exclude_user_id)
 

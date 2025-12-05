@@ -1,12 +1,25 @@
+import uuid
+
+from django.conf import settings
+from django.contrib.admin.views.decorators import staff_member_required
+from django.db import transaction
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import render
+from django.template.loader import render_to_string
+from django.utils import timezone
 from decimal import Decimal
 
 from account.models import Address
 from django.core.cache import cache
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.decorators import action
+
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from rest_framework.views import APIView
+
+from .validators import validate_image_file_extension
 
 from .models import (
     Cart,
@@ -14,9 +27,17 @@ from .models import (
     Order,
     OrderItem,
     Product,
-    ProductCategory,
+    ProductCategory, 
+    ProductImage,
     Wishlist,
     WishlistItem,
+)
+from .r2_storage import (
+    generate_presigned_upload_url,
+    generate_unique_object_key,
+    upload_compressed_image_to_r2,
+    validate_image_size,
+    validate_image_type,
 )
 from .serializers import (
     CartItemSerializer,
@@ -25,6 +46,7 @@ from .serializers import (
     OrderItemSerializer,
     OrderSerializer,
     ProductSerializer,
+    ProductListSerializer,
     WishlistItemSerializer,
     WishlistSerializer,
 )
@@ -133,7 +155,7 @@ class ProductList(APIView):
         # Apply pagination
         products = products[offset : offset + limit]
 
-        serializer = ProductSerializer(products, many=True)
+        serializer = ProductListSerializer(products, many=True)
 
         # Prepare response data
         response_data = {
@@ -160,13 +182,13 @@ class ProductList(APIView):
         return Response(response_data)
 
     def post(self, request):
-        """Create a new product and initialize its stock."""
+        """Create a new product with images."""
         serializer = ProductSerializer(data=request.data)
         if serializer.is_valid():
             product = serializer.save()
-            # Initialize stock for the new product
-            # Stock.objects.create(product=product, quantity=request.data.get("stock", 0))
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(
+                ProductSerializer(product).data, status=status.HTTP_201_CREATED
+            )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -176,7 +198,7 @@ class ProductDetail(APIView):
     ]  # Allow unauthenticated access to view product details
 
     def get(self, request, product_id):
-        """Retrieve a single product by ID."""
+        """Retrieve a single product by ID with all images."""
         product = self.get_object(product_id)
         if product:
             serializer = ProductSerializer(product)
@@ -186,7 +208,7 @@ class ProductDetail(APIView):
         )
 
     def put(self, request, product_id):
-        """Update a product by replacing it entirely."""
+        """Update a product by replacing it entirely, including images."""
         product = self.get_object(product_id)
         if product:
             serializer = ProductSerializer(product, data=request.data)
@@ -199,7 +221,7 @@ class ProductDetail(APIView):
         )
 
     def patch(self, request, product_id):
-        """Partially update a product."""
+        """Partially update a product. If images are included, they replace all existing images."""
         product = self.get_object(product_id)
         if product:
             serializer = ProductSerializer(product, data=request.data, partial=True)
@@ -212,9 +234,10 @@ class ProductDetail(APIView):
         )
 
     def delete(self, request, product_id):
-        """Delete a product."""
+        """Delete a product and all its images."""
         product = self.get_object(product_id)
         if product:
+            # Images are automatically deleted via CASCADE
             product.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
         return Response(
@@ -223,9 +246,9 @@ class ProductDetail(APIView):
 
     @staticmethod
     def get_object(product_id):
-        """Helper method to retrieve a product by ID."""
+        """Helper method to retrieve a product by ID with images prefetched."""
         try:
-            return Product.objects.get(id=product_id)
+            return Product.objects.prefetch_related("images").get(id=product_id)
         except Product.DoesNotExist:
             return None
 
@@ -266,6 +289,371 @@ class CategoryList(APIView):
 #             return Response(
 #                 {"error": "Product not found."}, status=status.HTTP_404_NOT_FOUND
 #             )
+
+
+class OrderListCreateView(APIView):
+    """List all orders or create a new order."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """Retrieve all orders for the authenticated user."""
+        orders = Order.objects.filter(customer=request.user).order_by("-id")
+        serializer = OrderSerializer(orders, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        """Create a new order."""
+        # Add customer from authenticated user
+        data = request.data.copy()
+        data["customer"] = request.user.id
+
+        serializer = OrderSerializer(data=data)
+        if serializer.is_valid():
+            try:
+                # Create the order
+                order = serializer.save()
+                return Response(
+                    OrderSerializer(order).data, status=status.HTTP_201_CREATED
+                )
+            except Exception as e:
+                return Response(
+                    {"error": f"Failed to create order: {str(e)}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class OrderListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """Get user's orders with filtering and pagination."""
+        if not request.user.is_authenticated:
+            return Response(
+                {"error": "Authentication required"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # Get user's orders
+        orders = Order.objects.filter(customer=request.user).prefetch_related(
+            "items__product"
+        )
+
+        # Filtering
+        status_filter = request.query_params.get("status")
+        if status_filter:
+            orders = orders.filter(status=status_filter)
+
+        # Date filtering
+        date_from = request.query_params.get("date_from")
+        date_to = request.query_params.get("date_to")
+        if date_from:
+            orders = orders.filter(order_date__gte=date_from)
+        if date_to:
+            orders = orders.filter(order_date__lte=date_to)
+
+        # Sorting
+        sort = request.query_params.get("sort", "-order_date")
+        if sort in [
+            "order_date",
+            "-order_date",
+            "delivery_date",
+            "-delivery_date",
+            "total_price",
+            "-total_price",
+        ]:
+            orders = orders.order_by(sort)
+
+        # Pagination
+        limit = int(request.query_params.get("limit", 20))
+        offset = int(request.query_params.get("offset", 0))
+
+        total_count = orders.count()
+        orders = orders[offset : offset + limit]
+
+        serializer = OrderSerializer(orders, many=True)
+
+        response_data = {
+            "results": serializer.data,
+            "count": total_count,
+            "next": (
+                f"?limit={limit}&offset={offset + limit}"
+                if offset + limit < total_count
+                else None
+            ),
+            "previous": (
+                f"?limit={limit}&offset={max(0, offset - limit)}"
+                if offset > 0
+                else None
+            ),
+            "limit": limit,
+            "offset": offset,
+        }
+
+        return Response(response_data)
+
+    def post(self, request):
+        """Create a new order from cart items."""
+        if not request.user.is_authenticated:
+            return Response(
+                {"error": "Authentication required"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        try:
+            # Get user's cart
+            cart = Cart.objects.get(user=request.user)
+            cart_items = cart.items.all()
+
+            if not cart_items.exists():
+                return Response(
+                    {"error": "Cart is empty"}, status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Create order using values from cart (ensure consistency)
+            # Prioritize cart values as the single source of truth - all cart fields are saved to order
+            # Convert discount and delivery_fee to Decimal to avoid type errors
+            discount_value = cart.discount or request.data.get("discount", 0)
+            delivery_fee_value = cart.delivery_fee or request.data.get("delivery_fee", 0)
+            
+            # Ensure values are Decimal type
+            if isinstance(discount_value, str):
+                discount_value = Decimal(discount_value) if discount_value else Decimal(0)
+            elif not isinstance(discount_value, Decimal):
+                discount_value = Decimal(str(discount_value))
+            
+            if isinstance(delivery_fee_value, str):
+                delivery_fee_value = Decimal(delivery_fee_value) if delivery_fee_value else Decimal(0)
+            elif not isinstance(delivery_fee_value, Decimal):
+                delivery_fee_value = Decimal(str(delivery_fee_value))
+            
+            order_data = {
+                "customer": request.user,
+                "notes": cart.notes or request.data.get("notes", ""),
+                "delivery_date": cart.delivery_date or request.data.get("delivery_date"),
+                "discount": discount_value,
+                "is_home_delivery": cart.is_home_delivery,
+                "delivery_fee": delivery_fee_value,
+                "status": "pending",
+            }
+
+            # Handle payment information if provided
+            payment_intent_id = request.data.get("payment_intent_id")
+            payment_status = request.data.get("payment_status")
+            
+            if payment_intent_id:
+                order_data["payment_intent_id"] = payment_intent_id
+            
+            if payment_status:
+                # Map "paid" to "succeeded" for payment_status field (Stripe uses "succeeded")
+                if payment_status == "paid":
+                    order_data["payment_status"] = "succeeded"
+                else:
+                    order_data["payment_status"] = payment_status
+                
+                # If payment is succeeded/paid, update order status
+                if payment_status in ["succeeded", "paid"]:
+                    order_data["status"] = "paid"
+
+            # Handle address from form data
+            address_data = request.data.get("address")
+            if address_data:
+                # Create a new address instance for this order
+                address = Address.objects.create(
+                    address_line=address_data.get("address_line", ""),
+                    address_line2=address_data.get("address_line2", ""),
+                    city=address_data.get("city", ""),
+                    postal_code=address_data.get("postal_code", ""),
+                )
+                order_data["address"] = address
+
+            order = Order.objects.create(**order_data)
+
+            # Create order items from cart items
+            for cart_item in cart_items:
+                OrderItem.objects.create(
+                    order=order, product=cart_item.product, quantity=cart_item.quantity
+                )
+
+            # Only recalculate if delivery_fee_manual is False (admin override)
+            # Otherwise use cart values
+            if not order.delivery_fee_manual:
+                self._calculate_delivery_type_and_fee(order)
+
+            # Delete the cart instance completely after order is created
+            # This ensures all cart data is transferred to the order
+            cart.delete()
+
+            serializer = OrderSerializer(order)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        except Cart.DoesNotExist:
+            return Response(
+                {"error": "Cart not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            import traceback
+            error_details = str(e)
+            # Log the full traceback for debugging
+            print(f"Error creating order: {error_details}")
+            print(traceback.format_exc())
+            return Response(
+                {"error": f"Failed to create order: {error_details}"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    def _calculate_delivery_type_and_fee(self, order):
+        """
+        Calculate delivery type and fee automatically based on cart contents.
+        Implements the same logic as OrderAdmin.save_related method.
+        """
+        items = order.items.all()
+
+        if not order.delivery_fee_manual:
+            # Sausage category name
+            post_suitable_category = "Sausages and Marinated products"
+            # Check if ALL products are sausages (only sausages)
+            all_products_are_sausages = True
+            for item in items:
+                category_names = item.product.categories.values_list("name", flat=True)
+                if post_suitable_category not in [
+                    name.lower() for name in category_names
+                ]:
+                    all_products_are_sausages = False
+                    break
+
+            if all_products_are_sausages:
+                # ALL products are sausages, use post delivery
+                order.is_home_delivery = False
+                if order.total_price > 220:
+                    order.delivery_fee = 0
+                else:
+                    total_weight = sum(item.quantity for item in items)
+                    if total_weight <= 2:
+                        order.delivery_fee = 5
+                    elif total_weight <= 10:
+                        order.delivery_fee = 8
+                    else:
+                        order.delivery_fee = 15
+            else:
+                # Mixed products or no sausages, use home delivery
+                order.is_home_delivery = True
+                order.delivery_fee = 10
+        order.save()
+
+
+class OrderDetailView(APIView):
+    """
+    Retrieve, update or delete a specific order.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self, order_id, user):
+        """Get order object and check ownership."""
+        try:
+            return Order.objects.get(id=order_id, customer=user)
+        except Order.DoesNotExist:
+            return None
+
+    def get(self, request, order_id):
+        """Retrieve a specific order."""
+        order = self.get_object(order_id, request.user)
+        if order:
+            serializer = OrderSerializer(order)
+            return Response(serializer.data)
+        return Response({"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    @transaction.atomic
+    def put(self, request, order_id):
+        """Update an order entirely."""
+        order = self.get_object(order_id, request.user)
+        if order:
+            serializer = OrderSerializer(order, data=request.data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    @transaction.atomic
+    def patch(self, request, order_id):
+            """Update order status (limited to certain statuses for customers)."""
+            if not request.user.is_authenticated:
+                return Response(
+                    {"error": "Authentication required"},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+            order = self.get_object(order_id, request.user)
+            if order:
+                serializer = OrderSerializer(order, data=request.data, partial=True)
+                if serializer.is_valid():
+                    serializer.save()
+                    return Response(serializer.data)
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+    def delete(self, request, order_id):
+        """Delete an order."""
+        order = self.get_object(order_id, request.user)
+        if order:
+            order.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response({"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+class OrderItemView(APIView):
+    """Manage order items."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, order_id):
+        """Add an item to an order."""
+        try:
+            order = Order.objects.select_for_update().get(
+                id=order_id, customer=request.user
+            )
+        except Order.DoesNotExist:
+            return Response(
+                {"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        product_id = request.data.get("product")
+        quantity = request.data.get("quantity", 1)
+
+        # Validate product exists
+        try:
+            product = Product.objects.get(id=product_id)
+        except Product.DoesNotExist:
+            return Response(
+                {"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Validate quantity
+        if quantity <= 0:
+            return Response(
+                {"error": "Quantity must be greater than 0"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Use the safe method that handles duplicates by merging quantities
+        item = order.add_item_safely(product, quantity)
+        serializer = OrderItemSerializer(item)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @transaction.atomic
+    def delete(self, request, order_id, item_id):
+        """Remove an item from an order."""
+        try:
+            order = Order.objects.get(id=order_id, customer=request.user)
+            item = OrderItem.objects.get(id=item_id, order=order)
+            item.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except (Order.DoesNotExist, OrderItem.DoesNotExist):
+            return Response(
+                {"error": "Order or item not found"}, status=status.HTTP_404_NOT_FOUND
+            )
 
 
 class WishlistView(APIView):
@@ -602,279 +990,6 @@ class CartView(APIView):
                 {"error": "Product not in cart"}, status=status.HTTP_404_NOT_FOUND
             )
 
-
-class OrderListView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        """Get user's orders with filtering and pagination."""
-        if not request.user.is_authenticated:
-            return Response(
-                {"error": "Authentication required"},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
-
-        # Get user's orders
-        orders = Order.objects.filter(customer=request.user).prefetch_related(
-            "items__product"
-        )
-
-        # Filtering
-        status_filter = request.query_params.get("status")
-        if status_filter:
-            orders = orders.filter(status=status_filter)
-
-        # Date filtering
-        date_from = request.query_params.get("date_from")
-        date_to = request.query_params.get("date_to")
-        if date_from:
-            orders = orders.filter(order_date__gte=date_from)
-        if date_to:
-            orders = orders.filter(order_date__lte=date_to)
-
-        # Sorting
-        sort = request.query_params.get("sort", "-order_date")
-        if sort in [
-            "order_date",
-            "-order_date",
-            "delivery_date",
-            "-delivery_date",
-            "total_price",
-            "-total_price",
-        ]:
-            orders = orders.order_by(sort)
-
-        # Pagination
-        limit = int(request.query_params.get("limit", 20))
-        offset = int(request.query_params.get("offset", 0))
-
-        total_count = orders.count()
-        orders = orders[offset : offset + limit]
-
-        serializer = OrderSerializer(orders, many=True)
-
-        response_data = {
-            "results": serializer.data,
-            "count": total_count,
-            "next": (
-                f"?limit={limit}&offset={offset + limit}"
-                if offset + limit < total_count
-                else None
-            ),
-            "previous": (
-                f"?limit={limit}&offset={max(0, offset - limit)}"
-                if offset > 0
-                else None
-            ),
-            "limit": limit,
-            "offset": offset,
-        }
-
-        return Response(response_data)
-
-    def post(self, request):
-        """Create a new order from cart items."""
-        if not request.user.is_authenticated:
-            return Response(
-                {"error": "Authentication required"},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
-
-        try:
-            # Get user's cart
-            cart = Cart.objects.get(user=request.user)
-            cart_items = cart.items.all()
-
-            if not cart_items.exists():
-                return Response(
-                    {"error": "Cart is empty"}, status=status.HTTP_400_BAD_REQUEST
-                )
-
-            # Create order using values from cart (ensure consistency)
-            # Prioritize cart values as the single source of truth - all cart fields are saved to order
-            # Convert discount and delivery_fee to Decimal to avoid type errors
-            discount_value = cart.discount or request.data.get("discount", 0)
-            delivery_fee_value = cart.delivery_fee or request.data.get("delivery_fee", 0)
-            
-            # Ensure values are Decimal type
-            if isinstance(discount_value, str):
-                discount_value = Decimal(discount_value) if discount_value else Decimal(0)
-            elif not isinstance(discount_value, Decimal):
-                discount_value = Decimal(str(discount_value))
-            
-            if isinstance(delivery_fee_value, str):
-                delivery_fee_value = Decimal(delivery_fee_value) if delivery_fee_value else Decimal(0)
-            elif not isinstance(delivery_fee_value, Decimal):
-                delivery_fee_value = Decimal(str(delivery_fee_value))
-            
-            order_data = {
-                "customer": request.user,
-                "notes": cart.notes or request.data.get("notes", ""),
-                "delivery_date": cart.delivery_date or request.data.get("delivery_date"),
-                "discount": discount_value,
-                "is_home_delivery": cart.is_home_delivery,
-                "delivery_fee": delivery_fee_value,
-                "status": "pending",
-            }
-
-            # Handle payment information if provided
-            payment_intent_id = request.data.get("payment_intent_id")
-            payment_status = request.data.get("payment_status")
-            
-            if payment_intent_id:
-                order_data["payment_intent_id"] = payment_intent_id
-            
-            if payment_status:
-                # Map "paid" to "succeeded" for payment_status field (Stripe uses "succeeded")
-                if payment_status == "paid":
-                    order_data["payment_status"] = "succeeded"
-                else:
-                    order_data["payment_status"] = payment_status
-                
-                # If payment is succeeded/paid, update order status
-                if payment_status in ["succeeded", "paid"]:
-                    order_data["status"] = "paid"
-
-            # Handle address from form data
-            address_data = request.data.get("address")
-            if address_data:
-                # Create a new address instance for this order
-                address = Address.objects.create(
-                    address_line=address_data.get("address_line", ""),
-                    address_line2=address_data.get("address_line2", ""),
-                    city=address_data.get("city", ""),
-                    postal_code=address_data.get("postal_code", ""),
-                )
-                order_data["address"] = address
-
-            order = Order.objects.create(**order_data)
-
-            # Create order items from cart items
-            for cart_item in cart_items:
-                OrderItem.objects.create(
-                    order=order, product=cart_item.product, quantity=cart_item.quantity
-                )
-
-            # Only recalculate if delivery_fee_manual is False (admin override)
-            # Otherwise use cart values
-            if not order.delivery_fee_manual:
-                self._calculate_delivery_type_and_fee(order)
-
-            # Delete the cart instance completely after order is created
-            # This ensures all cart data is transferred to the order
-            cart.delete()
-
-            serializer = OrderSerializer(order)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-        except Cart.DoesNotExist:
-            return Response(
-                {"error": "Cart not found"}, status=status.HTTP_404_NOT_FOUND
-            )
-        except Exception as e:
-            import traceback
-            error_details = str(e)
-            # Log the full traceback for debugging
-            print(f"Error creating order: {error_details}")
-            print(traceback.format_exc())
-            return Response(
-                {"error": f"Failed to create order: {error_details}"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-    def _calculate_delivery_type_and_fee(self, order):
-        """
-        Calculate delivery type and fee automatically based on cart contents.
-        Implements the same logic as OrderAdmin.save_related method.
-        """
-        items = order.items.all()
-
-        if not order.delivery_fee_manual:
-            # Sausage category name
-            post_suitable_category = "Sausages and Marinated products"
-            # Check if ALL products are sausages (only sausages)
-            all_products_are_sausages = True
-            for item in items:
-                category_names = item.product.categories.values_list("name", flat=True)
-                if post_suitable_category not in [
-                    name.lower() for name in category_names
-                ]:
-                    all_products_are_sausages = False
-                    break
-
-            if all_products_are_sausages:
-                # ALL products are sausages, use post delivery
-                order.is_home_delivery = False
-                if order.total_price > 220:
-                    order.delivery_fee = 0
-                else:
-                    total_weight = sum(item.quantity for item in items)
-                    if total_weight <= 2:
-                        order.delivery_fee = 5
-                    elif total_weight <= 10:
-                        order.delivery_fee = 8
-                    else:
-                        order.delivery_fee = 15
-            else:
-                # Mixed products or no sausages, use home delivery
-                order.is_home_delivery = True
-                order.delivery_fee = 10
-        order.save()
-
-
-class OrderDetailView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, order_id):
-        """Get a specific order by ID."""
-        if not request.user.is_authenticated:
-            return Response(
-                {"error": "Authentication required"},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
-
-        try:
-            order = Order.objects.prefetch_related("items__product").get(
-                id=order_id, customer=request.user
-            )
-            serializer = OrderSerializer(order)
-            return Response(serializer.data)
-
-        except Order.DoesNotExist:
-            return Response(
-                {"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND
-            )
-
-    def patch(self, request, order_id):
-        """Update order status (limited to certain statuses for customers)."""
-        if not request.user.is_authenticated:
-            return Response(
-                {"error": "Authentication required"},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
-
-        try:
-            order = Order.objects.get(id=order_id, customer=request.user)
-
-            # Only allow customers to cancel orders
-            new_status = request.data.get("status")
-            if new_status == "cancelled" and order.status in ["pending", "paid"]:
-                order.status = new_status
-                order.save()
-                serializer = OrderSerializer(order)
-                return Response(serializer.data)
-            else:
-                return Response(
-                    {"error": "Cannot update order status"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-        except Order.DoesNotExist:
-            return Response(
-                {"error": "Order not found"}, status=status.HTTP_404_NOT_FOUND
-            )
-
-
 class UserOrdersView(APIView):
     """View for loading past orders of a specific user (admin functionality)."""
 
@@ -974,6 +1089,179 @@ class UserOrdersView(APIView):
         except User.DoesNotExist:
             return Response(
                 {"error": "User not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PresignedUploadView(APIView):
+    """
+    Generate presigned URLs for uploading product images to Cloudflare R2.
+    Requires authentication.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        """
+        Generate a presigned URL for uploading an image.
+        
+        Request body:
+        {
+            "filename": "image.jpg",
+            "content_type": "image/jpeg",
+            "product_id": 123  // optional
+            "file_size": 1024000  // optional, in bytes
+        }
+        
+        Response:
+        {
+            "presigned_url": "https://...",
+            "public_url": "https://...",
+            "object_key": "products/...",
+            "required_headers": {
+                "Content-Type": "image/jpeg"
+            }
+        }
+        """
+        filename = request.data.get("filename")
+        content_type = request.data.get("content_type")
+        product_id = request.data.get("product_id")
+        file_size = request.data.get("file_size")
+
+        # Validation
+        if not filename:
+            return Response(
+                {"error": "filename is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not content_type:
+            return Response(
+                {"error": "content_type is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validate file extension
+        try:
+            validate_image_file_extension(filename)
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validate image type
+        if not validate_image_type(content_type):
+            return Response(
+                {
+                    "error": f"Invalid image type. Allowed types: {', '.join(settings.ALLOWED_IMAGE_TYPES)}"
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validate file size if provided
+        if file_size and not validate_image_size(file_size):
+            max_size_mb = settings.MAX_IMAGE_SIZE / (1024 * 1024)
+            return Response(
+                {"error": f"File size exceeds maximum allowed size of {max_size_mb}MB"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validate product exists if product_id is provided
+        if product_id:
+            try:
+                Product.objects.get(id=product_id)
+            except Product.DoesNotExist:
+                return Response(
+                    {"error": "Product not found"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+        try:
+            # Generate unique object key
+            object_key = generate_unique_object_key(filename, product_id)
+
+            # Generate presigned URL
+            upload_data = generate_presigned_upload_url(object_key, content_type)
+
+            return Response(upload_data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to generate presigned URL: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class CompressedImageUploadView(APIView):
+    """
+    Direct image upload endpoint with automatic compression.
+    Accepts multipart/form-data file uploads, compresses them, and uploads to R2.
+    Requires authentication.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        """
+        Upload and compress an image file.
+        
+        Request:
+        - multipart/form-data with 'image' field containing the file
+        - Optional 'product_id' field
+        - Optional 'max_width' field (default: 1920)
+        - Optional 'max_height' field (default: 1920)
+        - Optional 'quality' field (default: 85, range: 1-100)
+        
+        Response:
+        {
+            "public_url": "https://...",
+            "object_key": "products/...",
+            "content_type": "image/jpeg",
+            "original_size": 1024000,
+            "compressed_size": 256000,
+            "compression_ratio": 75.0
+        }
+        """
+        # Check if image file is provided
+        if 'image' not in request.FILES:
+            return Response(
+                {"error": "No image file provided. Use 'image' field in multipart/form-data."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        image_file = request.FILES['image']
+        filename = image_file.name
+        
+        # Validate file extension
+        try:
+            validate_image_file_extension(filename)
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        # Validate content type
+        content_type = image_file.content_type
+        if not validate_image_type(content_type):
+            return Response(
+                {
+                    "error": f"Invalid image type. Allowed types: {', '.join(settings.ALLOWED_IMAGE_TYPES)}"
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        # Validate file size
+        if not validate_image_size(image_file.size):
+            max_size_mb = settings.MAX_IMAGE_SIZE / (1024 * 1024)
+            return Response(
+                {"message": "Stock updated successfully."}, status=status.HTTP_200_OK
+            )
+        except Stock.DoesNotExist:
+            return Response(
+                {"error": "Product not found."}, status=status.HTTP_404_NOT_FOUND
             )
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
