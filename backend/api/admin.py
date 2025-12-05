@@ -20,9 +20,11 @@ from django.utils.translation import gettext_lazy as _
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 
-from .forms import ProductImageAdminForm, ProductImageInlineForm, OrderItemForm, OrderItemFormSet
+from .forms import (
+    ProductImageAdminForm,
+    ProductImageInlineForm,
+)
 from .models import Order, OrderItem, Product, ProductCategories, ProductImage
-
 
 
 class OrderAdminForm(ModelForm):
@@ -48,25 +50,29 @@ class ProductImageInline(admin.TabularInline):
     ordering = ["sort_order"]
 
     class Media:
-        css = {
-            'all': ('admin/css/product_image_inline.css',)
-        }
+        css = {"all": ("admin/css/product_image_inline.css",)}
 
     def image_preview(self, obj):
         if obj.image_url:
             # Mark the first image as primary visually with green border
-            is_primary = obj.sort_order == 0 or (obj.product and obj.product.images.first() == obj)
-            border_style = "border: 3px solid #4CAF50;" if is_primary else "border: 1px solid #ddd;"
-            
+            is_primary = obj.sort_order == 0 or (
+                obj.product and obj.product.images.first() == obj
+            )
+            border_style = (
+                "border: 3px solid #4CAF50;"
+                if is_primary
+                else "border: 1px solid #ddd;"
+            )
+
             return format_html(
                 '<img src="{}" style="max-width: 100px; max-height: 100px; object-fit: contain; {}; border-radius: 4px; padding: 2px;" />',
                 obj.image_url,
-                border_style
+                border_style,
             )
         return format_html(
             '<div style="width: 100px; height: 100px; border: 2px dashed #ccc; border-radius: 4px; '
             'display: flex; align-items: center; justify-content: center; color: #999; font-size: 11px; text-align: center;">'
-            'No image<br>yet</div>'
+            "No image<br>yet</div>"
         )
 
     image_preview.short_description = "Preview"
@@ -80,7 +86,7 @@ class ProductImageInline(admin.TabularInline):
 #     search_fields = ["product__name", "alt_text"]
 #     ordering = ["product", "sort_order"]
 #     autocomplete_fields = ["product"]
-    
+
 #     fieldsets = (
 #         ('Product', {
 #             'fields': ('product',)
@@ -109,11 +115,11 @@ class ProductImageInline(admin.TabularInline):
 #         )
 
 #     image_preview_thumb.short_description = "Preview"
-    
+
 #     def is_primary_display(self, obj):
 #         """Display if this is the primary image (first by sort_order)."""
 #         return obj.is_primary
-    
+
 #     is_primary_display.boolean = True
 #     is_primary_display.short_description = "Primary"
 
@@ -126,9 +132,8 @@ class ProductAdmin(admin.ModelAdmin):
     search_fields = ["name"]
     ordering = ["name"]
     inlines = [ProductImageInline]
-    
-    fields = ["name", "description", "base_price", "holiday_fee", "categories"]
 
+    fields = ["name", "description", "base_price", "holiday_fee", "categories"]
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
@@ -318,8 +323,6 @@ class OrderItemInline(admin.TabularInline):
     extra = 1
     readonly_fields = ["get_total_price"]
     autocomplete_fields = ["product"]
-    formset = OrderItemFormSet
-    form = OrderItemForm
 
     def get_total_price(self, obj):
         if obj and obj.product and obj.quantity:

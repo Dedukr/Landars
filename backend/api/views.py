@@ -21,13 +21,13 @@ from .r2_storage import (
     validate_image_size,
     validate_image_type,
 )
-from .validators import validate_image_file_extension
 from .serializers import (
     OrderItemSerializer,
     OrderSerializer,
     ProductListSerializer,
     ProductSerializer,
 )
+from .validators import validate_image_file_extension
 
 # @staff_member_required
 # def order_invoice_pdf(request, pk):

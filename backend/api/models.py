@@ -564,7 +564,6 @@ class OrderItem(models.Model):
 
     class Meta:
         verbose_name_plural = "Order Items"
-        unique_together = ("order", "product")
 
     def __str__(self):
         return f"{self.product.name if self.product else 'Deleted product'} - {self.quantity}"
