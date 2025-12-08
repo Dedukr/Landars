@@ -73,7 +73,7 @@ def validate_unique_email(email, exclude_user_id=None):
     # Check for existing user with this email (case-insensitive)
     # Use exact match since emails are normalized in the database
     queryset = User.objects.filter(email=normalized_email)
-    if exclude_user_id:
+    if exclude_user_id is not None:
         queryset = queryset.exclude(pk=exclude_user_id)
 
     if queryset.exists():

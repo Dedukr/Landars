@@ -167,7 +167,7 @@ const CartItem = memo<CartItemProps>(
                   opacity: 0.6,
                 }}
               >
-                £{product?.price} each
+                £{product?.price ? parseFloat(product.price).toFixed(2) : "0.00"} each
               </div>
             </div>
           </div>

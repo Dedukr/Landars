@@ -9,6 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import SignInPopup from "@/components/SignInPopup";
 import Breadcrumb from "@/components/Breadcrumb";
 import ProductGallery from "@/components/ProductGallery";
+import ProductImageCollage from "@/components/ProductImageCollage";
 // import ProductDetails from "@/components/ProductDetails";
 import ProductRecommendations from "@/components/ProductRecommendations";
 import LoadingSpinner from "@/components/LoadingSpinner";
@@ -19,12 +20,13 @@ interface Product {
   description: string;
   price: string;
   image_url?: string | null;
+  images?: Array<{ image_url: string; sort_order: number }> | string[];
+  primary_image?: string | null;
   stock_quantity?: number;
   category?: {
     id: number;
     name: string;
   };
-  images?: string[];
   specifications?: {
     [key: string]: string;
   };
@@ -202,15 +204,48 @@ export default function ProductPage() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
-          {/* Product Images */}
+          {/* Product Images - Collage Layout */}
           <div className="space-y-4">
-            <ProductGallery
-              images={
-                product.images || (product.image_url ? [product.image_url] : [])
+            {(() => {
+              // Extract image URLs from the images array
+              // Handle both formats: array of strings or array of objects with image_url
+              let imageUrls: string[] = [];
+              
+              if (product.images && product.images.length > 0) {
+                imageUrls = product.images.map((img: string | { image_url: string }) => {
+                  if (typeof img === "string") {
+                    return img;
+                  } else if (img && typeof img === "object" && "image_url" in img) {
+                    return img.image_url;
+                  }
+                  return null;
+                }).filter((url: string | null): url is string => url !== null);
+              } else if (product.image_url || product.primary_image) {
+                const url = product.image_url || product.primary_image;
+                imageUrls = url ? [url] : [];
               }
-              selectedImage={selectedImage}
-              onImageSelect={setSelectedImage}
-            />
+
+              // Use collage for 2+ images, gallery for single image or when user wants gallery view
+              if (imageUrls.length >= 2) {
+                return (
+                  <ProductImageCollage
+                    images={imageUrls}
+                    alt={product.name}
+                    className="w-full"
+                    onImageClick={(index) => setSelectedImage(index)}
+                  />
+                );
+              }
+
+              // Fallback to gallery for single image or empty
+              return (
+                <ProductGallery
+                  images={imageUrls}
+                  selectedImage={selectedImage}
+                  onImageSelect={setSelectedImage}
+                />
+              );
+            })()}
           </div>
 
           {/* Product Information */}
@@ -230,7 +265,7 @@ export default function ProductPage() {
               className="text-3xl font-bold"
               style={{ color: "var(--success)" }}
             >
-              £{product.price}
+              £{product.price ? parseFloat(String(product.price)).toFixed(2) : "0.00"}
             </div>
 
             {/* Description */}

@@ -67,9 +67,16 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
             validate_unique_email(self.email, exclude_user_id=self.pk)
 
     def save(self, *args, **kwargs):
-        # Run full validation (email normalization happens in clean())
-        self.full_clean()
-        super().save(*args, **kwargs)
+        # Skip validation if only updating specific fields like last_login
+        # to avoid unnecessary validation errors during login
+        update_fields = kwargs.get("update_fields")
+        if update_fields and set(update_fields) <= {"last_login"}:
+            # Only updating last_login, skip validation
+            super().save(*args, **kwargs)
+        else:
+            # Run full validation (email normalization happens in clean())
+            self.full_clean()
+            super().save(*args, **kwargs)
 
 
 class Address(models.Model):
@@ -88,7 +95,7 @@ class Profile(models.Model):
         CustomUser, on_delete=models.CASCADE, related_name="profile"
     )
     # name = models.CharField(max_length=255, blank=True, null=True)
-    phone = models.CharField(max_length=20, blank=True, null=True)
+    phone = models.CharField(max_length=40, blank=True, null=True)
     address = models.ForeignKey(
         Address, on_delete=models.CASCADE, related_name="profiles", null=True
     )

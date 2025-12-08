@@ -77,7 +77,7 @@ const OrderReviewItem = memo<OrderReviewItemProps>(
                   opacity: 0.6,
                 }}
               >
-                £{product?.price} each
+                £{product?.price ? parseFloat(product.price).toFixed(2) : "0.00"} each
               </div>
             </div>
           </div>
@@ -86,7 +86,7 @@ const OrderReviewItem = memo<OrderReviewItemProps>(
               className="text-lg font-semibold"
               style={{ color: "var(--foreground)" }}
             >
-              £{totalPrice}
+              £{parseFloat(totalPrice).toFixed(2)}
             </div>
           </div>
         </div>

@@ -8,19 +8,21 @@ import React, {
 import { useCart } from "@/contexts/CartContext";
 import { useWishlist } from "@/contexts/WishlistContext";
 import { useAuth } from "@/contexts/AuthContext";
-import Image from "next/image";
 import Link from "next/link";
 import SignInPopup from "./SignInPopup";
 import { Button } from "@/components/ui/Button";
 import { AddToCartButton } from "@/components/ui/AddToCartButton";
 import { useInView } from "react-intersection-observer";
+import ProductImageCarousel from "./ProductImageCarousel";
 
 interface Product {
   id: number;
   name: string;
-  description: string;
+  description?: string | null;
   price: string;
   image_url?: string | null;
+  images?: string[];
+  primary_image?: string | null;
   stock_quantity?: number;
 }
 
@@ -342,12 +344,12 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
           href={`/product/${product.id}`}
           className="flex flex-col flex-grow cursor-pointer outline-none focus:outline-none"
         >
-          {/* Image section - fixed height with lazy loading */}
-          <div className="h-32 w-full flex items-center justify-center bg-gray-50 rounded mb-2 overflow-hidden flex-shrink-0 relative">
+          {/* Image section - carousel for multiple images */}
+          <div className="h-32 w-full mb-2 flex-shrink-0 relative" style={{ minHeight: "128px" }}>
             {/* Stock badge */}
             {typeof product.stock_quantity === "number" && (
               <span
-                className="absolute top-2 left-2 px-2 py-0.5 rounded text-xs font-medium"
+                className="absolute top-2 left-2 px-2 py-0.5 rounded text-xs font-medium z-20"
                 style={{
                   background:
                     product.stock_quantity > 0
@@ -362,20 +364,29 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
                 {product.stock_quantity > 0 ? "In stock" : "Out of stock"}
               </span>
             )}
-            {product.image_url ? (
-              <Image
-                src={product.image_url}
-                alt={product.name}
-                className="object-cover h-full w-full"
-                width={128}
-                height={128}
-                loading="lazy"
-                placeholder="blur"
-                blurDataURL="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
-              />
-            ) : (
-              <span className="text-4xl text-gray-300">🍎</span>
-            )}
+            <ProductImageCarousel
+              images={(() => {
+                // Handle both formats: array of strings or array of objects
+                if (product.images && product.images.length > 0) {
+                  return product.images.map((img: string | { image_url: string }) => {
+                    if (typeof img === "string") return img;
+                    if (img && typeof img === "object" && "image_url" in img) return img.image_url;
+                    return null;
+                  }).filter((url): url is string => url !== null);
+                }
+                if (product.image_url || product.primary_image) {
+                  const url = product.image_url || product.primary_image;
+                  return url ? [url] : [];
+                }
+                return [];
+              })()}
+              alt={product.name}
+              className="h-full w-full"
+              autoPlay={true}
+              autoPlayInterval={4000}
+              showDots={true}
+              showArrows={true}
+            />
           </div>
 
           {/* Content section - grows to fill available space */}
@@ -389,11 +400,11 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
             <div
               className="text-sm truncate flex-grow"
               style={{ color: "var(--foreground)" }}
-              title={product.description}
+              title={product.description || ""}
             >
-              {product.description.length > 48
-                ? product.description.slice(0, 48) + "..."
-                : product.description}
+              {(product.description || "").length > 48
+                ? (product.description || "").slice(0, 48) + "..."
+                : product.description || ""}
             </div>
           </div>
         </Link>
@@ -406,7 +417,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
               className="font-bold text-lg"
               style={{ color: "var(--primary)" }}
             >
-              £{product.price}
+              £{product.price ? parseFloat(String(product.price)).toFixed(2) : "0.00"}
             </div>
 
             {/* Add to Cart Button */}

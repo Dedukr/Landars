@@ -1,6 +1,7 @@
 # Generated manually on 2025-11-26
 
 from decimal import Decimal
+
 from django.core.validators import MinValueValidator
 from django.db import migrations, models
 
@@ -8,7 +9,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("api", "0002_add_order_delivery_date_order_id"),
+        ("api", "0028_add_address_to_order"),
     ]
 
     operations = [

@@ -357,6 +357,11 @@ ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"]
 MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB in bytes
 PRESIGNED_URL_EXPIRATION = 300  # 5 minutes
 
+# File Upload Settings - Allow larger file uploads for admin panel
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB - files larger than this use temp files
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB - files larger than this use temp files
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000  # Increase if needed for complex forms
+
 BUSINESS_INFO = {
     "name": os.getenv("BUSINESS_NAME", "My Business name"),
     "address": os.getenv("BUSINESS_ADDRESS", "Address"),

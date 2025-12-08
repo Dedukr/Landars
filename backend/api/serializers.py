@@ -1,11 +1,9 @@
 from decimal import Decimal
 
-from django.db import transaction
-
 from account.serializers import AddressSerializer
+from django.db import transaction
 from rest_framework import serializers
 
-from .validators import ProductImageValidationMixin
 from .models import (
     Cart,
     CartItem,
@@ -17,6 +15,7 @@ from .models import (
     Wishlist,
     WishlistItem,
 )
+from .validators import ProductImageValidationMixin
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -31,7 +30,7 @@ class CategorySerializer(serializers.ModelSerializer):
 
 class ProductImageSerializer(serializers.ModelSerializer):
     is_primary = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = ProductImage
         fields = [
@@ -60,9 +59,7 @@ class ProductImageSerializer(serializers.ModelSerializer):
 class ProductSerializer(ProductImageValidationMixin, serializers.ModelSerializer):
     images = ProductImageSerializer(many=True, required=False)
     primary_image = serializers.SerializerMethodField()
-    price = serializers.DecimalField(
-        max_digits=10, decimal_places=2, read_only=True, source="price"
-    )
+    price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
 
     class Meta:
         model = Product
@@ -152,9 +149,10 @@ class ProductSerializer(ProductImageValidationMixin, serializers.ModelSerializer
 
 
 class ProductListSerializer(serializers.ModelSerializer):
-    """Serializer for product list view - only returns primary image."""
-    
+    """Serializer for product list view - returns primary image and all images for carousel."""
+
     primary_image = serializers.SerializerMethodField()
+    images = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -165,11 +163,18 @@ class ProductListSerializer(serializers.ModelSerializer):
             "price",
             "categories",
             "primary_image",
+            "images",
         ]
 
     def get_primary_image(self, obj):
         """Get only the primary image URL."""
         return obj.get_primary_image()
+
+    def get_images(self, obj):
+        """Get all image URLs for carousel."""
+        return [
+            img.image_url for img in obj.images.all()[:5]
+        ]  # Limit to 5 images for performance
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -322,6 +327,7 @@ class OrderSerializer(serializers.ModelSerializer):
 
         instance.save()
         return instance
+
 
 class WishlistItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source="product.name", read_only=True)
@@ -517,7 +523,13 @@ class OrderSerializer(serializers.ModelSerializer):
             "total_price",
             "total_items",
         ]
-        read_only_fields = ["id", "order_date", "sum_price", "total_price", "total_items"]
+        read_only_fields = [
+            "id",
+            "order_date",
+            "sum_price",
+            "total_price",
+            "total_items",
+        ]
 
     def get_sum_price(self, obj):
         return str(obj.sum_price)

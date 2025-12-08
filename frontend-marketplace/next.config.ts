@@ -5,6 +5,34 @@ const nextConfig: NextConfig = {
   trailingSlash: true,
   output: "standalone", // Enable standalone output for Docker
 
+  // Image configuration - allow external image domains
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "cdn.landarsfood.com",
+        pathname: "/**",
+      },
+      // Allow any R2 public URL (for flexibility)
+      {
+        protocol: "https",
+        hostname: "*.r2.cloudflarestorage.com",
+        pathname: "/**",
+      },
+      // Allow any Cloudflare R2 custom domain
+      {
+        protocol: "https",
+        hostname: "*.cloudflarestorage.com",
+        pathname: "/**",
+      },
+    ],
+    // Allow unoptimized images if needed (fallback)
+    unoptimized: false,
+    // Image optimization settings
+    formats: ["image/avif", "image/webp"],
+    minimumCacheTTL: 60,
+  },
+
   // Proxy API calls to backend
   async rewrites() {
     // Get backend URL from environment variables

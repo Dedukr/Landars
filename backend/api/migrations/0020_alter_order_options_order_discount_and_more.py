@@ -7,30 +7,45 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0019_order_delivery_fee_manual'),
+        ("api", "0019_order_delivery_fee_manual"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='order',
-            options={'ordering': ['-delivery_date'], 'verbose_name_plural': 'Orders'},
+            name="order",
+            options={"ordering": ["-delivery_date"], "verbose_name_plural": "Orders"},
         ),
         migrations.AddField(
-            model_name='order',
-            name='discount',
-            field=models.DecimalField(decimal_places=2, default=0, max_digits=5, validators=[django.core.validators.MinValueValidator(0)]),
+            model_name="order",
+            name="discount",
+            field=models.DecimalField(
+                decimal_places=2,
+                default=0,
+                max_digits=5,
+                validators=[django.core.validators.MinValueValidator(0)],
+            ),
         ),
         migrations.AlterField(
-            model_name='order',
-            name='delivery_fee_manual',
-            field=models.BooleanField(default=False, help_text='Check to set the delivery fee manually'),
+            model_name="order",
+            name="delivery_fee_manual",
+            field=models.BooleanField(
+                default=False, help_text="Check to set the delivery fee manually"
+            ),
         ),
         migrations.AlterField(
-            model_name='order',
-            name='status',
-            field=models.CharField(choices=[('pending', 'Pending'), ('paid', 'Paid'), ('cancelled', 'Cancelled')], default='pending', max_length=50),
+            model_name="order",
+            name="status",
+            field=models.CharField(
+                choices=[
+                    ("pending", "Pending"),
+                    ("paid", "Paid"),
+                    ("cancelled", "Cancelled"),
+                ],
+                default="pending",
+                max_length=50,
+            ),
         ),
         migrations.DeleteModel(
-            name='Stock',
+            name="Stock",
         ),
     ]

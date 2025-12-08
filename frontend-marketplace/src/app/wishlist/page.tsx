@@ -107,11 +107,15 @@ export default function WishlistPage() {
   const filteredAndSortedProducts = useMemo(() => {
     return (Array.isArray(filteredProducts) ? filteredProducts : [])
       .filter((product) => {
+        // Ensure name and description are strings before calling toLowerCase
+        const productName = typeof product.name === "string" ? product.name : "";
+        const productDescription =
+          typeof product.description === "string" ? product.description : "";
+        const searchLower = typeof searchQuery === "string" ? searchQuery.toLowerCase() : "";
+
         const matchesSearch =
-          product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          product.description
-            ?.toLowerCase()
-            .includes(searchQuery.toLowerCase());
+          productName.toLowerCase().includes(searchLower) ||
+          (productDescription && productDescription.toLowerCase().includes(searchLower));
         const matchesCategory =
           filterCategory === "all" ||
           product.categories?.includes(filterCategory);

@@ -20,6 +20,7 @@ from django.utils.translation import gettext_lazy as _
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 
+from .forms import ProductImageAdminForm, ProductImageInlineForm
 from .models import (
     Cart,
     CartItem,
@@ -28,15 +29,10 @@ from .models import (
     OrderItem,
     Product,
     ProductCategory,
+    ProductImage,
     Wishlist,
     WishlistItem,
 )
-
-from .forms import (
-    ProductImageAdminForm,
-    ProductImageInlineForm,
-)
-from .models import Order, OrderItem, Product, ProductCategories, ProductImage
 
 
 class OrderAdminForm(ModelForm):
@@ -165,7 +161,7 @@ class ProductAdmin(admin.ModelAdmin):
     def formfield_for_manytomany(self, db_field, request, **kwargs):
         if db_field.name == "categories":
             # Only categories that are not parents (i.e., that are leaf nodes)
-            kwargs["queryset"] = ProductCategories.objects.filter(
+            kwargs["queryset"] = ProductCategory.objects.filter(
                 subcategories__isnull=True
             ).order_by("parent__name", "name")
         return super().formfield_for_manytomany(db_field, request, **kwargs)
@@ -191,9 +187,7 @@ class ParentCategoriesFilter(admin.SimpleListFilter):
 
     def lookups(self, request, model_admin):
         # Only show parents that have subcategories
-        parents = ProductCategories.objects.filter(
-            subcategories__isnull=False
-        ).distinct()
+        parents = ProductCategory.objects.filter(subcategories__isnull=False).distinct()
         return [(parent.id, parent.name) for parent in parents]
 
     def queryset(self, request, queryset):
@@ -202,7 +196,7 @@ class ParentCategoriesFilter(admin.SimpleListFilter):
         return queryset
 
 
-@admin.register(ProductCategories)
+@admin.register(ProductCategory)
 class ProductCategoryAdmin(admin.ModelAdmin):
     list_display = ["name", "description", "parent"]
     list_filter = [ParentCategoriesFilter]
@@ -776,32 +770,6 @@ class OrderAdmin(admin.ModelAdmin):
         html_string = render_to_string("orders.html", {"orders": queryset})
 
         # Generate PDF from HTML
-        orders_qs = queryset.select_related("customer").prefetch_related("items")
-        orders_list = list(orders_qs.order_by("id"))
-
-        if not orders_list:
-            self.message_user(request, "No orders selected.", level=messages.ERROR)
-            return
-
-        # Ensure every selected order shares the same delivery_date
-        unique_delivery_dates = {order.delivery_date for order in orders_list}
-        if len(unique_delivery_dates) != 1:
-            self.message_user(
-                request,
-                "Error: All selected orders must have the same delivery date. Please select orders from one day only.",
-                level=messages.ERROR,
-            )
-            return
-
-        delivery_date = unique_delivery_dates.pop()
-        html_string = render_to_string(
-            "orders.html",
-            {
-                "orders": orders_list,
-            },
-        )
-        from weasyprint import HTML
-
         with tempfile.NamedTemporaryFile(delete=True) as output:
             HTML(string=html_string).write_pdf(target=output.name)
             output.seek(0)

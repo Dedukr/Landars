@@ -10,7 +10,6 @@ from .views import (
     WishlistView,
     OrderDetailView,
     OrderListView,
-    OrderCreateView,
     OrderItemView,
     UserOrdersView,
 )
@@ -33,17 +32,11 @@ urlpatterns = [
     path("cart/", CartView.as_view(), name="cart"),
     # Order endpoints
     path("orders/", OrderListView.as_view(), name="order-list"),
-    path("orders/create/", OrderCreateView.as_view(), name="order-create"),
     path("orders/<int:order_id>/", OrderDetailView.as_view(), name="order-detail"),
-    path(
-        "orders/<int:order_id>/items/",
-        OrderListItemsView.as_view(),
-        name="order-item-create",
-    ),
     path(
         "orders/<int:order_id>/items/<int:item_id>/",
         OrderItemView.as_view(),
-        name="order-item-delete",
+        name="order-item",
     ),
     path("users/<int:user_id>/orders/", UserOrdersView.as_view(), name="user-orders"),
 ]

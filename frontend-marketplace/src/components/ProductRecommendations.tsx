@@ -289,7 +289,7 @@ const ProductRecommendations: React.FC<ProductRecommendationsProps> = ({
                   className="text-lg font-bold mt-1"
                   style={{ color: "var(--primary)" }}
                 >
-                  £{product.price}
+                  £{product.price ? parseFloat(String(product.price)).toFixed(2) : "0.00"}
                 </p>
               </div>
             </Link>

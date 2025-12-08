@@ -50,7 +50,11 @@ export function calculateDeliveryFee(
   // Check if ALL products are sausages (only sausages)
   let allProductsAreSausages = true;
   for (const product of products) {
-    const categoryNames = product.categories.map((cat) => cat.toLowerCase());
+    // Ensure categories is an array and filter out non-string values
+    const validCategories = (product.categories || []).filter(
+      (cat): cat is string => typeof cat === "string"
+    );
+    const categoryNames = validCategories.map((cat) => cat.toLowerCase());
     // If the sausage category is NOT in this product's categories, then not all products are sausages
     if (!categoryNames.includes(sausageCategory.toLowerCase())) {
       allProductsAreSausages = false;

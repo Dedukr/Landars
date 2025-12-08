@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("api", "0003_add_holiday_fee_rename_price_to_base_price"),
+        ("api", "0029_add_holiday_fee_rename_price_to_base_price"),
     ]
 
     operations = [

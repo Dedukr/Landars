@@ -154,7 +154,7 @@ export default function CartPage() {
   }, [user, cartProducts.length, deliveryCalculation.deliveryFee, deliveryCalculation.isHomeDelivery, cartDeliveryFee, fetchCartData]);
 
   const handleApplyCoupon = async () => {
-    if (couponCode.toLowerCase() === "save10") {
+    if (typeof couponCode === "string" && couponCode.toLowerCase() === "save10") {
       const discountAmount = subtotal * 0.1; // 10% discount
       
       try {
@@ -365,12 +365,12 @@ export default function CartPage() {
                                 <div
                                   className="text-sm"
                                   style={{
-                                    color: "var(--foreground)",
-                                    opacity: 0.6,
-                                  }}
-                                >
-                                  £{product?.price}
-                                </div>
+                                  color: "var(--foreground)",
+                                  opacity: 0.6,
+                                }}
+                              >
+                                £{product?.price ? parseFloat(product.price).toFixed(2) : "0.00"}
+                              </div>
                               </div>
                               <div className="flex space-x-2">
                                 <button
