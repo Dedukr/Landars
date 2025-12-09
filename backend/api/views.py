@@ -449,9 +449,17 @@ class OrderListView(APIView):
             # Prioritize cart values as the single source of truth - all cart fields are saved to order
             # Convert discount and delivery_fee to Decimal to avoid type errors
             discount_value = cart.discount or request.data.get("discount", 0)
-            delivery_fee_value = cart.delivery_fee or request.data.get(
-                "delivery_fee", 0
-            )
+            
+            # If shipping option is selected, use its price as delivery_fee
+            # Otherwise fall back to cart delivery_fee or request delivery_fee
+            shipping_cost = request.data.get("shipping_cost")
+            if shipping_cost:
+                # Use shipping option price as delivery fee
+                delivery_fee_value = shipping_cost
+            else:
+                delivery_fee_value = cart.delivery_fee or request.data.get(
+                    "delivery_fee", 0
+                )
 
             # Ensure values are Decimal type
             if isinstance(discount_value, str):
@@ -468,6 +476,18 @@ class OrderListView(APIView):
             elif not isinstance(delivery_fee_value, Decimal):
                 delivery_fee_value = Decimal(str(delivery_fee_value))
 
+            # Convert shipping_cost to Decimal if provided
+            shipping_cost_decimal = None
+            if shipping_cost:
+                if isinstance(shipping_cost, str):
+                    shipping_cost_decimal = (
+                        Decimal(shipping_cost) if shipping_cost else None
+                    )
+                elif not isinstance(shipping_cost, Decimal):
+                    shipping_cost_decimal = Decimal(str(shipping_cost))
+                else:
+                    shipping_cost_decimal = shipping_cost
+
             order_data = {
                 "customer": request.user,
                 "notes": cart.notes or request.data.get("notes", ""),
@@ -478,6 +498,16 @@ class OrderListView(APIView):
                 "delivery_fee": delivery_fee_value,
                 "status": "pending",
             }
+            
+            # Add shipping option information if provided
+            if request.data.get("shipping_method_id"):
+                order_data["shipping_method_id"] = request.data.get("shipping_method_id")
+            if request.data.get("shipping_carrier"):
+                order_data["shipping_carrier"] = request.data.get("shipping_carrier")
+            if request.data.get("shipping_service_name"):
+                order_data["shipping_service_name"] = request.data.get("shipping_service_name")
+            if shipping_cost_decimal is not None:
+                order_data["shipping_cost"] = shipping_cost_decimal
 
             # Handle payment information if provided
             payment_intent_id = request.data.get("payment_intent_id")
@@ -517,9 +547,10 @@ class OrderListView(APIView):
                     order=order, product=cart_item.product, quantity=cart_item.quantity
                 )
 
-            # Only recalculate if delivery_fee_manual is False (admin override)
-            # Otherwise use cart values
-            if not order.delivery_fee_manual:
+            # If shipping option was selected, don't recalculate delivery fee
+            # The delivery_fee is already set from shipping_cost
+            # Only recalculate if no shipping option was selected and delivery_fee_manual is False
+            if not order.delivery_fee_manual and not shipping_cost:
                 self._calculate_delivery_type_and_fee(order)
 
             # Delete the cart instance completely after order is created
@@ -853,6 +884,10 @@ class CartView(APIView):
             cart_item.quantity += quantity
             cart_item.save()
 
+        # Recalculate delivery fee based on updated cart contents
+        self._calculate_delivery_type_and_fee(cart)
+        cart.save()
+
         serializer = CartItemSerializer(cart_item)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -895,6 +930,11 @@ class CartView(APIView):
             if quantity == 0:
                 # Remove item if quantity is 0
                 cart_item.delete()
+                
+                # Recalculate delivery fee after removing item
+                self._calculate_delivery_type_and_fee(cart)
+                cart.save()
+                
                 return Response(
                     {"message": "Item removed from cart"}, status=status.HTTP_200_OK
                 )
@@ -902,6 +942,11 @@ class CartView(APIView):
                 # Update quantity
                 cart_item.quantity = quantity
                 cart_item.save()
+                
+                # Recalculate delivery fee based on updated cart contents
+                self._calculate_delivery_type_and_fee(cart)
+                cart.save()
+                
                 serializer = CartItemSerializer(cart_item)
                 return Response(serializer.data)
 
@@ -960,13 +1005,16 @@ class CartView(APIView):
     def _calculate_delivery_type_and_fee(self, cart):
         """
         Calculate delivery type and fee automatically based on cart contents.
-        Implements the same logic as OrderAdmin.save_related method.
+        Uses preassigned Royal Mail delivery fee map for post delivery (sausages).
         """
+        from decimal import Decimal
+        from shipping.service import ShippingService
+        
         items = cart.items.all()
 
         if not items.exists():
             cart.is_home_delivery = True
-            cart.delivery_fee = 0
+            cart.delivery_fee = Decimal("0")
             return
 
         # Sausage category name (compare using lowercase to match stored values)
@@ -980,22 +1028,20 @@ class CartView(APIView):
                 break
 
         if all_products_are_sausages:
-            # ALL products are sausages, use post delivery
+            # ALL products are sausages, use post delivery with Royal Mail pricing
             cart.is_home_delivery = False
             if cart.sum_price > 220:
-                cart.delivery_fee = 0
+                cart.delivery_fee = Decimal("0")
             else:
-                total_weight = sum(item.quantity for item in items)
-                if total_weight <= 2:
-                    cart.delivery_fee = 5
-                elif total_weight <= 10:
-                    cart.delivery_fee = 8
-                else:
-                    cart.delivery_fee = 15
+                # Calculate total weight from cart items
+                total_weight = float(sum(item.quantity for item in items))
+                
+                # Use preassigned Royal Mail delivery fee map
+                cart.delivery_fee = ShippingService.get_delivery_fee_by_weight(total_weight)
         else:
             # Mixed products or no sausages, use home delivery
             cart.is_home_delivery = True
-            cart.delivery_fee = 10
+            cart.delivery_fee = Decimal("10")
 
     def delete(self, request):
         """Remove a product from cart or clear entire cart."""
@@ -1015,12 +1061,22 @@ class CartView(APIView):
                 # Remove specific item
                 cart_item = CartItem.objects.get(cart=cart, product_id=product_id)
                 cart_item.delete()
+                
+                # Recalculate delivery fee after removing item
+                self._calculate_delivery_type_and_fee(cart)
+                cart.save()
+                
                 return Response(
                     {"message": "Product removed from cart"}, status=status.HTTP_200_OK
                 )
             else:
                 # Clear entire cart
                 cart.items.all().delete()
+                
+                # Recalculate delivery fee (should be 0 for empty cart)
+                self._calculate_delivery_type_and_fee(cart)
+                cart.save()
+                
                 return Response({"message": "Cart cleared"}, status=status.HTTP_200_OK)
 
         except Cart.DoesNotExist:

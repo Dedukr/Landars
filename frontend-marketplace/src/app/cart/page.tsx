@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useCart } from "@/contexts/CartContext";
@@ -81,13 +81,33 @@ export default function CartPage() {
     }
   }, [user]);
 
-  // Fetch cart data when component mounts (only once)
+  // Fetch cart data when component mounts
   useEffect(() => {
     if (user) {
       fetchCartData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // Create a stable key from cart items to detect actual changes
+  const cartKey = useMemo(() => {
+    return cart
+      .map((item) => `${item.productId}:${item.quantity}`)
+      .sort()
+      .join(",");
+  }, [cart]);
+
+  // Refetch cart data when cart items change to get updated delivery fee
+  // This ensures delivery fee is recalculated and displayed after items are added/updated/removed
+  useEffect(() => {
+    if (!user || cartIsLoading) return;
+    
+    const timeoutId = setTimeout(() => {
+      fetchCartData();
+    }, 500); // Debounce by 500ms to batch rapid changes
+
+    return () => clearTimeout(timeoutId);
+  }, [cartKey, user, fetchCartData, cartIsLoading]);
 
   // Use optimized cart calculations
   const { subtotal, totalItems, cartProducts } = useCartCalculations(
@@ -133,52 +153,23 @@ export default function CartPage() {
   const {
     deliveryCalculation,
     deliveryBreakdown,
-    totalPrice: calculatedTotal,
   } = useDeliveryFee({
     products: cartProducts,
     subtotal: subtotal,
     discount: discount,
   });
 
-  // Use calculated total instead of stats.total
-  const total = calculatedTotal;
-
-  // Sync calculated delivery fee to backend cart
-  // Skip if cart is loading to prevent cascading updates during quantity changes
+  // Use backend's preassigned delivery fee (calculated using Royal Mail map)
+  // Backend automatically calculates delivery fee when items are added/updated
   const cartDeliveryFee = cartData?.delivery_fee ? parseFloat(cartData.delivery_fee) : 0;
-  useEffect(() => {
-    if (cartIsLoading) return; // Skip during cart updates
-    
-    if (user && cartProducts.length > 0 && deliveryCalculation.deliveryFee !== undefined) {
-      const calculatedFee = deliveryCalculation.deliveryFee;
-      // Only update if the values don't match (with small tolerance for floating point)
-      if (Math.abs(cartDeliveryFee - calculatedFee) > 0.01) {
-        const timeoutId = setTimeout(async () => {
-          try {
-            await httpClient.put("/api/cart/", {
-              delivery_fee: calculatedFee,
-              is_home_delivery: deliveryCalculation.isHomeDelivery,
-              recalculate_delivery: false,
-            });
-            // Update local cartData to avoid extra refetch
-            setCartData((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    delivery_fee: calculatedFee.toString(),
-                    is_home_delivery: deliveryCalculation.isHomeDelivery,
-                  }
-                : prev
-            );
-          } catch (error) {
-            console.error("Failed to update delivery fee:", error);
-          }
-        }, 800); // Gentle debounce to batch updates
+  const cartIsHomeDelivery = cartData?.is_home_delivery ?? true;
+  
+  // Use backend delivery fee if available, otherwise fall back to frontend calculation
+  const displayDeliveryFee = cartDeliveryFee > 0 ? cartDeliveryFee : deliveryCalculation.deliveryFee;
+  const displayIsHomeDelivery = cartData ? cartIsHomeDelivery : deliveryCalculation.isHomeDelivery;
 
-        return () => clearTimeout(timeoutId);
-      }
-    }
-  }, [user, cartProducts.length, deliveryCalculation.deliveryFee, deliveryCalculation.isHomeDelivery, cartDeliveryFee, cartIsLoading]);
+  // Calculate total using backend delivery fee (preassigned Royal Mail pricing)
+  const total = subtotal + displayDeliveryFee - discount;
 
   const handleApplyCoupon = async () => {
     if (typeof couponCode === "string" && couponCode.toLowerCase() === "save10") {
@@ -622,10 +613,16 @@ export default function CartPage() {
 
                       {/* Dynamic Delivery Fee - Based on Order Model Logic */}
                       <DeliveryFeeDisplay
-                        deliveryFee={deliveryCalculation.deliveryFee}
-                        isFree={deliveryBreakdown.isFree}
-                        reasoning={deliveryBreakdown.reasoning}
-                        hasSausages={deliveryBreakdown.hasSausages}
+                        deliveryFee={displayDeliveryFee}
+                        isFree={displayDeliveryFee === 0}
+                        reasoning={
+                          displayDeliveryFee === 0
+                            ? "Free delivery for orders over £220"
+                            : displayIsHomeDelivery
+                            ? "Home delivery"
+                            : `Royal Mail post delivery (weight-based)`
+                        }
+                        hasSausages={!displayIsHomeDelivery}
                         weight={deliveryBreakdown.weight}
                       />
 

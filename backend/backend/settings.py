@@ -56,9 +56,9 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "account",
-    # "api.apps.ApiConfig",
     "api",
     "storages",
+    "shipping",
 ]
 
 MIDDLEWARE = [
@@ -319,9 +319,9 @@ AWS_DEFAULT_ACL = None
 AWS_QUERYSTRING_AUTH = False
 
 S3_STORAGE_CLASS = os.getenv("S3_STORAGE_CLASS")  # Storage class
-S3_BACKUP_DIR = os.getenv("S3_BACKUP_DIR")   # Directory prefix in S3
+S3_BACKUP_DIR = os.getenv("S3_BACKUP_DIR")  # Directory prefix in S3
 
-EMAIL_BACKEND = os.getenv("EMAIL_BACKEND")  
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND")
 AWS_SES_REGION_NAME = os.getenv("AWS_SES_REGION_NAME")
 AWS_SES_REGION_ENDPOINT = os.getenv("AWS_SES_REGION_ENDPOINT")
 
@@ -360,8 +360,12 @@ MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB in bytes
 PRESIGNED_URL_EXPIRATION = 300  # 5 minutes
 
 # File Upload Settings - Allow larger file uploads for admin panel
-DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB - files larger than this use temp files
-FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB - files larger than this use temp files
+DATA_UPLOAD_MAX_MEMORY_SIZE = (
+    10 * 1024 * 1024
+)  # 10MB - files larger than this use temp files
+FILE_UPLOAD_MAX_MEMORY_SIZE = (
+    10 * 1024 * 1024
+)  # 10MB - files larger than this use temp files
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000  # Increase if needed for complex forms
 
 BUSINESS_INFO = {
@@ -395,6 +399,24 @@ EMAIL_VERIFICATION_RESEND_RATE_LIMIT = "3/hour"  # 3 resend requests per hour pe
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+
+# Sendcloud Configuration
+SENDCLOUD_PUBLIC_KEY = os.getenv("SENDCLOUD_PUBLIC_KEY", "")
+SENDCLOUD_SECRET_KEY = os.getenv("SENDCLOUD_SECRET_KEY", "")
+SENDCLOUD_SENDER_COUNTRY = os.getenv("SENDCLOUD_SENDER_COUNTRY", "GB")
+SENDCLOUD_SENDER_POSTAL_CODE = os.getenv("SENDCLOUD_SENDER_POSTAL_CODE", "")
+
+# Sendcloud Shipping Options Filtering
+# Only show specific carriers and services
+SENDCLOUD_ALLOWED_CARRIERS = os.getenv(
+    "SENDCLOUD_ALLOWED_CARRIERS", "royal_mail,royal_mailv2"
+).split(",")
+SENDCLOUD_ALLOWED_SERVICES = os.getenv(
+    "SENDCLOUD_ALLOWED_SERVICES", "tracked 48"
+).split(",")
+SENDCLOUD_EXCLUDE_SERVICES = os.getenv(
+    "SENDCLOUD_EXCLUDE_SERVICES", "signed,tracked 24,express,large letter"
+).split(",")
 
 
 # Frontend URL for email verification links - derive from URL_BASE

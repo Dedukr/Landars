@@ -13,6 +13,7 @@ interface User {
   id: number;
   name: string;
   email: string;
+  is_staff?: boolean;
 }
 
 interface AuthTokens {
@@ -42,9 +43,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /**
    * Validates a JWT token by making a test request to the user endpoint
+   * Also fetches and returns the full user profile including is_staff
    */
   const validateToken = useCallback(
-    async (tokenToValidate: string): Promise<boolean> => {
+    async (tokenToValidate: string): Promise<User | null> => {
       try {
         const response = await fetch(`/api/auth/profile/`, {
           method: "GET",
@@ -59,13 +61,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.warn(
             `Token validation failed with status: ${response.status}`
           );
-          return false;
+          return null;
         }
 
-        return true;
+        const data = await response.json();
+        // Return user data with is_staff from profile response
+        if (data.user) {
+          return {
+            id: data.user.id,
+            name: data.user.name,
+            email: data.user.email,
+            is_staff: data.user.is_staff || false,
+          };
+        }
+
+        return null;
       } catch (error) {
         console.error("Token validation error:", error);
-        return false;
+        return null;
       }
     },
     []
@@ -102,6 +115,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem("refreshToken", data.refresh);
       }
 
+      // Fetch and update user profile with is_staff after token refresh
+      const updatedUser = await validateToken(data.access);
+      if (updatedUser) {
+        setUser(updatedUser);
+        localStorage.setItem("user", JSON.stringify(updatedUser));
+      }
+
       return true;
     } catch (error) {
       console.error("Token refresh error:", error);
@@ -109,7 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setRefreshing(false);
     }
-  }, [refreshTokenValue, refreshing]);
+  }, [refreshTokenValue, refreshing, validateToken]);
 
   /**
    * Logs out the user and clears all authentication data
@@ -152,16 +172,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const storedUser = localStorage.getItem("user");
 
         if (storedToken && storedRefresh && storedUser) {
-          const userData = JSON.parse(storedUser);
+          // Validate the stored token and get full user profile with is_staff
+          const validatedUser = await validateToken(storedToken);
 
-          // Validate the stored token
-          const isValid = await validateToken(storedToken);
-
-          if (isValid) {
-            // Token is valid, restore auth state
+          if (validatedUser) {
+            // Token is valid, restore auth state with updated user data
             setToken(storedToken);
             setRefreshTokenValue(storedRefresh);
-            setUser(userData);
+            setUser(validatedUser);
+            // Update localStorage with complete user data including is_staff
+            localStorage.setItem("user", JSON.stringify(validatedUser));
           } else {
             // Token is invalid, try to refresh
             const refreshSuccess = await refreshToken();
@@ -199,14 +219,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const handleVisibilityChange = () => {
       // When user returns to the tab, validate token if we have one
       if (!document.hidden && token) {
-        validateToken(token).then((isValid) => {
-          if (!isValid) {
+        validateToken(token).then((validatedUser) => {
+          if (!validatedUser) {
             console.log("Token invalid on tab focus, attempting refresh...");
             refreshToken().then((refreshSuccess) => {
               if (!refreshSuccess) {
                 logout();
               }
             });
+          } else if (validatedUser) {
+            // Update user data with latest is_staff status
+            setUser(validatedUser);
+            localStorage.setItem("user", JSON.stringify(validatedUser));
           }
         });
       }

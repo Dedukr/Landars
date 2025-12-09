@@ -292,7 +292,12 @@ def login_view(request):
                 "message": "Login successful",
                 "access": str(refresh.access_token),
                 "refresh": str(refresh),
-                "user": {"id": user.id, "name": user.name, "email": user.email},
+                "user": {
+                    "id": user.id,
+                    "name": user.name,
+                    "email": user.email,
+                    "is_staff": user.is_staff,
+                },
             },
             status=status.HTTP_200_OK,
         )
@@ -351,6 +356,7 @@ def user_profile(request):
                 "name": user.name,
                 "email": user.email,
                 "last_login": user.last_login,
+                "is_staff": user.is_staff,
             }
         }
 
@@ -521,6 +527,7 @@ def update_profile(request):
                 "name": user.name,
                 "email": user.email,
                 "last_login": user.last_login,
+                "is_staff": user.is_staff,
             },
             "profile": {
                 "phone": profile.phone,

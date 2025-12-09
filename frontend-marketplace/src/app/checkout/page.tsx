@@ -17,10 +17,13 @@ import DiscountDisplay from "@/components/cart/DiscountDisplay";
 import DeliveryFeeDisplay from "@/components/cart/DeliveryFeeDisplay";
 import SubtotalDisplay from "@/components/cart/SubtotalDisplay";
 import TotalDisplay from "@/components/cart/TotalDisplay";
+import ShippingOptions from "@/components/ShippingOptions";
+import {
+  useShippingOptions,
+  type ShippingOption,
+} from "@/hooks/useShippingOptions";
 
 interface ShippingFormData {
-  firstName: string;
-  lastName: string;
   email: string;
   phone: string;
   address_line: string;
@@ -119,8 +122,6 @@ interface OrderDetails {
     currency: string;
   };
   shippingInfo?: {
-    firstName: string;
-    lastName: string;
     email: string;
     phone: string;
     address_line: string;
@@ -152,6 +153,16 @@ export default function CheckoutPage() {
   const [orderDetails] = useState<OrderDetails | null>(null);
   const [cartData, setCartData] = useState<CartData | null>(null);
 
+  // Shipping options state
+  const {
+    options: shippingOptions,
+    loading: shippingOptionsLoading,
+    error: shippingOptionsError,
+    fetchShippingOptions,
+  } = useShippingOptions();
+  const [selectedShippingOption, setSelectedShippingOption] =
+    useState<ShippingOption | null>(null);
+
   // Redirect if cart is empty (but not if we're showing order review)
   useEffect(() => {
     if (
@@ -166,8 +177,6 @@ export default function CheckoutPage() {
 
   // Form states
   const [shippingForm, setShippingForm] = useState<ShippingFormData>({
-    firstName: "",
-    lastName: "",
     email: "",
     phone: "",
     address_line: "",
@@ -215,15 +224,38 @@ export default function CheckoutPage() {
         try {
           const updates: {
             recalculate_delivery?: boolean;
+            delivery_fee?: string;
             notes?: string;
           } = {};
           let needsUpdate = false;
 
-          // Ensure delivery fee is calculated and saved
-          const currentDeliveryFee = cartData.delivery_fee ? parseFloat(cartData.delivery_fee) : 0;
-          if (!cartData.delivery_fee || currentDeliveryFee === 0) {
-            updates.recalculate_delivery = true;
-            needsUpdate = true;
+          // Calculate and save delivery fee
+          if (cartData.is_home_delivery) {
+            // For home delivery, use backend calculation
+            const currentDeliveryFee = cartData.delivery_fee
+              ? parseFloat(cartData.delivery_fee)
+              : 0;
+            if (!cartData.delivery_fee || currentDeliveryFee === 0) {
+              updates.recalculate_delivery = true;
+              needsUpdate = true;
+            }
+          } else {
+            // For post delivery, use API price from shipping options
+            // If shipping options are available, use the first one's price
+            // Otherwise, keep the existing fee
+            if (shippingOptions.length > 0) {
+              const apiPrice = parseFloat(shippingOptions[0].price);
+              const currentDeliveryFee = cartData.delivery_fee
+                ? parseFloat(cartData.delivery_fee)
+                : 0;
+
+              // Update if fee doesn't match API price
+              if (Math.abs(currentDeliveryFee - apiPrice) > 0.01) {
+                updates.delivery_fee = apiPrice.toString();
+                needsUpdate = true;
+              }
+            }
+            // If no shipping options available yet, don't update (will be set when options load)
           }
 
           // Ensure notes are saved (if they exist in shipping form but not in cart)
@@ -244,14 +276,26 @@ export default function CheckoutPage() {
 
       updateCartInfo();
     }
-  }, [user, cartData, checkoutStep, cart.length, shippingForm.notes, fetchCartData]);
+  }, [
+    user,
+    cartData,
+    checkoutStep,
+    cart.length,
+    shippingForm.notes,
+    fetchCartData,
+    shippingOptions,
+  ]);
 
   // All values come from cart model - single source of truth
   const cartSubtotal = cartData?.sum_price ? parseFloat(cartData.sum_price) : 0;
   const cartDiscount = cartData?.discount ? parseFloat(cartData.discount) : 0;
-  const cartDeliveryFee = cartData?.delivery_fee ? parseFloat(cartData.delivery_fee) : 0;
+  const cartDeliveryFee = cartData?.delivery_fee
+    ? parseFloat(cartData.delivery_fee)
+    : 0;
   const cartIsHomeDelivery = cartData?.is_home_delivery ?? true;
-  const cartTotal = cartData?.total_price ? parseFloat(cartData.total_price) : 0;
+  const cartTotal = cartData?.total_price
+    ? parseFloat(cartData.total_price)
+    : 0;
   const cartTotalWeight =
     cartData?.items?.reduce(
       (sum, item) => sum + (parseFloat(item.quantity) || 0),
@@ -262,6 +306,28 @@ export default function CheckoutPage() {
     return cartIsHomeDelivery ? "Home Delivery" : "Post Delivery";
   };
 
+  // Calculate delivery fee - use API price from selected shipping option, or first available option
+  const getDeliveryFeeFromAPI = (): number => {
+    if (cartIsHomeDelivery) {
+      return cartDeliveryFee;
+    }
+
+    // For post delivery, use price from selected shipping option
+    if (selectedShippingOption) {
+      return parseFloat(selectedShippingOption.price);
+    }
+
+    // If no option selected yet, use first available option's price (if available)
+    if (shippingOptions.length > 0) {
+      return parseFloat(shippingOptions[0].price);
+    }
+
+    // Fallback to cart fee if no shipping options available
+    return cartDeliveryFee;
+  };
+
+  const apiDeliveryFee = getDeliveryFeeFromAPI();
+
   // Helper function to get delivery fee reasoning (simplified for display)
   const getDeliveryFeeReasoning = () => {
     if (cartDeliveryFee === 0) {
@@ -270,19 +336,37 @@ export default function CheckoutPage() {
     if (cartIsHomeDelivery) {
       return "Standard home delivery fee";
     }
-    // Post delivery weight tiers (match cart logic)
-    if (cartDeliveryFee === 5) return "Sausages ≤2kg: £5 delivery fee";
-    if (cartDeliveryFee === 8) return "Sausages ≤10kg: £8 delivery fee";
-    if (cartDeliveryFee === 15) return "Sausages >10kg: £15 delivery fee";
-    return "Post delivery fee based on weight";
+    // Post delivery - show API price
+    if (selectedShippingOption) {
+      return `Royal Mail shipping: £${parseFloat(
+        selectedShippingOption.price
+      ).toFixed(2)}`;
+    }
+    if (shippingOptions.length > 0) {
+      return `Royal Mail shipping: £${parseFloat(
+        shippingOptions[0].price
+      ).toFixed(2)}`;
+    }
+    return "Depends on courier";
   };
 
+  // Calculate display delivery fee - use API price for post delivery, otherwise cart fee
+  const displayDeliveryFee = !cartIsHomeDelivery
+    ? apiDeliveryFee
+    : cartDeliveryFee;
+
+  // Calculate display total - use API delivery fee in calculation
+  const displayTotal = !cartIsHomeDelivery
+    ? cartSubtotal + apiDeliveryFee - cartDiscount
+    : cartTotal;
+
   const deliveryDisplayProps = {
-    deliveryFee: cartDeliveryFee,
-    isFree: cartDeliveryFee === 0,
+    deliveryFee: displayDeliveryFee,
+    isFree: displayDeliveryFee === 0 && cartIsHomeDelivery,
     reasoning: getDeliveryFeeReasoning(),
     hasSausages: !cartIsHomeDelivery,
     weight: cartTotalWeight,
+    dependsOnCourier: !cartIsHomeDelivery && shippingOptions.length === 0, // Depends on courier if no options loaded yet
   };
 
   // Fetch user profile data
@@ -295,10 +379,7 @@ export default function CheckoutPage() {
       setProfileData(data);
 
       // Pre-populate form with existing data
-      const nameParts = data.user.name.split(" ");
       setShippingForm({
-        firstName: nameParts[0] || "",
-        lastName: nameParts.slice(1).join(" ") || "",
         email: data.user.email || "",
         phone: data.profile?.phone || "",
         address_line: data.address?.address_line || "",
@@ -318,7 +399,6 @@ export default function CheckoutPage() {
   useEffect(() => {
     fetchProfileData();
   }, [fetchProfileData]);
-
 
   // Update cart notes when user changes them
   const updateCartNotes = useCallback(
@@ -351,16 +431,78 @@ export default function CheckoutPage() {
     return () => clearTimeout(timeoutId);
   }, [shippingForm.notes, user, cartData, updateCartNotes]);
 
+  // Fetch shipping options when address is complete
+  useEffect(() => {
+    // Check if required address fields are filled
+    const hasCompleteAddress =
+      shippingForm.address_line.trim() &&
+      shippingForm.city.trim() &&
+      shippingForm.postal_code.trim();
+
+    if (hasCompleteAddress && cartData && cartData.items.length > 0) {
+      // Debounce the fetch
+      const timeoutId = setTimeout(() => {
+        fetchShippingOptions(
+          {
+            country: "GB", // Default to UK for now
+            postal_code: shippingForm.postal_code,
+            city: shippingForm.city,
+            address_line: shippingForm.address_line,
+          },
+          cartData.items.map((item) => ({
+            product_id: item.product,
+            quantity: item.quantity,
+          }))
+        );
+      }, 500);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [
+    shippingForm.address_line,
+    shippingForm.city,
+    shippingForm.postal_code,
+    cartData,
+    fetchShippingOptions,
+  ]);
+
+  // Handle shipping option selection
+  const handleSelectShippingOption = useCallback(
+    async (optionId: number) => {
+      const option = shippingOptions.find((opt) => opt.id === optionId);
+      if (option) {
+        setSelectedShippingOption(option);
+
+        // Update cart delivery_fee to the API price from selected shipping option
+        if (!cartIsHomeDelivery && user) {
+          try {
+            const apiPrice = parseFloat(option.price);
+            await httpClient.put("/api/cart/", {
+              delivery_fee: apiPrice.toString(),
+            });
+            // Refetch cart data to get updated values
+            await fetchCartData();
+          } catch (error) {
+            console.error("Failed to update delivery fee:", error);
+          }
+        }
+      }
+    },
+    [shippingOptions, cartIsHomeDelivery, user, fetchCartData]
+  );
+
   // Create payment intent when component mounts - using cart total
   const createPaymentIntent = useCallback(async () => {
-    if (!user || cartTotal <= 0) return;
+    // Use displayTotal for payment intent (includes shipping price if selected)
+    const totalForPayment = displayTotal > 0 ? displayTotal : cartTotal;
+    if (!user || totalForPayment <= 0) return;
 
     try {
       const response = await httpClient.post<{
         client_secret: string;
         payment_intent_id: string;
       }>("/api/payments/create-payment-intent/", {
-        amount: Math.round(cartTotal * 100), // Convert to cents
+        amount: Math.round(totalForPayment * 100), // Convert to cents
         currency: "gbp",
         metadata: {
           user_id: user.id.toString(),
@@ -373,27 +515,19 @@ export default function CheckoutPage() {
       console.error("Failed to create payment intent:", error);
       setErrors({ payment: "Failed to initialize payment. Please try again." });
     }
-  }, [user, cartTotal]);
+  }, [user, cartTotal, displayTotal]);
 
   useEffect(() => {
-    if (user && cartTotal > 0 && cartData) {
+    if (user && (displayTotal > 0 || cartTotal > 0) && cartData) {
       createPaymentIntent();
     }
-  }, [user, cartTotal, cartData, createPaymentIntent]);
+  }, [user, cartTotal, displayTotal, cartData, createPaymentIntent]);
 
   // Form validation for shipping fields
   const validateShippingForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
     // Required field validation
-    if (!shippingForm.firstName.trim()) {
-      newErrors.firstName = "First name is required";
-    }
-
-    if (!shippingForm.lastName.trim()) {
-      newErrors.lastName = "Last name is required";
-    }
-
     if (!shippingForm.email.trim()) {
       newErrors.email = "Email address is required";
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(shippingForm.email)) {
@@ -426,6 +560,11 @@ export default function CheckoutPage() {
       newErrors.postal_code = "Please enter a valid UK postal code";
     }
 
+    // Validate shipping option is selected
+    if (!selectedShippingOption) {
+      newErrors.shipping = "Please select a shipping option";
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -441,11 +580,31 @@ export default function CheckoutPage() {
   }) => {
     setSubmitting(true);
     try {
-      // Create order with payment intent ID, using cart values (single source of truth)
-      const orderData = {
+      // Create order with payment intent ID and shipping info
+      // If shipping option is selected, use its price as delivery_fee
+      const orderData: {
+        notes: string;
+        discount: string;
+        is_home_delivery: boolean;
+        payment_intent_id: string;
+        payment_status: string;
+        address: {
+          address_line: string;
+          address_line2: string;
+          city: string;
+          postal_code: string;
+          country: string;
+        };
+        delivery_fee: string;
+        shipping_method_id?: number;
+        shipping_carrier?: string;
+        shipping_service_name?: string;
+        shipping_cost?: string;
+      } = {
         notes: cartData?.notes || shippingForm.notes,
         discount: cartData?.discount || "0",
-        delivery_fee: cartData?.delivery_fee || "0",
+        delivery_fee:
+          selectedShippingOption?.price || cartData?.delivery_fee || "0",
         is_home_delivery: cartData?.is_home_delivery ?? true,
         payment_intent_id: paymentIntent.id,
         payment_status: "paid",
@@ -454,8 +613,17 @@ export default function CheckoutPage() {
           address_line2: shippingForm.address_line2,
           city: shippingForm.city,
           postal_code: shippingForm.postal_code,
+          country: "GB", // Default to UK
         },
       };
+
+      // If shipping option is selected, add shipping metadata
+      if (selectedShippingOption?.price) {
+        orderData.shipping_method_id = selectedShippingOption.id;
+        orderData.shipping_carrier = selectedShippingOption.carrier;
+        orderData.shipping_service_name = selectedShippingOption.name;
+        orderData.shipping_cost = selectedShippingOption.price;
+      }
 
       const order = await httpClient.post<{ id: number }>(
         "/api/orders/",
@@ -468,7 +636,6 @@ export default function CheckoutPage() {
       if (shippingForm.saveShippingInfo) {
         try {
           await httpClient.put("/api/auth/profile/update/", {
-            name: `${shippingForm.firstName} ${shippingForm.lastName}`.trim(),
             email: shippingForm.email,
             phone: shippingForm.phone,
             address: {
@@ -476,6 +643,7 @@ export default function CheckoutPage() {
               address_line2: shippingForm.address_line2,
               city: shippingForm.city,
               postal_code: shippingForm.postal_code,
+              country: "GB",
             },
           });
         } catch (profileError) {
@@ -486,7 +654,7 @@ export default function CheckoutPage() {
 
       // Clear cart context (backend already deleted the cart instance)
       clearCart();
-      
+
       // Redirect to order detail page for successful confirmation
       router.push(`/orders/${order.id}`);
     } catch (error) {
@@ -568,33 +736,6 @@ export default function CheckoutPage() {
                 </h2>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <Input
-                    label="First Name *"
-                    value={shippingForm.firstName}
-                    onChange={(e) =>
-                      setShippingForm({
-                        ...shippingForm,
-                        firstName: e.target.value,
-                      })
-                    }
-                    error={errors.firstName}
-                    fullWidth
-                  />
-                  <Input
-                    label="Last Name *"
-                    value={shippingForm.lastName}
-                    onChange={(e) =>
-                      setShippingForm({
-                        ...shippingForm,
-                        lastName: e.target.value,
-                      })
-                    }
-                    error={errors.lastName}
-                    fullWidth
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                   <Input
                     label="Email Address *"
                     type="email"
@@ -714,6 +855,33 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
+              {/* Shipping Options */}
+              <ShippingOptions
+                options={shippingOptions}
+                selectedOptionId={selectedShippingOption?.id || null}
+                onSelectOption={handleSelectShippingOption}
+                loading={shippingOptionsLoading}
+                error={shippingOptionsError}
+              />
+
+              {/* Validation Error for Shipping */}
+              {errors.shipping && (
+                <div
+                  className="rounded-lg shadow-sm p-4"
+                  style={{
+                    background: "var(--destructive-bg)",
+                    border: "1px solid var(--destructive-border)",
+                  }}
+                >
+                  <p
+                    className="text-sm"
+                    style={{ color: "var(--destructive)" }}
+                  >
+                    {errors.shipping}
+                  </p>
+                </div>
+              )}
+
               {/* Payment Information */}
               <div
                 className="rounded-lg shadow-sm p-6"
@@ -734,11 +902,11 @@ export default function CheckoutPage() {
                     <StripePaymentForm
                       onPaymentSuccess={handlePaymentSuccess}
                       onPaymentError={handlePaymentError}
-                      totalAmount={cartTotal}
+                      totalAmount={displayTotal}
                       isProcessing={submitting}
                       onValidationRequired={validateShippingForm}
                       billingDetails={{
-                        name: `${shippingForm.firstName} ${shippingForm.lastName}`.trim(),
+                        name: user?.name || "",
                         email: shippingForm.email,
                         phone: shippingForm.phone,
                         address: {
@@ -842,7 +1010,7 @@ export default function CheckoutPage() {
                     <SubtotalDisplay subtotal={cartSubtotal} />
                     <DeliveryFeeDisplay {...deliveryDisplayProps} />
                     <DiscountDisplay discount={cartDiscount} />
-                    <TotalDisplay total={cartTotal} />
+                    <TotalDisplay total={displayTotal} />
                   </div>
 
                   {/* Trust Signals */}
@@ -1035,10 +1203,9 @@ export default function CheckoutPage() {
                         className="text-base"
                         style={{ color: "var(--foreground)" }}
                       >
-                        {orderDetails.shippingInfo?.firstName || ""}{" "}
-                        {orderDetails.shippingInfo?.lastName || ""}
-                        {!orderDetails.shippingInfo?.firstName &&
-                          orderDetails.customer_name}
+                        {orderDetails.customer?.name ||
+                          orderDetails.customer_name ||
+                          ""}
                       </p>
                     </div>
                     <div>
@@ -1117,14 +1284,16 @@ export default function CheckoutPage() {
                       className="text-base"
                       style={{ color: "var(--foreground)" }}
                     >
-                      {orderDetails.shippingInfo?.firstName}{" "}
-                      {orderDetails.shippingInfo?.lastName}
+                      {orderDetails.customer?.name ||
+                        orderDetails.customer_name ||
+                        ""}
                     </p>
                     <p
                       className="text-base"
                       style={{ color: "var(--foreground)" }}
                     >
-                      {orderDetails.shippingInfo?.address_line}
+                      {orderDetails.shippingInfo?.address_line ||
+                        orderDetails.customer_address}
                       {orderDetails.shippingInfo?.address_line2 && (
                         <>
                           <br />
@@ -1290,7 +1459,7 @@ export default function CheckoutPage() {
                       <SubtotalDisplay subtotal={cartSubtotal} />
                       <DeliveryFeeDisplay {...deliveryDisplayProps} />
                       <DiscountDisplay discount={cartDiscount} />
-                      <TotalDisplay total={cartTotal} />
+                      <TotalDisplay total={displayTotal} />
                     </div>
                   </div>
 

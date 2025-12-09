@@ -7,6 +7,7 @@ interface DeliveryFeeDisplayProps {
   reasoning?: string;
   hasSausages?: boolean;
   weight?: number;
+  dependsOnCourier?: boolean;
 }
 
 const DeliveryFeeDisplay = memo<DeliveryFeeDisplayProps>(({ 
@@ -14,7 +15,8 @@ const DeliveryFeeDisplay = memo<DeliveryFeeDisplayProps>(({
   isFree, 
   reasoning, 
   hasSausages, 
-  weight 
+  weight,
+  dependsOnCourier
 }) => {
   return (
     <>
@@ -28,12 +30,18 @@ const DeliveryFeeDisplay = memo<DeliveryFeeDisplayProps>(({
           className="font-medium"
           style={{ color: "var(--foreground)" }}
         >
-          {isFree ? "Free" : `£${deliveryFee.toFixed(2)}`}
+          {dependsOnCourier ? (
+            <span style={{ opacity: 0.7 }}>Depends on courier</span>
+          ) : isFree ? (
+            "Free"
+          ) : (
+            `£${deliveryFee.toFixed(2)}`
+          )}
         </span>
       </div>
 
       {/* Delivery Fee Breakdown */}
-      {deliveryFee > 0 && (
+      {!dependsOnCourier && deliveryFee > 0 && (
         <div
           className="text-xs"
           style={{ color: "var(--foreground)", opacity: 0.6 }}
@@ -45,6 +53,14 @@ const DeliveryFeeDisplay = memo<DeliveryFeeDisplayProps>(({
               • Weight: {weight?.toFixed(1)}kg
             </span>
           )}
+        </div>
+      )}
+      {dependsOnCourier && (
+        <div
+          className="text-xs"
+          style={{ color: "var(--foreground)", opacity: 0.6 }}
+        >
+          {reasoning}
         </div>
       )}
     </>

@@ -13,16 +13,22 @@ const navLinks = [
   { name: "Contact Us", href: "/contact" },
 ];
 
-const userMenu = [
-  { name: "My Profile", href: "/profile" },
-  { name: "My Orders", href: "/orders" },
-  { name: "Wishlist", href: "/wishlist" },
-  { name: "Log Out", action: "logout" },
-];
-
 export default function Header() {
   const { cart } = useCart();
   const { user, logout } = useAuth();
+  
+  // Build user menu based on user type
+  // For staff users: My Profile → My Orders → Admin Panel → Log Out
+  // For regular users: My Profile → My Orders → Wishlist → Log Out
+  const userMenu = [
+    { name: "My Profile", href: "/profile" },
+    { name: "My Orders", href: "/orders" },
+    ...(user?.is_staff 
+      ? [{ name: "Admin Panel", href: "/admin" }]
+      : [{ name: "Wishlist", href: "/wishlist" }]
+    ),
+    { name: "Log Out", action: "logout" },
+  ];
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);

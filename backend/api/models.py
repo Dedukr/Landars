@@ -296,6 +296,43 @@ class Order(models.Model):
         max_length=255, blank=True, null=True, help_text="Stripe Customer ID"
     )
 
+    # Shipping fields (Sendcloud integration)
+    shipping_method_id = models.IntegerField(
+        blank=True, null=True, help_text="Sendcloud shipping method ID"
+    )
+    shipping_carrier = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Shipping carrier name (e.g., DPD, Royal Mail)",
+    )
+    shipping_service_name = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Shipping service name (e.g., Standard, Express)",
+    )
+    shipping_cost = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0)],
+        help_text="Cost of shipping charged to customer",
+    )
+    shipping_tracking_number = models.CharField(
+        max_length=255, blank=True, null=True, help_text="Shipment tracking number"
+    )
+    shipping_tracking_url = models.URLField(
+        max_length=500, blank=True, null=True, help_text="Shipment tracking URL"
+    )
+    shipping_label_url = models.URLField(
+        max_length=500, blank=True, null=True, help_text="Shipping label URL"
+    )
+    sendcloud_parcel_id = models.IntegerField(
+        blank=True, null=True, help_text="Sendcloud parcel ID for tracking"
+    )
+
     class Meta:
         verbose_name_plural = "Orders"
         # ordering = ["-delivery_date"]

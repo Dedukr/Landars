@@ -13,7 +13,6 @@ class CustomUserForm(UserChangeForm):
     address_line2 = forms.CharField(label="Address Line 2", required=False)
     city = forms.CharField(label="City", required=False)
     postal_code = forms.CharField(label="Postal Code", required=False)
-    country = forms.CharField(label="Country", required=False)
     notes = forms.CharField(label="Notes", required=False)
 
     class Meta:
@@ -71,7 +70,6 @@ class CustomUserCreationForm(forms.ModelForm):
     address_line2 = forms.CharField(label="Address Line 2", required=False)
     city = forms.CharField(label="City", required=False)
     postal_code = forms.CharField(label="Postal Code", required=False)
-    country = forms.CharField(label="Country", required=False)
     notes = forms.CharField(label="Notes", required=False)
     password = forms.CharField(
         label="Password",

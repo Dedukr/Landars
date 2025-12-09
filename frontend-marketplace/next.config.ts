@@ -25,6 +25,30 @@ const nextConfig: NextConfig = {
         hostname: "*.cloudflarestorage.com",
         pathname: "/**",
       },
+      // Allow Sendcloud carrier logos
+      {
+        protocol: "https",
+        hostname: "www.sendcloud.com",
+        pathname: "/wp-content/uploads/**",
+      },
+      // Allow Sendcloud panel assets
+      {
+        protocol: "https",
+        hostname: "panel.sendcloud.sc",
+        pathname: "/**",
+      },
+      // Allow Wikimedia Commons for carrier logos
+      {
+        protocol: "https",
+        hostname: "upload.wikimedia.org",
+        pathname: "/**",
+      },
+      // Allow Logos World for carrier logos
+      {
+        protocol: "https",
+        hostname: "logos-world.net",
+        pathname: "/**",
+      },
     ],
     // Allow unoptimized images if needed (fallback)
     unoptimized: false,
