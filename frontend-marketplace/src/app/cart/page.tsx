@@ -58,7 +58,7 @@ export default function CartPage() {
     decreaseQuantity,
     increaseQuantity,
   } = useCartItems(products);
-  const { addToCart } = useCart();
+  const { addToCart, isLoading: cartIsLoading } = useCart();
   const [couponCode, setCouponCode] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
   const [savedItems, setSavedItems] = useState<number[]>([]);
@@ -81,12 +81,13 @@ export default function CartPage() {
     }
   }, [user]);
 
-  // Fetch cart data when component mounts
+  // Fetch cart data when component mounts (only once)
   useEffect(() => {
     if (user) {
       fetchCartData();
     }
-  }, [user, fetchCartData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   // Use optimized cart calculations
   const { subtotal, totalItems, cartProducts } = useCartCalculations(
@@ -100,21 +101,31 @@ export default function CartPage() {
   const cartDiscount = cartData?.discount ? parseFloat(cartData.discount) : 0;
   
   // Update cart discount if coupon is applied and discount doesn't match
+  // Debounce to prevent excessive API calls; no refetch to avoid cascades
   useEffect(() => {
+    if (cartIsLoading) return; // Skip during cart updates
+    
     if (appliedCoupon && user && subtotal > 0) {
       const expectedDiscount = subtotal * 0.1;
       if (Math.abs(cartDiscount - expectedDiscount) > 0.01) {
-        // Discount needs to be updated
-        httpClient.put("/api/cart/", {
-          discount: expectedDiscount,
-        }).then(() => {
-          fetchCartData();
-        }).catch((error) => {
-          console.error("Failed to update discount:", error);
-        });
+        const timeoutId = setTimeout(async () => {
+          try {
+            await httpClient.put("/api/cart/", {
+              discount: expectedDiscount,
+            });
+            // Update local cartData to avoid extra refetch
+            setCartData((prev) =>
+              prev ? { ...prev, discount: expectedDiscount.toString() } : prev
+            );
+          } catch (error) {
+            console.error("Failed to update discount:", error);
+          }
+        }, 800); // Gentle debounce to batch updates
+
+        return () => clearTimeout(timeoutId);
       }
     }
-  }, [subtotal, appliedCoupon, user, cartDiscount, fetchCartData]);
+  }, [subtotal, appliedCoupon, user, cartDiscount, cartIsLoading]);
   
   const discount = cartDiscount > 0 ? cartDiscount : calculatedDiscount;
 
@@ -133,25 +144,41 @@ export default function CartPage() {
   const total = calculatedTotal;
 
   // Sync calculated delivery fee to backend cart
-  // This ensures checkout page has the correct delivery fee
+  // Skip if cart is loading to prevent cascading updates during quantity changes
   const cartDeliveryFee = cartData?.delivery_fee ? parseFloat(cartData.delivery_fee) : 0;
   useEffect(() => {
+    if (cartIsLoading) return; // Skip during cart updates
+    
     if (user && cartProducts.length > 0 && deliveryCalculation.deliveryFee !== undefined) {
       const calculatedFee = deliveryCalculation.deliveryFee;
       // Only update if the values don't match (with small tolerance for floating point)
       if (Math.abs(cartDeliveryFee - calculatedFee) > 0.01) {
-        httpClient.put("/api/cart/", {
-          delivery_fee: calculatedFee,
-          is_home_delivery: deliveryCalculation.isHomeDelivery,
-          recalculate_delivery: false, // We're setting it explicitly, no need to recalculate
-        }).then(() => {
-          fetchCartData();
-        }).catch((error) => {
-          console.error("Failed to update delivery fee:", error);
-        });
+        const timeoutId = setTimeout(async () => {
+          try {
+            await httpClient.put("/api/cart/", {
+              delivery_fee: calculatedFee,
+              is_home_delivery: deliveryCalculation.isHomeDelivery,
+              recalculate_delivery: false,
+            });
+            // Update local cartData to avoid extra refetch
+            setCartData((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    delivery_fee: calculatedFee.toString(),
+                    is_home_delivery: deliveryCalculation.isHomeDelivery,
+                  }
+                : prev
+            );
+          } catch (error) {
+            console.error("Failed to update delivery fee:", error);
+          }
+        }, 800); // Gentle debounce to batch updates
+
+        return () => clearTimeout(timeoutId);
       }
     }
-  }, [user, cartProducts.length, deliveryCalculation.deliveryFee, deliveryCalculation.isHomeDelivery, cartDeliveryFee, fetchCartData]);
+  }, [user, cartProducts.length, deliveryCalculation.deliveryFee, deliveryCalculation.isHomeDelivery, cartDeliveryFee, cartIsLoading]);
 
   const handleApplyCoupon = async () => {
     if (typeof couponCode === "string" && couponCode.toLowerCase() === "save10") {
@@ -221,7 +248,7 @@ export default function CartPage() {
           <CartItemsCountDisplay totalItems={totalItems} />
         </div>
 
-        {productsLoading ? (
+        {productsLoading && cart.length === 0 ? (
           <div className="text-center py-16">
             <div className="mb-6 text-4xl">⏳</div>
             <h2

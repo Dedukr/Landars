@@ -14,6 +14,9 @@ import StripePaymentForm from "@/components/StripePaymentForm";
 import { Button } from "@/components/ui/Button";
 import OrderReviewItem from "@/components/OrderReviewItem";
 import DiscountDisplay from "@/components/cart/DiscountDisplay";
+import DeliveryFeeDisplay from "@/components/cart/DeliveryFeeDisplay";
+import SubtotalDisplay from "@/components/cart/SubtotalDisplay";
+import TotalDisplay from "@/components/cart/TotalDisplay";
 
 interface ShippingFormData {
   firstName: string;
@@ -249,8 +252,11 @@ export default function CheckoutPage() {
   const cartDeliveryFee = cartData?.delivery_fee ? parseFloat(cartData.delivery_fee) : 0;
   const cartIsHomeDelivery = cartData?.is_home_delivery ?? true;
   const cartTotal = cartData?.total_price ? parseFloat(cartData.total_price) : 0;
-  const cartTotalItems = cartData?.total_items ?? cart.length;
-
+  const cartTotalWeight =
+    cartData?.items?.reduce(
+      (sum, item) => sum + (parseFloat(item.quantity) || 0),
+      0
+    ) || 0;
   // Helper function to get delivery type display text
   const getDeliveryTypeText = () => {
     return cartIsHomeDelivery ? "Home Delivery" : "Post Delivery";
@@ -264,7 +270,19 @@ export default function CheckoutPage() {
     if (cartIsHomeDelivery) {
       return "Standard home delivery fee";
     }
+    // Post delivery weight tiers (match cart logic)
+    if (cartDeliveryFee === 5) return "Sausages ≤2kg: £5 delivery fee";
+    if (cartDeliveryFee === 8) return "Sausages ≤10kg: £8 delivery fee";
+    if (cartDeliveryFee === 15) return "Sausages >10kg: £15 delivery fee";
     return "Post delivery fee based on weight";
+  };
+
+  const deliveryDisplayProps = {
+    deliveryFee: cartDeliveryFee,
+    isFree: cartDeliveryFee === 0,
+    reasoning: getDeliveryFeeReasoning(),
+    hasSausages: !cartIsHomeDelivery,
+    weight: cartTotalWeight,
   };
 
   // Fetch user profile data
@@ -819,101 +837,12 @@ export default function CheckoutPage() {
                   {/* Delivery Fee Information */}
                   <DeliveryFeeInfo />
 
-                  {/* Order Summary */}
+                  {/* Order Summary - mirror cart view */}
                   <div className="space-y-3">
-                    {/* Items Breakdown */}
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span
-                          style={{ color: "var(--foreground)", opacity: 0.7 }}
-                        >
-                          Subtotal ({cartTotalItems} items)
-                        </span>
-                        <span
-                          className="font-medium"
-                          style={{ color: "var(--foreground)" }}
-                        >
-                          £{cartSubtotal.toFixed(2)}
-                        </span>
-                      </div>
-
-                      {/* Individual Items - from cart model */}
-                      <div className="ml-4 space-y-1">
-                        {cartData?.items?.map((item) => {
-                          const quantity = parseFloat(item.quantity);
-                          const itemPrice = parseFloat(item.product_price);
-                          const itemTotal = itemPrice * quantity;
-
-                          return (
-                            <div
-                              key={item.id}
-                              className="flex justify-between text-xs"
-                            >
-                              <span
-                                style={{
-                                  color: "var(--foreground)",
-                                  opacity: 0.6,
-                                }}
-                              >
-                                {item.product_name} × {quantity}
-                              </span>
-                              <span
-                                style={{
-                                  color: "var(--foreground)",
-                                  opacity: 0.6,
-                                }}
-                              >
-                                £{itemTotal.toFixed(2)}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div className="flex justify-between text-sm">
-                      <span
-                        style={{ color: "var(--foreground)", opacity: 0.7 }}
-                      >
-                        Delivery Fee
-                      </span>
-                      <span
-                        className="font-medium"
-                        style={{ color: "var(--foreground)" }}
-                      >
-                        {cartDeliveryFee === 0
-                          ? "Free"
-                          : `£${cartDeliveryFee.toFixed(2)}`}
-                      </span>
-                    </div>
-
-                    {cartDeliveryFee > 0 && (
-                      <div
-                        className="text-xs"
-                        style={{ color: "var(--foreground)", opacity: 0.6 }}
-                      >
-                        {getDeliveryFeeReasoning()}
-                      </div>
-                    )}
-
-                    {/* Discount - Display from cart */}
-                    {cartDiscount > 0 && (
-                      <DiscountDisplay discount={cartDiscount} />
-                    )}
-
-                    <div
-                      className="pt-3"
-                      style={{ borderTop: "1px solid var(--sidebar-border)" }}
-                    >
-                      <div className="flex justify-between text-lg font-semibold">
-                        <span style={{ color: "var(--foreground)" }}>
-                          Total
-                        </span>
-                        <span style={{ color: "var(--foreground)" }}>
-                          £{cartTotal.toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
+                    <SubtotalDisplay subtotal={cartSubtotal} />
+                    <DeliveryFeeDisplay {...deliveryDisplayProps} />
+                    <DiscountDisplay discount={cartDiscount} />
+                    <TotalDisplay total={cartTotal} />
                   </div>
 
                   {/* Trust Signals */}
@@ -1356,78 +1285,12 @@ export default function CheckoutPage() {
                   </h2>
 
                   <div className="space-y-4">
-                    <div className="flex justify-between text-sm">
-                      <span
-                        style={{ color: "var(--foreground)", opacity: 0.7 }}
-                      >
-                        Subtotal
-                      </span>
-                      <span
-                        className="font-medium"
-                        style={{ color: "var(--foreground)" }}
-                      >
-                        £
-                        {orderDetails.sum_price
-                          ? parseFloat(orderDetails.sum_price).toFixed(2)
-                          : (
-                              orderDetails.items?.reduce((sum, item) => {
-                                const price = parseFloat(
-                                  item.total_price ||
-                                    item.get_total_price ||
-                                    "0"
-                                );
-                                return sum + price;
-                              }, 0) || 0
-                            ).toFixed(2)}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between text-sm">
-                      <span
-                        style={{ color: "var(--foreground)", opacity: 0.7 }}
-                      >
-                        Delivery Fee
-                      </span>
-                      <span
-                        className="font-medium"
-                        style={{ color: "var(--foreground)" }}
-                      >
-                        {parseFloat(orderDetails.delivery_fee || "0") === 0
-                          ? "Free"
-                          : `£${parseFloat(
-                              orderDetails.delivery_fee || "0"
-                            ).toFixed(2)}`}
-                      </span>
-                    </div>
-
-                    {parseFloat(orderDetails.discount || "0") > 0 && (
-                      <div
-                        className="flex justify-between text-sm"
-                        style={{ color: "var(--success)" }}
-                      >
-                        <span>Discount</span>
-                        <span>
-                          -£
-                          {parseFloat(orderDetails.discount || "0").toFixed(2)}
-                        </span>
-                      </div>
-                    )}
-
-                    <div
-                      className="pt-4"
-                      style={{ borderTop: "1px solid var(--sidebar-border)" }}
-                    >
-                      <div className="flex justify-between text-lg font-semibold">
-                        <span style={{ color: "var(--foreground)" }}>
-                          Total
-                        </span>
-                        <span style={{ color: "var(--foreground)" }}>
-                          £
-                          {parseFloat(orderDetails.total_price || "0").toFixed(
-                            2
-                          )}
-                        </span>
-                      </div>
+                    <DeliveryFeeInfo />
+                    <div className="space-y-3">
+                      <SubtotalDisplay subtotal={cartSubtotal} />
+                      <DeliveryFeeDisplay {...deliveryDisplayProps} />
+                      <DiscountDisplay discount={cartDiscount} />
+                      <TotalDisplay total={cartTotal} />
                     </div>
                   </div>
 

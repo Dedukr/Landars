@@ -12,7 +12,7 @@ interface Product {
 }
 
 export const useCartOptimized = () => {
-  const { cart, clearCart, isLoading: cartIsLoading } = useCart();
+  const { cart, clearCart } = useCart();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const prevProductIdsRef = useRef<string | null>(null);
@@ -49,12 +49,6 @@ export const useCartOptimized = () => {
 
   // Fetch products only when the SET of product IDs changes (not quantities)
   useEffect(() => {
-    // If cart context is still loading, wait for it
-    if (cartIsLoading) {
-      setLoading(true);
-      return;
-    }
-
     async function fetchProductsByIds(productIdsKey: string) {
       if (!productIdsKey) {
         setProducts([]);
@@ -90,13 +84,16 @@ export const useCartOptimized = () => {
       }
     }
 
-    // Always run on initial mount (when prevProductIdsRef.current is null)
-    // or when product IDs actually change
+    // Only fetch when product IDs actually change (not when quantities change)
+    // Don't set loading state based on cartIsLoading to avoid page reload effect
     if (prevProductIdsRef.current !== cartProductIdsKey) {
       prevProductIdsRef.current = cartProductIdsKey;
       fetchProductsByIds(cartProductIdsKey);
+    } else if (prevProductIdsRef.current === null && cartProductIdsKey) {
+      // Initial load - fetch products
+      fetchProductsByIds(cartProductIdsKey);
     }
-  }, [cartProductIdsKey, cartIsLoading]);
+  }, [cartProductIdsKey]);
 
   // Keep products array aligned with current cart IDs (no loading toggles)
   useEffect(() => {

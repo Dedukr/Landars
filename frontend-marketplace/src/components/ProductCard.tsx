@@ -96,6 +96,7 @@ const ProductCard = memo<ProductCardProps>(
         {/* Product Link */}
         <Link
           href={`/product/${product.id}`}
+          prefetch={false}
           className="flex flex-col flex-grow cursor-pointer outline-none focus:outline-none"
         >
           {/* Image section - carousel for multiple images */}

@@ -44,6 +44,7 @@ interface CartContextType {
   addToCart: (productId: number, quantity?: number) => void;
   removeFromCart: (productId: number) => void;
   removeItem: (productId: number) => void;
+  updateQuantity: (productId: number, quantity: number) => void;
   clearCart: () => void;
   isLoading: boolean;
   mergeConflicts: CartConflict[];
@@ -389,6 +390,97 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     [user, cart]
   );
 
+  const updateQuantity = useCallback(
+    async (productId: number, quantity: number) => {
+      if (user) {
+        // Don't set loading state for quantity updates to avoid page reload effect
+        // Only use loading state for initial cart fetch or bulk operations
+        const previousCart = [...cart];
+        try {
+          // Optimistic update - update UI immediately
+          setCart((prev: CartItem[]) => {
+            const existing = prev.find((item) => item.productId === productId);
+            
+            if (quantity <= 0) {
+              // Remove item if quantity is 0
+              if (existing) {
+                return prev.filter((item: CartItem) => item.productId !== productId);
+              }
+              return prev;
+            }
+            
+            if (existing) {
+              // Update existing item
+              return prev.map((item: CartItem) =>
+                item.productId === productId
+                  ? { ...item, quantity }
+                  : item
+              );
+            } else {
+              // Add new item
+              return [...prev, { productId, quantity }];
+            }
+          });
+
+          // Sync to backend in background (non-blocking)
+          if (quantity <= 0) {
+            // Remove item if quantity is 0
+            await httpClient.request("/api/cart/", {
+              method: "DELETE",
+              body: JSON.stringify({ productId: productId }),
+            });
+          } else {
+            // Check if item exists in backend to decide between POST and PATCH
+            const existing = cart.find((item) => item.productId === productId);
+            if (existing) {
+              // Update quantity in backend
+              await httpClient.patch("/api/cart/", {
+                productId: productId,
+                quantity: quantity,
+              });
+            } else {
+              // Add new item to backend
+              await httpClient.post("/api/cart/", {
+                productId: productId,
+                quantity: quantity,
+              });
+            }
+          }
+        } catch (error) {
+          console.error("Failed to update quantity:", error);
+          // Revert optimistic update on error
+          setCart(previousCart);
+        }
+      } else {
+        // Update quantity in local cart (or add if doesn't exist)
+        setCart((prev: CartItem[]) => {
+          const existing = prev.find((item) => item.productId === productId);
+          
+          if (quantity <= 0) {
+            // Remove item if quantity is 0
+            if (existing) {
+              return prev.filter((item: CartItem) => item.productId !== productId);
+            }
+            return prev;
+          }
+          
+          if (existing) {
+            // Update existing item
+            return prev.map((item: CartItem) =>
+              item.productId === productId
+                ? { ...item, quantity }
+                : item
+            );
+          } else {
+            // Add new item
+            return [...prev, { productId, quantity }];
+          }
+        });
+      }
+    },
+    [user, cart]
+  );
+
   const removeItem = useCallback(
     async (productId: number) => {
       if (user) {
@@ -468,6 +560,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
       addToCart,
       removeFromCart,
       removeItem,
+      updateQuantity,
       clearCart,
       isLoading,
       mergeConflicts,
@@ -478,6 +571,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
       addToCart,
       removeFromCart,
       removeItem,
+      updateQuantity,
       clearCart,
       isLoading,
       mergeConflicts,

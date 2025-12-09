@@ -1,9 +1,14 @@
 from datetime import timedelta
+from decimal import Decimal
 
 from account.models import Address, CustomUser
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator, MaxValueValidator, MinLengthValidator
+from django.core.validators import (
+    MaxValueValidator,
+    MinLengthValidator,
+    MinValueValidator,
+)
 from django.db import models
 from django.utils import timezone
 
@@ -77,13 +82,13 @@ class ProductImage(models.Model):
     def __str__(self):
         primary_text = " (Primary)" if self.sort_order == 0 else ""
         return f"{self.product.name} - Image {self.sort_order}{primary_text}"
-    
+
     @property
     def is_primary(self):
         """The first image (sort_order=0 or lowest) is always the primary image."""
         first_image = self.product.images.first()
         return first_image and first_image.id == self.id
-    
+
     def delete(self, *args, **kwargs):
         """
         Override delete to also remove the image from R2 storage.
@@ -92,15 +97,20 @@ class ProductImage(models.Model):
         if self.image_url:
             try:
                 from django.conf import settings
+
                 from .r2_storage import delete_image_from_r2
-                
+
                 # Extract the object key from the URL
                 # URL format: https://cdn.example.com/products/123/timestamp_uuid_filename.jpg
                 # We need: products/123/timestamp_uuid_filename.jpg
-                if settings.R2_PUBLIC_URL and self.image_url.startswith(settings.R2_PUBLIC_URL):
+                if settings.R2_PUBLIC_URL and self.image_url.startswith(
+                    settings.R2_PUBLIC_URL
+                ):
                     # Remove the public URL prefix to get the object key
-                    object_key = self.image_url.replace(f"{settings.R2_PUBLIC_URL}/", "")
-                    
+                    object_key = self.image_url.replace(
+                        f"{settings.R2_PUBLIC_URL}/", ""
+                    )
+
                     # Delete from R2
                     deleted = delete_image_from_r2(object_key)
                     if deleted:
@@ -110,7 +120,7 @@ class ProductImage(models.Model):
             except Exception as e:
                 # Don't fail the delete operation if R2 deletion fails
                 print(f"Error deleting image from R2: {e}")
-        
+
         # Call the parent delete method
         super().delete(*args, **kwargs)
 
@@ -168,7 +178,7 @@ class Product(models.Model):
             "price": str(self.price),
             "primary_image": primary_image.image_url if primary_image else None,
         }
-    
+
     def get_primary_image(self):
         """Get the primary image URL or None. The first image (by sort_order) is always primary."""
         first_image = self.images.first()
@@ -583,7 +593,7 @@ class OrderItem(models.Model):
     quantity = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        validators=[MinValueValidator(0.01)],
+        validators=[MinValueValidator(Decimal("0.01"))],
         blank=False,
         null=False,
     )
@@ -717,7 +727,7 @@ class CartItem(models.Model):
     quantity = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        validators=[MinValueValidator(0.01)],
+        validators=[MinValueValidator(Decimal("0.01"))],
         default=1,
     )
     added_date = models.DateTimeField(auto_now_add=True)

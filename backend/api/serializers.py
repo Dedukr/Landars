@@ -60,6 +60,7 @@ class ProductSerializer(ProductImageValidationMixin, serializers.ModelSerializer
     images = ProductImageSerializer(many=True, required=False)
     primary_image = serializers.SerializerMethodField()
     price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    categories = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -153,6 +154,7 @@ class ProductListSerializer(serializers.ModelSerializer):
 
     primary_image = serializers.SerializerMethodField()
     images = serializers.SerializerMethodField()
+    categories = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -175,6 +177,21 @@ class ProductListSerializer(serializers.ModelSerializer):
         return [
             img.image_url for img in obj.images.all()[:5]
         ]  # Limit to 5 images for performance
+
+    def get_categories(self, obj):
+        """Return all category names for the product, including parent categories."""
+        categories = []
+        category_names = set()
+
+        for cat in obj.categories.all().order_by("parent__name", "name"):
+            if cat.name not in category_names:
+                categories.append(cat.name)
+                category_names.add(cat.name)
+            if cat.parent and cat.parent.name not in category_names:
+                categories.append(cat.parent.name)
+                category_names.add(cat.parent.name)
+
+        return categories
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -390,7 +407,6 @@ class CartItemSerializer(serializers.ModelSerializer):
         source="product.price",
         max_digits=10,
         decimal_places=2,
-        min_value=Decimal("0"),
         read_only=True,
     )
     product_image_url = serializers.SerializerMethodField()

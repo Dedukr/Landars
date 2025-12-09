@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
@@ -11,6 +11,12 @@ import WishlistItemsList from "@/components/WishlistItemsList";
 import ProductRecommendations from "@/components/ProductRecommendations";
 import { useWishlistOptimized } from "@/hooks/useWishlistOptimized";
 import { useWishlistItems } from "@/hooks/useWishlistItems";
+
+interface Category {
+  id: number;
+  name: string;
+  parent: number | null;
+}
 
 export default function WishlistPage() {
   const { user } = useAuth();
@@ -27,6 +33,46 @@ export default function WishlistPage() {
     "name" | "name_desc" | "price" | "price_desc"
   >("name");
   const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [categories, setCategories] = useState<Category[]>([]);
+
+  // Fetch categories to identify leaf categories
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const response = await fetch("/api/categories/");
+        if (response.ok) {
+          const data = await response.json();
+          setCategories(data);
+        }
+      } catch (error) {
+        console.error("Error fetching categories:", error);
+      }
+    };
+    fetchCategories();
+  }, []);
+
+  // Filter products to only show leaf categories and map category names
+  const productsWithLeafCategories = useMemo(() => {
+    if (!categories.length) return filteredProducts;
+
+    // Create a map of category names to their parent status
+    const categoryMap = new Map<string, boolean>();
+    categories.forEach((cat) => {
+      categoryMap.set(cat.name, cat.parent !== null);
+    });
+
+    return filteredProducts.map((product) => {
+      // Filter to only leaf categories (categories with a parent)
+      const leafCategories =
+        product.categories?.filter((catName) => categoryMap.get(catName)) ||
+        [];
+
+      return {
+        ...product,
+        categories: leafCategories,
+      };
+    });
+  }, [filteredProducts, categories]);
 
   const wishlistSortOptions: SortOption[] = [
     { value: "name", label: "Name: A-Z", icon: "↑" },
@@ -35,13 +81,22 @@ export default function WishlistPage() {
     { value: "price_desc", label: "Price: High to Low", icon: "↓" },
   ];
 
+  // Get leaf categories from products for filter options
+  const leafCategoriesForFilter = useMemo(() => {
+    const leafCategorySet = new Set<string>();
+    productsWithLeafCategories.forEach((product) => {
+      product.categories?.forEach((cat) => leafCategorySet.add(cat));
+    });
+    return Array.from(leafCategorySet).sort();
+  }, [productsWithLeafCategories]);
+
   const categoryFilterOptions: SortOption[] = [
     { value: "all", label: "All Categories", icon: "📂" },
-    ...(stats?.categories?.map((category) => ({
+    ...leafCategoriesForFilter.map((category) => ({
       value: category,
       label: category,
       icon: "🏷️",
-    })) || []),
+    })),
   ];
 
   const handleBulkAddToCart = useCallback(() => {
@@ -105,7 +160,7 @@ export default function WishlistPage() {
   }, []);
 
   const filteredAndSortedProducts = useMemo(() => {
-    return (Array.isArray(filteredProducts) ? filteredProducts : [])
+    return (Array.isArray(productsWithLeafCategories) ? productsWithLeafCategories : [])
       .filter((product) => {
         // Ensure name and description are strings before calling toLowerCase
         const productName = typeof product.name === "string" ? product.name : "";
@@ -135,7 +190,7 @@ export default function WishlistPage() {
             return 0; // Keep original order
         }
       });
-  }, [filteredProducts, searchQuery, filterCategory, sortBy]);
+  }, [productsWithLeafCategories, searchQuery, filterCategory, sortBy]);
 
   if (!user) {
     return (

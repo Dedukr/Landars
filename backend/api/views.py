@@ -5,6 +5,7 @@ from account.models import Address
 from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
 from django.core.cache import cache
+from django.db.models import Q
 from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
@@ -48,6 +49,10 @@ from .serializers import (
 )
 from .validators import validate_image_file_extension
 
+# Temporary feature flag to show only a single category (sausages) in prod.
+SAUSAGE_ONLY_MODE = getattr(settings, "SAUSAGE_ONLY_MODE", False)
+SAUSAGE_CATEGORY_NAME = "Sausages and Marinated products"
+
 
 # Custom throttle for categories - more permissive since it's read-only
 class CategoryThrottle(AnonRateThrottle):
@@ -81,8 +86,8 @@ class ProductList(APIView):
 
     def get(self, request):
         """Retrieve products with filtering, sorting, and pagination."""
-        # Create cache key based on query parameters
-        cache_key = f"products_{hash(str(request.query_params))}"
+        # Create cache key based on query parameters and feature flag
+        cache_key = f"products_{hash(str(request.query_params))}_{'saus_only' if SAUSAGE_ONLY_MODE else 'all'}"
 
         # Try to get cached response
         cached_response = cache.get(cache_key)
@@ -95,6 +100,12 @@ class ProductList(APIView):
             .prefetch_related("categories", "images")
             .all()
         )
+
+        # Temporary restriction: only show sausage/marinated category when flag is on
+        if SAUSAGE_ONLY_MODE:
+            products = products.filter(
+                categories__name__iexact=SAUSAGE_CATEGORY_NAME
+            ).distinct()
 
         # Filtering
         categories = request.query_params.get("categories")
@@ -202,6 +213,13 @@ class ProductDetail(APIView):
         """Retrieve a single product by ID with all images."""
         product = self.get_object(product_id)
         if product:
+            # Temporary restriction: hide products outside sausage category when flag is on
+            if SAUSAGE_ONLY_MODE and not product.categories.filter(
+                name__iexact=SAUSAGE_CATEGORY_NAME
+            ).exists():
+                return Response(
+                    {"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND
+                )
             serializer = ProductSerializer(product)
             return Response(serializer.data)
         return Response(
@@ -260,13 +278,26 @@ class CategoryList(APIView):
 
     def get(self, request):
         """Retrieve all categories."""
-        # Use cache to reduce database load
-        cache_key = "categories_list"
+        # Use cache to reduce database load; include flag in key
+        cache_key = f"categories_list_{'saus_only' if SAUSAGE_ONLY_MODE else 'all'}"
         cached_response = cache.get(cache_key)
         if cached_response:
             return Response(cached_response)
 
         categories = ProductCategory.objects.all()
+
+        # Temporary restriction: only expose the sausage/marinated category and its children when flag is on
+        if SAUSAGE_ONLY_MODE:
+            sausage = ProductCategory.objects.filter(
+                name__iexact=SAUSAGE_CATEGORY_NAME
+            ).first()
+            if sausage:
+                categories = categories.filter(
+                    Q(id=sausage.id) | Q(parent=sausage) | Q(parent__parent=sausage)
+                )
+            else:
+                categories = categories.none()
+
         serializer = CategorySerializer(categories, many=True)
         response_data = serializer.data
 
@@ -522,8 +553,8 @@ class OrderListView(APIView):
         items = order.items.all()
 
         if not order.delivery_fee_manual:
-            # Sausage category name
-            post_suitable_category = "Sausages and Marinated products"
+            # Sausage category name (compare using lowercase to match stored values)
+            post_suitable_category = "Sausages and Marinated products".lower()
             # Check if ALL products are sausages (only sausages)
             all_products_are_sausages = True
             for item in items:
@@ -938,8 +969,8 @@ class CartView(APIView):
             cart.delivery_fee = 0
             return
 
-        # Sausage category name
-        post_suitable_category = "Sausages and Marinated products"
+        # Sausage category name (compare using lowercase to match stored values)
+        post_suitable_category = "Sausages and Marinated products".lower()
         # Check if ALL products are sausages (only sausages)
         all_products_are_sausages = True
         for item in items:

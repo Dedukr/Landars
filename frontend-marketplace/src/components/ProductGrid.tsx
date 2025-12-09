@@ -342,6 +342,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
         {/* Product Link */}
         <Link
           href={`/product/${product.id}`}
+          prefetch={false}
           className="flex flex-col flex-grow cursor-pointer outline-none focus:outline-none"
         >
           {/* Image section - carousel for multiple images */}

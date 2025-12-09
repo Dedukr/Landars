@@ -12,7 +12,7 @@ interface Product {
 }
 
 export const useCartItems = (products: Product[]) => {
-  const { removeFromCart, removeItem, addToCart, cart } = useCart();
+  const { removeItem, updateQuantity, cart } = useCart();
   const [removingIds, setRemovingIds] = useState<Set<number>>(new Set());
 
   // Optimized remove function that only updates the specific item
@@ -55,20 +55,27 @@ export const useCartItems = (products: Product[]) => {
             return newSet;
           });
         }, 300);
-      } else {
-        // Just decrease quantity
-        removeFromCart(productId);
+      } else if (cartItem) {
+        // Use updateQuantity for direct quantity updates
+        updateQuantity(productId, cartItem.quantity - 1);
       }
     },
-    [removeFromCart, removeItem, cart]
+    [removeItem, updateQuantity, cart]
   );
 
   // Optimized quantity increase function
   const increaseQuantity = useCallback(
     (productId: number) => {
-      addToCart(productId, 1);
+      const cartItem = cart.find((item) => item.productId === productId);
+      if (cartItem) {
+        // Use updateQuantity for direct quantity updates
+        updateQuantity(productId, cartItem.quantity + 1);
+      } else {
+        // Use updateQuantity to add new item (it handles both cases)
+        updateQuantity(productId, 1);
+      }
     },
-    [addToCart]
+    [updateQuantity, cart]
   );
 
   // Memoized filtered products - filter out items that are being removed OR not in cart

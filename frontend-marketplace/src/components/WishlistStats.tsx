@@ -24,7 +24,7 @@ const WishlistStats = memo<WishlistStatsProps>(({ stats }) => {
         boxShadow: "var(--card-shadow)",
       }}
     >
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="text-center">
           <div
             className="text-2xl font-bold"
@@ -65,20 +65,6 @@ const WishlistStats = memo<WishlistStatsProps>(({ stats }) => {
             style={{ color: "var(--foreground)", opacity: 0.7 }}
           >
             Avg. Price
-          </div>
-        </div>
-        <div className="text-center">
-          <div
-            className="text-2xl font-bold"
-            style={{ color: "var(--accent)" }}
-          >
-            {stats.categories.length}
-          </div>
-          <div
-            className="text-sm"
-            style={{ color: "var(--foreground)", opacity: 0.7 }}
-          >
-            Categories
           </div>
         </div>
       </div>

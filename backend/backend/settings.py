@@ -304,6 +304,8 @@ STATICFILES_STORAGE = "django.contrib.staticfiles.storage.ManifestStaticFilesSto
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
+SAUSAGE_ONLY_MODE = True
+
 # AWS Configuration
 
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")

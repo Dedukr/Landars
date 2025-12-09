@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useCart } from "@/contexts/CartContext";
@@ -52,107 +52,105 @@ const ProductRecommendations: React.FC<ProductRecommendationsProps> = ({
   const { addToWishlist, removeFromWishlist, isInWishlist } = useWishlist();
   const { user } = useAuth();
   const lastFetchParams = useRef<string>("");
+  const hasFetchedRef = useRef<boolean>(false);
+  const initialExcludeIdsRef = useRef<string>("");
 
-  // Get all categories from the API to map names to IDs
-  const fetchCategories = useCallback(async () => {
-    try {
-      const response = await fetch("/api/categories/");
-      if (response.ok) {
-        const categories = await response.json();
-        return categories;
-      }
-    } catch (error) {
-      console.error("Error fetching categories:", error);
+  // Create stable exclude IDs string for initial fetch only
+  const excludeIdsString = useMemo(() => {
+    const ids = excludeProducts.map((p) => p.id).sort((a, b) => a - b);
+    return ids.join(",");
+  }, [excludeProducts]);
+
+  // Store initial exclude IDs on first render
+  useEffect(() => {
+    if (!hasFetchedRef.current && excludeIdsString) {
+      initialExcludeIdsRef.current = excludeIdsString;
     }
-    return [];
-  }, []);
+  }, [excludeIdsString]);
 
   const fetchRecommendations = useCallback(async () => {
     try {
+      // Only fetch once on initial mount, not when excludeProducts changes
+      if (hasFetchedRef.current && products.length > 0) {
+        return; // Don't refetch after initial load
+      }
+
       setIsLoading(true);
 
-      // If no products to exclude, don't show recommendations
-      if (excludeProducts.length === 0) {
-        setProducts([]);
-        setIsLoading(false);
-        return;
-      }
-
-      // Get all categories to map names to IDs
-      const allCategories = await fetchCategories();
-
-      // Extract category names from ALL excluded products (combines all categories)
-      const excludedCategoryNames = new Set<string>();
-      excludeProducts.forEach((product) => {
-        if (product.categories && product.categories.length > 0) {
-          product.categories.forEach((cat) => {
-            excludedCategoryNames.add(cat);
-          });
-        }
-      });
-
-      // Filter to only leaf categories (categories WITH parent - they are child categories)
-      const leafCategoryNames = new Set<string>();
-      excludedCategoryNames.forEach((categoryName) => {
-        const category = allCategories.find(
-          (cat: { id: number; name: string; parent: number | null }) =>
-            cat.name === categoryName
-        );
-        if (category && category.parent) {
-          leafCategoryNames.add(categoryName);
-        }
-      });
-
-      // Map leaf category names to IDs
-      const categoryIds: number[] = [];
-      leafCategoryNames.forEach((categoryName) => {
-        const category = allCategories.find(
-          (cat: { id: number; name: string }) => cat.name === categoryName
-        );
-        if (category) {
-          categoryIds.push(category.id);
-        }
-      });
-
-      // If no valid categories found, don't show recommendations
-      if (categoryIds.length === 0) {
-        setProducts([]);
-        setIsLoading(false);
-        return;
-      }
-
-      // Build API parameters
+      // Use initial exclude IDs (from first render) to prevent refetching when items are removed
+      const excludeIdsToUse = initialExcludeIdsRef.current
+        ? initialExcludeIdsRef.current.split(",").map(Number)
+        : excludeProducts.map((p) => p.id);
+      
+      // Fetch ALL products (or a very large number) without category filtering
+      // This ensures we get products from the entire scope
       const params = new URLSearchParams();
-      params.append("limit", (limit * 3).toString()); // Get more to ensure we have enough
-      params.append("categories", categoryIds.join(","));
-
-      // Exclude the provided products
-      const excludeIds = excludeProducts.map((p) => p.id);
-      params.append("exclude", excludeIds.join(","));
+      // Fetch a large number to ensure good randomization from all products
+      // Use a high limit to get as many products as possible
+      params.append("limit", "500"); // Fetch up to 500 products
+      
+      // Exclude the provided products (using initial exclude list)
+      if (excludeIdsToUse.length > 0) {
+        params.append("exclude", excludeIdsToUse.join(","));
+      }
 
       const currentParams = params.toString();
 
       // Only fetch if parameters have changed
-      if (lastFetchParams.current === currentParams) {
+      if (lastFetchParams.current === currentParams && products.length > 0) {
         setIsLoading(false);
         return;
       }
 
       lastFetchParams.current = currentParams;
 
-      const response = await fetch(`/api/products/?${currentParams}`);
+      // Fetch all products (or paginate if needed)
+      let allProducts: Product[] = [];
+      let offset = 0;
+      const pageSize = 500;
+      let hasMore = true;
 
-      if (response.ok) {
-        const data = await response.json();
-        const fetchedProducts = Array.isArray(data) ? data : data.results || [];
+      // Fetch products in batches until we have enough or no more products
+      while (hasMore && allProducts.length < 1000) {
+        const batchParams = new URLSearchParams();
+        batchParams.append("limit", pageSize.toString());
+        batchParams.append("offset", offset.toString());
+        if (excludeIdsToUse.length > 0) {
+          batchParams.append("exclude", excludeIdsToUse.join(","));
+        }
 
-        // Filter out any products that are in the excluded list (double-check)
-        const filteredProducts = fetchedProducts.filter(
-          (product: Product) => !excludeIds.includes(product.id)
-        );
+        const response = await fetch(`/api/products/?${batchParams.toString()}`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          const batchProducts = Array.isArray(data) ? data : data.results || [];
+          
+          if (batchProducts.length === 0) {
+            hasMore = false;
+          } else {
+            allProducts = [...allProducts, ...batchProducts];
+            offset += pageSize;
+            
+            // If we got fewer products than requested, we've reached the end
+            if (batchProducts.length < pageSize) {
+              hasMore = false;
+            }
+          }
+        } else {
+          hasMore = false;
+        }
+      }
 
-        // Shuffle the products randomly using Fisher-Yates algorithm
-        const shuffledProducts = [...filteredProducts];
+      // Filter out any products that are in the excluded list (double-check)
+      const filteredProducts = allProducts.filter(
+        (product: Product) => !excludeIdsToUse.includes(product.id)
+      );
+
+      // Enhanced shuffle: Fisher-Yates algorithm with multiple passes for better randomization
+      const shuffledProducts = [...filteredProducts];
+      
+      // Perform multiple shuffle passes for better randomization
+      for (let pass = 0; pass < 5; pass++) {
         for (let i = shuffledProducts.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
           [shuffledProducts[i], shuffledProducts[j]] = [
@@ -160,17 +158,30 @@ const ProductRecommendations: React.FC<ProductRecommendationsProps> = ({
             shuffledProducts[i],
           ];
         }
-
-        setProducts(shuffledProducts.slice(0, limit));
-      } else {
-        setProducts([]);
       }
-    } catch {
+
+      // Randomly select products from the shuffled array
+      // Instead of taking a consecutive slice, randomly pick individual products
+      const selectedProducts: Product[] = [];
+      const availableIndices = shuffledProducts.map((_, index) => index);
+      
+      // Randomly select up to 'limit' products
+      const selectionCount = Math.min(limit, shuffledProducts.length);
+      for (let i = 0; i < selectionCount; i++) {
+        const randomIndex = Math.floor(Math.random() * availableIndices.length);
+        const productIndex = availableIndices.splice(randomIndex, 1)[0];
+        selectedProducts.push(shuffledProducts[productIndex]);
+      }
+
+      setProducts(selectedProducts);
+      hasFetchedRef.current = true; // Mark as fetched
+    } catch (error) {
+      console.error("Error fetching recommendations:", error);
       setProducts([]);
     } finally {
       setIsLoading(false);
     }
-  }, [excludeProducts, limit, fetchCategories]);
+  }, [limit, excludeProducts, products.length]);
 
   useEffect(() => {
     fetchRecommendations();
