@@ -122,7 +122,7 @@ jobs:
           cd backend
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-django pytest-cov
+          pip install coverage
 
       - name: Install Node.js dependencies
         run: |
@@ -150,7 +150,9 @@ jobs:
       - name: Run backend tests
         run: |
           cd backend
-          python manage.py test --verbosity=2 --coverage
+          coverage run --source='.' manage.py test --verbosity=2
+          coverage xml -o coverage.xml
+          coverage report
         env:
           DJANGO_SETTINGS_MODULE: backend.settings
           POSTGRES_DB: ${{ env.POSTGRES_DB }}
@@ -164,10 +166,11 @@ jobs:
           cd frontend-marketplace
           npm run lint
           npm run build
-          npm run test -- --coverage --watchAll=false
+          npm run test:coverage -- --watchAll=false
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v3
+        continue-on-error: true
         with:
           files: ./backend/coverage.xml,./frontend-marketplace/coverage/lcov.info
 

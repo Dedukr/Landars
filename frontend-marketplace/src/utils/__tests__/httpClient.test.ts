@@ -1,261 +1,545 @@
 /**
  * HTTP Client Tests
  *
- * Tests for the professional HTTP client with automatic token refresh
+ * Clean, professional tests for the HTTP client with automatic token refresh
+ * Following Jest best practices for mocking fetch and localStorage
  */
 
-import { httpClient } from "../httpClient";
+import { httpClient, resetCSRFToken } from "../httpClient";
 
-// Mock fetch
-global.fetch = jest.fn();
+// Constants
+const API_BASE_URL = "https://localhost";
+const CSRF_TOKEN_URL = `${API_BASE_URL}/api/auth/csrf-token/`;
+const TOKEN_REFRESH_URL = `${API_BASE_URL}/api/auth/token/refresh/`;
+const TEST_API_URL = `${API_BASE_URL}/api/test`;
 
-// Mock localStorage
-const localStorageMock = {
-  getItem: jest.fn(),
-  setItem: jest.fn(),
-  removeItem: jest.fn(),
-  clear: jest.fn(),
+// Mock fetch globally
+const mockFetch = jest.fn();
+global.fetch = mockFetch as typeof fetch;
+
+// Mock localStorage with actual storage
+const storage: Record<string, string> = {};
+const mockLocalStorage = {
+  getItem: jest.fn((key: string) => storage[key] || null),
+  setItem: jest.fn((key: string, value: string) => {
+    storage[key] = value;
+  }),
+  removeItem: jest.fn((key: string) => {
+    delete storage[key];
+  }),
+  clear: jest.fn(() => {
+    Object.keys(storage).forEach((key) => delete storage[key]);
+  }),
 };
+
 Object.defineProperty(window, "localStorage", {
-  value: localStorageMock,
+  value: mockLocalStorage,
+  writable: true,
 });
 
-// No notification mocking needed
+// Mock window.dispatchEvent for logout testing
+const mockDispatchEvent = jest.fn();
+const originalDispatchEvent = window.dispatchEvent;
 
 describe("HttpClient", () => {
   beforeEach(() => {
+    // Clear all mocks
     jest.clearAllMocks();
-    (fetch as jest.Mock).mockClear();
-    localStorageMock.getItem.mockClear();
-    localStorageMock.setItem.mockClear();
-    localStorageMock.removeItem.mockClear();
+    mockFetch.mockClear();
+
+    // Clear storage
+    Object.keys(storage).forEach((key) => delete storage[key]);
+
+    // Reset CSRF token state
+    resetCSRFToken();
+
+    // Reset window.dispatchEvent
+    window.dispatchEvent = mockDispatchEvent;
   });
 
-  describe("Token Refresh", () => {
-    it("should automatically refresh token on 401 response", async () => {
-      // Mock initial request returning 401
-      (fetch as jest.Mock)
-        .mockResolvedValueOnce({
-          ok: false,
-          status: 401,
-          json: () => Promise.resolve({ error: "Token expired" }),
-        })
-        // Mock token refresh request
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              access: "new-access-token",
-              refresh: "new-refresh-token",
-            }),
-        })
-        // Mock retry request with new token
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve({ data: "success" }),
-        });
-
-      // Mock localStorage
-      localStorageMock.getItem
-        .mockReturnValueOnce("csrf-token") // CSRF token
-        .mockReturnValueOnce("old-access-token") // Auth token
-        .mockReturnValueOnce("old-refresh-token"); // Refresh token
-
-      const result = await httpClient.get("/api/test");
-
-      expect(result).toEqual({ data: "success" });
-      expect(localStorageMock.setItem).toHaveBeenCalledWith(
-        "authToken",
-        "new-access-token"
-      );
-      expect(localStorageMock.setItem).toHaveBeenCalledWith(
-        "refreshToken",
-        "new-refresh-token"
-      );
-    });
-
-    it("should trigger logout when token refresh fails", async () => {
-      // Mock initial request returning 401
-      (fetch as jest.Mock)
-        .mockResolvedValueOnce({
-          ok: false,
-          status: 401,
-          json: () => Promise.resolve({ error: "Token expired" }),
-        })
-        // Mock token refresh request failing
-        .mockResolvedValueOnce({
-          ok: false,
-          status: 401,
-          json: () => Promise.resolve({ error: "Refresh token expired" }),
-        });
-
-      // Mock localStorage
-      localStorageMock.getItem
-        .mockReturnValueOnce("csrf-token")
-        .mockReturnValueOnce("old-access-token")
-        .mockReturnValueOnce("old-refresh-token");
-
-      // Mock window.dispatchEvent
-      const mockDispatchEvent = jest.fn();
-      Object.defineProperty(window, "dispatchEvent", {
-        value: mockDispatchEvent,
-      });
-
-      await expect(httpClient.get("/api/test")).rejects.toThrow(
-        "Authentication failed. Please log in again."
-      );
-
-      expect(localStorageMock.removeItem).toHaveBeenCalledWith("authToken");
-      expect(localStorageMock.removeItem).toHaveBeenCalledWith("refreshToken");
-      expect(localStorageMock.removeItem).toHaveBeenCalledWith("user");
-      expect(localStorageMock.removeItem).toHaveBeenCalledWith("wishlist");
-      expect(mockDispatchEvent).toHaveBeenCalledWith(
-        new CustomEvent("auth:logout")
-      );
-    });
+  afterAll(() => {
+    window.dispatchEvent = originalDispatchEvent;
   });
 
-  describe("Request Methods", () => {
+  describe("Basic HTTP Methods", () => {
     beforeEach(() => {
-      (fetch as jest.Mock).mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ data: "success" }),
-      });
-      localStorageMock.getItem.mockReturnValue("token");
+      // Setup: Mock CSRF token fetch and successful response
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ csrfToken: "test-csrf-token" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ data: "success" }),
+        });
     });
 
-    it("should make GET requests", async () => {
+    test("GET request should work", async () => {
       const result = await httpClient.get("/api/test");
+
       expect(result).toEqual({ data: "success" });
-      expect(fetch).toHaveBeenCalledWith(
-        "/api/test",
-        expect.objectContaining({
-          method: "GET",
-        })
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+
+      // First call: CSRF token fetch
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        CSRF_TOKEN_URL,
+        expect.any(Object)
+      );
+
+      // Second call: Actual GET request
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        TEST_API_URL,
+        expect.objectContaining({ method: "GET" })
       );
     });
 
-    it("should make POST requests", async () => {
-      const data = { test: "data" };
-      const result = await httpClient.post("/api/test", data);
+    test("POST request should work", async () => {
+      const testData = { name: "test" };
+      const result = await httpClient.post("/api/test", testData);
+
       expect(result).toEqual({ data: "success" });
-      expect(fetch).toHaveBeenCalledWith(
-        "/api/test",
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+
+      // Second call should be POST with data
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        TEST_API_URL,
         expect.objectContaining({
           method: "POST",
-          body: JSON.stringify(data),
+          body: JSON.stringify(testData),
         })
       );
     });
 
-    it("should make PUT requests", async () => {
-      const data = { test: "data" };
-      const result = await httpClient.put("/api/test", data);
+    test("PUT request should work", async () => {
+      const testData = { name: "updated" };
+      const result = await httpClient.put("/api/test", testData);
+
       expect(result).toEqual({ data: "success" });
-      expect(fetch).toHaveBeenCalledWith(
-        "/api/test",
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        TEST_API_URL,
         expect.objectContaining({
           method: "PUT",
-          body: JSON.stringify(data),
+          body: JSON.stringify(testData),
         })
       );
     });
 
-    it("should make PATCH requests", async () => {
-      const data = { test: "data" };
-      const result = await httpClient.patch("/api/test", data);
+    test("PATCH request should work", async () => {
+      const testData = { name: "patched" };
+      const result = await httpClient.patch("/api/test", testData);
+
       expect(result).toEqual({ data: "success" });
-      expect(fetch).toHaveBeenCalledWith(
-        "/api/test",
+
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        TEST_API_URL,
         expect.objectContaining({
           method: "PATCH",
-          body: JSON.stringify(data),
+          body: JSON.stringify(testData),
         })
       );
     });
 
-    it("should make DELETE requests", async () => {
+    test("DELETE request should work", async () => {
       const result = await httpClient.delete("/api/test");
+
       expect(result).toEqual({ data: "success" });
-      expect(fetch).toHaveBeenCalledWith(
-        "/api/test",
-        expect.objectContaining({
-          method: "DELETE",
-        })
-      );
-    });
-  });
 
-  describe("Error Handling", () => {
-    it("should handle HTTP errors", async () => {
-      (fetch as jest.Mock).mockResolvedValue({
-        ok: false,
-        status: 400,
-        statusText: "Bad Request",
-        json: () => Promise.resolve({ error: "Invalid request" }),
-      });
-
-      localStorageMock.getItem.mockReturnValue("token");
-
-      await expect(httpClient.get("/api/test")).rejects.toThrow(
-        "Invalid request"
-      );
-    });
-
-    it("should handle network errors", async () => {
-      (fetch as jest.Mock).mockRejectedValue(new Error("Network error"));
-      localStorageMock.getItem.mockReturnValue("token");
-
-      await expect(httpClient.get("/api/test")).rejects.toThrow(
-        "Network error"
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        TEST_API_URL,
+        expect.objectContaining({ method: "DELETE" })
       );
     });
   });
 
   describe("CSRF Token Management", () => {
-    it("should include CSRF token in requests", async () => {
-      (fetch as jest.Mock).mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ data: "success" }),
-      });
-
-      localStorageMock.getItem.mockReturnValue("csrf-token");
-
-      await httpClient.get("/api/test");
-
-      expect(fetch).toHaveBeenCalledWith(
-        "/api/test",
-        expect.objectContaining({
-          headers: expect.any(Headers),
-        })
-      );
-
-      const headers = (fetch as jest.Mock).mock.calls[0][1].headers;
-      expect(headers.get("X-CSRFToken")).toBe("csrf-token");
-    });
-
-    it("should fetch CSRF token if not available", async () => {
-      (fetch as jest.Mock)
+    test("should fetch CSRF token on first request", async () => {
+      mockFetch
         .mockResolvedValueOnce({
           ok: true,
-          json: () => Promise.resolve({ csrfToken: "new-csrf-token" }),
+          json: async () => ({ csrfToken: "new-csrf-token" }),
         })
         .mockResolvedValueOnce({
           ok: true,
-          json: () => Promise.resolve({ data: "success" }),
+          json: async () => ({ data: "success" }),
         });
 
-      localStorageMock.getItem.mockReturnValue(null);
+      await httpClient.get("/api/test");
+
+      // Should make 2 calls: CSRF fetch + actual request
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        CSRF_TOKEN_URL,
+        expect.any(Object)
+      );
+    });
+
+    test("should use cached CSRF token for subsequent requests", async () => {
+      // First request: fetch CSRF token + make request
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ csrfToken: "cached-token" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ data: "first" }),
+        });
+
+      await httpClient.get("/api/first");
+
+      mockFetch.mockClear();
+
+      // Second request: should use cached CSRF token (no fetch)
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: "second" }),
+      });
+
+      await httpClient.get("/api/second");
+
+      // Should only make 1 call (no CSRF fetch)
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    test("should include CSRF token in request headers", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ csrfToken: "test-token" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ data: "success" }),
+        });
 
       await httpClient.get("/api/test");
 
-      expect(fetch).toHaveBeenCalledTimes(2);
-      expect(fetch).toHaveBeenNthCalledWith(
-        1,
-        "/api/auth/csrf-token/",
-        expect.any(Object)
+      const actualRequestCall = mockFetch.mock.calls[1];
+      const headers = actualRequestCall[1].headers;
+
+      expect(headers.get("X-CSRFToken")).toBe("test-token");
+    });
+  });
+
+  describe("Authentication", () => {
+    test("should include auth token in requests when available", async () => {
+      storage["authToken"] = "test-auth-token";
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ csrfToken: "test-csrf" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ data: "success" }),
+        });
+
+      await httpClient.get("/api/test");
+
+      const actualRequestCall = mockFetch.mock.calls[1];
+      const headers = actualRequestCall[1].headers;
+
+      expect(headers.get("Authorization")).toBe("Bearer test-auth-token");
+    });
+
+    test("should skip auth token when skipAuth is true", async () => {
+      storage["authToken"] = "test-auth-token";
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ csrfToken: "test-csrf" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ data: "success" }),
+        });
+
+      await httpClient.get("/api/test", { skipAuth: true });
+
+      const actualRequestCall = mockFetch.mock.calls[1];
+      const headers = actualRequestCall[1].headers;
+
+      expect(headers.has("Authorization")).toBe(false);
+    });
+  });
+
+  describe("Token Refresh Flow", () => {
+    test("should refresh token and retry on 401 response", async () => {
+      // Setup: User has valid refresh token
+      storage["authToken"] = "expired-token";
+      storage["refreshToken"] = "valid-refresh-token";
+
+      mockFetch
+        // Call 1: CSRF token fetch (initial request)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ csrfToken: "csrf-token" }),
+        })
+        // Call 2: Initial request returns 401
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          json: async () => ({ error: "Token expired" }),
+        })
+        // Call 3: Token refresh succeeds
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            access: "new-access-token",
+            refresh: "new-refresh-token",
+          }),
+        })
+        // Call 4: Retry request succeeds
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ data: "success" }),
+        });
+
+      const result = await httpClient.get("/api/test");
+
+      // Should get the final success response
+      expect(result).toEqual({ data: "success" });
+
+      // Tokens should be updated
+      expect(storage["authToken"]).toBe("new-access-token");
+      expect(storage["refreshToken"]).toBe("new-refresh-token");
+
+      // Should make 4 fetch calls total
+      expect(mockFetch).toHaveBeenCalledTimes(4);
+
+      // Verify the refresh call
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        3,
+        TOKEN_REFRESH_URL,
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ refresh: "valid-refresh-token" }),
+        })
       );
-      expect(fetch).toHaveBeenNthCalledWith(2, "/api/test", expect.any(Object));
+    });
+
+    test("should trigger logout when refresh fails", async () => {
+      storage["authToken"] = "expired-token";
+      storage["refreshToken"] = "invalid-refresh-token";
+
+      mockFetch
+        // Call 1: CSRF token fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ csrfToken: "csrf-token" }),
+        })
+        // Call 2: Initial request returns 401
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          json: async () => ({ error: "Token expired" }),
+        })
+        // Call 3: Token refresh fails
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          json: async () => ({ error: "Invalid refresh token" }),
+        });
+
+      await expect(httpClient.get("/api/test")).rejects.toThrow(
+        "Authentication failed. Please log in again."
+      );
+
+      // Tokens should be cleared
+      expect(storage["authToken"]).toBeUndefined();
+      expect(storage["refreshToken"]).toBeUndefined();
+      expect(storage["user"]).toBeUndefined();
+      expect(storage["wishlist"]).toBeUndefined();
+
+      // Logout event should be dispatched
+      expect(mockDispatchEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "auth:logout" })
+      );
+    });
+
+    test("should not retry when maxRetries is reached", async () => {
+      storage["authToken"] = "expired-token";
+      storage["refreshToken"] = "valid-refresh-token";
+
+      mockFetch
+        // Call 1: CSRF token fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ csrfToken: "csrf-token" }),
+        })
+        // Call 2: Initial request returns 401
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          json: async () => ({ error: "Token expired" }),
+        })
+        // Call 3: Token refresh succeeds
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            access: "new-token",
+            refresh: "new-refresh",
+          }),
+        })
+        // Call 4: Retry also returns 401
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          json: async () => ({ error: "Still expired" }),
+        });
+
+      await expect(httpClient.get("/api/test")).rejects.toThrow(
+        "Still expired"
+      );
+
+      // Should not attempt second refresh (maxRetries = 1)
+      expect(mockFetch).toHaveBeenCalledTimes(4);
+    });
+  });
+
+  describe("Error Handling", () => {
+    test("should handle HTTP errors (4xx/5xx)", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ csrfToken: "csrf-token" }),
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 400,
+          statusText: "Bad Request",
+          json: async () => ({ error: "Invalid data" }),
+        });
+
+      await expect(httpClient.get("/api/test")).rejects.toThrow("Invalid data");
+    });
+
+    test("should handle network errors", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ csrfToken: "csrf-token" }),
+        })
+        .mockRejectedValueOnce(new Error("Network failure"));
+
+      await expect(httpClient.get("/api/test")).rejects.toThrow(
+        "Network failure"
+      );
+    });
+
+    test("should handle CSRF token fetch failure", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ error: "Server error" }),
+      });
+
+      await expect(httpClient.get("/api/test")).rejects.toThrow(
+        "Failed to fetch CSRF token"
+      );
+    });
+  });
+
+  describe("Request Configuration", () => {
+    test("should skip CSRF token when skipCSRF is true", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: "success" }),
+      });
+
+      await httpClient.get("/api/test", { skipCSRF: true });
+
+      // Should only make 1 call (no CSRF fetch)
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch).toHaveBeenCalledWith(TEST_API_URL, expect.any(Object));
+    });
+
+    test("should include custom headers", async () => {
+      const customHeaders = new Headers({ "X-Custom": "value" });
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ csrfToken: "csrf-token" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ data: "success" }),
+        });
+
+      await httpClient.get("/api/test", { headers: customHeaders });
+
+      const actualRequestCall = mockFetch.mock.calls[1];
+      const headers = actualRequestCall[1].headers;
+
+      expect(headers.get("X-Custom")).toBe("value");
+    });
+  });
+
+  describe("Response Parsing", () => {
+    test("should parse JSON responses correctly", async () => {
+      const mockResponse = { id: 1, name: "test", items: [1, 2, 3] };
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ csrfToken: "csrf-token" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => mockResponse,
+        });
+
+      const result = await httpClient.get("/api/test");
+
+      expect(result).toEqual(mockResponse);
+    });
+
+    test("getProducts should handle paginated responses", async () => {
+      const mockProducts = [{ id: 1 }, { id: 2 }];
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ csrfToken: "csrf-token" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ results: mockProducts, count: 2 }),
+        });
+
+      const result = await httpClient.getProducts("/api/products");
+
+      expect(result).toEqual(mockProducts);
+    });
+
+    test("getProducts should handle direct array responses", async () => {
+      const mockProducts = [{ id: 1 }, { id: 2 }];
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ csrfToken: "csrf-token" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => mockProducts,
+        });
+
+      const result = await httpClient.getProducts("/api/products");
+
+      expect(result).toEqual(mockProducts);
     });
   });
 });

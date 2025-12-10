@@ -60,6 +60,17 @@ cookies.txt
 # playwright-report/
 .playwright-mcp/
 
+# Testing
+coverage/
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+.jest/
+jest-results/
+*.test.js.snap
+__snapshots__/
+
 # md files
 *.md
 !README.md

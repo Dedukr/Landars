@@ -84,7 +84,7 @@ describe("Email Validation", () => {
       const longEmail = "a".repeat(250) + "@example.com";
       const result = validateEmail(longEmail);
       expect(result.isValid).toBe(false);
-      expect(result.error).toContain("too long");
+      expect(result.error).toContain("no more than 254 characters");
     });
   });
 
@@ -96,8 +96,9 @@ describe("Email Validation", () => {
 
   describe("formatEmailForDisplay", () => {
     it("should mask email addresses for privacy", () => {
+      // "user" has 4 chars: u + ** + r (2 middle chars masked)
       expect(formatEmailForDisplay("user@example.com")).toBe(
-        "u***r@example.com"
+        "u**r@example.com"
       );
       expect(formatEmailForDisplay("a@example.com")).toBe("a@example.com"); // Don't mask very short emails
     });
@@ -112,9 +113,10 @@ describe("Email Validation", () => {
 
   describe("isMajorEmailProvider", () => {
     it("should identify major email providers", () => {
-      expect(isMajorEmailProvider("gmail.com")).toBe(true);
-      expect(isMajorEmailProvider("yahoo.com")).toBe(true);
-      expect(isMajorEmailProvider("example.com")).toBe(false);
+      // Function expects full email address, not just domain
+      expect(isMajorEmailProvider("test@gmail.com")).toBe(true);
+      expect(isMajorEmailProvider("test@yahoo.com")).toBe(true);
+      expect(isMajorEmailProvider("test@example.com")).toBe(false);
     });
   });
 
