@@ -1,20 +1,22 @@
-# Ignore all files
-**/*.pyc
-**/*.pyo
-**/*.mo
-.gitignore
+# Git files
 .git/
-**/__pycache__/
-db.sqlite3
+.gitignore
 **/*.md
 
 # Environment variables
 .env
 .env.local
 .env.*.local
-venv
-.venv
 
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# SSL certificates (mounted at runtime)
+certs/
+*.pem
+*.key
+*.crt
+
+# Logs
+*.log
