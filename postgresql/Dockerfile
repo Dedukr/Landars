@@ -2,27 +2,32 @@
 FROM postgres:15-alpine
 
 # Install additional packages for WAL archiving
-# Note: In multi-platform builds, busybox triggers may fail in emulation, but packages install successfully
-# We install packages and verify they're available, handling trigger errors gracefully
-RUN set -e; \
+# Note: In multi-platform builds (especially arm64 emulation), package triggers may fail
+# even though packages install successfully. We handle this by verifying installation.
+RUN set -euo pipefail; \
+    # Install packages (allow non-zero exit due to trigger failures in emulation)
     apk add --no-cache \
         bash \
         coreutils \
-        findutils || true; \
-    # Verify packages are actually installed (critical for functionality)
-    if ! command -v bash > /dev/null; then \
-        echo "ERROR: bash not found after installation" >&2; \
-        exit 1; \
-    fi; \
-    if ! command -v date > /dev/null; then \
-        echo "ERROR: date (coreutils) not found after installation" >&2; \
-        exit 1; \
-    fi; \
-    if ! command -v find > /dev/null; then \
-        echo "ERROR: find (findutils) not found after installation" >&2; \
-        exit 1; \
-    fi; \
-    echo "✓ Required packages verified: bash, coreutils, findutils"
+        findutils || \
+    # If installation failed, verify packages are actually installed
+    ( \
+        echo "Warning: Package installation reported errors (likely trigger failures in emulation)" >&2; \
+        # Verify all required packages are present
+        command -v bash > /dev/null && \
+        command -v date > /dev/null && \
+        command -v find > /dev/null && \
+        echo "Packages verified: installation successful despite trigger errors" \
+    ) || \
+    ( \
+        echo "ERROR: Required packages failed to install" >&2; \
+        echo "Missing packages:" >&2; \
+        command -v bash > /dev/null || echo "  - bash" >&2; \
+        command -v date > /dev/null || echo "  - coreutils (date)" >&2; \
+        command -v find > /dev/null || echo "  - findutils (find)" >&2; \
+        exit 1 \
+    ); \
+    echo "✓ Required packages installed and verified: bash, coreutils, findutils"
 
 # Create directories for WAL archiving
 RUN mkdir -p /var/lib/postgresql/archive \
