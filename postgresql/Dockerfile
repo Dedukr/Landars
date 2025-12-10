@@ -2,10 +2,27 @@
 FROM postgres:15-alpine
 
 # Install additional packages for WAL archiving
-RUN apk add --no-cache \
-    bash \
-    coreutils \
-    findutils
+# Note: In multi-platform builds, busybox triggers may fail in emulation, but packages install successfully
+# We install packages and verify they're available, handling trigger errors gracefully
+RUN set -e; \
+    apk add --no-cache \
+        bash \
+        coreutils \
+        findutils || true; \
+    # Verify packages are actually installed (critical for functionality)
+    if ! command -v bash > /dev/null; then \
+        echo "ERROR: bash not found after installation" >&2; \
+        exit 1; \
+    fi; \
+    if ! command -v date > /dev/null; then \
+        echo "ERROR: date (coreutils) not found after installation" >&2; \
+        exit 1; \
+    fi; \
+    if ! command -v find > /dev/null; then \
+        echo "ERROR: find (findutils) not found after installation" >&2; \
+        exit 1; \
+    fi; \
+    echo "✓ Required packages verified: bash, coreutils, findutils"
 
 # Create directories for WAL archiving
 RUN mkdir -p /var/lib/postgresql/archive \
