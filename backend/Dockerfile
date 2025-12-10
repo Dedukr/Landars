@@ -14,7 +14,7 @@ RUN apk add --no-cache \
     postgresql-dev
 
 # Install Python dependencies
-COPY backend/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Production stage
@@ -41,7 +41,7 @@ COPY --from=builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
 
 # Copy application code
-COPY backend/ .
+COPY . .
 
 # Copy sequence fix script
 # COPY management/fix_identity_columns.py /tmp/fix_identity_columns.py
