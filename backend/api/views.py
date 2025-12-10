@@ -1,3 +1,4 @@
+import logging
 import uuid
 from decimal import Decimal
 
@@ -5,8 +6,8 @@ from account.models import Address
 from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
 from django.core.cache import cache
-from django.db.models import Q
 from django.db import transaction
+from django.db.models import F, Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.template.loader import render_to_string
@@ -17,6 +18,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from rest_framework.views import APIView
+from shipping.models import ShippingDetails
 
 from .models import (
     Cart,
@@ -47,6 +49,8 @@ from .serializers import (
     WishlistItemSerializer,
     WishlistSerializer,
 )
+
+logger = logging.getLogger(__name__)
 from .validators import validate_image_file_extension
 
 # Temporary feature flag to show only a single category (sausages) in prod.
@@ -130,12 +134,15 @@ class ProductList(APIView):
         if search:
             products = products.filter(name__icontains=search)
 
+        # Annotate with calculated price (base_price + holiday_fee) for filtering and sorting
+        products = products.annotate(calculated_price=F("base_price") + F("holiday_fee"))
+
         price_min = request.query_params.get("price_min")
         price_max = request.query_params.get("price_max")
         if price_min:
-            products = products.filter(price__gte=price_min)
+            products = products.filter(calculated_price__gte=price_min)
         if price_max:
-            products = products.filter(price__lte=price_max)
+            products = products.filter(calculated_price__lte=price_max)
 
         # Stock filtering is disabled since Stock model is commented out
         # in_stock = request.query_params.get("in_stock")
@@ -149,9 +156,9 @@ class ProductList(APIView):
         elif sort == "name_desc":
             products = products.order_by("-name")
         elif sort == "price_asc":
-            products = products.order_by("price")
+            products = products.order_by("calculated_price")
         elif sort == "price_desc":
-            products = products.order_by("-price")
+            products = products.order_by("-calculated_price")
 
         # Get total count before pagination
         total_count = products.count()
@@ -214,9 +221,12 @@ class ProductDetail(APIView):
         product = self.get_object(product_id)
         if product:
             # Temporary restriction: hide products outside sausage category when flag is on
-            if SAUSAGE_ONLY_MODE and not product.categories.filter(
-                name__iexact=SAUSAGE_CATEGORY_NAME
-            ).exists():
+            if (
+                SAUSAGE_ONLY_MODE
+                and not product.categories.filter(
+                    name__iexact=SAUSAGE_CATEGORY_NAME
+                ).exists()
+            ):
                 return Response(
                     {"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND
                 )
@@ -449,7 +459,7 @@ class OrderListView(APIView):
             # Prioritize cart values as the single source of truth - all cart fields are saved to order
             # Convert discount and delivery_fee to Decimal to avoid type errors
             discount_value = cart.discount or request.data.get("discount", 0)
-            
+
             # If shipping option is selected, use its price as delivery_fee
             # Otherwise fall back to cart delivery_fee or request delivery_fee
             shipping_cost = request.data.get("shipping_cost")
@@ -498,16 +508,23 @@ class OrderListView(APIView):
                 "delivery_fee": delivery_fee_value,
                 "status": "pending",
             }
-            
+
+            shipping_details_data = {}
             # Add shipping option information if provided
             if request.data.get("shipping_method_id"):
-                order_data["shipping_method_id"] = request.data.get("shipping_method_id")
+                shipping_details_data["shipping_method_id"] = request.data.get(
+                    "shipping_method_id"
+                )
             if request.data.get("shipping_carrier"):
-                order_data["shipping_carrier"] = request.data.get("shipping_carrier")
+                shipping_details_data["shipping_carrier"] = request.data.get(
+                    "shipping_carrier"
+                )
             if request.data.get("shipping_service_name"):
-                order_data["shipping_service_name"] = request.data.get("shipping_service_name")
+                shipping_details_data["shipping_service_name"] = request.data.get(
+                    "shipping_service_name"
+                )
             if shipping_cost_decimal is not None:
-                order_data["shipping_cost"] = shipping_cost_decimal
+                shipping_details_data["shipping_cost"] = shipping_cost_decimal
 
             # Handle payment information if provided
             payment_intent_id = request.data.get("payment_intent_id")
@@ -540,6 +557,8 @@ class OrderListView(APIView):
                 order_data["address"] = address
 
             order = Order.objects.create(**order_data)
+            if shipping_details_data:
+                ShippingDetails.objects.create(order=order, **shipping_details_data)
 
             # Create order items from cart items
             for cart_item in cart_items:
@@ -552,6 +571,37 @@ class OrderListView(APIView):
             # Only recalculate if no shipping option was selected and delivery_fee_manual is False
             if not order.delivery_fee_manual and not shipping_cost:
                 self._calculate_delivery_type_and_fee(order)
+
+            # Trigger shipment creation if order is paid and has shipping method
+            shipping_details = getattr(order, "shipping_details", None)
+            if (
+                order.status == "paid"
+                and shipping_details
+                and shipping_details.shipping_method_id
+            ):
+                # Import here to avoid circular imports
+                from shipping.service import ShippingService
+
+                try:
+                    shipping_service = ShippingService()
+                    result = shipping_service.create_shipment_for_order(order)
+
+                    if result.get("success"):
+                        logger.info(
+                            f"Shipment created for order {order.id}: "
+                            f"tracking={result.get('tracking_number')}"
+                        )
+                    else:
+                        logger.warning(
+                            f"Failed to create shipment for order {order.id}: "
+                            f"{result.get('error')}"
+                        )
+                except Exception as e:
+                    # Don't fail the order creation if shipment creation fails
+                    logger.error(
+                        f"Exception while creating shipment for order {order.id}: {e}",
+                        exc_info=True,
+                    )
 
             # Delete the cart instance completely after order is created
             # This ensures all cart data is transferred to the order
@@ -930,11 +980,11 @@ class CartView(APIView):
             if quantity == 0:
                 # Remove item if quantity is 0
                 cart_item.delete()
-                
+
                 # Recalculate delivery fee after removing item
                 self._calculate_delivery_type_and_fee(cart)
                 cart.save()
-                
+
                 return Response(
                     {"message": "Item removed from cart"}, status=status.HTTP_200_OK
                 )
@@ -942,11 +992,11 @@ class CartView(APIView):
                 # Update quantity
                 cart_item.quantity = quantity
                 cart_item.save()
-                
+
                 # Recalculate delivery fee based on updated cart contents
                 self._calculate_delivery_type_and_fee(cart)
                 cart.save()
-                
+
                 serializer = CartItemSerializer(cart_item)
                 return Response(serializer.data)
 
@@ -1008,8 +1058,9 @@ class CartView(APIView):
         Uses preassigned Royal Mail delivery fee map for post delivery (sausages).
         """
         from decimal import Decimal
+
         from shipping.service import ShippingService
-        
+
         items = cart.items.all()
 
         if not items.exists():
@@ -1035,9 +1086,11 @@ class CartView(APIView):
             else:
                 # Calculate total weight from cart items
                 total_weight = float(sum(item.quantity for item in items))
-                
-                # Use preassigned Royal Mail delivery fee map
-                cart.delivery_fee = ShippingService.get_delivery_fee_by_weight(total_weight)
+
+                # No courier option above 20kg; return £0 and let frontend surface message
+                cart.delivery_fee = ShippingService.get_delivery_fee_by_weight(
+                    total_weight
+                )
         else:
             # Mixed products or no sausages, use home delivery
             cart.is_home_delivery = True
@@ -1061,22 +1114,22 @@ class CartView(APIView):
                 # Remove specific item
                 cart_item = CartItem.objects.get(cart=cart, product_id=product_id)
                 cart_item.delete()
-                
+
                 # Recalculate delivery fee after removing item
                 self._calculate_delivery_type_and_fee(cart)
                 cart.save()
-                
+
                 return Response(
                     {"message": "Product removed from cart"}, status=status.HTTP_200_OK
                 )
             else:
                 # Clear entire cart
                 cart.items.all().delete()
-                
+
                 # Recalculate delivery fee (should be 0 for empty cart)
                 self._calculate_delivery_type_and_fee(cart)
                 cart.save()
-                
+
                 return Response({"message": "Cart cleared"}, status=status.HTTP_200_OK)
 
         except Cart.DoesNotExist:

@@ -301,15 +301,16 @@ export default function CheckoutPage() {
       (sum, item) => sum + (parseFloat(item.quantity) || 0),
       0
     ) || 0;
-  // Helper function to get delivery type display text
-  const getDeliveryTypeText = () => {
-    return cartIsHomeDelivery ? "Home Delivery" : "Post Delivery";
-  };
+  const isOverweightSausageOrder = !cartIsHomeDelivery && cartTotalWeight > 20;
 
   // Calculate delivery fee - use API price from selected shipping option, or first available option
   const getDeliveryFeeFromAPI = (): number => {
     if (cartIsHomeDelivery) {
       return cartDeliveryFee;
+    }
+
+    if (isOverweightSausageOrder) {
+      return 0;
     }
 
     // For post delivery, use price from selected shipping option
@@ -330,6 +331,9 @@ export default function CheckoutPage() {
 
   // Helper function to get delivery fee reasoning (simplified for display)
   const getDeliveryFeeReasoning = () => {
+    if (isOverweightSausageOrder) {
+      return "We can ship sausage orders up to 20kg. Please split your order or contact us for assistance.";
+    }
     if (cartDeliveryFee === 0) {
       return "Free delivery";
     }
@@ -366,7 +370,10 @@ export default function CheckoutPage() {
     reasoning: getDeliveryFeeReasoning(),
     hasSausages: !cartIsHomeDelivery,
     weight: cartTotalWeight,
-    dependsOnCourier: !cartIsHomeDelivery && shippingOptions.length === 0, // Depends on courier if no options loaded yet
+    dependsOnCourier:
+      (!cartIsHomeDelivery && shippingOptions.length === 0) ||
+      isOverweightSausageOrder, // Depends on courier if no options loaded yet or overweight
+    overweight: isOverweightSausageOrder,
   };
 
   // Fetch user profile data
@@ -972,35 +979,29 @@ export default function CheckoutPage() {
 
                 <div className="p-6 space-y-4">
                   {/* Delivery Type Information */}
-                  <div
-                    className="p-3 rounded-md"
-                    style={{
-                      background: "var(--info-bg)",
-                      border: "1px solid var(--info-border)",
-                    }}
-                  >
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0">
-                        <span className="text-lg mr-2">
-                          {cartIsHomeDelivery ? "🏠" : "📦"}
-                        </span>
-                      </div>
-                      <div>
-                        <h4
-                          className="text-sm font-medium"
-                          style={{ color: "var(--info-text)" }}
-                        >
-                          {getDeliveryTypeText()}
-                        </h4>
-                        <p
-                          className="text-sm"
-                          style={{ color: "var(--info-text)", opacity: 0.8 }}
-                        >
-                          {getDeliveryFeeReasoning()}
-                        </p>
+                  {!cartIsHomeDelivery && (
+                    <div
+                      className="p-3 rounded-md"
+                      style={{
+                        background: "var(--info-bg)",
+                        border: "1px solid var(--info-border)",
+                      }}
+                    >
+                      <div className="flex items-center">
+                        <div className="flex-shrink-0">
+                          <span className="text-lg mr-2">📦</span>
+                        </div>
+                        <div>
+                          <h4
+                            className="text-sm font-medium"
+                            style={{ color: "var(--info-text)" }}
+                          >
+                            Post Delivery
+                          </h4>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Delivery Fee Information */}
                   <DeliveryFeeInfo />

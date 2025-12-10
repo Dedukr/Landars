@@ -34,6 +34,8 @@ export function useDeliveryFee({
         totalWeight: 0,
         hasSausages: false,
         reasoning: "No items in cart",
+        dependsOnCourier: false,
+        overweight: false,
       };
     }
 

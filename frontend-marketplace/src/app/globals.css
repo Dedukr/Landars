@@ -160,6 +160,26 @@ body {
   font-family: Arial, Helvetica, sans-serif;
   transition: background-color 0.3s ease, color 0.3s ease;
   font-size: 0.85em; /* 15% reduction (100% - 15% = 85%) */
+  /* Improve touch interactions on mobile */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Ensure buttons work properly on mobile */
+button,
+a[role="button"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+}
+
+/* Improve touch target sizes on mobile */
+@media (max-width: 768px) {
+  button,
+  a[role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
 }
 
 /* Button hover effects for destructive and success variants */

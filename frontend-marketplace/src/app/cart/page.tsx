@@ -71,7 +71,7 @@ export default function CartPage() {
     try {
       const data = await httpClient.get<CartData>("/api/cart/");
       setCartData(data);
-      
+
       // If cart has discount, set applied coupon
       if (data.discount && parseFloat(data.discount) > 0) {
         setAppliedCoupon("save10"); // Assume save10 if discount exists
@@ -101,7 +101,7 @@ export default function CartPage() {
   // This ensures delivery fee is recalculated and displayed after items are added/updated/removed
   useEffect(() => {
     if (!user || cartIsLoading) return;
-    
+
     const timeoutId = setTimeout(() => {
       fetchCartData();
     }, 500); // Debounce by 500ms to batch rapid changes
@@ -119,12 +119,12 @@ export default function CartPage() {
   // If coupon is applied but cart discount doesn't match current subtotal, recalculate
   const calculatedDiscount = appliedCoupon ? subtotal * 0.1 : 0;
   const cartDiscount = cartData?.discount ? parseFloat(cartData.discount) : 0;
-  
+
   // Update cart discount if coupon is applied and discount doesn't match
   // Debounce to prevent excessive API calls; no refetch to avoid cascades
   useEffect(() => {
     if (cartIsLoading) return; // Skip during cart updates
-    
+
     if (appliedCoupon && user && subtotal > 0) {
       const expectedDiscount = subtotal * 0.1;
       if (Math.abs(cartDiscount - expectedDiscount) > 0.01) {
@@ -146,14 +146,11 @@ export default function CartPage() {
       }
     }
   }, [subtotal, appliedCoupon, user, cartDiscount, cartIsLoading]);
-  
+
   const discount = cartDiscount > 0 ? cartDiscount : calculatedDiscount;
 
   // Dynamic delivery fee calculation
-  const {
-    deliveryCalculation,
-    deliveryBreakdown,
-  } = useDeliveryFee({
+  const { deliveryCalculation, deliveryBreakdown } = useDeliveryFee({
     products: cartProducts,
     subtotal: subtotal,
     discount: discount,
@@ -161,29 +158,37 @@ export default function CartPage() {
 
   // Use backend's preassigned delivery fee (calculated using Royal Mail map)
   // Backend automatically calculates delivery fee when items are added/updated
-  const cartDeliveryFee = cartData?.delivery_fee ? parseFloat(cartData.delivery_fee) : 0;
+  const cartDeliveryFee = cartData?.delivery_fee
+    ? parseFloat(cartData.delivery_fee)
+    : 0;
   const cartIsHomeDelivery = cartData?.is_home_delivery ?? true;
-  
+
   // Use backend delivery fee if available, otherwise fall back to frontend calculation
-  const displayDeliveryFee = cartDeliveryFee > 0 ? cartDeliveryFee : deliveryCalculation.deliveryFee;
-  const displayIsHomeDelivery = cartData ? cartIsHomeDelivery : deliveryCalculation.isHomeDelivery;
+  const displayDeliveryFee =
+    cartDeliveryFee > 0 ? cartDeliveryFee : deliveryCalculation.deliveryFee;
+  const displayIsHomeDelivery = cartData
+    ? cartIsHomeDelivery
+    : deliveryCalculation.isHomeDelivery;
 
   // Calculate total using backend delivery fee (preassigned Royal Mail pricing)
   const total = subtotal + displayDeliveryFee - discount;
 
   const handleApplyCoupon = async () => {
-    if (typeof couponCode === "string" && couponCode.toLowerCase() === "save10") {
+    if (
+      typeof couponCode === "string" &&
+      couponCode.toLowerCase() === "save10"
+    ) {
       const discountAmount = subtotal * 0.1; // 10% discount
-      
+
       try {
         // Save discount to cart
         await httpClient.put("/api/cart/", {
           discount: discountAmount,
         });
-        
+
         setAppliedCoupon(couponCode);
         setCouponCode("");
-        
+
         // Refetch cart data to get updated values
         await fetchCartData();
       } catch (error) {
@@ -198,9 +203,9 @@ export default function CartPage() {
       await httpClient.put("/api/cart/", {
         discount: 0,
       });
-      
+
       setAppliedCoupon(null);
-      
+
       // Refetch cart data to get updated values
       await fetchCartData();
     } catch (error) {
@@ -383,12 +388,15 @@ export default function CartPage() {
                                 <div
                                   className="text-sm"
                                   style={{
-                                  color: "var(--foreground)",
-                                  opacity: 0.6,
-                                }}
-                              >
-                                £{product?.price ? parseFloat(product.price).toFixed(2) : "0.00"}
-                              </div>
+                                    color: "var(--foreground)",
+                                    opacity: 0.6,
+                                  }}
+                                >
+                                  £
+                                  {product?.price
+                                    ? parseFloat(product.price).toFixed(2)
+                                    : "0.00"}
+                                </div>
                               </div>
                               <div className="flex space-x-2">
                                 <button
@@ -464,35 +472,29 @@ export default function CartPage() {
                   </div>
                   <div className="p-6 space-y-4">
                     {/* Delivery Type Information */}
-                    <div
-                      className="p-3 rounded-md"
-                      style={{
-                        background: "var(--info-bg)",
-                        border: "1px solid var(--info-border)",
-                      }}
-                    >
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0">
-                          <span className="text-lg mr-2">
-                            {deliveryCalculation.isHomeDelivery ? "🏠" : "📦"}
-                          </span>
-                        </div>
-                        <div>
-                          <h4
-                            className="text-sm font-medium"
-                            style={{ color: "var(--info-text)" }}
-                          >
-                            {deliveryBreakdown.type}
-                          </h4>
-                          <p
-                            className="text-sm"
-                            style={{ color: "var(--info-text)", opacity: 0.8 }}
-                          >
-                            {deliveryBreakdown.reasoning}
-                          </p>
+                    {!deliveryCalculation.isHomeDelivery && (
+                      <div
+                        className="p-3 rounded-md"
+                        style={{
+                          background: "var(--info-bg)",
+                          border: "1px solid var(--info-border)",
+                        }}
+                      >
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0">
+                            <span className="text-lg mr-2">📦</span>
+                          </div>
+                          <div>
+                            <h4
+                              className="text-sm font-medium"
+                              style={{ color: "var(--info-text)" }}
+                            >
+                              Post Delivery
+                            </h4>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
                     {/* Delivery Fee Information */}
                     <DeliveryFeeInfo />
@@ -616,7 +618,9 @@ export default function CartPage() {
                         deliveryFee={displayDeliveryFee}
                         isFree={displayDeliveryFee === 0}
                         reasoning={
-                          displayDeliveryFee === 0
+                          deliveryBreakdown.overweight
+                            ? deliveryBreakdown.reasoning
+                            : displayDeliveryFee === 0
                             ? "Free delivery for orders over £220"
                             : displayIsHomeDelivery
                             ? "Home delivery"
@@ -624,6 +628,11 @@ export default function CartPage() {
                         }
                         hasSausages={!displayIsHomeDelivery}
                         weight={deliveryBreakdown.weight}
+                        dependsOnCourier={
+                          deliveryBreakdown.dependsOnCourier ||
+                          deliveryBreakdown.overweight
+                        }
+                        overweight={deliveryBreakdown.overweight}
                       />
 
                       {/* Discount - Based on Order Model */}

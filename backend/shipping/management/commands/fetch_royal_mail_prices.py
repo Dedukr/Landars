@@ -4,8 +4,8 @@ This is useful for testing and debugging Royal Mail price fetching.
 """
 
 from django.core.management.base import BaseCommand
-from shipping.service import ShippingService
 from shipping.sendcloud_client import SendcloudAPIError
+from shipping.service import ShippingService
 
 
 class Command(BaseCommand):
@@ -45,9 +45,7 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"\n{'='*60}\n"
-                f"Fetching Royal Mail Prices\n"
-                f"{'='*60}\n"
+                f"\n{'='*60}\n" f"Fetching Royal Mail Prices\n" f"{'='*60}\n"
             )
         )
         self.stdout.write(f"Destination: {city}, {postal_code}, {country}")
@@ -91,10 +89,10 @@ class Command(BaseCommand):
                     self.stdout.write(
                         f"   Price: £{option.get('price', '0.00')} {option.get('currency', 'GBP')}"
                     )
-                    self.stdout.write(
-                        f"   Method ID: {option.get('id', 'N/A')}"
-                    )
-                    if option.get("min_delivery_days") or option.get("max_delivery_days"):
+                    self.stdout.write(f"   Method ID: {option.get('id', 'N/A')}")
+                    if option.get("min_delivery_days") or option.get(
+                        "max_delivery_days"
+                    ):
                         self.stdout.write(
                             f"   Delivery: {option.get('min_delivery_days', '?')}-{option.get('max_delivery_days', '?')} days"
                         )
@@ -120,9 +118,7 @@ class Command(BaseCommand):
             self.stdout.write(f"\n{'='*60}\n")
 
         except SendcloudAPIError as e:
-            self.stdout.write(
-                self.style.ERROR(f"\n✗ Sendcloud API Error: {e}\n")
-            )
+            self.stdout.write(self.style.ERROR(f"\n✗ Sendcloud API Error: {e}\n"))
             self.stdout.write(
                 "Please check:\n"
                 "  1. SENDCLOUD_PUBLIC_KEY and SENDCLOUD_SECRET_KEY are set\n"
@@ -130,10 +126,7 @@ class Command(BaseCommand):
                 "  3. Royal Mail pricing is set up in your Sendcloud panel\n"
             )
         except Exception as e:
-            self.stdout.write(
-                self.style.ERROR(f"\n✗ Unexpected Error: {e}\n")
-            )
+            self.stdout.write(self.style.ERROR(f"\n✗ Unexpected Error: {e}\n"))
             import traceback
 
             self.stdout.write(traceback.format_exc())
-

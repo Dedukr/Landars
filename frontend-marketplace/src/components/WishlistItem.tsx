@@ -147,12 +147,22 @@ const WishlistItem = memo<WishlistItemProps>(
           <div className="flex flex-col items-end space-y-2">
             <button
               onClick={handleRemove}
-              className="transition-colors"
-              style={{ color: "#dc2626" }}
+              className="transition-colors touch-manipulation"
+              style={{
+                color: "#dc2626",
+                touchAction: "manipulation",
+                WebkitTapHighlightColor: "transparent",
+              }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.opacity = "0.8";
               }}
               onMouseLeave={(e) => {
+                e.currentTarget.style.opacity = "1";
+              }}
+              onTouchStart={(e) => {
+                e.currentTarget.style.opacity = "0.8";
+              }}
+              onTouchEnd={(e) => {
                 e.currentTarget.style.opacity = "1";
               }}
               title="Remove from wishlist"
@@ -167,12 +177,22 @@ const WishlistItem = memo<WishlistItemProps>(
             </button>
             <button
               onClick={handleAddToCart}
-              className="px-4 py-2 text-white rounded-md transition-colors text-sm font-medium"
-              style={{ background: "var(--primary)" }}
+              className="px-4 py-2 text-white rounded-md transition-colors text-sm font-medium touch-manipulation"
+              style={{
+                background: "var(--primary)",
+                touchAction: "manipulation",
+                WebkitTapHighlightColor: "transparent",
+              }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = "var(--primary-hover)";
               }}
               onMouseLeave={(e) => {
+                e.currentTarget.style.background = "var(--primary)";
+              }}
+              onTouchStart={(e) => {
+                e.currentTarget.style.background = "var(--primary-hover)";
+              }}
+              onTouchEnd={(e) => {
                 e.currentTarget.style.background = "var(--primary)";
               }}
             >

@@ -59,3 +59,7 @@ cookies.txt
 
 # playwright-report/
 .playwright-mcp/
+
+# md files
+*.md
+!README.md

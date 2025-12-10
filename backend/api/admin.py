@@ -19,6 +19,7 @@ from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
+from shipping.models import ShippingDetails
 
 from .forms import ProductImageAdminForm, ProductImageInlineForm
 from .models import (
@@ -193,6 +194,24 @@ class ParentCategoriesFilter(admin.SimpleListFilter):
     def queryset(self, request, queryset):
         if self.value():
             return queryset.filter(parent__id=self.value())
+        return queryset
+
+
+class HolidayFeeFilter(admin.SimpleListFilter):
+    title = _("Have holiday_fee")
+    parameter_name = "have_holiday_fee"
+
+    def lookups(self, request, model_admin):
+        return [
+            ("yes", _("Yes")),
+            ("no", _("No")),
+        ]
+
+    def queryset(self, request, queryset):
+        if self.value() == "yes":
+            return queryset.filter(holiday_fee__gt=0)
+        elif self.value() == "no":
+            return queryset.filter(holiday_fee=0)
         return queryset
 
 
@@ -410,6 +429,98 @@ class OrderItemInline(admin.TabularInline):
     get_total_price.short_description = "Total Price"
 
 
+class ShippingDetailsInline(admin.StackedInline):
+    model = ShippingDetails
+    fk_name = "order"
+    extra = 0
+    can_delete = False
+    readonly_fields = [
+        "shipping_tracking_number",
+        "shipping_tracking_url",
+        "shipping_label_url",
+        "sendcloud_parcel_id",
+        "shipping_status",
+        "shipping_error_message",
+    ]
+    fields = [
+        "shipping_method_id",
+        "shipping_carrier",
+        "shipping_service_name",
+        "shipping_cost",
+        "shipping_tracking_number",
+        "shipping_tracking_url",
+        "shipping_label_url",
+        "sendcloud_parcel_id",
+        "shipping_status",
+        "shipping_error_message",
+    ]
+
+
+def retry_shipment_creation(modeladmin, request, queryset):
+    """
+    Admin action to retry shipment creation for selected orders.
+    """
+    import logging
+
+    from shipping.service import ShippingService
+
+    logger = logging.getLogger(__name__)
+    shipping_service = ShippingService()
+
+    success_count = 0
+    failed_count = 0
+    skipped_count = 0
+
+    for order in queryset:
+        details = getattr(order, "shipping_details", None)
+        # Skip orders that are not paid
+        if order.status != "paid":
+            skipped_count += 1
+            continue
+
+        # Skip orders without shipping method
+        if not details or not details.shipping_method_id:
+            skipped_count += 1
+            continue
+
+        try:
+            result = shipping_service.create_shipment_for_order(order)
+            if result.get("success"):
+                success_count += 1
+                logger.info(
+                    f"Retry: Successfully created shipment for order {order.id}"
+                )
+            else:
+                failed_count += 1
+                logger.warning(
+                    f"Retry: Failed to create shipment for order {order.id}: {result.get('error')}"
+                )
+        except Exception as e:
+            failed_count += 1
+            logger.error(
+                f"Retry: Exception creating shipment for order {order.id}: {e}",
+                exc_info=True,
+            )
+
+    # Show feedback message
+    messages = []
+    if success_count > 0:
+        messages.append(f"{success_count} shipment(s) created successfully")
+    if failed_count > 0:
+        messages.append(f"{failed_count} shipment(s) failed")
+    if skipped_count > 0:
+        messages.append(
+            f"{skipped_count} order(s) skipped (not paid or no shipping method)"
+        )
+
+    modeladmin.message_user(request, ". ".join(messages))
+
+
+retry_shipment_creation.short_description = (
+    "Retry shipment creation for selected orders"
+)
+
+
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
     form = OrderAdminForm
@@ -424,6 +535,7 @@ class OrderAdmin(admin.ModelAdmin):
         mark_orders_pending,
         calculate_sum,
         calculate_total_items,
+        retry_shipment_creation,
         "export_orders_pdf",
         "food_summary_csv",
         "food_summary_excel",
@@ -439,10 +551,16 @@ class OrderAdmin(admin.ModelAdmin):
         "get_total_items",
         "get_total_price",
         "status",
+        "get_shipping_status_display",
         "get_invoice",
     ]
     list_display_links = ["id", "delivery_date", "customer_name"]
-    list_filter = [DateFilter, "status"]
+    list_filter = [
+        DateFilter,
+        "status",
+        "shipping_details__shipping_status",
+        HolidayFeeFilter,
+    ]
     list_editable = ["status"]
     search_fields = [
         "customer__profile__name",
@@ -451,7 +569,7 @@ class OrderAdmin(admin.ModelAdmin):
     ]
     ordering = ["-id"]
     date_hierarchy = "delivery_date"
-    inlines = [OrderItemInline]
+    inlines = [OrderItemInline, ShippingDetailsInline]
     autocomplete_fields = ["customer"]
 
     def get_fields(self, request, obj=None):
@@ -491,6 +609,9 @@ class OrderAdmin(admin.ModelAdmin):
             "get_holiday_fee_amount",
             "get_total_price",
             "get_invoice",
+            # Shipping fields are read-only (managed by system)
+            "get_shipping_tracking_link",
+            "get_shipping_label_link",
         ]
         return readonly  # Admins can edit customer, status, notes
 
@@ -625,6 +746,67 @@ class OrderAdmin(admin.ModelAdmin):
         return "-"
 
     get_holiday_fee_amount.short_description = "Holiday Fee (£)"
+
+    def get_shipping_status_display(self, obj):
+        """Display shipping status with color coding."""
+        details = getattr(obj, "shipping_details", None)
+        if not details or not details.shipping_status:
+            if obj.status == "paid" and details and details.shipping_method_id:
+                return format_html('<span style="color: orange;">⏳ Pending</span>')
+            return "-"
+
+        status_colors = {
+            "pending_shipment": "orange",
+            "label_created": "green",
+            "shipment_failed": "red",
+            "in_transit": "blue",
+            "out_for_delivery": "purple",
+            "delivered": "darkgreen",
+        }
+
+        status_icons = {
+            "pending_shipment": "⏳",
+            "label_created": "✅",
+            "shipment_failed": "❌",
+            "in_transit": "🚚",
+            "out_for_delivery": "📦",
+            "delivered": "✓",
+        }
+
+        color = status_colors.get(details.shipping_status, "gray")
+        icon = status_icons.get(details.shipping_status, "")
+        label = details.get_shipping_status_display()
+
+        return format_html('<span style="color: {};">{} {}</span>', color, icon, label)
+
+    get_shipping_status_display.short_description = "Shipping Status"
+
+    def get_shipping_tracking_link(self, obj):
+        """Display tracking number as clickable link if available."""
+        details = getattr(obj, "shipping_details", None)
+        if details and details.shipping_tracking_number:
+            if details.shipping_tracking_url:
+                return format_html(
+                    '<a href="{}" target="_blank">{}</a>',
+                    details.shipping_tracking_url,
+                    details.shipping_tracking_number,
+                )
+            return details.shipping_tracking_number
+        return "-"
+
+    get_shipping_tracking_link.short_description = "Tracking Number"
+
+    def get_shipping_label_link(self, obj):
+        """Display label download link if available."""
+        details = getattr(obj, "shipping_details", None)
+        if details and details.shipping_label_url:
+            return format_html(
+                '<a href="{}" target="_blank" class="button">📄 Download Label</a>',
+                details.shipping_label_url,
+            )
+        return "-"
+
+    get_shipping_label_link.short_description = "Shipping Label"
 
     def save_model(self, request, obj, form, change):
         """Save the order without calculating delivery fees here to avoid double save."""
@@ -775,6 +957,7 @@ class OrderAdmin(admin.ModelAdmin):
             output.seek(0)
 
             response = HttpResponse(output.read(), content_type="application/pdf")
+            delivery_date = date.today()
             response["Content-Disposition"] = (
                 f'attachment; filename="{delivery_date.strftime("%d-%b-%Y")}_Orders.pdf"'
             )

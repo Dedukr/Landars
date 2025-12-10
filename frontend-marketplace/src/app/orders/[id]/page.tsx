@@ -46,6 +46,17 @@ interface Order {
   total_items: number;
   payment_intent_id?: string;
   payment_status?: string;
+  // Shipping fields
+  shipping_method_id?: number;
+  shipping_carrier?: string;
+  shipping_service_name?: string;
+  shipping_cost?: string;
+  shipping_tracking_number?: string;
+  shipping_tracking_url?: string;
+  shipping_label_url?: string;
+  sendcloud_parcel_id?: number;
+  shipping_status?: string;
+  shipping_error_message?: string;
 }
 
 const statusConfig = {
@@ -535,6 +546,204 @@ export default function OrderDetailPage() {
                 </div>
               </div>
             </div>
+
+            {/* Shipping Tracking Section */}
+            {(order.shipping_tracking_number || 
+              order.shipping_carrier || 
+              order.shipping_status) && (
+              <div
+                className="rounded-xl shadow-sm p-6 border"
+                style={{
+                  background: "var(--card-bg)",
+                  borderColor: "var(--sidebar-border)",
+                }}
+              >
+                <h2
+                  className="text-xl font-semibold mb-6"
+                  style={{ color: "var(--foreground)" }}
+                >
+                  Shipping Information
+                </h2>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Shipping Method */}
+                  {(order.shipping_carrier || order.shipping_service_name) && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <svg
+                          className="w-5 h-5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          style={{ color: "var(--accent)" }}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"
+                          />
+                        </svg>
+                        <p
+                          className="text-sm font-semibold"
+                          style={{ color: "var(--foreground)" }}
+                        >
+                          Shipping Method
+                        </p>
+                      </div>
+                      <p
+                        className="text-sm"
+                        style={{ color: "var(--muted-foreground)" }}
+                      >
+                        {order.shipping_carrier && order.shipping_service_name
+                          ? `${order.shipping_carrier} - ${order.shipping_service_name}`
+                          : order.shipping_carrier || order.shipping_service_name}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Shipping Status */}
+                  {order.shipping_status && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <svg
+                          className="w-5 h-5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          style={{ color: "var(--accent)" }}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
+                        </svg>
+                        <p
+                          className="text-sm font-semibold"
+                          style={{ color: "var(--foreground)" }}
+                        >
+                          Shipping Status
+                        </p>
+                      </div>
+                      <p
+                        className="text-sm capitalize"
+                        style={{ color: "var(--muted-foreground)" }}
+                      >
+                        {order.shipping_status.replace(/_/g, " ")}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Tracking Number */}
+                  {order.shipping_tracking_number && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <svg
+                          className="w-5 h-5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          style={{ color: "var(--accent)" }}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                          />
+                        </svg>
+                        <p
+                          className="text-sm font-semibold"
+                          style={{ color: "var(--foreground)" }}
+                        >
+                          Tracking Number
+                        </p>
+                      </div>
+                      {order.shipping_tracking_url ? (
+                        <a
+                          href={order.shipping_tracking_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm hover:underline inline-flex items-center gap-1"
+                          style={{ color: "var(--accent)" }}
+                        >
+                          {order.shipping_tracking_number}
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                            />
+                          </svg>
+                        </a>
+                      ) : (
+                        <p
+                          className="text-sm font-mono"
+                          style={{ color: "var(--muted-foreground)" }}
+                        >
+                          {order.shipping_tracking_number}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Preparing Shipment Message */}
+                  {!order.shipping_tracking_number && 
+                   order.status === "paid" && 
+                   order.shipping_method_id && (
+                    <div className="md:col-span-2">
+                      <div
+                        className="rounded-lg p-4 border"
+                        style={{
+                          background: "rgba(217, 164, 65, 0.1)",
+                          borderColor: "rgba(217, 164, 65, 0.3)",
+                        }}
+                      >
+                        <div className="flex items-start gap-3">
+                          <svg
+                            className="w-5 h-5 flex-shrink-0 mt-0.5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            style={{ color: "var(--accent)" }}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                            />
+                          </svg>
+                          <div>
+                            <p
+                              className="text-sm font-semibold mb-1"
+                              style={{ color: "var(--foreground)" }}
+                            >
+                              Preparing Your Shipment
+                            </p>
+                            <p
+                              className="text-sm"
+                              style={{ color: "var(--muted-foreground)" }}
+                            >
+                              We&apos;re preparing your order for shipment. 
+                              Tracking information will be available soon.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Payment Information */}
             {order.payment_intent_id && (

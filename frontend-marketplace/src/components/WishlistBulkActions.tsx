@@ -34,12 +34,22 @@ const WishlistBulkActions = memo<WishlistBulkActionsProps>(
           <div className="flex gap-2">
             <button
               onClick={handleBulkAddToCart}
-              className="px-4 py-2 text-white rounded-md transition-colors"
-              style={{ background: "var(--primary)" }}
+              className="px-4 py-2 text-white rounded-md transition-colors touch-manipulation"
+              style={{
+                background: "var(--primary)",
+                touchAction: "manipulation",
+                WebkitTapHighlightColor: "transparent",
+              }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = "var(--primary-hover)";
               }}
               onMouseLeave={(e) => {
+                e.currentTarget.style.background = "var(--primary)";
+              }}
+              onTouchStart={(e) => {
+                e.currentTarget.style.background = "var(--primary-hover)";
+              }}
+              onTouchEnd={(e) => {
                 e.currentTarget.style.background = "var(--primary)";
               }}
             >
@@ -47,12 +57,22 @@ const WishlistBulkActions = memo<WishlistBulkActionsProps>(
             </button>
             <button
               onClick={handleBulkRemove}
-              className="px-4 py-2 text-white rounded-md transition-colors"
-              style={{ background: "#dc2626" }}
+              className="px-4 py-2 text-white rounded-md transition-colors touch-manipulation"
+              style={{
+                background: "#dc2626",
+                touchAction: "manipulation",
+                WebkitTapHighlightColor: "transparent",
+              }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = "#b91c1c";
               }}
               onMouseLeave={(e) => {
+                e.currentTarget.style.background = "#dc2626";
+              }}
+              onTouchStart={(e) => {
+                e.currentTarget.style.background = "#b91c1c";
+              }}
+              onTouchEnd={(e) => {
                 e.currentTarget.style.background = "#dc2626";
               }}
             >

@@ -8,15 +8,17 @@ interface DeliveryFeeDisplayProps {
   hasSausages?: boolean;
   weight?: number;
   dependsOnCourier?: boolean;
+  overweight?: boolean;
 }
 
-const DeliveryFeeDisplay = memo<DeliveryFeeDisplayProps>(({ 
-  deliveryFee, 
-  isFree, 
-  reasoning, 
-  hasSausages, 
+const DeliveryFeeDisplay = memo<DeliveryFeeDisplayProps>(({
+  deliveryFee,
+  isFree,
+  reasoning,
+  hasSausages,
   weight,
-  dependsOnCourier
+  dependsOnCourier,
+  overweight,
 }) => {
   return (
     <>
@@ -55,7 +57,7 @@ const DeliveryFeeDisplay = memo<DeliveryFeeDisplayProps>(({
           )}
         </div>
       )}
-      {dependsOnCourier && (
+      {(dependsOnCourier || overweight) && (
         <div
           className="text-xs"
           style={{ color: "var(--foreground)", opacity: 0.6 }}

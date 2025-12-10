@@ -16,17 +16,16 @@ const navLinks = [
 export default function Header() {
   const { cart } = useCart();
   const { user, logout } = useAuth();
-  
+
   // Build user menu based on user type
   // For staff users: My Profile → My Orders → Admin Panel → Log Out
   // For regular users: My Profile → My Orders → Wishlist → Log Out
   const userMenu = [
     { name: "My Profile", href: "/profile" },
     { name: "My Orders", href: "/orders" },
-    ...(user?.is_staff 
+    ...(user?.is_staff
       ? [{ name: "Admin Panel", href: "/admin" }]
-      : [{ name: "Wishlist", href: "/wishlist" }]
-    ),
+      : [{ name: "Wishlist", href: "/wishlist" }]),
     { name: "Log Out", action: "logout" },
   ];
   const router = useRouter();
@@ -34,6 +33,7 @@ export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
 
   async function handleMenuClick(item: {
     name: string;
@@ -55,15 +55,26 @@ export default function Header() {
 
   // Close mobile menu when clicking outside or on navigation
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
+    function handleClickOutside(event: MouseEvent | TouchEvent) {
+      const target = event.target as Node;
+      // Don't close if clicking the mobile menu toggle button
       if (
-        mobileMenuRef.current &&
-        !mobileMenuRef.current.contains(event.target as Node)
+        mobileMenuButtonRef.current &&
+        mobileMenuButtonRef.current.contains(target)
       ) {
-        setMobileMenuOpen(false);
+        return;
       }
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setMenuOpen(false);
+      // Only handle clicks if the mobile menu is actually open
+      if (mobileMenuOpen) {
+        if (mobileMenuRef.current && !mobileMenuRef.current.contains(target)) {
+          setMobileMenuOpen(false);
+        }
+      }
+      // Only handle desktop menu if it's open
+      if (menuOpen) {
+        if (menuRef.current && !menuRef.current.contains(target)) {
+          setMenuOpen(false);
+        }
       }
     }
 
@@ -72,15 +83,18 @@ export default function Header() {
       setMobileMenuOpen(false);
     }
 
+    // Use both mousedown and touchstart for better mobile support
     document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside);
     // Listen for navigation events
     window.addEventListener("popstate", handleRouteChange);
 
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
       window.removeEventListener("popstate", handleRouteChange);
     };
-  }, []);
+  }, [mobileMenuOpen, menuOpen]);
 
   return (
     <header
@@ -188,6 +202,7 @@ export default function Header() {
 
             {/* Mobile Menu Button */}
             <button
+              ref={mobileMenuButtonRef}
               className="lg:hidden p-2 hover:bg-gray-100 rounded transition-colors"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               aria-label="Toggle mobile menu"

@@ -22,21 +22,19 @@ logger = logging.getLogger(__name__)
 # Maps weight ranges (in kg) to delivery fees (in GBP)
 ROYAL_MAIL_DELIVERY_FEE_MAP = {
     # Weight range: (min_kg, max_kg): price_gbp
-    (0.0, 1.0): Decimal("2.34"),  # Large Letter
-    (1.0, 5.0): Decimal("4.44"),  # Medium Parcel 0-5kg
+    (0.0, 5.0): Decimal("4.44"),  # Medium Parcel 0-5kg
     (5.0, 10.0): Decimal("5.82"),  # Medium Parcel 5-10kg
-    # For weights above 10kg, you may need to add more tiers
-    (10.0, 20.0): Decimal("8.00"),  # Estimated for larger parcels
+    (10.0, 20.0): Decimal("9.25"),  # 10-20kg delivery
+    # No service above 20kg – handled explicitly in code
 }
 
 # Alternative format: weight threshold to price mapping
 # This is easier to use for lookup: if weight <= threshold, use this price
 ROYAL_MAIL_DELIVERY_FEE_BY_WEIGHT = {
-    1.0: Decimal("2.34"),  # 0-1kg: Large Letter
-    5.0: Decimal("4.44"),  # 1-5kg: Medium Parcel 0-5kg
+    5.0: Decimal("4.44"),  # 0-5kg: Medium Parcel 0-5kg
     10.0: Decimal("5.82"),  # 5-10kg: Medium Parcel 5-10kg
-    # Default for >10kg
-    float("inf"): Decimal("8.00"),  # 10kg+: Larger parcel (estimated)
+    20.0: Decimal("9.25"),  # 10-20kg: Delivery
+    # No option above 20kg
 }
 
 
@@ -73,14 +71,22 @@ class ShippingService:
         # Ensure minimum weight
         weight = max(weight, 0.1)
 
+        # If weight exceeds supported range, return 0 to signal no available option
+        if weight > 20:
+            logger.warning(
+                "No delivery option available for weight %.2fkg (above 20kg limit)",
+                weight,
+            )
+            return Decimal("0.00")
+
         # Reference module-level constant directly
         # Find the appropriate price tier
         for threshold, price in sorted(ROYAL_MAIL_DELIVERY_FEE_BY_WEIGHT.items()):
             if weight <= threshold:
                 return price
 
-        # Fallback to highest price if weight exceeds all thresholds
-        return max(ROYAL_MAIL_DELIVERY_FEE_BY_WEIGHT.values())
+        # Fallback should never be hit because >20kg is handled above
+        return Decimal("0.00")
 
     def _calculate_parcel_weight(self, items: List[Dict[str, Any]]) -> float:
         """
@@ -251,18 +257,30 @@ class ShippingService:
                 weight_unit="kilogram",
             )
 
-            # Filter methods based on configuration
-            allowed_carriers = getattr(
-                settings, "SENDCLOUD_ALLOWED_CARRIERS", ["royal_mail", "royal_mailv2"]
-            )
-            allowed_services = getattr(
-                settings, "SENDCLOUD_ALLOWED_SERVICES", ["tracked 48"]
-            )
-            exclude_services = getattr(
-                settings,
-                "SENDCLOUD_EXCLUDE_SERVICES",
-                ["signed", "tracked 24", "express"],
-            )
+            # Filter methods based on configuration (normalize/strip for reliable matching)
+            allowed_carriers = [
+                c.strip().lower()
+                for c in getattr(
+                    settings,
+                    "SENDCLOUD_ALLOWED_CARRIERS",
+                    ["royal_mail", "royal_mailv2"],
+                )
+                if c and c.strip()
+            ]
+            allowed_services = [
+                s.strip().lower()
+                for s in getattr(settings, "SENDCLOUD_ALLOWED_SERVICES", ["tracked 48"])
+                if s and s.strip()
+            ]
+            exclude_services = [
+                s.strip().lower()
+                for s in getattr(
+                    settings,
+                    "SENDCLOUD_EXCLUDE_SERVICES",
+                    ["signed", "tracked 24", "express", "large letter"],
+                )
+                if s and s.strip()
+            ]
 
             filtered_methods = []
             for method in methods:
@@ -491,7 +509,7 @@ class ShippingService:
                 address_2=address.address_line2 or "",
                 city=address.city,
                 postal_code=address.postal_code,
-                country="GB",
+                country=address.country or "GB",
                 email=order.customer.email if order.customer else "",
                 phone=customer_phone,
                 shipping_method_id=shipping_method_id,
@@ -552,3 +570,163 @@ class ShippingService:
             raise SendcloudAPIError("Sendcloud client not configured")
 
         return self.client.cancel_parcel(parcel_id)
+
+    def create_shipment_for_order(self, order: Any) -> Dict[str, Any]:
+        """
+        Create a shipment for an order in an idempotent way.
+
+        This function:
+        - Checks if a shipment already exists for the order
+        - Creates a new shipment if one doesn't exist
+        - Updates the order with tracking information
+        - Handles errors gracefully and logs them
+
+        Args:
+            order: Order model instance
+
+        Returns:
+            Dictionary with shipment result:
+            {
+                "success": bool,
+                "parcel_id": int,
+                "tracking_number": str,
+                "tracking_url": str,
+                "label_url": str,
+                "carrier": str,
+                "status": str,
+                "error": str (if failed)
+            }
+        """
+        from django.db import transaction
+
+        # Use select_for_update to prevent race conditions
+        with transaction.atomic():
+            # Lock the order row to prevent concurrent shipment creation
+            locked_order = type(order).objects.select_for_update().get(pk=order.pk)
+            details = locked_order.ensure_shipping_details()
+
+            # Check if shipment already exists (idempotency check)
+            if details.sendcloud_parcel_id:
+                logger.info(
+                    f"Shipment already exists for order {locked_order.id} "
+                    f"(parcel_id: {details.sendcloud_parcel_id})"
+                )
+                return {
+                    "success": True,
+                    "parcel_id": details.sendcloud_parcel_id,
+                    "tracking_number": details.shipping_tracking_number,
+                    "tracking_url": details.shipping_tracking_url,
+                    "label_url": details.shipping_label_url,
+                    "carrier": details.shipping_carrier,
+                    "status": details.shipping_status or "label_created",
+                    "already_exists": True,
+                }
+
+            # Validate order has required data
+            if not details.shipping_method_id:
+                error_msg = "Order does not have a shipping method selected"
+                logger.error(
+                    f"Cannot create shipment for order {locked_order.id}: {error_msg}"
+                )
+                details.shipping_status = "shipment_failed"
+                details.shipping_error_message = error_msg
+                details.save(
+                    update_fields=["shipping_status", "shipping_error_message"]
+                )
+                return {
+                    "success": False,
+                    "error": error_msg,
+                }
+
+            if not locked_order.address:
+                error_msg = "Order does not have a shipping address"
+                logger.error(
+                    f"Cannot create shipment for order {locked_order.id}: {error_msg}"
+                )
+                details.shipping_status = "shipment_failed"
+                details.shipping_error_message = error_msg
+                details.save(
+                    update_fields=["shipping_status", "shipping_error_message"]
+                )
+                return {
+                    "success": False,
+                    "error": error_msg,
+                }
+
+            try:
+                logger.info(
+                    f"Creating shipment for order {locked_order.id} with "
+                    f"shipping method {details.shipping_method_id}"
+                )
+
+                # Create the shipment
+                shipment_data = self.create_shipment(
+                    order=locked_order,
+                    shipping_method_id=details.shipping_method_id,
+                )
+
+                # Update order with shipment information
+                details.sendcloud_parcel_id = shipment_data.get("parcel_id")
+                details.shipping_tracking_number = shipment_data.get("tracking_number")
+                details.shipping_tracking_url = shipment_data.get("tracking_url")
+                details.shipping_label_url = shipment_data.get("label_url")
+                details.shipping_status = "label_created"
+                details.shipping_error_message = None  # Clear any previous errors
+
+                details.save(
+                    update_fields=[
+                        "sendcloud_parcel_id",
+                        "shipping_tracking_number",
+                        "shipping_tracking_url",
+                        "shipping_label_url",
+                        "shipping_status",
+                        "shipping_error_message",
+                    ]
+                )
+
+                logger.info(
+                    f"Successfully created shipment for order {locked_order.id}: "
+                    f"parcel_id={shipment_data.get('parcel_id')}, "
+                    f"tracking={shipment_data.get('tracking_number')}"
+                )
+
+                return {
+                    "success": True,
+                    **shipment_data,
+                }
+
+            except SendcloudAPIError as e:
+                error_msg = f"Sendcloud API error: {str(e)}"
+                logger.error(
+                    f"Failed to create shipment for order {locked_order.id}: {error_msg}"
+                )
+
+                # Update order with error information
+                details.shipping_status = "shipment_failed"
+                details.shipping_error_message = error_msg
+                details.save(
+                    update_fields=["shipping_status", "shipping_error_message"]
+                )
+
+                return {
+                    "success": False,
+                    "error": error_msg,
+                }
+            except Exception as e:
+                error_msg = f"Unexpected error: {str(e)}"
+                logger.error(
+                    f"Failed to create shipment for order {locked_order.id}: {error_msg}",
+                    exc_info=True,
+                )
+
+                # Update order with error information
+                details.shipping_status = "shipment_failed"
+                details.shipping_error_message = error_msg
+                details.save(
+                    update_fields=["shipping_status", "shipping_error_message"]
+                )
+
+                return {
+                    "success": False,
+                    "error": error_msg,
+                }

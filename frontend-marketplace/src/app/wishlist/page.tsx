@@ -64,8 +64,7 @@ export default function WishlistPage() {
     return filteredProducts.map((product) => {
       // Filter to only leaf categories (categories with a parent)
       const leafCategories =
-        product.categories?.filter((catName) => categoryMap.get(catName)) ||
-        [];
+        product.categories?.filter((catName) => categoryMap.get(catName)) || [];
 
       return {
         ...product,
@@ -160,17 +159,24 @@ export default function WishlistPage() {
   }, []);
 
   const filteredAndSortedProducts = useMemo(() => {
-    return (Array.isArray(productsWithLeafCategories) ? productsWithLeafCategories : [])
+    return (
+      Array.isArray(productsWithLeafCategories)
+        ? productsWithLeafCategories
+        : []
+    )
       .filter((product) => {
         // Ensure name and description are strings before calling toLowerCase
-        const productName = typeof product.name === "string" ? product.name : "";
+        const productName =
+          typeof product.name === "string" ? product.name : "";
         const productDescription =
           typeof product.description === "string" ? product.description : "";
-        const searchLower = typeof searchQuery === "string" ? searchQuery.toLowerCase() : "";
+        const searchLower =
+          typeof searchQuery === "string" ? searchQuery.toLowerCase() : "";
 
         const matchesSearch =
           productName.toLowerCase().includes(searchLower) ||
-          (productDescription && productDescription.toLowerCase().includes(searchLower));
+          (productDescription &&
+            productDescription.toLowerCase().includes(searchLower));
         const matchesCategory =
           filterCategory === "all" ||
           product.categories?.includes(filterCategory);
@@ -367,12 +373,22 @@ export default function WishlistPage() {
                   <div className="flex items-center gap-4">
                     <button
                       onClick={handleSelectAll}
-                      className="text-sm transition-colors"
-                      style={{ color: "var(--accent)" }}
+                      className="text-sm transition-colors touch-manipulation"
+                      style={{
+                        color: "var(--accent)",
+                        touchAction: "manipulation",
+                        WebkitTapHighlightColor: "transparent",
+                      }}
                       onMouseEnter={(e) => {
                         e.currentTarget.style.opacity = "0.8";
                       }}
                       onMouseLeave={(e) => {
+                        e.currentTarget.style.opacity = "1";
+                      }}
+                      onTouchStart={(e) => {
+                        e.currentTarget.style.opacity = "0.8";
+                      }}
+                      onTouchEnd={(e) => {
                         e.currentTarget.style.opacity = "1";
                       }}
                     >
@@ -382,12 +398,22 @@ export default function WishlistPage() {
                     </button>
                     <button
                       onClick={handleShareWishlist}
-                      className="text-sm transition-colors"
-                      style={{ color: "var(--accent)" }}
+                      className="text-sm transition-colors touch-manipulation"
+                      style={{
+                        color: "var(--accent)",
+                        touchAction: "manipulation",
+                        WebkitTapHighlightColor: "transparent",
+                      }}
                       onMouseEnter={(e) => {
                         e.currentTarget.style.opacity = "0.8";
                       }}
                       onMouseLeave={(e) => {
+                        e.currentTarget.style.opacity = "1";
+                      }}
+                      onTouchStart={(e) => {
+                        e.currentTarget.style.opacity = "0.8";
+                      }}
+                      onTouchEnd={(e) => {
                         e.currentTarget.style.opacity = "1";
                       }}
                     >
@@ -395,12 +421,22 @@ export default function WishlistPage() {
                     </button>
                     <button
                       onClick={clearWishlist}
-                      className="text-sm transition-colors"
-                      style={{ color: "#dc2626" }}
+                      className="text-sm transition-colors touch-manipulation"
+                      style={{
+                        color: "#dc2626",
+                        touchAction: "manipulation",
+                        WebkitTapHighlightColor: "transparent",
+                      }}
                       onMouseEnter={(e) => {
                         e.currentTarget.style.opacity = "0.8";
                       }}
                       onMouseLeave={(e) => {
+                        e.currentTarget.style.opacity = "1";
+                      }}
+                      onTouchStart={(e) => {
+                        e.currentTarget.style.opacity = "0.8";
+                      }}
+                      onTouchEnd={(e) => {
                         e.currentTarget.style.opacity = "1";
                       }}
                     >

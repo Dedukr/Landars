@@ -3,6 +3,7 @@ from decimal import Decimal
 from account.serializers import AddressSerializer
 from django.db import transaction
 from rest_framework import serializers
+from shipping.models import ShippingDetails
 
 from .models import (
     Cart,
@@ -233,6 +234,68 @@ class OrderSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source="customer.name", read_only=True)
     total_price = serializers.SerializerMethodField()
     total_items = serializers.SerializerMethodField()
+    shipping_method_id = serializers.IntegerField(
+        source="shipping_details.shipping_method_id",
+        allow_null=True,
+        required=False,
+    )
+    shipping_carrier = serializers.CharField(
+        source="shipping_details.shipping_carrier",
+        allow_blank=True,
+        allow_null=True,
+        required=False,
+    )
+    shipping_service_name = serializers.CharField(
+        source="shipping_details.shipping_service_name",
+        allow_blank=True,
+        allow_null=True,
+        required=False,
+    )
+    shipping_cost = serializers.DecimalField(
+        source="shipping_details.shipping_cost",
+        max_digits=10,
+        decimal_places=2,
+        allow_null=True,
+        required=False,
+    )
+    shipping_tracking_number = serializers.CharField(
+        source="shipping_details.shipping_tracking_number",
+        allow_blank=True,
+        allow_null=True,
+        required=False,
+        read_only=True,
+    )
+    shipping_tracking_url = serializers.URLField(
+        source="shipping_details.shipping_tracking_url",
+        allow_null=True,
+        required=False,
+        read_only=True,
+    )
+    shipping_label_url = serializers.URLField(
+        source="shipping_details.shipping_label_url",
+        allow_null=True,
+        required=False,
+        read_only=True,
+    )
+    sendcloud_parcel_id = serializers.IntegerField(
+        source="shipping_details.sendcloud_parcel_id",
+        allow_null=True,
+        required=False,
+        read_only=True,
+    )
+    shipping_status = serializers.CharField(
+        source="shipping_details.shipping_status",
+        allow_null=True,
+        required=False,
+        read_only=True,
+    )
+    shipping_error_message = serializers.CharField(
+        source="shipping_details.shipping_error_message",
+        allow_blank=True,
+        allow_null=True,
+        required=False,
+        read_only=True,
+    )
 
     class Meta:
         model = Order
@@ -252,6 +315,17 @@ class OrderSerializer(serializers.ModelSerializer):
             "total_price",
             "total_items",
             "items",
+            # Shipping fields
+            "shipping_method_id",
+            "shipping_carrier",
+            "shipping_service_name",
+            "shipping_cost",
+            "shipping_tracking_number",
+            "shipping_tracking_url",
+            "shipping_label_url",
+            "sendcloud_parcel_id",
+            "shipping_status",
+            "shipping_error_message",
         ]
         read_only_fields = [
             "id",
@@ -260,6 +334,13 @@ class OrderSerializer(serializers.ModelSerializer):
             "order_date",
             "total_price",
             "total_items",
+            # Shipping tracking fields are read-only (set by backend)
+            "shipping_tracking_number",
+            "shipping_tracking_url",
+            "shipping_label_url",
+            "sendcloud_parcel_id",
+            "shipping_status",
+            "shipping_error_message",
         ]
 
     def validate(self, data):
@@ -282,9 +363,13 @@ class OrderSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def create(self, validated_data):
+        shipping_data = validated_data.pop("shipping_details", {})
         items_data = validated_data.pop("items")
         # Create order instance but delay finalizing delivery fields until items are known
         order = Order.objects.create(**validated_data)
+
+        if shipping_data:
+            ShippingDetails.objects.create(order=order, **shipping_data)
 
         # Persist items
         for item_data in items_data:
@@ -308,6 +393,7 @@ class OrderSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def update(self, instance, validated_data):
         items_data = validated_data.pop("items", None)
+        shipping_data = validated_data.pop("shipping_details", None)
 
         # Update basic fields
         for attr, value in validated_data.items():
@@ -343,6 +429,15 @@ class OrderSerializer(serializers.ModelSerializer):
                 instance.delivery_fee = delivery_fee
 
         instance.save()
+
+        if shipping_data is not None:
+            details = getattr(instance, "shipping_details", None)
+            if details:
+                for key, value in shipping_data.items():
+                    setattr(details, key, value)
+                details.save()
+            else:
+                ShippingDetails.objects.create(order=instance, **shipping_data)
         return instance
 
 

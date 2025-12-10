@@ -17,6 +17,8 @@ export interface DeliveryFeeCalculation {
   totalWeight: number;
   hasSausages: boolean;
   reasoning: string;
+  dependsOnCourier: boolean;
+  overweight: boolean;
 }
 
 /**
@@ -45,6 +47,8 @@ export function calculateDeliveryFee(
   let isHomeDelivery = true;
   let reasoning = "";
   let hasSausages = false;
+  let dependsOnCourier = false;
+  let overweight = false;
 
   // Implement the exact logic from Django admin OrderAdmin.save_related
   // Check if ALL products are sausages (only sausages)
@@ -72,7 +76,13 @@ export function calculateDeliveryFee(
       reasoning = "Free delivery for sausages over £220";
     } else {
       // Weight-based delivery fees for sausages
-      if (totalWeight <= 2) {
+      if (totalWeight > 20) {
+        deliveryFee = 0;
+        overweight = true;
+        dependsOnCourier = true;
+        reasoning =
+          "We can ship sausage orders up to 20kg. Please split your order or contact us for assistance.";
+      } else if (totalWeight <= 2) {
         deliveryFee = 5;
         reasoning = `Sausages ≤2kg: £5 delivery fee`;
       } else if (totalWeight <= 10) {
@@ -96,6 +106,8 @@ export function calculateDeliveryFee(
     totalWeight,
     hasSausages,
     reasoning,
+    dependsOnCourier,
+    overweight,
   };
 }
 
@@ -110,6 +122,8 @@ export function getDeliveryFeeBreakdown(calculation: DeliveryFeeCalculation) {
     hasSausages: calculation.hasSausages,
     reasoning: calculation.reasoning,
     isFree: calculation.deliveryFee === 0,
+    dependsOnCourier: calculation.dependsOnCourier,
+    overweight: calculation.overweight,
   };
 }
 

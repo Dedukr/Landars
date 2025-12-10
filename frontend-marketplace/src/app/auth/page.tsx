@@ -499,25 +499,38 @@ function AuthForm() {
               >
                 Email Address
               </label>
-              <EmailInput
-                id="email"
-                name="email"
-                value={formData.email}
-                onChange={(email) => {
-                  setFormData((prev) => ({ ...prev, email }));
-                  // You can also track validation state if needed
-                }}
-                placeholder="Email address"
-                required
-                showSuggestions={false}
-                validationOptions={{
-                  allowDisposable: false,
-                  checkTypos: true,
-                  validateOnChange: true,
-                  validateOnBlur: true,
-                }}
-                className="auth-input"
-              />
+              {isSignUp ? (
+                <EmailInput
+                  id="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={(email) => {
+                    setFormData((prev) => ({ ...prev, email }));
+                    // You can also track validation state if needed
+                  }}
+                  placeholder="Email address"
+                  required
+                  showSuggestions={false}
+                  validationOptions={{
+                    allowDisposable: false,
+                    checkTypos: true,
+                    validateOnChange: true,
+                    validateOnBlur: true,
+                  }}
+                  className="auth-input"
+                />
+              ) : (
+                <input
+                  id="email"
+                  name="email"
+                  type="text"
+                  value={formData.email}
+                  onChange={handleChange}
+                  placeholder="Email address"
+                  required
+                  className="mt-1 appearance-none relative block w-full px-3 py-2 border rounded-md focus:outline-none focus:z-10 sm:text-sm auth-input"
+                />
+              )}
             </div>
             <div>
               <label

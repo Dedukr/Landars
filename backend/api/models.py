@@ -296,42 +296,18 @@ class Order(models.Model):
         max_length=255, blank=True, null=True, help_text="Stripe Customer ID"
     )
 
-    # Shipping fields (Sendcloud integration)
-    shipping_method_id = models.IntegerField(
-        blank=True, null=True, help_text="Sendcloud shipping method ID"
-    )
-    shipping_carrier = models.CharField(
-        max_length=100,
-        blank=True,
-        null=True,
-        help_text="Shipping carrier name (e.g., DPD, Royal Mail)",
-    )
-    shipping_service_name = models.CharField(
-        max_length=100,
-        blank=True,
-        null=True,
-        help_text="Shipping service name (e.g., Standard, Express)",
-    )
-    shipping_cost = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        blank=True,
-        null=True,
-        validators=[MinValueValidator(0)],
-        help_text="Cost of shipping charged to customer",
-    )
-    shipping_tracking_number = models.CharField(
-        max_length=255, blank=True, null=True, help_text="Shipment tracking number"
-    )
-    shipping_tracking_url = models.URLField(
-        max_length=500, blank=True, null=True, help_text="Shipment tracking URL"
-    )
-    shipping_label_url = models.URLField(
-        max_length=500, blank=True, null=True, help_text="Shipping label URL"
-    )
-    sendcloud_parcel_id = models.IntegerField(
-        blank=True, null=True, help_text="Sendcloud parcel ID for tracking"
-    )
+    def ensure_shipping_details(self):
+        """
+        Return existing shipping details or create a blank record.
+        Keeps legacy callers from failing when shipping data is needed.
+        """
+        from shipping.models import ShippingDetails
+
+        details = getattr(self, "shipping_details", None)
+        if details:
+            return details
+        details, _ = ShippingDetails.objects.get_or_create(order=self)
+        return details
 
     class Meta:
         verbose_name_plural = "Orders"
@@ -364,10 +340,10 @@ class Order(models.Model):
         """Calculate the total price of the order including holiday fee, discount and delivery fee."""
         from decimal import Decimal
 
-        # Calculate holiday fee amount as percentage of sum_price
-        holiday_fee_amount = self.sum_price * self.holiday_fee_amount
         # Total = sum_price + holiday_fee + delivery_fee - discount
-        total = self.sum_price + holiday_fee_amount + self.delivery_fee - self.discount
+        total = (
+            self.sum_price + self.holiday_fee_amount + self.delivery_fee - self.discount
+        )
         # Round to 2 decimal places (consistent with OrderItem.get_total_price pattern)
         return round(total, 2)
 

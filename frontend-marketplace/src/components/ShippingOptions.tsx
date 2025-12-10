@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from "react";
+import Image from "next/image";
 import type { ShippingOption } from "@/hooks/useShippingOptions";
 import LoadingSpinner from "./LoadingSpinner";
 
@@ -44,9 +45,11 @@ function LogoImage({
 
   return (
     <div className="w-24 h-16 bg-white rounded border border-gray-200 flex items-center justify-center p-2">
-      <img
+      <Image
         src={src}
         alt={alt}
+        width={96}
+        height={64}
         className="max-w-full max-h-full object-contain"
         onError={() => setImageError(true)}
       />
