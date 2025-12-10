@@ -18,7 +18,13 @@ class CustomUserManager(BaseUserManager):
 
         # Normalize email if provided
         if email:
-            email = self.normalize_email(email)
+            normalized_email = self.normalize_email(email)
+            # Also lowercase the local part for consistency
+            if "@" in normalized_email:
+                local_part, domain = normalized_email.split("@", 1)
+                email = f"{local_part.lower()}@{domain}"
+            else:
+                email = normalized_email
             # Check for email uniqueness
             if self.filter(email=email).exists():
                 raise ValueError("A user with this email already exists")
@@ -31,11 +37,11 @@ class CustomUserManager(BaseUserManager):
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, name, password=None, **extra_fields):
+    def create_superuser(self, name, email=None, password=None, **extra_fields):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
 
-        return self.create_user(name, password, **extra_fields)
+        return self.create_user(name, email=email, password=password, **extra_fields)
 
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
@@ -59,8 +65,14 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         """Validate the model before saving"""
         super().clean()
         if self.email:
-            # Normalize email before validation
-            self.email = self.__class__.objects.normalize_email(self.email)
+            # Normalize email before validation (lowercase domain part only)
+            normalized_email = self.__class__.objects.normalize_email(self.email)
+            # Also lowercase the local part for consistency
+            if "@" in normalized_email:
+                local_part, domain = normalized_email.split("@", 1)
+                self.email = f"{local_part.lower()}@{domain}"
+            else:
+                self.email = normalized_email
             # Use the custom validator
             from .validators import validate_unique_email
 
@@ -91,7 +103,7 @@ class Address(models.Model):
     postal_code = models.CharField(max_length=20, blank=True, null=True)
 
     def __str__(self):
-        return f"{self.postal_code}" or "No Address"
+        return self.postal_code or "No Address"
 
 
 class Profile(models.Model):
