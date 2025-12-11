@@ -79,6 +79,8 @@ print_header() {
 
 print_header
 log_info "Ultimate backup script started"
+log_info "Runtime: host $(hostname), pwd $(pwd)"
+log_info "Env (pre-load): DB_TYPE=${DB_TYPE:-unset}, POSTGRES_HOST=${POSTGRES_HOST:-unset}, POSTGRES_CONTAINER=${POSTGRES_CONTAINER:-unset}"
 
 #########################################################################
 # CONFIGURATION MANAGEMENT
@@ -298,6 +300,13 @@ create_postgresql_backup() {
         return 1
     fi
     
+    # Quick connectivity check before dump
+    log_info "🔌 Checking DB connectivity (container: $container, user: $DB_USER, db: $DB_NAME)..."
+    if ! docker exec "$container" psql -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" >/dev/null 2>&1; then
+        log_error "DB connectivity check failed (container: $container, user: $DB_USER, db: $DB_NAME)"
+        return 1
+    fi
+
     local backup_file="landarsfood_backup_${TIMESTAMP}.sql"
     local backup_path="$BACKUP_BASE_DIR/postgresql/$backup_file"
     local current_backup="$BACKUP_BASE_DIR/postgresql/latest.sql"
@@ -308,13 +317,16 @@ create_postgresql_backup() {
     log_info "📊 Starting PostgreSQL dump from container '$container'..."
     log_info "📁 Backup file: $backup_path"
     
-    # Create the backup using pg_dump
-    if docker-compose exec -T postgres pg_dump \
+    # Create the backup using pg_dump (via docker exec) with stderr captured
+    local dump_log
+    dump_log=$(mktemp)
+    if docker exec "$container" pg_dump \
         -U "$DB_USER" \
         -h localhost \
         -d "$DB_NAME" \
         --verbose \
-        --no-password > "$backup_path" 2>/dev/null; then
+        --no-password \
+        > "$backup_path" 2> "$dump_log"; then
         
         local duration=$(($(date +%s) - start_time))
         local file_size=$(get_file_size "$backup_path")
@@ -322,6 +334,7 @@ create_postgresql_backup() {
         log_success "✅ PostgreSQL backup completed in ${duration}s"
         log_info "📄 File: $backup_path"
         log_info "📊 Size: $file_size"
+        log_debug "pg_dump log:\n$(cat "$dump_log")"
         
         # Create/update latest backup symlink
         ln -sf "$backup_file" "$current_backup"
@@ -345,7 +358,10 @@ create_postgresql_backup() {
         return 0
     else
         log_error "❌ PostgreSQL backup failed"
+        log_error "pg_dump stderr:"
+        cat "$dump_log" >&2
         rm -f "$backup_path"
+        rm -f "$dump_log"
         return 1
     fi
 }
