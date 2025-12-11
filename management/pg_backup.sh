@@ -92,12 +92,17 @@ load_env() {
         log_info "Loading configuration from $env_file"
         # Robust .env loader that preserves spaces and ignores comments/blank lines
         # Supports unquoted values that may contain spaces or brackets.
+        local line_num=0
         while IFS= read -r line || [[ -n "$line" ]]; do
+            ((line_num++))
             # Skip empty lines and comments
             [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
 
             # Only process lines containing '='
-            [[ "$line" != *"="* ]] && { log_warning "Skipping invalid line in .env: $line"; continue; }
+            if [[ "$line" != *"="* ]]; then
+                log_warning "Skipping invalid line $line_num in .env (no '='): $line"
+                continue
+            fi
 
             # Split on first '=' to preserve value intact
             key="${line%%=*}"
@@ -109,7 +114,7 @@ load_env() {
 
             # Keys must be valid shell identifiers
             if [[ ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-                log_warning "Skipping invalid key in .env: $key"
+                log_warning "Skipping invalid key at line $line_num in .env: $key"
                 continue
             fi
 
@@ -129,6 +134,8 @@ load_env
 # Normalize postgres container/host naming to match docker-compose on server
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-${POSTGRES_HOST:-landars-postgres-1}}"
 POSTGRES_HOST="${POSTGRES_HOST:-$POSTGRES_CONTAINER}"
+# Keep container name consistent across helpers
+POSTGRES_CONTAINER_NAME="${POSTGRES_CONTAINER_NAME:-$POSTGRES_CONTAINER}"
 
 # Verify the postgres container exists before proceeding
 check_postgres_container
