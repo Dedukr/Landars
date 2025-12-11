@@ -49,6 +49,9 @@
   --sort-selected-fg: #ffffff; /* default selected option text (light) */
   /* Sidebar width used for responsive content offset */
   --sidebar-width: 18rem;
+  /* Font fallbacks (self-hosted / system) */
+  --font-geist-sans: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-geist-mono: "SFMono-Regular", "Menlo", "Consolas", monospace;
 }
 
 /* Light theme (explicit) */
