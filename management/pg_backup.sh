@@ -82,10 +82,20 @@ load_env() {
     
     if [[ -f "$env_file" ]]; then
         log_info "Loading configuration from $env_file"
-        # Export variables from .env file, ignoring comments and empty lines
-        set -a
-        source <(grep -v '^#' "$env_file" | grep -v '^$' | sed 's/^/export /')
-        set +a
+        # Robust .env loader that preserves spaces and ignores comments/blank lines
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            # Skip empty lines and comments
+            [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+
+            # Match KEY=VALUE pairs (allow leading/trailing spaces around key)
+            if [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
+                key="${BASH_REMATCH[1]}"
+                value="${BASH_REMATCH[2]}"
+                # Trim leading spaces from value (but preserve inner spaces)
+                value="${value#"${value%%[![:space:]]*}"}"
+                export "${key}=${value}"
+            fi
+        done < "$env_file"
         log_success "Configuration loaded from $env_file"
     else
         log_warning ".env file not found. Using default configuration."

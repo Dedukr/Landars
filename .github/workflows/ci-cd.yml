@@ -244,11 +244,6 @@ jobs:
           script: |
             cd ${{ secrets.PROJECT_PATH }}
 
-            # Load environment variables from .env file
-            if [ -f ".env" ]; then
-              export $(grep -v '^#' .env | xargs)
-            fi
-
             echo "🗄️  Creating pre-deployment database backup..."
 
             # Make backup script executable
