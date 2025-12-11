@@ -55,6 +55,14 @@ log_warning() {
     echo -e "${YELLOW}[WARNING]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
 }
 
+check_postgres_container() {
+    # Ensure target container exists and is running before backup
+    if ! docker ps --format '{{.Names}}' | grep -q "^${POSTGRES_CONTAINER}\$"; then
+        log_error "PostgreSQL container '${POSTGRES_CONTAINER}' not found or not running. Set POSTGRES_CONTAINER/POSTGRES_HOST to the correct name."
+        exit 1
+    fi
+}
+
 log_debug() {
     if [[ "$DEBUG" == "true" ]]; then
         echo -e "${PURPLE}[DEBUG]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
@@ -83,18 +91,30 @@ load_env() {
     if [[ -f "$env_file" ]]; then
         log_info "Loading configuration from $env_file"
         # Robust .env loader that preserves spaces and ignores comments/blank lines
+        # Supports unquoted values that may contain spaces or brackets.
         while IFS= read -r line || [[ -n "$line" ]]; do
             # Skip empty lines and comments
             [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
 
-            # Match KEY=VALUE pairs (allow leading/trailing spaces around key)
-            if [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
-                key="${BASH_REMATCH[1]}"
-                value="${BASH_REMATCH[2]}"
-                # Trim leading spaces from value (but preserve inner spaces)
-                value="${value#"${value%%[![:space:]]*}"}"
-                export "${key}=${value}"
+            # Only process lines containing '='
+            [[ "$line" != *"="* ]] && { log_warning "Skipping invalid line in .env: $line"; continue; }
+
+            # Split on first '=' to preserve value intact
+            key="${line%%=*}"
+            value="${line#*=}"
+
+            # Trim whitespace around key
+            key="${key#"${key%%[![:space:]]*}"}"
+            key="${key%"${key##*[![:space:]]}"}"
+
+            # Keys must be valid shell identifiers
+            if [[ ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+                log_warning "Skipping invalid key in .env: $key"
+                continue
             fi
+
+            # Preserve value exactly (including spaces/brackets)
+            export "$key=$value"
         done < "$env_file"
         log_success "Configuration loaded from $env_file"
     else
@@ -105,6 +125,13 @@ load_env() {
 
 # Load environment variables
 load_env
+
+# Normalize postgres container/host naming to match docker-compose on server
+POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-${POSTGRES_HOST:-landars-postgres-1}}"
+POSTGRES_HOST="${POSTGRES_HOST:-$POSTGRES_CONTAINER}"
+
+# Verify the postgres container exists before proceeding
+check_postgres_container
 
 # Set database configuration from environment variables with defaults
 DB_TYPE="${DB_TYPE:-postgresql}"  # postgresql or sqlite
