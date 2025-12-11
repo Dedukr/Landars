@@ -134,6 +134,15 @@ load_env() {
     fi
 }
 
+# Remove surrounding double quotes from path-like variables to avoid
+# accidental nested paths such as /foo/"/foo"/bar when .env values are quoted.
+strip_wrapping_quotes() {
+    local value="$1"
+    value="${value%\"}"
+    value="${value#\"}"
+    echo "$value"
+}
+
 # Load environment variables
 load_env
 
@@ -155,10 +164,10 @@ DB_HOST="${POSTGRES_HOST:-localhost}"
 DB_PORT="${POSTGRES_PORT:-5432}"
 
 # Directory configuration
-PROJECT_DIR="${PROJECT_DIR:-$(pwd)}"
-BACKUP_BASE_DIR="${BACKUP_BASE_DIR:-${PROJECT_DIR}/db_backups}"
-LEGACY_BACKUP_DIR="${LEGACY_BACKUP_DIR:-${PROJECT_DIR}/db_backups/sqlite}"
-ARCHIVE_DIR="${ARCHIVE_DIR:-${PROJECT_DIR}/db_backups/wal_archive}"
+PROJECT_DIR="$(strip_wrapping_quotes "${PROJECT_DIR:-$(pwd)}")"
+BACKUP_BASE_DIR="$(strip_wrapping_quotes "${BACKUP_BASE_DIR:-${PROJECT_DIR}/db_backups}")"
+LEGACY_BACKUP_DIR="$(strip_wrapping_quotes "${LEGACY_BACKUP_DIR:-${PROJECT_DIR}/db_backups/sqlite}")"
+ARCHIVE_DIR="$(strip_wrapping_quotes "${ARCHIVE_DIR:-${PROJECT_DIR}/db_backups/wal_archive}")"
 # Feature flags to control legacy/pitr behavior safely
 ENABLE_LEGACY_SQLITE="${ENABLE_LEGACY_SQLITE:-false}"
 ENABLE_PITR="${ENABLE_PITR:-false}"
