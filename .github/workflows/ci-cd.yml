@@ -248,7 +248,7 @@ jobs:
 
             # Make backup script executable
             chmod +x management/pg_backup.sh
-
+            ./management/pg_backup.sh backup || echo "Pre-deployment backup failed, but continuing with deployment"
             # Use the comprehensive backup script
             if ./management/pg_backup.sh backup; then
               echo "✅ Pre-deployment backup completed successfully"
