@@ -329,6 +329,15 @@ create_postgresql_backup() {
     
     log_info "📊 Starting PostgreSQL dump from container '$container'..."
     log_info "📁 Backup file: $backup_path"
+    log_debug "Paths: PROJECT_DIR=$PROJECT_DIR BACKUP_BASE_DIR=$BACKUP_BASE_DIR"
+    log_debug "Working dir: $(pwd)"
+    log_debug "Ensuring backup dir exists and is writable..."
+    ls -ld "$BACKUP_BASE_DIR" "$BACKUP_BASE_DIR/postgresql" 2>/dev/null || true
+    if ! touch "$BACKUP_BASE_DIR/postgresql/.write_test" 2>/dev/null; then
+        log_error "Backup directory not writable: $BACKUP_BASE_DIR/postgresql"
+    else
+        rm -f "$BACKUP_BASE_DIR/postgresql/.write_test"
+    fi
     
     # Create the backup using pg_dump (via docker exec) with stderr captured
     local dump_log
@@ -379,8 +388,11 @@ create_postgresql_backup() {
         return 0
     else
         log_error "❌ PostgreSQL backup failed"
-        log_error "pg_dump stderr:"
+        log_error "Context: container=$container backup_path=$backup_path DB_NAME=$DB_NAME DB_USER=$DB_USER PROJECT_DIR=$PROJECT_DIR"
+        log_error "pg_dump stderr (see below)"
         cat "$dump_log" >&2
+        log_debug "Directory listing of backup target:"
+        ls -la "$BACKUP_BASE_DIR/postgresql" 2>/dev/null || true
         rm -f "$backup_path"
         rm -f "$dump_log"
         return 1
