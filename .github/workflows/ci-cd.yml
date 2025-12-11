@@ -346,6 +346,7 @@ jobs:
             # Create backup before stopping containers
             log "Creating backup before stopping containers..."
             chmod +x management/pg_backup.sh
+            ./management/pg_backup.sh backup || warn "Pre-stop backup failed, but continuing with deployment"
             if ./management/pg_backup.sh backup; then
               log "✅ Pre-stop backup completed successfully"
             else
