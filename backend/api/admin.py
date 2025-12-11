@@ -569,8 +569,16 @@ class OrderAdmin(admin.ModelAdmin):
     ]
     ordering = ["-id"]
     date_hierarchy = "delivery_date"
-    inlines = [OrderItemInline, ShippingDetailsInline]
+    inlines = [OrderItemInline]
     autocomplete_fields = ["customer"]
+
+    def get_inlines(self, request, obj):
+        """Conditionally include ShippingDetailsInline only for orders with is_home_delivery=False."""
+        inlines = [OrderItemInline]
+        # Only show shipping details for orders that are NOT home delivery
+        if obj and not obj.is_home_delivery:
+            inlines.append(ShippingDetailsInline)
+        return inlines
 
     def get_fields(self, request, obj=None):
         fields = [
