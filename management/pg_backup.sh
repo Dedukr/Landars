@@ -29,6 +29,10 @@
 #
 #########################################################################
 
+# Fail fast and surface failing line for easier debugging
+set -euo pipefail
+trap 'log_error "Backup script failed at ${BASH_SOURCE[0]}:${LINENO}"' ERR
+
 # Color codes for enhanced output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -320,7 +324,15 @@ create_postgresql_backup() {
     # Create the backup using pg_dump (via docker exec) with stderr captured
     local dump_log
     dump_log=$(mktemp)
-    if docker exec "$container" pg_dump \
+    # Ensure pg_dump exists in the container
+    if ! docker exec "$container" sh -c "command -v pg_dump" >/dev/null 2>&1; then
+        log_error "pg_dump not found in container $container"
+        rm -f "$dump_log"
+        return 1
+    fi
+
+    # Run pg_dump with optional password passed via env if provided
+    if docker exec -e PGPASSWORD="$DB_PASSWORD" "$container" pg_dump \
         -U "$DB_USER" \
         -h localhost \
         -d "$DB_NAME" \
