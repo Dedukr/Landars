@@ -70,7 +70,3 @@ htmlcov/
 jest-results/
 *.test.js.snap
 __snapshots__/
-
-# md files
-*.md
-!README.md
