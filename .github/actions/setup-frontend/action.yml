@@ -1,0 +1,48 @@
+name: 'Setup Frontend Environment'
+description: 'Setup Node.js and npm dependencies for frontend testing and building'
+
+inputs:
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '20'
+  cache-key:
+    description: 'Additional cache key suffix'
+    required: false
+    default: 'default'
+
+outputs:
+  cache-hit:
+    description: 'Whether cache was hit'
+    value: ${{ steps.npm-cache.outputs.cache-hit }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Cache npm dependencies
+      id: npm-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.npm
+          frontend-marketplace/node_modules
+          frontend-marketplace/.next/cache
+        key: ${{ runner.os }}-npm-${{ inputs.node-version }}-${{ hashFiles('frontend-marketplace/package-lock.json') }}-${{ inputs.cache-key }}
+        restore-keys: |
+          ${{ runner.os }}-npm-${{ inputs.node-version }}-
+          ${{ runner.os }}-npm-
+
+    - name: Install frontend dependencies
+      shell: bash
+      working-directory: ./frontend-marketplace
+      run: |
+        if [ ! -d "node_modules" ]; then
+          npm ci
+        else
+          echo "Dependencies already cached"
+        fi

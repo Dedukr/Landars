@@ -1,252 +1,384 @@
 #!/bin/bash
 
-# Deployment script for Food Platform
-# This script is executed on the server by the CI/CD pipeline
+#######################################
+# Simplified Deployment Script for Food Platform
+# Designed to work with GitHub Actions CI/CD
+#######################################
 
-set -e  # Exit on any error
-
-# Configuration
-PROJECT_DIR="/path/to/your/project"  # Update this to your actual project path
-COMPOSE_FILE="docker-compose.yml"
-BACKUP_DIR="/path/to/backups"  # Update this to your backup directory
+set -euo pipefail
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Initialize unified logging
-init_logging() {
-    # Create logs directory if it doesn't exist
-    mkdir -p "$PROJECT_DIR/logs"
-    
-    # Initialize Python logging system
-    python3 -c "
-import sys
-sys.path.append('$PROJECT_DIR')
-from unified_logging import get_logger
-logger = get_logger('$PROJECT_DIR')
-logger.log_info('Deployment script started', 'deploy')
-" 2>/dev/null || echo "Warning: Could not initialize unified logging"
-}
+# Configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Logging functions with unified logging integration
+# Logging functions
 log() {
     echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')] $1${NC}"
-    # Also log to unified system
-    python3 -c "
-import sys
-sys.path.append('$PROJECT_DIR')
-from unified_logging import log_info
-log_info('$1', 'deploy')
-" 2>/dev/null || true
 }
 
 warn() {
     echo -e "${YELLOW}[$(date +'%Y-%m-%d %H:%M:%S')] WARNING: $1${NC}"
-    # Also log to unified system
-    python3 -c "
-import sys
-sys.path.append('$PROJECT_DIR')
-from unified_logging import log_warning
-log_warning('$1', 'deploy')
-" 2>/dev/null || true
 }
 
 error() {
     echo -e "${RED}[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $1${NC}"
-    # Also log to unified system
-    python3 -c "
-import sys
-sys.path.append('$PROJECT_DIR')
-from unified_logging import log_error
-log_error('$1', 'deploy')
-" 2>/dev/null || true
-    exit 1
 }
 
-# Initialize logging
-init_logging
+info() {
+    echo -e "${BLUE}[$(date +'%Y-%m-%d %H:%M:%S')] INFO: $1${NC}"
+}
 
-# Check if we're in the right directory
-if [ ! -f "$COMPOSE_FILE" ]; then
-    error "Docker Compose file not found. Please run this script from the project root."
-fi
+# Load environment variables
+load_env() {
+    if [ -f "$PROJECT_DIR/.env" ]; then
+        export $(grep -v '^#' "$PROJECT_DIR/.env" | xargs)
+        log "Environment variables loaded"
+    else
+        warn "No .env file found"
+    fi
+}
 
-log "Starting deployment process..."
+# Pre-deployment checks
+pre_deployment_checks() {
+    log "Running pre-deployment checks..."
+    
+    cd "$PROJECT_DIR"
+    
+    # Check if docker-compose.yml exists
+    if [ ! -f "docker-compose.yml" ]; then
+        error "docker-compose.yml not found in $PROJECT_DIR"
+        exit 1
+    fi
+    
+    # Check if Docker is running
+    if ! docker info > /dev/null 2>&1; then
+        error "Docker is not running"
+        exit 1
+    fi
+    
+    log "✅ Pre-deployment checks passed"
+}
 
-# Log deployment start to unified system
-python3 -c "
-import sys
-sys.path.append('$PROJECT_DIR')
-from unified_logging import get_logger
-logger = get_logger('$PROJECT_DIR')
-with logger.process_logger('deployment', 'deploy'):
-    pass
-" 2>/dev/null || true
-
-# Backup current database (if exists)
-if docker-compose ps | grep -q "backend"; then
-    log "Creating database backup..."
-    python3 -c "
-import sys
-sys.path.append('$PROJECT_DIR')
-from unified_logging import get_logger
-logger = get_logger('$PROJECT_DIR')
-with logger.process_logger('database_backup', 'backup'):
-    pass
-" 2>/dev/null || true
-    ./management/pg_backup.sh backup
-fi
+# Create pre-deployment backup
+create_backup() {
+    log "Creating pre-deployment backup..."
+    
+    if [ -x "$SCRIPT_DIR/pg_backup.sh" ]; then
+        if "$SCRIPT_DIR/pg_backup.sh" backup; then
+            log "✅ Backup created successfully"
+            return 0
+        else
+            error "Backup failed"
+            return 1
+        fi
+    else
+        warn "Backup script not found or not executable, skipping backup"
+        return 0
+    fi
+}
 
 # Pull latest code
-log "Pulling latest code from repository..."
-python3 -c "
-import sys
-sys.path.append('$PROJECT_DIR')
-from unified_logging import get_logger
-logger = get_logger('$PROJECT_DIR')
-with logger.process_logger('git_pull', 'git'):
-    pass
-" 2>/dev/null || true
-git pull origin main || error "Failed to pull latest code"
+pull_code() {
+    log "Pulling latest code..."
+    
+    cd "$PROJECT_DIR"
+    
+    # Store current commit for rollback
+    CURRENT_SHA=$(git rev-parse HEAD)
+    echo "$CURRENT_SHA" > /tmp/previous_deployment_sha
+    
+    if git pull origin main || git pull origin master; then
+        log "✅ Code updated successfully"
+        NEW_SHA=$(git rev-parse HEAD)
+        info "Updated from $CURRENT_SHA to $NEW_SHA"
+        return 0
+    else
+        error "Failed to pull latest code"
+        return 1
+    fi
+}
 
 # Pull latest Docker images
-log "Pulling latest Docker images..."
-python3 -c "
-import sys
-sys.path.append('$PROJECT_DIR')
-from unified_logging import get_logger
-logger = get_logger('$PROJECT_DIR')
-with logger.process_logger('docker_pull', 'docker'):
-    pass
-" 2>/dev/null || true
-docker-compose pull || error "Failed to pull Docker images"
+pull_images() {
+    log "Pulling latest Docker images..."
+    
+    cd "$PROJECT_DIR"
+    
+    if docker compose pull; then
+        log "✅ Docker images pulled successfully"
+        return 0
+    else
+        error "Failed to pull Docker images"
+        return 1
+    fi
+}
 
-# Stop existing containers gracefully
-log "Stopping existing containers..."
-python3 -c "
-import sys
-sys.path.append('$PROJECT_DIR')
-from unified_logging import get_logger
-logger = get_logger('$PROJECT_DIR')
-with logger.process_logger('docker_stop', 'docker'):
-    pass
-" 2>/dev/null || true
-docker-compose down --timeout 30 || warn "Graceful shutdown failed, forcing stop"
-docker-compose down --timeout 10 || error "Failed to stop containers"
+# Stop containers
+stop_containers() {
+    log "Stopping existing containers..."
+    
+    cd "$PROJECT_DIR"
+    
+    # Graceful stop with 30s timeout
+    if docker compose down --timeout 30; then
+        log "✅ Containers stopped gracefully"
+        return 0
+    else
+        warn "Graceful stop failed, forcing stop..."
+        if docker compose down --timeout 10; then
+            log "✅ Containers stopped (forced)"
+            return 0
+        else
+            error "Failed to stop containers"
+            return 1
+        fi
+    fi
+}
 
-# Start containers with latest images
-log "Starting containers with latest images..."
-python3 -c "
-import sys
-sys.path.append('$PROJECT_DIR')
-from unified_logging import get_logger
-logger = get_logger('$PROJECT_DIR')
-with logger.process_logger('docker_start', 'docker'):
-    pass
-" 2>/dev/null || true
-docker-compose up || error "Failed to start containers"
+# Start containers
+start_containers() {
+    log "Starting containers with latest images..."
+    
+    cd "$PROJECT_DIR"
+    
+    if docker compose up -d; then
+        log "✅ Containers started successfully"
+        return 0
+    else
+        error "Failed to start containers"
+        return 1
+    fi
+}
 
-# Wait for services to be healthy
-log "Waiting for services to be ready..."
-sleep 10
+# Wait for services
+wait_for_services() {
+    log "Waiting for services to initialize..."
+    sleep 15
+    
+    info "Services are starting up..."
+}
 
-# Check if services are running
-log "Checking service status..."
-if docker-compose ps | grep -q "Up"; then
-    log "Services are running successfully!"
-else
-    error "Some services failed to start"
-fi
+# Run database migrations
+run_migrations() {
+    log "Running database migrations..."
+    
+    cd "$PROJECT_DIR"
+    
+    # Make migrations
+    if docker compose exec -T backend python manage.py makemigrations; then
+        log "✅ Migrations generated"
+    else
+        warn "No new migrations to generate"
+    fi
+    
+    # Apply migrations
+    if docker compose exec -T backend python manage.py migrate --noinput; then
+        log "✅ Migrations applied successfully"
+        return 0
+    else
+        error "Migrations failed"
+        return 1
+    fi
+}
 
-# Run database migrations (if needed)
-log "Running database migrations..."
-python3 -c "
-import sys
-sys.path.append('$PROJECT_DIR')
-from unified_logging import get_logger
-logger = get_logger('$PROJECT_DIR')
-with logger.process_logger('database_migrations', 'database'):
-    pass
-" 2>/dev/null || true
-docker-compose exec -T backend python manage.py makemigrations || warn "Database make migrations failed"
-docker-compose exec -T backend python manage.py migrate || warn "Database migration failed"
-
-# Fix PostgreSQL sequences to prevent duplicate key errors
-log "Fixing PostgreSQL sequences..."
-python3 -c "
-import sys
-sys.path.append('$PROJECT_DIR')
-from unified_logging import get_logger
-logger = get_logger('$PROJECT_DIR')
-with logger.process_logger('sequence_fix', 'database'):
-    pass
-" 2>/dev/null || true
-# Copy and run the sequence fix script
-docker cp management/fix_identity_columns.py $(docker-compose ps -q backend):/tmp/fix_identity_columns.py
-docker-compose exec -T backend python /tmp/fix_identity_columns.py || warn "Sequence fix failed"
+# Fix database sequences
+fix_sequences() {
+    log "Fixing PostgreSQL sequences..."
+    
+    cd "$PROJECT_DIR"
+    
+    if [ -f "management/fix_identity_columns.py" ]; then
+        # Copy script to container
+        BACKEND_CONTAINER=$(docker compose ps -q backend)
+        if [ -n "$BACKEND_CONTAINER" ]; then
+            docker cp management/fix_identity_columns.py "${BACKEND_CONTAINER}:/tmp/fix_identity_columns.py"
+            
+            if docker compose exec -T backend python /tmp/fix_identity_columns.py; then
+                log "✅ Sequences fixed successfully"
+            else
+                warn "Sequence fix failed (non-critical)"
+            fi
+        fi
+    else
+        info "Sequence fix script not found, skipping"
+    fi
+}
 
 # Collect static files
-log "Collecting static files..."
-python3 -c "
-import sys
-sys.path.append('$PROJECT_DIR')
-from unified_logging import get_logger
-logger = get_logger('$PROJECT_DIR')
-with logger.process_logger('static_collection', 'django'):
-    pass
-" 2>/dev/null || true
-docker-compose exec -T backend python manage.py collectstatic --noinput || warn "Static file collection failed"
+collect_static() {
+    log "Collecting static files..."
+    
+    cd "$PROJECT_DIR"
+    
+    if docker compose exec -T backend python manage.py collectstatic --noinput; then
+        log "✅ Static files collected"
+        return 0
+    else
+        warn "Static file collection failed (non-critical)"
+        return 0
+    fi
+}
 
-# Clean up unused Docker images
-log "Cleaning up unused Docker images..."
-python3 -c "
-import sys
-sys.path.append('$PROJECT_DIR')
-from unified_logging import get_logger
-logger = get_logger('$PROJECT_DIR')
-with logger.process_logger('docker_cleanup', 'docker'):
-    pass
-" 2>/dev/null || true
-docker image prune -f || warn "Docker cleanup failed"
+# Run health checks
+run_health_checks() {
+    log "Running health checks..."
+    
+    if [ -x "$SCRIPT_DIR/health_check.sh" ]; then
+        if "$SCRIPT_DIR/health_check.sh"; then
+            log "✅ All health checks passed"
+            return 0
+        else
+            error "Health checks failed"
+            return 1
+        fi
+    else
+        warn "Health check script not found, running basic checks..."
+        
+        cd "$PROJECT_DIR"
+        
+        # Basic health checks
+        local all_healthy=true
+        
+        # Check containers are running
+        if docker compose ps | grep -q "Up"; then
+            log "✅ Containers are running"
+        else
+            error "❌ Some containers are not running"
+            all_healthy=false
+        fi
+        
+        # Check backend
+        sleep 5
+        if curl -f http://localhost:8000/health/ > /dev/null 2>&1; then
+            log "✅ Backend is responding"
+        else
+            warn "⚠️ Backend health check failed"
+            all_healthy=false
+        fi
+        
+        # Check frontend
+        if curl -f http://localhost:3000 > /dev/null 2>&1; then
+            log "✅ Frontend is responding"
+        else
+            warn "⚠️ Frontend health check failed"
+            all_healthy=false
+        fi
+        
+        if [ "$all_healthy" = true ]; then
+            return 0
+        else
+            return 1
+        fi
+    fi
+}
 
-# Show final status
-log "Deployment completed successfully!"
-log "Current service status:"
-docker-compose ps
+# Cleanup old images
+cleanup() {
+    log "Cleaning up old Docker resources..."
+    
+    docker image prune -f --filter "until=168h" || warn "Image cleanup failed"
+    docker volume prune -f || warn "Volume cleanup failed"
+    
+    log "✅ Cleanup completed"
+}
 
-# Health check
-log "Performing health checks..."
-python3 -c "
-import sys
-sys.path.append('$PROJECT_DIR')
-from unified_logging import get_logger
-logger = get_logger('$PROJECT_DIR')
-logger.run_health_checks()
-" 2>/dev/null || true
+# Display status
+display_status() {
+    log "Deployment Status:"
+    cd "$PROJECT_DIR"
+    docker compose ps
+    
+    echo ""
+    log "Resource Usage:"
+    docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}" || true
+}
 
-if curl -f http://localhost:3000 > /dev/null 2>&1; then
-    log "Frontend is responding"
-else
-    warn "Frontend health check failed"
-fi
+# Main deployment process
+main() {
+    log "=========================================="
+    log "  Food Platform Deployment"
+    log "=========================================="
+    echo ""
+    
+    cd "$PROJECT_DIR"
+    
+    # Load environment
+    load_env
+    
+    # Execute deployment steps
+    if ! pre_deployment_checks; then
+        error "Pre-deployment checks failed. Aborting."
+        exit 1
+    fi
+    
+    if ! create_backup; then
+        error "Backup failed. Aborting deployment."
+        exit 1
+    fi
+    
+    if ! pull_code; then
+        error "Failed to pull code. Aborting."
+        exit 1
+    fi
+    
+    if ! pull_images; then
+        error "Failed to pull images. Aborting."
+        exit 1
+    fi
+    
+    if ! stop_containers; then
+        error "Failed to stop containers. Aborting."
+        exit 1
+    fi
+    
+    if ! start_containers; then
+        error "Failed to start containers. Manual intervention required."
+        exit 1
+    fi
+    
+    wait_for_services
+    
+    if ! run_migrations; then
+        error "Migrations failed. Rolling back..."
+        # Attempt automatic rollback
+        if [ -x "$SCRIPT_DIR/rollback.sh" ]; then
+            "$SCRIPT_DIR/rollback.sh" --no-db-restore
+        fi
+        exit 1
+    fi
+    
+    fix_sequences
+    collect_static
+    
+    if ! run_health_checks; then
+        error "Health checks failed. Rolling back..."
+        # Attempt automatic rollback
+        if [ -x "$SCRIPT_DIR/rollback.sh" ]; then
+            "$SCRIPT_DIR/rollback.sh"
+        fi
+        exit 1
+    fi
+    
+    cleanup
+    
+    # Success
+    echo ""
+    log "=========================================="
+    log "  ✅ Deployment Completed Successfully!"
+    log "=========================================="
+    echo ""
+    
+    display_status
+    
+    log "Deployment completed at $(date)"
+}
 
-if curl -f http://localhost:8000 > /dev/null 2>&1; then
-    log "Backend is responding"
-else
-    warn "Backend health check failed"
-fi
-
-log "Deployment process completed!"
-
-# Log final stats
-python3 -c "
-import sys
-sys.path.append('$PROJECT_DIR')
-from unified_logging import get_logger
-logger = get_logger('$PROJECT_DIR')
-stats = logger.get_stats_summary()
-print(f'Deployment Stats: {stats[\"successful_processes\"]}/{stats[\"total_processes\"]} processes successful')
-" 2>/dev/null || true 
+# Run main function
+main "$@"

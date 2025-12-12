@@ -42,3 +42,4 @@ zopfli==0.2.3.post1
 stripe==13.0.1
 django-ses==3.5.0
 coverage==7.5.0
+pypdf==5.1.0

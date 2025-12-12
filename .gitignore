@@ -70,3 +70,7 @@ htmlcov/
 jest-results/
 *.test.js.snap
 __snapshots__/
+
+# WeasyPrint cache
+backend/cache/
+cache/

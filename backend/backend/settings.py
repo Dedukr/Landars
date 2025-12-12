@@ -448,4 +448,19 @@ LOGGING = {
         "handlers": ["console"],
         "level": "INFO",
     },
+    # Suppress fonttools verbose logging
+    "loggers": {
+        "fontTools": {
+            "level": "ERROR",
+            "propagate": False,
+        },
+        "fontTools.subset": {
+            "level": "ERROR",
+            "propagate": False,
+        },
+        "weasyprint": {
+            "level": "ERROR",
+            "propagate": False,
+        },
+    },
 }

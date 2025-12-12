@@ -1,0 +1,574 @@
+name: Comprehensive CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy to"
+        required: true
+        default: "production"
+        type: choice
+        options:
+          - production
+          - staging
+      skip_tests:
+        description: "Skip tests (use with caution)"
+        required: false
+        default: false
+        type: boolean
+
+env:
+  REGISTRY: dedukr
+  BACKEND_IMAGE: landar-backend
+  FRONTEND_IMAGE: landar-frontend-marketplace
+  NGINX_IMAGE: landar-nginx
+  POSTGRES_IMAGE: landar-postgres
+
+jobs:
+  # Security and Quality Checks
+  security-scan:
+    name: Security & Quality Scan
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.skip_tests }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend-marketplace/package-lock.json
+
+      - name: Install Python dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install safety bandit
+
+      - name: Install Node.js dependencies
+        run: |
+          cd frontend-marketplace
+          npm ci
+
+      - name: Python Security Scan
+        run: |
+          cd backend
+          safety check --json || echo "Security issues found"
+          bandit -r . -f json || echo "Security issues found"
+
+      - name: Node.js Security Scan
+        run: |
+          cd frontend-marketplace
+          npm audit --audit-level=moderate || echo "Security vulnerabilities found"
+
+      - name: Docker Security Scan
+        run: |
+          echo "Docker security scan would be performed here"
+          # Add Trivy or other Docker security scanning tools
+
+  # Testing Phase
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    needs: security-scan
+    if: ${{ !inputs.skip_tests }}
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend-marketplace/package-lock.json
+
+      - name: Install Python dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install coverage
+
+      - name: Install Node.js dependencies
+        run: |
+          cd frontend-marketplace
+          npm ci
+
+      - name: Load environment variables
+        run: |
+          # Load environment variables from .env file if it exists
+          if [ -f "backend/old.env" ]; then
+            echo "Loading environment variables from backend/old.env"
+            export $(grep -v '^#' backend/old.env | xargs)
+            echo "POSTGRES_DB=$POSTGRES_DB" >> $GITHUB_ENV
+            echo "POSTGRES_USER=$POSTGRES_USER" >> $GITHUB_ENV
+            echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> $GITHUB_ENV
+            echo "POSTGRES_PORT=$POSTGRES_PORT" >> $GITHUB_ENV
+          else
+            echo "No .env file found, using default test values"
+            echo "POSTGRES_DB=test_db" >> $GITHUB_ENV
+            echo "POSTGRES_USER=postgres" >> $GITHUB_ENV
+            echo "POSTGRES_PASSWORD=postgres" >> $GITHUB_ENV
+            echo "POSTGRES_PORT=5432" >> $GITHUB_ENV
+          fi
+
+      - name: Run backend tests
+        run: |
+          cd backend
+          coverage run --source='.' manage.py test --verbosity=2
+          coverage xml -o coverage.xml
+          coverage report
+        env:
+          DJANGO_SETTINGS_MODULE: backend.settings
+          POSTGRES_DB: ${{ env.POSTGRES_DB }}
+          POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: ${{ env.POSTGRES_PORT }}
+
+      - name: Run frontend tests
+        run: |
+          cd frontend-marketplace
+          npm run lint
+          npm run build
+          npm run test:coverage -- --watchAll=false
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        continue-on-error: true
+        with:
+          files: ./backend/coverage.xml,./frontend-marketplace/coverage/lcov.info
+
+  # Build and Push Images
+  build-and-push:
+    name: Build and Push Docker Images
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop')
+
+    strategy:
+      matrix:
+        service: [backend, frontend-marketplace, nginx, postgres]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ matrix.service == 'frontend-marketplace' && env.FRONTEND_IMAGE || matrix.service == 'backend' && env.BACKEND_IMAGE || matrix.service == 'nginx' && env.NGINX_IMAGE || env.POSTGRES_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.service == 'frontend-marketplace' && './frontend-marketplace' || matrix.service == 'backend' && './backend' || matrix.service == 'nginx' && './nginx' || './postgresql' }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+  # Database Backup (Pre-deployment)
+  backup-database:
+    name: Backup Database (Pre-deployment)
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Pre-deployment database backup
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          passphrase: ${{ secrets.SERVER_SSH_PASSPHRASE }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            cd ${{ secrets.PROJECT_PATH }}
+
+            echo "🗄️  Creating pre-deployment database backup..."
+
+            # Make backup script executable
+            chmod +x management/pg_backup.sh
+            # Use the comprehensive backup script
+            if ./management/pg_backup.sh backup; then
+              echo "✅ Pre-deployment backup completed successfully"
+            else
+              echo "❌ Pre-deployment backup failed"
+              exit 1
+            fi
+
+  # Deploy to Server
+  deploy:
+    name: Deploy to Server
+    needs: [build-and-push, backup-database]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    environment: ${{ inputs.environment || 'production' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          passphrase: ${{ secrets.SERVER_SSH_PASSPHRASE }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            set -e  # Exit on any error
+
+            # Configuration
+            PROJECT_DIR="${{ secrets.PROJECT_PATH }}"
+            COMPOSE_FILE="docker-compose.yml"
+            BACKUP_DIR="db_backups"
+
+            # Colors for output
+            RED='\033[0;31m'
+            GREEN='\033[0;32m'
+            YELLOW='\033[1;33m'
+            BLUE='\033[0;34m'
+            NC='\033[0m' # No Color
+
+            # Logging functions
+            log() {
+              echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')] $1${NC}"
+            }
+
+            warn() {
+              echo -e "${YELLOW}[$(date +'%Y-%m-%d %H:%M:%S')] WARNING: $1${NC}"
+            }
+
+            error() {
+              echo -e "${RED}[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $1${NC}"
+              exit 1
+            }
+
+            info() {
+              echo -e "${BLUE}[$(date +'%Y-%m-%d %H:%M:%S')] INFO: $1${NC}"
+            }
+
+            # Navigate to project directory
+            cd "$PROJECT_DIR"
+
+            # Load environment variables from .env file
+            if [ -f ".env" ]; then
+              export $(grep -v '^#' .env | xargs)
+            fi
+
+            log "Starting deployment process..."
+
+            # Check if we're in the right directory
+            if [ ! -f "$COMPOSE_FILE" ]; then
+              error "Docker Compose file not found. Please run this script from the project root."
+            fi
+
+            # Check SSL certificates
+            log "Verifying SSL certificates..."
+            if [ ! -f "/etc/ssl/landarsfood/landarsfood.com.pem" ]; then
+              error "SSL certificates not found in /etc/ssl/landarsfood/"
+            fi
+
+            # Set proper permissions for SSL certificates
+            chmod 600 /etc/ssl/landarsfood/* 2>/dev/null || warn "SSL certificates permissions failed"
+
+            # Pull latest code
+            log "Pulling latest code from repository..."
+            git pull origin main || error "Failed to pull latest code"
+
+            # Pull latest Docker images
+            log "Pulling latest Docker images..."
+            docker compose pull || error "Failed to pull Docker images"
+
+            # Create backup before stopping containers
+            log "Creating backup before stopping containers..."
+            chmod +x management/pg_backup.sh
+            if ./management/pg_backup.sh backup; then
+              log "✅ Pre-stop backup completed successfully"
+            else
+              warn "⚠️  Pre-stop backup failed, but continuing with deployment"
+            fi
+
+            # Stop existing containers gracefully
+            log "Stopping existing containers..."
+            docker compose down --timeout 30 || warn "Graceful shutdown failed, forcing stop"
+            docker compose down --timeout 10 || error "Failed to stop containers"
+
+            # Start containers with latest images
+            log "Starting containers with latest images..."
+            docker compose up -d || error "Failed to start containers"
+
+            # Wait for services to be healthy
+            log "Waiting for services to be ready..."
+            sleep 15
+
+            # Health checks for all services
+            log "Performing comprehensive health checks..."
+
+            # Check PostgreSQL
+            if docker compose exec -T postgres pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}; then
+              log "PostgreSQL is healthy"
+            else
+              error "PostgreSQL health check failed"
+            fi
+
+            # Check Backend
+            if docker compose exec -T backend python -c "import requests; requests.get('http://localhost:8000', timeout=5)" 2>/dev/null; then
+              log "Backend is healthy"
+            else
+              error "Backend health check failed"
+            fi
+
+            # Check Frontend
+            if curl -f http://localhost:3000 > /dev/null 2>&1; then
+              log "Frontend is healthy"
+            else
+              error "Frontend health check failed"
+            fi
+
+            # Check Nginx
+            if curl -f http://localhost:80 > /dev/null 2>&1; then
+              log "Nginx is healthy"
+            else
+              error "Nginx health check failed"
+            fi
+
+            # Run database migrations
+            log "Running database migrations..."
+            docker compose exec -T backend python manage.py makemigrations || warn "Database make migrations failed"
+            docker compose exec -T backend python manage.py migrate || warn "Database migration failed"
+
+            # Fix PostgreSQL sequences
+            log "Fixing PostgreSQL sequences..."
+            docker cp management/fix_identity_columns.py $(docker compose ps -q backend):/tmp/fix_identity_columns.py
+            docker compose exec -T backend python /tmp/fix_identity_columns.py || warn "Sequence fix failed"
+
+            # Collect static files
+            log "Collecting static files..."
+            docker compose exec -T backend python manage.py collectstatic --noinput || warn "Static file collection failed"
+
+            # Performance optimization
+            log "Running performance optimizations..."
+
+            # Optimize PostgreSQL
+            docker compose exec -T postgres psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c "VACUUM ANALYZE;" || warn "PostgreSQL optimization failed"
+
+            # Clean up unused Docker resources
+            log "Cleaning up unused Docker resources..."
+            docker image prune -f || warn "Docker cleanup failed"
+            docker volume prune -f || warn "Docker volume cleanup failed"
+
+            # Final health check
+            log "Performing final health checks..."
+
+            # Check all services are running
+            if docker compose ps | grep -q "Up"; then
+              log "All services are running successfully!"
+            else
+              error "Some services failed to start"
+            fi
+
+            # Show final status
+            log "Deployment completed successfully!"
+            log "Current service status:"
+            docker compose ps
+
+            # Performance metrics
+            log "System resource usage:"
+            docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}"
+
+            # Create backup after successful deployment
+            log "Creating post-deployment backup..."
+            if ./management/pg_backup.sh backup; then
+              log "✅ Post-deployment backup completed successfully"
+            else
+              warn "⚠️  Post-deployment backup failed, but deployment was successful"
+            fi
+
+            log "Deployment process completed successfully!"
+
+  # Post-deployment verification
+  verify-deployment:
+    name: Verify Deployment
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify deployment
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            cd ${{ secrets.PROJECT_PATH }}
+
+            # Load environment variables from .env file
+            if [ -f ".env" ]; then
+              export $(grep -v '^#' .env | xargs)
+            fi
+
+            # Final verification
+            echo "=== DEPLOYMENT VERIFICATION ==="
+
+            # Check all containers are running
+            echo "Container Status:"
+            docker compose ps
+
+            # Check service endpoints
+            echo "Testing service endpoints..."
+
+            # Test backend API
+            if curl -f http://localhost:8000/api/ > /dev/null 2>&1; then
+              echo "✅ Backend API is responding"
+            else
+              echo "❌ Backend API is not responding"
+            fi
+
+            # Test frontend
+            if curl -f http://localhost:3000 > /dev/null 2>&1; then
+              echo "✅ Frontend is responding"
+            else
+              echo "❌ Frontend is not responding"
+            fi
+
+            # Test nginx
+            if curl -f http://localhost:80 > /dev/null 2>&1; then
+              echo "✅ Nginx is responding"
+            else
+              echo "❌ Nginx is not responding"
+            fi
+
+            # Check database connectivity
+            if docker compose exec -T postgres pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}; then
+              echo "✅ Database is accessible"
+            else
+              echo "❌ Database is not accessible"
+            fi
+
+            # System resources
+            echo "System Resources:"
+            docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}"
+
+            # Create final backup after successful verification
+            echo "Creating final backup after verification..."
+            chmod +x management/pg_backup.sh
+            if ./management/pg_backup.sh backup; then
+              echo "✅ Final backup completed successfully"
+            else
+              echo "⚠️  Final backup failed, but deployment is verified"
+            fi
+
+            echo "=== VERIFICATION COMPLETE ==="
+
+  # Rollback job (manual trigger)
+  rollback:
+    name: Rollback Deployment
+    runs-on: ubuntu-latest
+    if: failure() && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Rollback deployment
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            cd ${{ secrets.PROJECT_PATH }}
+
+            # Load environment variables from .env file
+            if [ -f ".env" ]; then
+              export $(grep -v '^#' .env | xargs)
+            fi
+
+            echo "=== ROLLBACK INITIATED ==="
+
+            # Stop current containers
+            docker compose down
+
+            # Restore from latest backup
+            LATEST_BACKUP=$(ls -t db_backups/ | head -n1)
+            if [ -n "$LATEST_BACKUP" ]; then
+              echo "Restoring from backup: $LATEST_BACKUP"
+              docker compose up -d postgres
+              sleep 10
+              docker compose exec -T postgres psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+              zcat "db_backups/$LATEST_BACKUP/postgres_backup.sql.gz" | docker compose exec -T postgres psql -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+            fi
+
+            # Start previous version
+            docker compose up -d
+
+            echo "=== ROLLBACK COMPLETE ==="

@@ -1,0 +1,160 @@
+name: Security Scan
+
+on:
+  workflow_call:
+    inputs:
+      fail-on-critical:
+        description: 'Fail the workflow on critical vulnerabilities'
+        required: false
+        type: boolean
+        default: true
+      upload-sarif:
+        description: 'Upload SARIF results to GitHub Security'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Backend Environment
+        uses: ./.github/actions/setup-backend
+        with:
+          python-version: '3.12'
+
+      - name: Setup Frontend Environment
+        uses: ./.github/actions/setup-frontend
+        with:
+          node-version: '20'
+
+      - name: Python Dependency Scan (safety)
+        working-directory: ./backend
+        run: |
+          echo "🔍 Scanning Python dependencies for vulnerabilities..."
+          if ${{ inputs.fail-on-critical }}; then
+            safety check --json || exit 1
+          else
+            safety check --json || echo "⚠️ Vulnerabilities found but not failing"
+          fi
+
+      - name: Python Security Scan (bandit)
+        working-directory: ./backend
+        run: |
+          echo "🔍 Running Bandit security scan..."
+          if ${{ inputs.fail-on-critical }}; then
+            bandit -r . -f json -ll || exit 1
+          else
+            bandit -r . -f json -ll || echo "⚠️ Security issues found but not failing"
+          fi
+
+      - name: Frontend Dependency Scan (npm audit)
+        working-directory: ./frontend-marketplace
+        run: |
+          echo "🔍 Scanning Node.js dependencies for vulnerabilities..."
+          if ${{ inputs.fail-on-critical }}; then
+            npm audit --audit-level=high
+          else
+            npm audit --audit-level=high || echo "⚠️ Vulnerabilities found but not failing"
+          fi
+
+  secret-scan:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks Scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_SUMMARY: true
+
+  container-scan:
+    name: Container Image Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    
+    strategy:
+      matrix:
+        service: [backend, frontend-marketplace, nginx, postgres]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for scanning
+        uses: docker/build-push-action@v5
+        with:
+          context: ./${{ matrix.service }}
+          push: false
+          load: true
+          tags: ${{ matrix.service }}:scan
+          cache-from: type=gha,scope=${{ matrix.service }}
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ matrix.service }}:scan
+          format: 'sarif'
+          output: 'trivy-results-${{ matrix.service }}.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: ${{ inputs.fail-on-critical && '1' || '0' }}
+
+      - name: Upload Trivy results to GitHub Security
+        if: inputs.upload-sarif && always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results-${{ matrix.service }}.sarif'
+          category: 'container-${{ matrix.service }}'
+
+  summary:
+    name: Security Scan Summary
+    runs-on: ubuntu-latest
+    needs: [dependency-scan, secret-scan, container-scan]
+    if: always()
+    
+    steps:
+      - name: Check scan results
+        run: |
+          echo "## 🔒 Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.dependency-scan.result }}" == "success" ]; then
+            echo "✅ Dependency scan passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Dependency scan failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.secret-scan.result }}" == "success" ]; then
+            echo "✅ Secret detection passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Secret detection failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.container-scan.result }}" == "success" ] || [ "${{ needs.container-scan.result }}" == "skipped" ]; then
+            echo "✅ Container scan passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Container scan failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Scan completed at $(date -u)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail if critical issues found
+        if: inputs.fail-on-critical && (needs.dependency-scan.result == 'failure' || needs.secret-scan.result == 'failure' || needs.container-scan.result == 'failure')
+        run: |
+          echo "❌ Critical security issues detected. Deployment blocked."
+          exit 1

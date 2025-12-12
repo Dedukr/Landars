@@ -1,0 +1,349 @@
+name: Manual Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      target-sha:
+        description: 'Git SHA to rollback to (leave empty for previous deployment)'
+        required: false
+        type: string
+      restore-database:
+        description: 'Restore database from backup'
+        required: false
+        type: boolean
+        default: true
+      backup-name:
+        description: 'Specific backup to restore (leave empty for latest)'
+        required: false
+        type: string
+
+jobs:
+  validate-rollback:
+    name: Validate Rollback Request
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate target SHA
+        if: inputs.target-sha != ''
+        run: |
+          echo "🔍 Validating target SHA: ${{ inputs.target-sha }}"
+          
+          if git rev-parse --verify ${{ inputs.target-sha }} > /dev/null 2>&1; then
+            echo "✅ Target SHA is valid"
+          else
+            echo "❌ Invalid SHA: ${{ inputs.target-sha }}"
+            exit 1
+          fi
+
+      - name: Display rollback plan
+        run: |
+          echo "## 🔄 Rollback Plan" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Initiated by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Current SHA:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -n "${{ inputs.target-sha }}" ]; then
+            echo "**Target SHA:** \`${{ inputs.target-sha }}\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Target:** Previous deployment" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "**Restore Database:** ${{ inputs.restore-database }}" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -n "${{ inputs.backup-name }}" ]; then
+            echo "**Backup:** ${{ inputs.backup-name }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Backup:** Latest available" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **Warning:** This will revert your production environment." >> $GITHUB_STEP_SUMMARY
+
+  pre-rollback-backup:
+    name: Create Backup Before Rollback
+    runs-on: ubuntu-latest
+    needs: validate-rollback
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create safety backup
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          passphrase: ${{ secrets.SERVER_SSH_PASSPHRASE }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            cd ${{ secrets.PROJECT_PATH }}
+            
+            echo "🗄️ Creating safety backup before rollback..."
+            chmod +x management/pg_backup.sh
+            
+            if ./management/pg_backup.sh backup; then
+              BACKUP_TIME=$(date +%Y%m%d_%H%M%S)
+              echo "✅ Safety backup created: $BACKUP_TIME"
+              echo "$BACKUP_TIME" > /tmp/rollback_safety_backup
+            else
+              echo "❌ Failed to create safety backup"
+              exit 1
+            fi
+
+  execute-rollback:
+    name: Execute Rollback
+    runs-on: ubuntu-latest
+    needs: pre-rollback-backup
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Rollback application
+        id: rollback
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          passphrase: ${{ secrets.SERVER_SSH_PASSPHRASE }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            set -e
+            
+            cd ${{ secrets.PROJECT_PATH }}
+            
+            # Load environment variables
+            if [ -f ".env" ]; then
+              export $(grep -v '^#' .env | xargs)
+            fi
+            
+            echo "🔄 Starting rollback process..."
+            
+            # Stop current containers
+            echo "🛑 Stopping current containers..."
+            docker compose down --timeout 30
+            
+            # Determine target SHA
+            if [ -n "${{ inputs.target-sha }}" ]; then
+              TARGET_SHA="${{ inputs.target-sha }}"
+            elif [ -f "/tmp/previous_deployment_sha" ]; then
+              TARGET_SHA=$(cat /tmp/previous_deployment_sha)
+            else
+              # Fallback to previous commit
+              TARGET_SHA=$(git rev-parse HEAD~1)
+            fi
+            
+            echo "⏪ Rolling back to SHA: $TARGET_SHA"
+            
+            # Checkout target version
+            git fetch origin
+            git reset --hard $TARGET_SHA
+            
+            # Restore database if requested
+            if [ "${{ inputs.restore-database }}" == "true" ]; then
+              echo "🗄️ Restoring database..."
+              
+              # Determine which backup to use
+              if [ -n "${{ inputs.backup-name }}" ]; then
+                BACKUP_DIR="db_backups/${{ inputs.backup-name }}"
+              else
+                BACKUP_DIR=$(ls -td db_backups/*/ | head -n1)
+              fi
+              
+              if [ -d "$BACKUP_DIR" ]; then
+                echo "Restoring from: $BACKUP_DIR"
+                
+                # Start postgres for restoration
+                docker compose up -d postgres
+                sleep 15
+                
+                # Check postgres is ready
+                until docker compose exec -T postgres pg_isready -U ${POSTGRES_USER}; do
+                  echo "Waiting for postgres..."
+                  sleep 2
+                done
+                
+                # Drop and recreate database
+                docker compose exec -T postgres psql -U ${POSTGRES_USER} -d postgres -c "DROP DATABASE IF EXISTS ${POSTGRES_DB};" || true
+                docker compose exec -T postgres psql -U ${POSTGRES_USER} -d postgres -c "CREATE DATABASE ${POSTGRES_DB};"
+                
+                # Restore from backup
+                if [ -f "${BACKUP_DIR}/postgres_backup.sql.gz" ]; then
+                  zcat "${BACKUP_DIR}/postgres_backup.sql.gz" | docker compose exec -T postgres psql -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+                  echo "✅ Database restored successfully"
+                elif [ -f "${BACKUP_DIR}/postgres_backup.sql" ]; then
+                  cat "${BACKUP_DIR}/postgres_backup.sql" | docker compose exec -T postgres psql -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+                  echo "✅ Database restored successfully"
+                else
+                  echo "❌ No backup file found in $BACKUP_DIR"
+                  exit 1
+                fi
+                
+                # Stop postgres before full restart
+                docker compose down
+              else
+                echo "❌ Backup directory not found: $BACKUP_DIR"
+                exit 1
+              fi
+            fi
+            
+            # Pull images for target version
+            echo "📥 Pulling Docker images..."
+            docker compose pull
+            
+            # Start all services
+            echo "▶️  Starting services..."
+            docker compose up -d
+            
+            echo "✅ Rollback deployment completed"
+
+  verify-rollback:
+    name: Verify Rollback
+    runs-on: ubuntu-latest
+    needs: execute-rollback
+    
+    steps:
+      - name: Wait for services
+        run: |
+          echo "⏳ Waiting for services to start..."
+          sleep 30
+
+      - name: Health checks
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          passphrase: ${{ secrets.SERVER_SSH_PASSPHRASE }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            cd ${{ secrets.PROJECT_PATH }}
+            
+            # Load environment variables
+            if [ -f ".env" ]; then
+              export $(grep -v '^#' .env | xargs)
+            fi
+            
+            echo "🏥 Running health checks..."
+            
+            # Check PostgreSQL
+            if docker compose exec -T postgres pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}; then
+              echo "✅ PostgreSQL is healthy"
+            else
+              echo "❌ PostgreSQL health check failed"
+              exit 1
+            fi
+            
+            # Check Backend
+            MAX_RETRIES=10
+            RETRY_COUNT=0
+            while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+              if curl -f http://localhost:8000/health/ > /dev/null 2>&1; then
+                echo "✅ Backend is healthy"
+                break
+              else
+                RETRY_COUNT=$((RETRY_COUNT + 1))
+                if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+                  echo "❌ Backend health check failed"
+                  exit 1
+                fi
+                sleep 5
+              fi
+            done
+            
+            # Check Frontend
+            if curl -f http://localhost:3000 > /dev/null 2>&1; then
+              echo "✅ Frontend is healthy"
+            else
+              echo "❌ Frontend health check failed"
+              exit 1
+            fi
+            
+            # Check Nginx
+            if curl -f http://localhost:80 > /dev/null 2>&1; then
+              echo "✅ Nginx is healthy"
+            else
+              echo "❌ Nginx health check failed"
+              exit 1
+            fi
+            
+            echo "✅ All health checks passed!"
+
+      - name: Display service status
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          passphrase: ${{ secrets.SERVER_SSH_PASSPHRASE }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            cd ${{ secrets.PROJECT_PATH }}
+            
+            echo "📊 Service Status:"
+            docker compose ps
+            
+            echo ""
+            echo "📈 Resource Usage:"
+            docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}"
+
+  rollback-summary:
+    name: Rollback Summary
+    runs-on: ubuntu-latest
+    needs: [validate-rollback, pre-rollback-backup, execute-rollback, verify-rollback]
+    if: always()
+    
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## 🔄 Rollback Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.validate-rollback.result }}" == "success" ]; then
+            echo "✅ Validation: Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Validation: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.pre-rollback-backup.result }}" == "success" ]; then
+            echo "✅ Safety Backup: Created" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Safety Backup: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.execute-rollback.result }}" == "success" ]; then
+            echo "✅ Rollback Execution: Completed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Rollback Execution: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.verify-rollback.result }}" == "success" ]; then
+            echo "✅ Health Verification: Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Health Verification: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Rollback initiated by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Completed at:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.verify-rollback.result }}" == "success" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **Rollback completed successfully!**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "❌ **Rollback failed. Manual intervention required.**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Check rollback status
+        if: needs.execute-rollback.result != 'success' || needs.verify-rollback.result != 'success'
+        run: |
+          echo "❌ Rollback failed or verification unsuccessful"
+          exit 1

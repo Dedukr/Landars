@@ -153,8 +153,9 @@ load_env() {
                 continue
             fi
 
-            # Preserve value exactly (including spaces/brackets)
-            export "$key=$value"
+            if ! export "$key=$value"; then
+                log_warning "Failed to export '$key' from .env line $line_num, skipping"
+            fi
         done < "$env_file"
         log_success "Configuration loaded from $env_file"
     else

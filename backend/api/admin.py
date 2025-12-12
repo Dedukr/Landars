@@ -1,4 +1,7 @@
 import csv
+import io
+import os
+import sys
 import tempfile
 from datetime import date, timedelta
 from decimal import Decimal
@@ -12,7 +15,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Count, Sum
 from django.db.models.functions import Round
 from django.forms import ModelForm
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseRedirect
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import format_html
@@ -335,33 +338,264 @@ def get_s3_client():
     )
 
 
-def upload_invoice_to_s3(file_path, s3_key):
+def upload_invoice_to_s3(file_path, s3_key, max_retries=3):
+    """
+    Upload invoice to S3 with retry logic and error handling.
+
+    Args:
+        file_path: Path to the PDF file to upload
+        s3_key: S3 key (path) where the file should be stored
+        max_retries: Maximum number of retry attempts
+
+    Returns:
+        str: The S3 key if successful
+
+    Raises:
+        Exception: If upload fails after all retries
+    """
+    import os
+    import time
+
     s3_client = get_s3_client()
     bucket = settings.AWS_STORAGE_BUCKET_NAME
-    s3_client.upload_file(file_path, bucket, s3_key)
-    return s3_key
+
+    # Validate file exists and is readable
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"Invoice file not found: {file_path}")
+
+    if not os.access(file_path, os.R_OK):
+        raise PermissionError(f"Cannot read invoice file: {file_path}")
+
+    # Retry logic for network issues
+    last_exception = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            s3_client.upload_file(file_path, bucket, s3_key)
+            return s3_key
+        except Exception as e:
+            last_exception = e
+            if attempt < max_retries:
+                # Exponential backoff: wait 1s, 2s, 4s...
+                wait_time = 2 ** (attempt - 1)
+                time.sleep(wait_time)
+            else:
+                raise Exception(
+                    f"Failed to upload invoice to S3 after {max_retries} attempts: {str(e)}"
+                ) from last_exception
+
+    raise Exception(f"Failed to upload invoice to S3: {str(last_exception)}")
 
 
 @admin.action(description="Create & Upload Invoice")
 def create_and_upload_invoice(modeladmin, request, queryset):
+    """
+    Create and upload invoices for selected orders with robust error handling,
+    memory management, and optimization.
+
+    Features:
+    - Reuses font configuration to avoid repeated font subsetting
+    - Processes orders in chunks to prevent memory exhaustion
+    - Comprehensive error handling with detailed feedback
+    - Database transactions for atomicity
+    - Retry logic for S3 uploads
+    - Memory management with garbage collection
+    - Optimized PDF generation settings
+    - Progress tracking and validation
+    """
+    import gc
+    import logging
+    import os
+    import time
+
+    from django.db import transaction
     from weasyprint import HTML
 
-    for order in queryset:
-        # Render your invoice template to HTML
-        html_string = render_to_string(
-            "invoice.html", {"order": order, "business": settings.BUSINESS_INFO}
-        )
-        # Generate PDF in a temp file
-        with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp_pdf:
-            HTML(string=html_string).write_pdf(tmp_pdf.name)
-            s3_key = f"invoices/order_{order.id}.pdf"
-            upload_invoice_to_s3(tmp_pdf.name, s3_key)
-            # Save the S3 key to the order
-            order.invoice_link = s3_key
-            order.save()
-    modeladmin.message_user(
-        request, "Invoice created and uploaded!", level=messages.SUCCESS
+    # Get shared font configuration (reused across all PDF generations)
+    # This significantly reduces font processing time and prevents crashes
+    # Access via modeladmin's class (OrderAdmin) to reuse the cached font config
+    font_config, cache_dir = modeladmin.__class__._get_font_config()
+
+    # Count orders for progress tracking
+    order_count = queryset.count()
+    if order_count == 0:
+        modeladmin.message_user(request, "No orders selected.", level=messages.WARNING)
+        return
+
+    # Estimate processing time (roughly 2-3 seconds per order)
+    estimated_time = order_count * 2.5
+    logger = logging.getLogger(__name__)
+    logger.info(
+        f"Starting creation and uploading of {order_count} order(s), "
+        f"approximate time {estimated_time:.1f} seconds"
     )
+
+    # Optimize queryset to avoid N+1 queries
+    from django.db.models import Prefetch
+
+    optimized_queryset = (
+        queryset.select_related("customer", "customer__profile")
+        .prefetch_related(
+            Prefetch(
+                "items",
+                queryset=OrderItem.objects.select_related("product"),
+                to_attr="prefetched_items",
+            )
+        )
+        .order_by("id")
+    )
+
+    # Optimize chunk size based on order count for better throughput
+    # Larger chunks = better throughput, but need to balance memory
+    if order_count > 50:
+        chunk_size = 20  # Larger chunks for big batches
+    elif order_count > 20:
+        chunk_size = 15
+    else:
+        chunk_size = min(10, order_count)  # Smaller chunks for small batches
+
+    # Optimize PDF settings based on batch size
+    # For large batches, use faster settings
+    use_fast_mode = order_count > 50
+    pdf_dpi = 120 if use_fast_mode else 150  # Lower DPI = faster
+    jpeg_quality = 75 if use_fast_mode else 85  # Lower quality = faster
+
+    success_count = 0
+    error_count = 0
+    errors = []
+    start_time = time.time()
+
+    # Process orders in chunks
+    for chunk_idx, i in enumerate(range(0, order_count, chunk_size), 1):
+        chunk_orders = list(optimized_queryset[i : i + chunk_size])
+
+        for order in chunk_orders:
+            try:
+                # Validate order has required data
+                if not order.customer:
+                    raise ValueError(f"Order {order.id} has no customer")
+
+                # Use database transaction for atomicity
+                with transaction.atomic():
+                    # Render invoice template to HTML
+                    html_string = render_to_string(
+                        "invoice.html",
+                        {
+                            "order": order,
+                            "business": settings.BUSINESS_INFO,
+                        },
+                    )
+
+                    # Generate PDF with optimized settings
+                    # Use persistent temp file to avoid premature deletion
+                    with tempfile.NamedTemporaryFile(
+                        delete=False, suffix=".pdf", mode="wb"
+                    ) as tmp_pdf:
+                        tmp_pdf_path = tmp_pdf.name
+
+                    try:
+                        # Generate PDF with font configuration reuse and optimizations
+                        # Using optimized settings based on batch size
+                        HTML(
+                            string=html_string,
+                            base_url=request.build_absolute_uri("/"),
+                        ).write_pdf(
+                            target=tmp_pdf_path,
+                            font_config=font_config,  # Reuse font config
+                            optimize_images=True,  # Optimize images
+                            jpeg_quality=jpeg_quality,  # Optimized quality
+                            dpi=pdf_dpi,  # Optimized DPI
+                            cache=cache_dir,  # Use font cache
+                        )
+
+                        # Validate PDF was created and has content
+                        if not os.path.exists(tmp_pdf_path):
+                            raise FileNotFoundError(
+                                f"PDF file was not created for order {order.id}"
+                            )
+
+                        file_size = os.path.getsize(tmp_pdf_path)
+                        if file_size == 0:
+                            raise ValueError(f"PDF file is empty for order {order.id}")
+
+                        # Upload to S3 with retry logic
+                        s3_key = f"invoices/order_{order.id}.pdf"
+                        upload_invoice_to_s3(tmp_pdf_path, s3_key, max_retries=3)
+
+                        # Save the S3 key to the order
+                        order.invoice_link = s3_key
+                        order.save(update_fields=["invoice_link"])
+
+                        success_count += 1
+
+                    finally:
+                        # Always clean up temp file
+                        if os.path.exists(tmp_pdf_path):
+                            try:
+                                os.unlink(tmp_pdf_path)
+                            except OSError:
+                                # Suppress warning messages - only show errors
+                                pass
+
+                    # Clean up HTML string immediately
+                    del html_string
+
+            except Exception as e:
+                error_count += 1
+                error_msg = f"Order {order.id}: {str(e)}"
+                errors.append(error_msg)
+                logger.error(error_msg, exc_info=True)
+                # Continue processing other orders even if one fails
+                continue
+
+        # Clean up chunk data and force garbage collection
+        del chunk_orders
+        gc.collect()
+
+    # Prepare user feedback message
+    elapsed_time = time.time() - start_time
+
+    if success_count == order_count:
+        message = (
+            f"Successfully created and uploaded {success_count} invoice(s) "
+            f"in {elapsed_time:.1f} seconds."
+        )
+        logger.info(message)
+        modeladmin.message_user(request, message, level=messages.SUCCESS)
+    elif success_count > 0:
+        message = (
+            f"Created and uploaded {success_count} invoice(s) successfully, "
+            f"but {error_count} failed. "
+            f"Time taken: {elapsed_time:.1f} seconds."
+        )
+        logger.info(message)
+        modeladmin.message_user(request, message, level=messages.WARNING)
+
+        # Show detailed errors (limit to first 10 to avoid overwhelming UI)
+        error_display = "\n".join(errors[:10])
+        if len(errors) > 10:
+            error_display += f"\n... and {len(errors) - 10} more errors."
+        modeladmin.message_user(
+            request,
+            f"Errors:\n{error_display}",
+            level=messages.ERROR,
+        )
+    else:
+        message = (
+            f"Failed to create any invoices. {error_count} error(s) occurred. "
+            f"Time taken: {elapsed_time:.1f} seconds."
+        )
+        logger.error(message)
+        modeladmin.message_user(request, message, level=messages.ERROR)
+
+        # Show all errors if all failed
+        error_display = "\n".join(errors[:20])
+        if len(errors) > 20:
+            error_display += f"\n... and {len(errors) - 20} more errors."
+        modeladmin.message_user(
+            request,
+            f"Errors:\n{error_display}",
+            level=messages.ERROR,
+        )
 
 
 @admin.action(description="Mark selected orders as Pending")
@@ -527,6 +761,29 @@ class OrderAdmin(admin.ModelAdmin):
 
     class Media:
         js = ("admin/js/order_filter_cleaner.js",)
+
+    # Class-level font configuration cache (reused across all PDF exports)
+    # This significantly reduces font processing time
+    _font_config = None
+    _font_cache_dir = None
+
+    @classmethod
+    def _get_font_config(cls):
+        """Get or create shared FontConfiguration with persistent cache."""
+        if cls._font_config is None:
+            import logging
+            from pathlib import Path
+
+            from weasyprint.text.fonts import FontConfiguration
+
+            # Setup persistent font cache directory
+            cache_dir = Path("/tmp/weasyprint_cache")
+            cache_dir.mkdir(parents=True, exist_ok=True)
+
+            cls._font_cache_dir = cache_dir
+            cls._font_config = FontConfiguration()
+
+        return cls._font_config, cls._font_cache_dir
 
     actions = [
         create_and_upload_invoice,
@@ -955,21 +1212,458 @@ class OrderAdmin(admin.ModelAdmin):
     get_invoice.short_description = "Invoice"
 
     def export_orders_pdf(self, request, queryset):
+        """
+        Export selected orders to PDF with optimized memory usage and performance.
+
+        Optimizations:
+        - Efficient database queries with select_related/prefetch_related
+        - Font caching to avoid repeated font subsetting
+        - Chunked processing for large datasets (reduces memory usage)
+        - Streaming response for very large exports
+        - Memory-efficient PDF generation settings
+        """
+        import logging
+        import time
+
+        start_time = time.time()
+
+        # Validate queryset
+        order_count = queryset.count()
+        if order_count == 0:
+            self.message_user(request, "No orders selected.", level=messages.WARNING)
+            return None
+
+        # Estimate processing time (roughly 1-2 seconds per order for PDF export)
+        estimated_time = order_count * 0.8
+        logger = logging.getLogger(__name__)
+        logger.info(
+            f"Starting PDF creation for {order_count} order(s), "
+            f"approximate time {estimated_time:.1f} seconds"
+        )
+
+        try:
+            # Check for PDF merger availability
+            try:
+                from pypdf import PdfReader, PdfWriter
+
+                pdf_merger_available = True
+            except ImportError:
+                pdf_merger_available = False
+                if order_count > 50:
+                    messages.warning(
+                        request,
+                        "Warning: pypdf not installed. Large exports may be slow. "
+                        "Install pypdf for better performance: pip install pypdf",
+                    )
+
+            # Optimize queryset to avoid N+1 queries
+            from django.db.models import Prefetch
+
+            optimized_queryset = (
+                queryset.select_related("customer", "customer__profile")
+                .prefetch_related(
+                    Prefetch(
+                        "items",
+                        queryset=OrderItem.objects.select_related("product"),
+                        to_attr="prefetched_items",
+                    )
+                )
+                .order_by("delivery_date", "id")
+            )
+
+            # Get shared font configuration
+            font_config, cache_dir = self._get_font_config()
+
+            # Generate filename
+            filename = self._generate_pdf_filename(queryset, order_count)
+
+            # Generate PDF
+            response = self._generate_pdf_by_strategy(
+                optimized_queryset=optimized_queryset,
+                order_count=order_count,
+                font_config=font_config,
+                cache_dir=cache_dir,
+                filename=filename,
+                request=request,
+                pdf_merger_available=pdf_merger_available,
+            )
+
+            # Show success message - stored in session, will show when user returns to admin page
+            # elapsed_time = time.time() - start_time
+            # self._show_pdf_success_message(request, order_count, elapsed_time)
+
+            return response
+
+        except Exception as e:
+            # Log error and show user-friendly message
+            import logging
+
+            logger = logging.getLogger(__name__)
+            elapsed_time = time.time() - start_time
+            error_message = (
+                f"Failed to create PDF after {elapsed_time:.1f} seconds: {str(e)}"
+            )
+            logger.error(error_message, exc_info=True)
+            self.message_user(
+                request,
+                error_message,
+                level=messages.ERROR,
+            )
+            return None
+
+    def _generate_pdf_filename(self, queryset, order_count):
+        """Generate appropriate filename for PDF export."""
+        delivery_dates = queryset.values_list("delivery_date", flat=True).distinct()
+        if len(delivery_dates) == 1:
+            return f"{delivery_dates[0].strftime('%d-%b-%Y')}_Orders.pdf"
+        return f"Orders_{order_count}_items.pdf"
+
+    def _get_chunk_size(self, order_count):
+        """Calculate optimal chunk size based on order count."""
+        if order_count <= 50:
+            return 50
+        elif order_count <= 200:
+            return 100
+        elif order_count <= 500:
+            return 150
+        else:
+            return 200
+
+    def _generate_pdf_by_strategy(
+        self,
+        optimized_queryset,
+        order_count,
+        font_config,
+        cache_dir,
+        filename,
+        request,
+        pdf_merger_available,
+    ):
+        """
+        Select and execute the appropriate PDF generation strategy.
+
+        Returns:
+            HttpResponse or StreamingHttpResponse
+        """
+        STREAMING_THRESHOLD = 100
+        chunk_size = self._get_chunk_size(order_count)
+
+        # Strategy 1: Single PDF (no merger available or small dataset)
+        if not pdf_merger_available or order_count <= chunk_size:
+            return self._generate_single_pdf(
+                optimized_queryset, font_config, cache_dir, filename, request
+            )
+
+        # Strategy 2: Chunked and merged (medium datasets)
+        if order_count <= STREAMING_THRESHOLD:
+            return self._generate_chunked_pdf(
+                optimized_queryset,
+                order_count,
+                chunk_size,
+                font_config,
+                cache_dir,
+                filename,
+                request,
+            )
+
+        # Strategy 3: Streaming (large datasets)
+        return self._generate_streaming_pdf(
+            optimized_queryset,
+            order_count,
+            chunk_size,
+            font_config,
+            cache_dir,
+            filename,
+            request,
+        )
+
+    def _show_pdf_success_message(self, request, order_count, elapsed_time):
+        """Display success message after PDF generation."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+        message = f"Successfully created PDF with {order_count} order(s) in {elapsed_time:.1f} seconds."
+        logger.info(message)
+        # Store message in session - message_user handles this, but ensure it's called
+        self.message_user(
+            request,
+            message,
+            level=messages.SUCCESS,
+        )
+
+    def _generate_single_pdf(self, queryset, font_config, cache_dir, filename, request):
+        """Generate PDF for small exports - fastest method."""
+        import gc
+
         from weasyprint import HTML
 
-        html_string = render_to_string("orders.html", {"orders": queryset})
+        # Convert to list to evaluate prefetch
+        orders_list = list(queryset)
 
-        # Generate PDF from HTML
-        with tempfile.NamedTemporaryFile(delete=True) as output:
-            HTML(string=html_string).write_pdf(target=output.name)
-            output.seek(0)
+        # Pre-process data
+        for order in orders_list:
+            if hasattr(order, "prefetched_items"):
+                order._items_cache = order.prefetched_items
+            order._cached_total_price = order.total_price
 
-            response = HttpResponse(output.read(), content_type="application/pdf")
-            delivery_date = date.today()
-            response["Content-Disposition"] = (
-                f'attachment; filename="{delivery_date.strftime("%d-%b-%Y")}_Orders.pdf"'
+        html_string = render_to_string("orders.html", {"orders": orders_list})
+
+        with tempfile.NamedTemporaryFile(delete=True, suffix=".pdf") as output:
+            HTML(
+                string=html_string,
+                base_url=request.build_absolute_uri("/"),
+            ).write_pdf(
+                target=output.name,
+                font_config=font_config,
+                optimize_images=True,
+                jpeg_quality=85,
+                dpi=150,
+                cache=cache_dir,
             )
+
+            gc.collect()
+            output.seek(0)
+            pdf_content = output.read()
+
+            response = HttpResponse(pdf_content, content_type="application/pdf")
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+            del pdf_content, html_string, orders_list
+            gc.collect()
+
             return response
+
+    def _generate_chunked_pdf(
+        self,
+        queryset,
+        order_count,
+        chunk_size,
+        font_config,
+        cache_dir,
+        filename,
+        request,
+    ):
+        """Generate PDF in chunks and merge - memory efficient for medium exports."""
+        import gc
+        import os
+        import shutil
+
+        from pypdf import PdfReader, PdfWriter
+        from weasyprint import HTML
+
+        # Create temporary directory for chunk PDFs
+        temp_dir = tempfile.mkdtemp()
+        chunk_files = []
+
+        try:
+            # Optimize PDF settings for very large exports
+            # Reduce DPI and quality for faster processing on large exports
+            use_fast_mode = order_count > 500
+            pdf_dpi = 120 if use_fast_mode else 150
+            jpeg_quality = 75 if use_fast_mode else 85
+
+            # Process orders in chunks
+            total_chunks = (order_count + chunk_size - 1) // chunk_size
+            for chunk_idx, i in enumerate(range(0, order_count, chunk_size), 1):
+                chunk_orders = queryset[i : i + chunk_size]
+                orders_list = list(chunk_orders)
+
+                # Pre-process chunk data
+                for order in orders_list:
+                    if hasattr(order, "prefetched_items"):
+                        order._items_cache = order.prefetched_items
+                    order._cached_total_price = order.total_price
+
+                # Generate HTML for chunk
+                html_string = render_to_string("orders.html", {"orders": orders_list})
+
+                # Generate PDF chunk with optimized settings
+                chunk_file = os.path.join(temp_dir, f"chunk_{i}.pdf")
+                HTML(
+                    string=html_string,
+                    base_url=request.build_absolute_uri("/"),
+                ).write_pdf(
+                    target=chunk_file,
+                    font_config=font_config,
+                    optimize_images=True,
+                    jpeg_quality=jpeg_quality,
+                    dpi=pdf_dpi,
+                    cache=cache_dir,
+                )
+
+                chunk_files.append(chunk_file)
+
+                # Clean up chunk data immediately
+                del html_string, orders_list
+                gc.collect()
+
+            # Merge all PDF chunks using PdfWriter (pypdf 5.0+)
+            # Optimize merging: read and append in one pass
+            writer = PdfWriter()
+            for chunk_file in chunk_files:
+                with open(chunk_file, "rb") as f:
+                    reader = PdfReader(f)
+                    writer.append(reader)
+                    # Close file immediately to free memory
+                # Delete chunk file immediately after reading to save disk space
+                if os.path.exists(chunk_file):
+                    os.unlink(chunk_file)
+
+            # Write merged PDF to temporary file
+            with tempfile.NamedTemporaryFile(
+                delete=False, suffix=".pdf", mode="wb"
+            ) as merged_output:
+                writer.write(merged_output)
+                merged_output.flush()  # Ensure data is written
+
+                # Read merged PDF
+                with open(merged_output.name, "rb") as f:
+                    pdf_content = f.read()
+
+                # Clean up (chunk files already deleted during merge)
+                os.unlink(merged_output.name)
+
+            response = HttpResponse(pdf_content, content_type="application/pdf")
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+            del pdf_content
+            gc.collect()
+
+            return response
+
+        finally:
+            # Cleanup temp directory
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def _generate_streaming_pdf(
+        self,
+        queryset,
+        order_count,
+        chunk_size,
+        font_config,
+        cache_dir,
+        filename,
+        request,
+    ):
+        """Generate and stream PDF chunks - most memory efficient for large exports."""
+        import gc
+        import os
+        import shutil
+
+        from django.http import StreamingHttpResponse
+        from pypdf import PdfReader, PdfWriter
+        from weasyprint import HTML
+
+        def pdf_generator():
+            """Generator that yields PDF chunks."""
+            # Optimize PDF settings for very large exports
+            use_fast_mode = order_count > 500
+            pdf_dpi = 120 if use_fast_mode else 150
+            jpeg_quality = 75 if use_fast_mode else 85
+
+            temp_dir = tempfile.mkdtemp()
+            chunk_files = []
+
+            try:
+                # Process first chunk
+                first_chunk = queryset[0:chunk_size]
+                orders_list = list(first_chunk)
+
+                for order in orders_list:
+                    if hasattr(order, "prefetched_items"):
+                        order._items_cache = order.prefetched_items
+                    order._cached_total_price = order.total_price
+
+                html_string = render_to_string("orders.html", {"orders": orders_list})
+                chunk_file = os.path.join(temp_dir, f"chunk_0.pdf")
+
+                HTML(
+                    string=html_string,
+                    base_url=request.build_absolute_uri("/"),
+                ).write_pdf(
+                    target=chunk_file,
+                    font_config=font_config,
+                    optimize_images=True,
+                    jpeg_quality=jpeg_quality,
+                    dpi=pdf_dpi,
+                    cache=cache_dir,
+                )
+
+                chunk_files.append(chunk_file)
+                del html_string, orders_list
+                gc.collect()
+
+                # Process remaining chunks
+                for i in range(chunk_size, order_count, chunk_size):
+                    chunk_orders = queryset[i : i + chunk_size]
+                    orders_list = list(chunk_orders)
+
+                    for order in orders_list:
+                        if hasattr(order, "prefetched_items"):
+                            order._items_cache = order.prefetched_items
+                        order._cached_total_price = order.total_price
+
+                    html_string = render_to_string(
+                        "orders.html", {"orders": orders_list}
+                    )
+                    chunk_file = os.path.join(temp_dir, f"chunk_{i}.pdf")
+
+                    HTML(
+                        string=html_string,
+                        base_url=request.build_absolute_uri("/"),
+                    ).write_pdf(
+                        target=chunk_file,
+                        font_config=font_config,
+                        optimize_images=True,
+                        jpeg_quality=jpeg_quality,
+                        dpi=pdf_dpi,
+                        cache=cache_dir,
+                    )
+
+                    chunk_files.append(chunk_file)
+                    del html_string, orders_list
+                    gc.collect()
+
+                # Merge and stream using PdfWriter (pypdf 5.0+)
+                # Optimize merging: read and append in one pass, delete immediately
+                writer = PdfWriter()
+                for chunk_file in chunk_files:
+                    with open(chunk_file, "rb") as f:
+                        reader = PdfReader(f)
+                        writer.append(reader)
+                    # Delete chunk file immediately after reading to save disk space
+                    if os.path.exists(chunk_file):
+                        os.unlink(chunk_file)
+
+                with tempfile.NamedTemporaryFile(
+                    delete=False, suffix=".pdf", mode="wb"
+                ) as merged_output:
+                    writer.write(merged_output)
+                    merged_output.flush()  # Ensure data is written
+
+                    # Stream the merged PDF in chunks
+                    with open(merged_output.name, "rb") as f:
+                        while True:
+                            chunk = f.read(8192)  # 8KB chunks
+                            if not chunk:
+                                break
+                            yield chunk
+
+                    os.unlink(merged_output.name)
+
+            finally:
+                # Cleanup (chunk files already deleted during merge)
+                if os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+
+        response = StreamingHttpResponse(
+            pdf_generator(), content_type="application/pdf"
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response["Content-Type"] = "application/pdf"
+
+        return response
 
     export_orders_pdf.short_description = "Export Selected Orders to PDF"
 

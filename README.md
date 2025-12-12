@@ -17,8 +17,10 @@ A comprehensive, enterprise-grade food delivery platform built with modern techn
 - [API Documentation](#api-documentation)
 - [Security Features](#security-features)
 - [Backup & Recovery](#backup--recovery)
-- [Deployment](#deployment)
+- [Deployment & CI/CD](#deployment--cicd)
 - [Development](#development)
+- [Testing](#testing)
+- [Monitoring & Logging](#monitoring--logging)
 - [Contributing](#contributing)
 - [License](#license)
 - [Support](#support)
@@ -71,13 +73,17 @@ Landars Food Platform is a full-stack food delivery application designed for res
 - **Database Migrations** with conflict resolution
 - **Performance Optimization** with proper indexing
 
-### 🚀 DevOps & Deployment
+### 🚀 DevOps & CI/CD
 
-- **Docker Containerization** with multi-stage builds
+- **GitHub Actions Pipeline** - Modular, security-first CI/CD
+- **Automatic Rollback** - Reverts on deployment failure
+- **Security Scanning** - Dependency, secret, and container scanning
+- **Docker Containerization** - Multi-platform builds with caching
 - **Docker Compose** orchestration
 - **Nginx Reverse Proxy** with SSL support
+- **Automated Testing** - Unit, integration, and build tests
+- **Health Monitoring** - Comprehensive post-deployment checks
 - **Environment Configuration** with secure secrets management
-- **CI/CD Ready** with automated deployment scripts
 
 ## 🏗️ Architecture
 
@@ -353,8 +359,10 @@ DELETE /api/wishlist/remove/{id}/ # Remove from wishlist
 
 ### Automated Backup System
 
+The platform includes a comprehensive backup system with **automatic S3 cloud storage**:
+
 ```bash
-# Create backup
+# Create backup (automatically uploads to S3 if configured)
 ./management/pg_backup.sh backup
 
 # Create comprehensive backup (SQL + PITR)
@@ -367,6 +375,33 @@ DELETE /api/wishlist/remove/{id}/ # Remove from wishlist
 ./management/pg_backup.sh restore
 ```
 
+### 🔄 AWS S3 Backup (Built-in)
+
+Your backup system **already has S3 integration**! Just configure these in your `.env` file:
+
+```bash
+# AWS S3 Configuration
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
+AWS_STORAGE_BUCKET_NAME=your-backup-bucket
+AWS_S3_REGION_NAME=us-east-1
+```
+
+**Features:**
+
+- ✅ Automatic upload on every backup
+- ✅ Works in CI/CD pipeline
+- ✅ Encrypted and secure
+- ✅ Version history maintained
+- ✅ Disaster recovery ready
+
+**Setup:**
+
+1. Install AWS CLI on server: `sudo apt install awscli -y`
+2. Add credentials to `.env` file (see above)
+3. Create S3 bucket: `aws s3 mb s3://your-bucket-name`
+4. Backups automatically upload to S3 on every backup operation
+
 ### Point-in-Time Recovery (PITR)
 
 ```bash
@@ -374,32 +409,235 @@ DELETE /api/wishlist/remove/{id}/ # Remove from wishlist
 ./management/pg_backup.sh pitr-restore --target-time '2024-01-15 14:30:00'
 ```
 
+### Restore from S3
+
+```bash
+# Download backup from S3
+aws s3 cp s3://your-bucket/backups/postgresql/backup_20240112_143022/ \
+  ./db_backups/backup_20240112_143022/ --recursive
+
+# Restore downloaded backup
+./management/rollback.sh --backup backup_20240112_143022
+```
+
 ### Backup Features
 
 - **Automated Daily Backups**: Scheduled backup creation
-- **S3 Integration**: Cloud storage for backup redundancy
+- **S3 Integration**: Automatic cloud backup to AWS S3 (already built-in!)
 - **WAL Archiving**: Continuous transaction log archiving
 - **Backup Verification**: Automated backup integrity checks
 - **Cleanup Automation**: Intelligent cleanup of old backups
+- **Off-Site Storage**: Every backup automatically uploaded to S3
+- **Disaster Recovery**: Restore from S3 even if server is lost
 
-## 🚀 Deployment
+## 🚀 Deployment & CI/CD
 
-### Production Deployment
+### Modern CI/CD Pipeline
+
+The platform features a comprehensive, modular CI/CD pipeline built with GitHub Actions, emphasizing security, reliability, and automatic rollback capabilities.
+
+#### Pipeline Architecture
+
+```
+.github/
+├── workflows/
+│   ├── ci.yml              # Continuous Integration (Pull Requests)
+│   ├── cd.yml              # Continuous Deployment (Main Branch)
+│   ├── security-scan.yml   # Security Scanning (Reusable)
+│   └── rollback.yml        # Manual Rollback
+└── actions/
+    ├── setup-backend/      # Backend environment setup
+    ├── setup-frontend/     # Frontend environment setup
+    └── docker-build-push/  # Docker build and push operations
+```
+
+### CI Pipeline (Pull Requests)
+
+Automatically runs on all pull requests to ensure code quality:
+
+**Workflow Jobs:**
+
+1. **Code Quality** - Linting (ESLint, flake8, black) and TypeScript checks
+2. **Security Scan** - Dependency vulnerabilities, secret detection, container scanning
+3. **Backend Tests** - Django tests with PostgreSQL, 70% coverage threshold
+4. **Frontend Tests** - Jest tests with coverage, 70% coverage threshold
+5. **Build Test** - Verify Docker images build and start successfully
+
+**Key Features:**
+
+- ✅ Parallel execution for faster feedback
+- ✅ Comprehensive test coverage requirements
+- ✅ Security vulnerability blocking
+- ✅ Docker layer caching for speed
+
+### CD Pipeline (Main Branch)
+
+Automatic deployment to production with safety checks:
+
+**Workflow Jobs:**
+
+1. **Security Check** - Re-run security scans before deployment
+2. **Build & Push** - Build and push multi-platform Docker images
+3. **Pre-Deployment Backup** - Create database backup before deployment
+4. **Deploy** - Pull images, update containers, run migrations
+5. **Health Check** - Verify all services are healthy
+6. **Automatic Rollback** - Revert on failure (if health checks fail)
+7. **Cleanup** - Remove old Docker images
+
+**Key Features:**
+
+- ✅ Automatic rollback on deployment failure
+- ✅ Pre and post-deployment backups **with S3 upload**
+- ✅ Comprehensive health checks
+- ✅ Zero-downtime deployment
+- ✅ SHA-based image tagging for rollback capability
+- ✅ Off-site backup storage for disaster recovery
+
+### Security Features
+
+The CI/CD pipeline includes multiple security layers:
+
+**Dependency Scanning:**
+
+- `npm audit` for frontend dependencies
+- `safety` for Python dependencies
+- Fails on HIGH/CRITICAL vulnerabilities
+
+**Secret Detection:**
+
+- Gitleaks scans for leaked credentials
+- Prevents accidental secret commits
+
+**Container Scanning:**
+
+- Trivy scans Docker images
+- SARIF reports to GitHub Security tab
+
+**Code Security:**
+
+- Bandit for Python security issues
+- ESLint security rules for JavaScript
+
+### Manual Rollback
+
+Emergency rollback available via GitHub Actions:
+
+```bash
+# Via GitHub Actions UI:
+# 1. Go to Actions → Rollback workflow
+# 2. Click "Run workflow"
+# 3. Select options:
+#    - Target SHA (optional, defaults to previous)
+#    - Restore database (default: yes)
+#    - Backup name (optional, defaults to latest)
+```
+
+**Rollback Features:**
+
+- Safety backup before rollback
+- Code rollback to specific commit
+- Database restoration from backup
+- Health verification after rollback
+
+### Local Deployment Scripts
+
+For manual deployments or local testing:
 
 ```bash
 # Deploy to production
 ./management/deploy.sh
 
-# Check deployment status
-docker compose ps
-docker compose logs
+# Run health checks
+./management/health_check.sh
+
+# Manual rollback
+./management/rollback.sh
+
+# Rollback to specific commit
+./management/rollback.sh --sha abc123def
+
+# Rollback without database restore
+./management/rollback.sh --no-db-restore
 ```
 
-### Environment-Specific Configuration
+### Required GitHub Secrets
 
-- **Development**: Local development with hot reloading
-- **Staging**: Pre-production testing environment
-- **Production**: Live environment with security hardening
+Configure these secrets in your GitHub repository:
+
+```
+DOCKERHUB_USERNAME          # Docker Hub username
+DOCKERHUB_TOKEN            # Docker Hub access token
+SERVER_HOST                # Production server IP/hostname
+SERVER_USERNAME            # SSH username
+SERVER_SSH_KEY             # Private SSH key
+SERVER_SSH_PASSPHRASE      # SSH key passphrase (if any)
+SERVER_PORT                # SSH port (default: 22)
+PROJECT_PATH               # Absolute path to project on server
+CODECOV_TOKEN              # Codecov token (optional)
+```
+
+### Required Server Configuration
+
+On your production server, add to `.env` file:
+
+```bash
+# AWS S3 for automatic backup uploads
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
+AWS_STORAGE_BUCKET_NAME=your-backup-bucket
+AWS_S3_REGION_NAME=us-east-1
+
+# Install AWS CLI (if not already installed)
+sudo apt update && sudo apt install awscli -y
+```
+
+**Note:** Once configured, every backup (pre-deployment, post-deployment, manual) automatically uploads to S3.
+
+### Deployment Workflow
+
+**Automatic Deployment:**
+
+1. Create a pull request with your changes
+2. CI pipeline validates code quality and security
+3. Merge to main branch after approval
+4. CD pipeline automatically deploys to production
+5. Health checks verify deployment success
+6. Automatic rollback if any issues detected
+
+**Manual Deployment:**
+
+```bash
+# Connect to server
+ssh user@your-server
+
+# Navigate to project
+cd /path/to/project
+
+# Run deployment script
+./management/deploy.sh
+```
+
+### Monitoring Deployment
+
+**GitHub Actions:**
+
+- View deployment status in Actions tab
+- Check detailed logs for each step
+- Review security scan results
+
+**Server-side:**
+
+```bash
+# Check service status
+docker compose ps
+
+# View logs
+docker compose logs -f backend
+docker compose logs -f frontend-marketplace
+
+# Run health checks
+./management/health_check.sh
+```
 
 ### SSL Configuration
 
@@ -408,7 +646,20 @@ docker compose logs
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout nginx/certs/landarsfood.key \
   -out nginx/certs/landarsfood.crt
+
+# Or use Let's Encrypt (recommended)
+certbot certonly --standalone -d your-domain.com
 ```
+
+### Deployment Best Practices
+
+- ✅ Always test in a feature branch first
+- ✅ Ensure all tests pass before merging
+- ✅ Review security scan results
+- ✅ Monitor deployment logs
+- ✅ Verify health checks after deployment
+- ✅ Keep backup retention policy up to date
+- ✅ Document any manual steps required
 
 ## 🛠️ Development
 
