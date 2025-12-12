@@ -178,34 +178,52 @@ load_env
 
 # Try to detect PostgreSQL container name from docker-compose first
 # This handles cases where container name depends on project directory
-if [[ -z "$POSTGRES_CONTAINER" ]] && [[ -z "$POSTGRES_HOST" ]]; then
+# Even if POSTGRES_CONTAINER is set, we'll verify it exists and auto-detect if needed
+detect_postgres_container() {
+    # First, verify if the configured container exists and is running
+    if [[ -n "$POSTGRES_CONTAINER" ]] && docker ps --format '{{.Names}}' | grep -q "^${POSTGRES_CONTAINER}\$"; then
+        log_info "Using configured PostgreSQL container: $POSTGRES_CONTAINER"
+        return 0
+    fi
+    
+    # If configured container doesn't exist or isn't running, try to detect it
+    if [[ -n "$POSTGRES_CONTAINER" ]]; then
+        log_info "Configured container '${POSTGRES_CONTAINER}' not found or not running, attempting auto-detection..."
+    fi
+    
     # Try docker-compose first (most reliable)
     if command -v docker-compose &> /dev/null; then
         detected_container=$(docker-compose ps postgres --format "{{.Name}}" 2>/dev/null | head -1)
-        if [[ -n "$detected_container" ]]; then
+        if [[ -n "$detected_container" ]] && docker ps --format '{{.Names}}' | grep -q "^${detected_container}\$"; then
             POSTGRES_CONTAINER="$detected_container"
             log_info "Detected PostgreSQL container from docker-compose: $POSTGRES_CONTAINER"
+            return 0
         fi
     fi
     
     # Fallback: try docker compose (v2)
-    if [[ -z "$POSTGRES_CONTAINER" ]] && command -v docker &> /dev/null; then
+    if command -v docker &> /dev/null; then
         detected_container=$(docker compose ps postgres --format "{{.Name}}" 2>/dev/null | head -1)
-        if [[ -n "$detected_container" ]]; then
+        if [[ -n "$detected_container" ]] && docker ps --format '{{.Names}}' | grep -q "^${detected_container}\$"; then
             POSTGRES_CONTAINER="$detected_container"
             log_info "Detected PostgreSQL container from docker compose: $POSTGRES_CONTAINER"
+            return 0
         fi
     fi
     
     # Last resort: try to find any postgres container
-    if [[ -z "$POSTGRES_CONTAINER" ]]; then
-        detected_container=$(docker ps --format '{{.Names}}' | grep -i postgres | head -1)
-        if [[ -n "$detected_container" ]]; then
-            POSTGRES_CONTAINER="$detected_container"
-            log_info "Detected PostgreSQL container from running containers: $POSTGRES_CONTAINER"
-        fi
+    detected_container=$(docker ps --format '{{.Names}}' | grep -i postgres | head -1)
+    if [[ -n "$detected_container" ]]; then
+        POSTGRES_CONTAINER="$detected_container"
+        log_info "Detected PostgreSQL container from running containers: $POSTGRES_CONTAINER"
+        return 0
     fi
-fi
+    
+    return 1
+}
+
+# Detect or verify PostgreSQL container
+detect_postgres_container
 
 # Normalize postgres container/host naming to match docker-compose on server
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-${POSTGRES_HOST:-landars-postgres-1}}"
