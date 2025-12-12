@@ -521,8 +521,8 @@ def create_and_upload_invoice(modeladmin, request, queryset):
                         s3_key = f"invoices/order_{order.id}.pdf"
                         upload_invoice_to_s3(tmp_pdf_path, s3_key, max_retries=3)
 
-            # Save the S3 key to the order
-            order.invoice_link = s3_key
+                        # Save the S3 key to the order
+                        order.invoice_link = s3_key
                         order.save(update_fields=["invoice_link"])
 
                         success_count += 1
@@ -574,7 +574,7 @@ def create_and_upload_invoice(modeladmin, request, queryset):
         error_display = "\n".join(errors[:10])
         if len(errors) > 10:
             error_display += f"\n... and {len(errors) - 10} more errors."
-    modeladmin.message_user(
+        modeladmin.message_user(
             request,
             f"Errors:\n{error_display}",
             level=messages.ERROR,
@@ -595,7 +595,7 @@ def create_and_upload_invoice(modeladmin, request, queryset):
             request,
             f"Errors:\n{error_display}",
             level=messages.ERROR,
-    )
+        )
 
 
 @admin.action(description="Mark selected orders as Pending")
@@ -1244,11 +1244,11 @@ class OrderAdmin(admin.ModelAdmin):
 
         try:
             # Check for PDF merger availability
-        try:
-            from pypdf import PdfReader, PdfWriter
+            try:
+                from pypdf import PdfReader, PdfWriter
 
                 pdf_merger_available = True
-        except ImportError:
+            except ImportError:
                 pdf_merger_available = False
                 if order_count > 50:
                     messages.warning(
@@ -1257,25 +1257,25 @@ class OrderAdmin(admin.ModelAdmin):
                         "Install pypdf for better performance: pip install pypdf",
                     )
 
-        # Optimize queryset to avoid N+1 queries
-        from django.db.models import Prefetch
+            # Optimize queryset to avoid N+1 queries
+            from django.db.models import Prefetch
 
-        optimized_queryset = (
-            queryset.select_related("customer", "customer__profile")
-            .prefetch_related(
-                Prefetch(
-                    "items",
-                    queryset=OrderItem.objects.select_related("product"),
-                    to_attr="prefetched_items",
+            optimized_queryset = (
+                queryset.select_related("customer", "customer__profile")
+                .prefetch_related(
+                    Prefetch(
+                        "items",
+                        queryset=OrderItem.objects.select_related("product"),
+                        to_attr="prefetched_items",
+                    )
                 )
+                .order_by("delivery_date", "id")
             )
-            .order_by("delivery_date", "id")
-        )
 
             # Get shared font configuration
-        font_config, cache_dir = self._get_font_config()
+            font_config, cache_dir = self._get_font_config()
 
-        # Generate filename
+            # Generate filename
             filename = self._generate_pdf_filename(queryset, order_count)
 
             # Generate PDF
@@ -1368,15 +1368,15 @@ class OrderAdmin(admin.ModelAdmin):
             )
 
         # Strategy 3: Streaming (large datasets)
-            return self._generate_streaming_pdf(
-                optimized_queryset,
-                order_count,
+        return self._generate_streaming_pdf(
+            optimized_queryset,
+            order_count,
             chunk_size,
-                font_config,
-                cache_dir,
-                filename,
-                request,
-            )
+            font_config,
+            cache_dir,
+            filename,
+            request,
+        )
 
     def _show_pdf_success_message(self, request, order_count, elapsed_time):
         """Display success message after PDF generation."""
