@@ -370,8 +370,8 @@ def upload_invoice_to_s3(file_path, s3_key, max_retries=3):
     last_exception = None
     for attempt in range(1, max_retries + 1):
         try:
-    s3_client.upload_file(file_path, bucket, s3_key)
-    return s3_key
+            s3_client.upload_file(file_path, bucket, s3_key)
+            return s3_key
         except Exception as e:
             last_exception = e
             if attempt < max_retries:
@@ -477,13 +477,13 @@ def create_and_upload_invoice(modeladmin, request, queryset):
                 # Use database transaction for atomicity
                 with transaction.atomic():
                     # Render invoice template to HTML
-        html_string = render_to_string(
-                        "invoice.html",
-                        {
-                            "order": order,
-                            "business": settings.BUSINESS_INFO,
-                        },
-        )
+                    html_string = render_to_string(
+                                    "invoice.html",
+                                    {
+                                        "order": order,
+                                        "business": settings.BUSINESS_INFO,
+                                    },
+                    )
 
                     # Generate PDF with optimized settings
                     # Use persistent temp file to avoid premature deletion
@@ -518,7 +518,7 @@ def create_and_upload_invoice(modeladmin, request, queryset):
                             raise ValueError(f"PDF file is empty for order {order.id}")
 
                         # Upload to S3 with retry logic
-            s3_key = f"invoices/order_{order.id}.pdf"
+                        s3_key = f"invoices/order_{order.id}.pdf"
                         upload_invoice_to_s3(tmp_pdf_path, s3_key, max_retries=3)
 
             # Save the S3 key to the order
