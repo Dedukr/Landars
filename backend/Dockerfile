@@ -95,7 +95,7 @@ COPY . .
 # COPY management/fix_identity_columns.py /tmp/fix_identity_columns.py
 
 # Copy migration script
-# COPY management/migrate_to_postgres.py /tmp/migrate_to_postgres.py
+COPY management/migrate_to_postgres.py /tmp/migrate_to_postgres.py
 
 # Collect static files
 RUN python manage.py collectstatic --noinput

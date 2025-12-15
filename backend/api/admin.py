@@ -967,6 +967,8 @@ class OrderAdmin(admin.ModelAdmin):
         items = order.items.all()
 
         if not order.delivery_fee_manual:
+            from shipping.service import ShippingService
+            
             # Sausage category name
             post_suitable_category = "Sausages and Marinated products"
             for item in items:
@@ -982,17 +984,11 @@ class OrderAdmin(admin.ModelAdmin):
                 if order.total_price > 220:
                     order.delivery_fee = 0
                 else:
+                    # Use Royal Mail pricing (same as cart)
                     total_weight = sum(item.quantity for item in items)
-                    if total_weight <= 2:
-                        order.delivery_fee = 5
-                    elif total_weight <= 10:
-                        order.delivery_fee = 8
-                    else:
-                        order.delivery_fee = 15
-                    # elif total_weight <= 20:
-                    #     delivery_fee = 15
-                    # else:
-                    #     delivery_fee = 25  # For > 20kg
+                    order.delivery_fee = ShippingService.get_delivery_fee_by_weight(
+                        float(total_weight)
+                    )
         order.save()
 
     def get_total_price(self, obj):

@@ -629,8 +629,12 @@ class OrderListView(APIView):
     def _calculate_delivery_type_and_fee(self, order):
         """
         Calculate delivery type and fee automatically based on cart contents.
-        Implements the same logic as OrderAdmin.save_related method.
+        Uses Royal Mail pricing for post-suitable items (same as cart).
         """
+        from decimal import Decimal
+
+        from shipping.service import ShippingService
+
         items = order.items.all()
 
         if not order.delivery_fee_manual:
@@ -647,22 +651,20 @@ class OrderListView(APIView):
                     break
 
             if all_products_are_sausages:
-                # ALL products are sausages, use post delivery
+                # ALL products are sausages, use post delivery with Royal Mail pricing
                 order.is_home_delivery = False
                 if order.total_price > 220:
-                    order.delivery_fee = 0
+                    order.delivery_fee = Decimal("0")
                 else:
-                    total_weight = sum(item.quantity for item in items)
-                    if total_weight <= 2:
-                        order.delivery_fee = 5
-                    elif total_weight <= 10:
-                        order.delivery_fee = 8
-                    else:
-                        order.delivery_fee = 15
+                    # Use Royal Mail pricing (same as cart)
+                    total_weight = float(sum(item.quantity for item in items))
+                    order.delivery_fee = ShippingService.get_delivery_fee_by_weight(
+                        total_weight
+                    )
             else:
                 # Mixed products or no sausages, use home delivery
                 order.is_home_delivery = True
-                order.delivery_fee = 10
+                order.delivery_fee = Decimal("10")
         order.save()
 
 

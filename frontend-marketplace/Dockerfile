@@ -14,6 +14,8 @@ ENV NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=$NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
 COPY package.json package-lock.json ./
 RUN npm ci --prefer-offline --no-audit --progress=false
 COPY . .
+# Clear Next.js cache to prevent stale Server Action errors
+RUN rm -rf .next
 RUN npm run build
 
 # Production image: use standalone output for minimal size

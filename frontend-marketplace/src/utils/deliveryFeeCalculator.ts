@@ -1,6 +1,7 @@
 /**
  * Delivery Fee Calculator
- * Implements the same logic as the Django admin OrderAdmin.save_related method
+ * Uses Royal Mail pricing for post-suitable items (same as backend cart and order logic)
+ * Royal Mail pricing: 0-5kg: £4.44, 5-10kg: £5.82, 10-20kg: £9.25, >20kg: no service
  */
 
 export interface CartProduct {
@@ -22,8 +23,46 @@ export interface DeliveryFeeCalculation {
 }
 
 /**
+ * Royal Mail delivery fee pricing map (matches backend ShippingService)
+ * Maps weight thresholds to delivery fees in GBP
+ */
+const ROYAL_MAIL_DELIVERY_FEE_BY_WEIGHT: Record<number, number> = {
+  5.0: 4.44, // 0-5kg: Medium Parcel 0-5kg
+  10.0: 5.82, // 5-10kg: Medium Parcel 5-10kg
+  20.0: 9.25, // 10-20kg: Delivery
+};
+
+/**
+ * Get Royal Mail delivery fee based on weight
+ * Matches backend ShippingService.get_delivery_fee_by_weight()
+ */
+function getRoyalMailDeliveryFeeByWeight(weight: number): number {
+  // Ensure minimum weight
+  weight = Math.max(weight, 0.1);
+
+  // If weight exceeds supported range, return 0 to signal no available option
+  if (weight > 20) {
+    return 0;
+  }
+
+  // Find the appropriate price tier
+  const thresholds = Object.keys(ROYAL_MAIL_DELIVERY_FEE_BY_WEIGHT)
+    .map(Number)
+    .sort((a, b) => a - b);
+
+  for (const threshold of thresholds) {
+    if (weight <= threshold) {
+      return ROYAL_MAIL_DELIVERY_FEE_BY_WEIGHT[threshold];
+    }
+  }
+
+  // Fallback should never be hit because >20kg is handled above
+  return 0;
+}
+
+/**
  * Calculate delivery fee based on cart contents
- * Implements the exact logic from Django admin OrderAdmin.save_related
+ * Uses Royal Mail pricing for post-suitable items (same as backend)
  */
 export function calculateDeliveryFee(
   products: CartProduct[]
@@ -50,7 +89,6 @@ export function calculateDeliveryFee(
   let dependsOnCourier = false;
   let overweight = false;
 
-  // Implement the exact logic from Django admin OrderAdmin.save_related
   // Check if ALL products are sausages (only sausages)
   let allProductsAreSausages = true;
   for (const product of products) {
@@ -67,7 +105,7 @@ export function calculateDeliveryFee(
   }
 
   if (allProductsAreSausages) {
-    // ALL products are sausages, use post delivery
+    // ALL products are sausages, use post delivery with Royal Mail pricing
     isHomeDelivery = false;
     hasSausages = true;
 
@@ -75,22 +113,27 @@ export function calculateDeliveryFee(
       deliveryFee = 0;
       reasoning = "Free delivery for sausages over £220";
     } else {
-      // Weight-based delivery fees for sausages
+      // Use Royal Mail weight-based delivery fees
       if (totalWeight > 20) {
         deliveryFee = 0;
         overweight = true;
         dependsOnCourier = true;
         reasoning =
           "We can ship sausage orders up to 20kg. Please split your order or contact us for assistance.";
-      } else if (totalWeight <= 2) {
-        deliveryFee = 5;
-        reasoning = `Sausages ≤2kg: £5 delivery fee`;
-      } else if (totalWeight <= 10) {
-        deliveryFee = 8;
-        reasoning = `Sausages ≤10kg: £8 delivery fee`;
       } else {
-        deliveryFee = 15;
-        reasoning = `Sausages >10kg: £15 delivery fee`;
+        deliveryFee = getRoyalMailDeliveryFeeByWeight(totalWeight);
+        // Format reasoning based on weight ranges
+        if (totalWeight <= 5) {
+          reasoning = `Sausages 0-5kg: £${deliveryFee.toFixed(2)} delivery fee`;
+        } else if (totalWeight <= 10) {
+          reasoning = `Sausages 5-10kg: £${deliveryFee.toFixed(
+            2
+          )} delivery fee`;
+        } else {
+          reasoning = `Sausages 10-20kg: £${deliveryFee.toFixed(
+            2
+          )} delivery fee`;
+        }
       }
     }
   } else {

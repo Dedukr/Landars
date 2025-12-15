@@ -640,8 +640,8 @@ export default function CartPage() {
 
                       {/* Total - Order Model Calculation: sum_price + delivery_fee - discount 
                           Based on Order.total_price = sum_price + delivery_fee - discount
-                          Admin logic: 
-                          - Sausages: is_home_delivery=False, weight-based fees (≤2kg=£5, ≤10kg=£8, >10kg=£15)
+                          Delivery fee logic: 
+                          - Sausages: is_home_delivery=False, Royal Mail pricing (0-5kg=£4.44, 5-10kg=£5.82, 10-20kg=£9.25)
                           - Other products: is_home_delivery=True, delivery_fee=£10
                           - Free delivery if total > £220
                       */}

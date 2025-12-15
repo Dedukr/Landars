@@ -76,3 +76,4 @@ backend/cache/
 cache/
 
 .github_*
+*.md

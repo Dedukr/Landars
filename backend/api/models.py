@@ -478,6 +478,7 @@ class Order(models.Model):
         """
         Calculate delivery fee and home delivery status based on order items.
         Returns a tuple (is_home_delivery, delivery_fee).
+        Uses Royal Mail pricing for post-suitable items (same as cart).
         """
         from decimal import Decimal
 
@@ -507,14 +508,12 @@ class Order(models.Model):
         if self.total_price > 220:
             return False, Decimal("0")  # Free delivery for high-value orders
 
-        # Calculate fee based on weight
+        # Calculate fee based on weight using Royal Mail pricing
+        from shipping.service import ShippingService
+        
         total_weight = sum(float(item.quantity) for item in items)
-        if total_weight <= 2:
-            return False, Decimal("5")
-        elif total_weight <= 10:
-            return False, Decimal("8")
-        else:
-            return False, Decimal("15")
+        delivery_fee = ShippingService.get_delivery_fee_by_weight(total_weight)
+        return False, delivery_fee
 
     def calculate_delivery_fee_and_home_status_from_items(self, items_data):
         """
@@ -575,13 +574,12 @@ class Order(models.Model):
         if total_price > Decimal("220"):
             return False, Decimal("0")
 
+        # Calculate fee based on weight using Royal Mail pricing
+        from shipping.service import ShippingService
+        
         total_weight = sum(float(q) for _, q in normalized)
-        if total_weight <= 2:
-            return False, Decimal("5")
-        elif total_weight <= 10:
-            return False, Decimal("8")
-        else:
-            return False, Decimal("15")
+        delivery_fee = ShippingService.get_delivery_fee_by_weight(total_weight)
+        return False, delivery_fee
 
     def update_delivery_fee_and_home_status(self):
         """Update delivery fee and home status if not manually set."""

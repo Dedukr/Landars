@@ -61,12 +61,15 @@ log_warning() {
 
 check_postgres_container() {
     # Ensure target container exists and is running before backup
-    if ! docker ps --format '{{.Names}}' | grep -q "^${POSTGRES_CONTAINER}\$"; then
+    # Use set +e temporarily to handle docker command failures gracefully
+    set +e
+    if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${POSTGRES_CONTAINER}\$"; then
+        set -e
         log_error "PostgreSQL container '${POSTGRES_CONTAINER}' not found or not running."
         log_info "Available containers:"
-        docker ps --format '{{.Names}}' | while read -r name; do
+        docker ps --format '{{.Names}}' 2>/dev/null | while read -r name; do
             log_info "  - $name"
-        done || log_info "  (docker ps failed)"
+        done || log_info "  (docker ps failed or no containers running)"
         
         log_info "Trying to detect container name..."
         # Try docker-compose detection again
@@ -94,6 +97,7 @@ check_postgres_container() {
         log_error "Set POSTGRES_CONTAINER or POSTGRES_HOST environment variable to the correct container name."
         exit 1
     fi
+    set -e
 }
 
 log_debug() {
@@ -113,7 +117,7 @@ print_header() {
 print_header
 log_info "Ultimate backup script started"
 log_info "Runtime: host $(hostname), pwd $(pwd)"
-log_info "Env (pre-load): DB_TYPE=${DB_TYPE:-unset}, POSTGRES_HOST=${POSTGRES_HOST:-unset}, POSTGRES_CONTAINER=${POSTGRES_CONTAINER:-unset}"
+# log_info "Env (pre-load): DB_TYPE=${DB_TYPE:-unset}, POSTGRES_HOST=${POSTGRES_HOST:-unset}, POSTGRES_CONTAINER=${POSTGRES_CONTAINER:-unset}"
 
 #########################################################################
 # CONFIGURATION MANAGEMENT
@@ -123,13 +127,17 @@ log_info "Env (pre-load): DB_TYPE=${DB_TYPE:-unset}, POSTGRES_HOST=${POSTGRES_HO
 load_env() {
     local env_file=".env"
     
+    # Disable exit on error for this function
+    set +e
+    
     if [[ -f "$env_file" ]]; then
         log_info "Loading configuration from $env_file"
         # Robust .env loader that preserves spaces and ignores comments/blank lines
         # Supports unquoted values that may contain spaces or brackets.
         local line_num=0
+        local loaded_count=0
         while IFS= read -r line || [[ -n "$line" ]]; do
-            ((line_num++))
+            ((line_num++)) || true
             # Skip empty lines and comments
             [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
 
@@ -153,15 +161,21 @@ load_env() {
                 continue
             fi
 
-            if ! export "$key=$value"; then
+            # Export the variable, but don't fail the script if it fails
+            if export "$key=$value" 2>/dev/null; then
+                ((loaded_count++)) || true
+            else
                 log_warning "Failed to export '$key' from .env line $line_num, skipping"
             fi
         done < "$env_file"
-        log_success "Configuration loaded from $env_file"
+        log_success "Configuration loaded from $env_file ($loaded_count variables loaded)"
     else
-        log_warning ".env file not found. Using default configuration."
+        log_warning ".env file not found at $(pwd)/$env_file. Using default configuration."
         log_info "Create a .env file for custom configuration"
     fi
+    
+    # Re-enable exit on error
+    set -e
 }
 
 # Remove surrounding double quotes from path-like variables to avoid
@@ -174,29 +188,35 @@ strip_wrapping_quotes() {
 }
 
 # Load environment variables
+set +u
 load_env
+set -u
 
 # Try to detect PostgreSQL container name from docker-compose first
 # This handles cases where container name depends on project directory
 # Even if POSTGRES_CONTAINER is set, we'll verify it exists and auto-detect if needed
 detect_postgres_container() {
+    # Temporarily disable exit on error for this function
+    set +e
     # First, verify if the configured container exists and is running
-    if [[ -n "$POSTGRES_CONTAINER" ]] && docker ps --format '{{.Names}}' | grep -q "^${POSTGRES_CONTAINER}\$"; then
-        log_info "Using configured PostgreSQL container: $POSTGRES_CONTAINER"
+    if [[ -n "${POSTGRES_CONTAINER:-}" ]] && docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${POSTGRES_CONTAINER}\$"; then
+        set -e
+        log_info "Using PostgreSQL container: $POSTGRES_CONTAINER"
         return 0
     fi
     
     # If configured container doesn't exist or isn't running, try to detect it
-    if [[ -n "$POSTGRES_CONTAINER" ]]; then
-        log_info "Configured container '${POSTGRES_CONTAINER}' not found or not running, attempting auto-detection..."
+    if [[ -n "${POSTGRES_CONTAINER:-}" ]]; then
+        log_info "Container '${POSTGRES_CONTAINER}' not found, attempting auto-detection..."
     fi
     
     # Try docker-compose first (most reliable)
     if command -v docker-compose &> /dev/null; then
         detected_container=$(docker-compose ps postgres --format "{{.Name}}" 2>/dev/null | head -1)
-        if [[ -n "$detected_container" ]] && docker ps --format '{{.Names}}' | grep -q "^${detected_container}\$"; then
+        if [[ -n "$detected_container" ]] && docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${detected_container}\$"; then
             POSTGRES_CONTAINER="$detected_container"
-            log_info "Detected PostgreSQL container from docker-compose: $POSTGRES_CONTAINER"
+            set -e
+            log_info "Detected PostgreSQL container: $POSTGRES_CONTAINER"
             return 0
         fi
     fi
@@ -204,26 +224,35 @@ detect_postgres_container() {
     # Fallback: try docker compose (v2)
     if command -v docker &> /dev/null; then
         detected_container=$(docker compose ps postgres --format "{{.Name}}" 2>/dev/null | head -1)
-        if [[ -n "$detected_container" ]] && docker ps --format '{{.Names}}' | grep -q "^${detected_container}\$"; then
+        if [[ -n "$detected_container" ]] && docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${detected_container}\$"; then
             POSTGRES_CONTAINER="$detected_container"
-            log_info "Detected PostgreSQL container from docker compose: $POSTGRES_CONTAINER"
+            set -e
+            log_info "Detected PostgreSQL container: $POSTGRES_CONTAINER"
             return 0
         fi
     fi
     
     # Last resort: try to find any postgres container
-    detected_container=$(docker ps --format '{{.Names}}' | grep -i postgres | head -1)
+    detected_container=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -i postgres | head -1)
     if [[ -n "$detected_container" ]]; then
         POSTGRES_CONTAINER="$detected_container"
-        log_info "Detected PostgreSQL container from running containers: $POSTGRES_CONTAINER"
+        set -e
+        log_info "Detected PostgreSQL container: $POSTGRES_CONTAINER"
         return 0
     fi
     
+    set -e
     return 1
 }
 
-# Detect or verify PostgreSQL container
+# Detect or verify PostgreSQL container (don't exit on failure, let main handle it)
+set +e
 detect_postgres_container
+detect_result=$?
+set -e
+if [[ $detect_result -ne 0 ]]; then
+    log_warning "Could not detect PostgreSQL container automatically. Will try again during backup."
+fi
 
 # Normalize postgres container/host naming to match docker-compose on server
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-${POSTGRES_HOST:-landars-postgres-1}}"
@@ -231,8 +260,8 @@ POSTGRES_HOST="${POSTGRES_HOST:-$POSTGRES_CONTAINER}"
 # Keep container name consistent across helpers
 POSTGRES_CONTAINER_NAME="${POSTGRES_CONTAINER_NAME:-$POSTGRES_CONTAINER}"
 
-# Verify the postgres container exists before proceeding
-check_postgres_container
+# Don't verify container at script load time - let the main function handle it
+# This allows the script to at least show help/config even if container is down
 
 # Set database configuration from environment variables with defaults
 DB_TYPE="${DB_TYPE:-postgresql}"  # postgresql or sqlite
@@ -243,10 +272,12 @@ DB_HOST="${POSTGRES_HOST:-localhost}"
 DB_PORT="${POSTGRES_PORT:-5432}"
 
 # Directory configuration
+set +e
 PROJECT_DIR="$(strip_wrapping_quotes "${PROJECT_DIR:-$(pwd)}")"
 BACKUP_BASE_DIR="$(strip_wrapping_quotes "${BACKUP_BASE_DIR:-${PROJECT_DIR}/db_backups}")"
 LEGACY_BACKUP_DIR="$(strip_wrapping_quotes "${LEGACY_BACKUP_DIR:-${PROJECT_DIR}/db_backups/sqlite}")"
 ARCHIVE_DIR="$(strip_wrapping_quotes "${ARCHIVE_DIR:-${PROJECT_DIR}/db_backups/wal_archive}")"
+set -e
 # Feature flags to control legacy/pitr behavior safely
 ENABLE_LEGACY_SQLITE="${ENABLE_LEGACY_SQLITE:-false}"
 ENABLE_PITR="${ENABLE_PITR:-false}"
