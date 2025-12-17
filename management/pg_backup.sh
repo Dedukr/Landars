@@ -155,6 +155,17 @@ load_env() {
             key="${key#"${key%%[![:space:]]*}"}"
             key="${key%"${key##*[![:space:]]}"}"
 
+            # Strip inline comments from value
+            # Remove everything from # onwards (handles: VALUE=something  # comment)
+            # This is safe for most .env files where comments appear after values
+            if [[ "$value" == *"#"* ]]; then
+                value="${value%%#*}"
+            fi
+
+            # Trim whitespace from value (leading and trailing)
+            value="${value#"${value%%[![:space:]]*}"}"
+            value="${value%"${value##*[![:space:]]}"}"
+
             # Keys must be valid shell identifiers
             if [[ ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
                 log_warning "Skipping invalid key at line $line_num in .env: $key"
@@ -187,11 +198,6 @@ strip_wrapping_quotes() {
     echo "$value"
 }
 
-# Load environment variables
-set +u
-load_env
-set -u
-
 # Try to detect PostgreSQL container name from docker-compose first
 # This handles cases where container name depends on project directory
 # Even if POSTGRES_CONTAINER is set, we'll verify it exists and auto-detect if needed
@@ -204,12 +210,12 @@ detect_postgres_container() {
         log_info "Using PostgreSQL container: $POSTGRES_CONTAINER"
         return 0
     fi
-    
+
     # If configured container doesn't exist or isn't running, try to detect it
     if [[ -n "${POSTGRES_CONTAINER:-}" ]]; then
         log_info "Container '${POSTGRES_CONTAINER}' not found, attempting auto-detection..."
     fi
-    
+
     # Try docker-compose first (most reliable)
     if command -v docker-compose &> /dev/null; then
         detected_container=$(docker-compose ps postgres --format "{{.Name}}" 2>/dev/null | head -1)
@@ -220,7 +226,7 @@ detect_postgres_container() {
             return 0
         fi
     fi
-    
+
     # Fallback: try docker compose (v2)
     if command -v docker &> /dev/null; then
         detected_container=$(docker compose ps postgres --format "{{.Name}}" 2>/dev/null | head -1)
@@ -231,7 +237,7 @@ detect_postgres_container() {
             return 0
         fi
     fi
-    
+
     # Last resort: try to find any postgres container
     detected_container=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -i postgres | head -1)
     if [[ -n "$detected_container" ]]; then
@@ -240,70 +246,76 @@ detect_postgres_container() {
         log_info "Detected PostgreSQL container: $POSTGRES_CONTAINER"
         return 0
     fi
-    
+
     set -e
     return 1
 }
 
-# Detect or verify PostgreSQL container (don't exit on failure, let main handle it)
-set +e
-detect_postgres_container
-detect_result=$?
-set -e
-if [[ $detect_result -ne 0 ]]; then
-    log_warning "Could not detect PostgreSQL container automatically. Will try again during backup."
-fi
+# Initialise configuration (env, containers, paths, retention, timestamps)
+init_config() {
+    # Load environment variables (tolerant of missing values)
+    set +u
+    load_env
+    set -u
 
-# Normalize postgres container/host naming to match docker-compose on server
-POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-${POSTGRES_HOST:-landars-postgres-1}}"
-POSTGRES_HOST="${POSTGRES_HOST:-$POSTGRES_CONTAINER}"
-# Keep container name consistent across helpers
-POSTGRES_CONTAINER_NAME="${POSTGRES_CONTAINER_NAME:-$POSTGRES_CONTAINER}"
+    # Detect or verify PostgreSQL container (don't exit on failure, let main/backup handle it)
+    set +e
+    detect_postgres_container
+    local detect_result=$?
+    set -e
+    if [[ $detect_result -ne 0 ]]; then
+        log_warning "Could not detect PostgreSQL container automatically. Will try again during backup."
+    fi
 
-# Don't verify container at script load time - let the main function handle it
-# This allows the script to at least show help/config even if container is down
+    # Normalize postgres container/host naming to match docker-compose on server
+    POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-${POSTGRES_HOST:-landars-postgres-1}}"
+    POSTGRES_HOST="${POSTGRES_HOST:-$POSTGRES_CONTAINER}"
+    # Keep container name consistent across helpers
+    POSTGRES_CONTAINER_NAME="${POSTGRES_CONTAINER_NAME:-$POSTGRES_CONTAINER}"
 
-# Set database configuration from environment variables with defaults
-DB_TYPE="${DB_TYPE:-postgresql}"  # postgresql or sqlite
-DB_NAME="${POSTGRES_DB:-landarsfooddb}"
-DB_USER="${POSTGRES_USER:-postgresuser}"
-DB_PASSWORD="${POSTGRES_PASSWORD:-}"
-DB_HOST="${POSTGRES_HOST:-localhost}"
-DB_PORT="${POSTGRES_PORT:-5432}"
+    # Set database configuration from environment variables with defaults
+    DB_TYPE="${DB_TYPE:-postgresql}"  # postgresql or sqlite
+    DB_NAME="${POSTGRES_DB:-landarsfooddb}"
+    DB_USER="${POSTGRES_USER:-postgresuser}"
+    DB_PASSWORD="${POSTGRES_PASSWORD:-}"
+    DB_HOST="${POSTGRES_HOST:-localhost}"
+    DB_PORT="${POSTGRES_PORT:-5432}"
 
-# Directory configuration
-set +e
-PROJECT_DIR="$(strip_wrapping_quotes "${PROJECT_DIR:-$(pwd)}")"
-BACKUP_BASE_DIR="$(strip_wrapping_quotes "${BACKUP_BASE_DIR:-${PROJECT_DIR}/db_backups}")"
-LEGACY_BACKUP_DIR="$(strip_wrapping_quotes "${LEGACY_BACKUP_DIR:-${PROJECT_DIR}/db_backups/sqlite}")"
-ARCHIVE_DIR="$(strip_wrapping_quotes "${ARCHIVE_DIR:-${PROJECT_DIR}/db_backups/wal_archive}")"
-set -e
-# Feature flags to control legacy/pitr behavior safely
-ENABLE_LEGACY_SQLITE="${ENABLE_LEGACY_SQLITE:-false}"
-ENABLE_PITR="${ENABLE_PITR:-false}"
-S3_BACKUP_DIR="${S3_BACKUP_DIR:-database-backups}"
+    # Directory configuration
+    set +e
+    PROJECT_DIR="$(strip_wrapping_quotes "${PROJECT_DIR:-$(pwd)}")"
+    BACKUP_BASE_DIR="$(strip_wrapping_quotes "${BACKUP_BASE_DIR:-${PROJECT_DIR}/db_backups}")"
+    LEGACY_BACKUP_DIR="$(strip_wrapping_quotes "${LEGACY_BACKUP_DIR:-${PROJECT_DIR}/db_backups/sqlite}")"
+    ARCHIVE_DIR="$(strip_wrapping_quotes "${ARCHIVE_DIR:-${PROJECT_DIR}/db_backups/wal_archive}")"
+    set -e
 
-# Retention policies
-SQL_RETENTION_DAYS="${SQL_RETENTION_DAYS:-30}"
-PITR_RETENTION_DAYS="${PITR_RETENTION_DAYS:-7}"
-LOCAL_RETENTION_COUNT="${LOCAL_RETENTION_COUNT:-10}"
+    # Feature flags to control legacy/pitr behavior safely
+    ENABLE_LEGACY_SQLITE="${ENABLE_LEGACY_SQLITE:-false}"
+    ENABLE_PITR="${ENABLE_PITR:-false}"
+    S3_BACKUP_DIR="${S3_BACKUP_DIR:-database-backups}"
 
-# S3 Configuration
-AWS_STORAGE_BUCKET_NAME="${AWS_STORAGE_BUCKET_NAME:-}"
-AWS_S3_REGION_NAME="${AWS_S3_REGION_NAME:-us-east-1}"
-S3_STORAGE_CLASS="${S3_STORAGE_CLASS:-STANDARD_IA}"
+    # Retention policies
+    SQL_RETENTION_DAYS="${SQL_RETENTION_DAYS:-30}"
+    PITR_RETENTION_DAYS="${PITR_RETENTION_DAYS:-7}"
+    LOCAL_RETENTION_COUNT="${LOCAL_RETENTION_COUNT:-10}"
 
-# SQLite legacy support
-SQLITE_CONTAINER="${SQLITE_CONTAINER:-foodplatform-backend-1}"
-SQLITE_PATH_IN_CONTAINER="${SQLITE_PATH_IN_CONTAINER:-/backend/db/db.sqlite3}"
-SQLITE_PATH_ON_HOST="${SQLITE_PATH_ON_HOST:-${PROJECT_DIR}/backend/db/db.sqlite3}"
+    # S3 Configuration
+    AWS_STORAGE_BUCKET_NAME="${AWS_STORAGE_BUCKET_NAME:-}"
+    AWS_S3_REGION_NAME="${AWS_S3_REGION_NAME:-us-east-1}"
+    S3_STORAGE_CLASS="${S3_STORAGE_CLASS:-STANDARD_IA}"
 
-# PostgreSQL container configuration
-POSTGRES_CONTAINER_NAME="${POSTGRES_CONTAINER_NAME:-foodplatform-postgres-1}"
+    # SQLite legacy support
+    SQLITE_CONTAINER="${SQLITE_CONTAINER:-foodplatform-backend-1}"
+    SQLITE_PATH_IN_CONTAINER="${SQLITE_PATH_IN_CONTAINER:-/backend/db/db.sqlite3}"
+    SQLITE_PATH_ON_HOST="${SQLITE_PATH_ON_HOST:-${PROJECT_DIR}/backend/db/db.sqlite3}"
 
-# Backup naming
-TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
-DATE_ONLY=$(date +"%Y-%m-%d")
+    # PostgreSQL container configuration
+    POSTGRES_CONTAINER_NAME="${POSTGRES_CONTAINER_NAME:-foodplatform-postgres-1}"
+
+    # Backup naming (fresh timestamp per invocation)
+    TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+    DATE_ONLY=$(date +"%Y-%m-%d")
+}
 
 #########################################################################
 # UTILITY FUNCTIONS
@@ -522,13 +534,25 @@ restore_postgresql_backup() {
     # Default to latest backup if no file specified
     if [[ -z "$backup_file" ]]; then
         backup_file="$BACKUP_BASE_DIR/postgresql/latest.sql"
+    else
+        # If just a filename is provided (not a full path), look in the backup directory
+        if [[ "$backup_file" != /* ]] && [[ "$backup_file" != ./* ]]; then
+            # It's just a filename, prepend the backup directory
+            local backup_dir="$BACKUP_BASE_DIR/postgresql"
+            backup_file="$backup_dir/$backup_file"
+        fi
     fi
     
     # Check if backup file exists
     if [[ ! -f "$backup_file" ]]; then
         log_error "Backup file not found: $backup_file"
-        log_info "Available backups:"
-        ls -la "$BACKUP_BASE_DIR/postgresql"/landarsfood_backup_*.sql 2>/dev/null || log_info "No backup files found"
+        log_info "Available backups in $BACKUP_BASE_DIR/postgresql:"
+        ls -la "$BACKUP_BASE_DIR/postgresql"/landarsfood_backup_*.sql 2>/dev/null | awk '{print "  " $9}' || log_info "  No backup files found"
+        log_info ""
+        log_info "Usage examples:"
+        log_info "  $0 restore                                    # Restore from latest.sql"
+        log_info "  $0 restore landarsfood_backup_2025-12-16_22-51-55.sql  # Restore from filename"
+        log_info "  $0 restore /full/path/to/backup.sql         # Restore from full path"
         return 1
     fi
     
@@ -537,14 +561,22 @@ restore_postgresql_backup() {
     
     # Step 1: Drop and recreate database (clean slate)
     log_info "🗑️ Dropping existing database (if it exists)..."
-    if docker-compose exec postgres psql -U "$DB_USER" -d postgres -c "DROP DATABASE IF EXISTS $DB_NAME;" >/dev/null 2>&1; then
+    set +e
+    docker-compose exec postgres psql -U "$DB_USER" -d postgres -c "DROP DATABASE IF EXISTS $DB_NAME;" >/dev/null 2>&1
+    drop_result=$?
+    set -e
+    if [[ $drop_result -eq 0 ]]; then
         log_success "Existing database dropped"
     else
         log_warning "No existing database to drop (this is normal for fresh installs)"
     fi
     
     log_info "🆕 Creating fresh database..."
-    if docker-compose exec postgres psql -U "$DB_USER" -d postgres -c "CREATE DATABASE $DB_NAME;" >/dev/null 2>&1; then
+    set +e
+    docker-compose exec postgres psql -U "$DB_USER" -d postgres -c "CREATE DATABASE $DB_NAME;" >/dev/null 2>&1
+    create_result=$?
+    set -e
+    if [[ $create_result -eq 0 ]]; then
         log_success "Fresh database created"
     else
         log_error "Failed to create database"
@@ -562,11 +594,18 @@ restore_postgresql_backup() {
     
     # Step 3: Verify the restore
     log_info "✅ Verifying restore..."
-    local table_count
+    local table_count=0
+    set +e
     table_count=$(docker-compose exec postgres psql -U "$DB_USER" -d "$DB_NAME" -t -c "
     SELECT COUNT(*) FROM information_schema.tables 
     WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
-    " 2>/dev/null | tr -d ' ')
+    " 2>/dev/null | tr -d ' ' || echo "0")
+    set -e
+    
+    # Ensure table_count is numeric
+    if ! [[ "$table_count" =~ ^[0-9]+$ ]]; then
+        table_count=0
+    fi
     
     if [[ "$table_count" -gt 0 ]]; then
         log_success "Restore verification successful - Found $table_count tables"
@@ -576,10 +615,13 @@ restore_postgresql_backup() {
     
     # Step 4: Start backend service
     log_info "🚀 Starting backend service..."
-    if docker-compose up -d backend; then
+    set +e
+    if docker-compose up -d backend >/dev/null 2>&1; then
+        set -e
         log_success "Backend service started"
     else
-        log_warning "Failed to start backend service"
+        set -e
+        log_warning "Failed to start backend service (may already be running)"
     fi
     
     # Step 5: Wait for backend to be ready
@@ -588,20 +630,30 @@ restore_postgresql_backup() {
     
     # Step 6: Run migrations to ensure everything is in sync
     log_info "🔄 Running Django migrations..."
+    set +e
     if docker-compose exec backend python manage.py migrate >/dev/null 2>&1; then
+        set -e
         log_success "Django migrations completed"
     else
+        set -e
         log_warning "Django migrations failed - this might be normal if database is already up to date"
     fi
     
     # Step 7: Final verification
     log_info "🔍 Final verification..."
-    local user_count
+    local user_count=0
+    set +e
     user_count=$(docker-compose exec backend python manage.py shell -c "
     from django.contrib.auth import get_user_model
     User = get_user_model()
     print(User.objects.count())
-    " 2>/dev/null | tail -1 | tr -d ' ')
+    " 2>/dev/null | tail -1 | tr -d ' ' || echo "0")
+    set -e
+    
+    # Ensure user_count is numeric
+    if ! [[ "$user_count" =~ ^[0-9]+$ ]]; then
+        user_count=0
+    fi
     
     local duration=$(($(date +%s) - start_time))
     
@@ -829,9 +881,19 @@ upload_to_s3() {
     local file_name=$(basename "$file_path")
     local s3_key="${S3_BACKUP_DIR}/${backup_type}/${DATE_ONLY}/${file_name}"
     
+    # Clean storage class value (remove any trailing comments/whitespace)
+    local storage_class="${S3_STORAGE_CLASS%%#*}"
+    storage_class="${storage_class%"${storage_class##*[![:space:]]}"}"
+    storage_class="${storage_class#"${storage_class%%[![:space:]]*}"}"
+    
+    # Clean region value
+    local region="${AWS_S3_REGION_NAME%%#*}"
+    region="${region%"${region##*[![:space:]]}"}"
+    region="${region#"${region%%[![:space:]]*}"}"
+    
     if aws s3 cp "$file_path" "s3://${AWS_STORAGE_BUCKET_NAME}/${s3_key}" \
-        --storage-class "$S3_STORAGE_CLASS" \
-        --region "$AWS_S3_REGION_NAME" \
+        --storage-class "$storage_class" \
+        --region "$region" \
         --quiet; then
         
         log_success "✅ Backup uploaded to S3: s3://${AWS_STORAGE_BUCKET_NAME}/${s3_key}"
@@ -1119,6 +1181,7 @@ show_usage() {
     echo "  backup                    - Create PostgreSQL backup (updates db_data/pg.sql)"
     echo "  full-backup              - Create all available backup types"
     echo "  restore [file]           - Restore PostgreSQL from backup (clean restore)"
+    echo "                            File can be: filename, full path, or omit for latest"
     echo "  sqlite-backup            - Create SQLite backup (legacy)"
     echo "  pitr-backup              - Create PITR base backup"
     echo ""
@@ -1147,8 +1210,9 @@ show_usage() {
     echo -e "${YELLOW}Examples:${NC}"
     echo "  $0                           # Create PostgreSQL backup"
     echo "  $0 full-backup              # Create all backup types"
-    echo "  $0 restore                  # Restore from latest backup (clean restore)"
-    echo "  $0 restore backup.sql       # Restore from specific file (clean restore)"
+    echo "  $0 restore                                    # Restore from latest backup"
+    echo "  $0 restore landarsfood_backup_2025-12-16_22-51-55.sql  # Restore from filename (searches backup dir)"
+    echo "  $0 restore /full/path/to/backup.sql           # Restore from full path"
     echo "  $0 stats                    # Show statistics"
     echo "  $0 health                   # Run health check"
     echo "  $0 cleanup                  # Clean up old backups"
@@ -1204,6 +1268,9 @@ show_config() {
 
 # Main function
 main() {
+    # Initialise configuration (env vars, containers, paths, timestamps)
+    init_config
+
     local command="${1:-backup}"
     
     # Validate configuration

@@ -808,14 +808,12 @@ class OrderAdmin(admin.ModelAdmin):
         "get_total_items",
         "get_total_price",
         "status",
-        "get_shipping_status_display",
         "get_invoice",
     ]
     list_display_links = ["id", "delivery_date", "customer_name"]
     list_filter = [
         DateFilter,
         "status",
-        "shipping_details__shipping_status",
         HolidayFeeFilter,
     ]
     list_editable = ["status"]
