@@ -233,3 +233,69 @@ class ProductImageInlineForm(forms.ModelForm):
             instance.save()
 
         return instance
+
+
+class OrderItemInlineFormSet(BaseInlineFormSet):
+    """
+    Custom formset for OrderItem that validates for duplicate products.
+    """
+
+    def clean(self):
+        """
+        Validate that no duplicate products exist in the formset.
+        """
+        if any(self.errors):
+            # Don't validate if there are already form errors
+            return
+
+        products_seen = {}
+        existing_order_items = {}
+
+        # Get the order instance
+        if self.instance and self.instance.pk:
+            order = self.instance
+            # Get existing items in the database for this order
+            # Exclude items that are being edited in this formset
+            existing_items = OrderItem.objects.filter(order=order).exclude(
+                pk__in=[form.instance.pk for form in self.forms if form.instance and form.instance.pk]
+            )
+            for item in existing_items:
+                if item.product:
+                    existing_order_items[item.product.id] = item
+
+        for form in self.forms:
+            # Skip forms that have errors
+            if form.errors:
+                continue
+            
+            # Skip if form doesn't have cleaned_data (not yet cleaned or empty)
+            if not hasattr(form, 'cleaned_data') or not form.cleaned_data:
+                continue
+
+            # Skip deleted forms
+            if form.cleaned_data.get("DELETE", False):
+                continue
+
+            product = form.cleaned_data.get("product")
+            if not product:
+                continue
+
+            product_id = product.id
+
+            # Check if product already exists in database (not in this formset)
+            if product_id in existing_order_items:
+                form.add_error(
+                    "product",
+                    ValidationError("This product already exists in this order.")
+                )
+                continue
+
+            # Check for duplicates within the formset
+            if product_id in products_seen:
+                # This product was already seen in another form
+                form.add_error(
+                    "product",
+                    ValidationError("This product already exists in this order.")
+                )
+            else:
+                products_seen[product_id] = product

@@ -385,20 +385,27 @@ class Order(models.Model):
 
     def add_item_safely(self, product, quantity):
         """
-        Safely add an item to the order, merging quantities if the item already exists.
+        Add an item to the order. Raises ValidationError if the item already exists.
         Returns the OrderItem instance.
         """
         from django.db import transaction
 
         with transaction.atomic():
-            order_item, created = OrderItem.objects.select_for_update().get_or_create(
-                order=self, product=product, defaults={"quantity": quantity}
+            # Check if item already exists
+            existing_item = OrderItem.objects.select_for_update().filter(
+                order=self, product=product
+            ).first()
+            
+            if existing_item:
+                raise ValidationError(
+                    f"Product '{product.name}' already exists in this order. "
+                    f"Please update the existing item instead of adding a duplicate."
+                )
+            
+            # Create new item
+            order_item = OrderItem.objects.create(
+                order=self, product=product, quantity=quantity
             )
-
-            if not created:
-                # Item already exists, update quantity
-                order_item.quantity += quantity
-                order_item.save()
 
             return order_item
 

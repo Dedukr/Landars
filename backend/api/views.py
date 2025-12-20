@@ -6,6 +6,7 @@ from account.models import Address
 from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
 from django.core.cache import cache
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import F, Q
 from django.http import HttpResponse, JsonResponse
@@ -762,10 +763,16 @@ class OrderItemView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Use the safe method that handles duplicates by merging quantities
-        item = order.add_item_safely(product, quantity)
-        serializer = OrderItemSerializer(item)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        # Add item to order (raises ValidationError if item already exists)
+        try:
+            item = order.add_item_safely(product, quantity)
+            serializer = OrderItemSerializer(item)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        except ValidationError as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
     @transaction.atomic
     def delete(self, request, order_id, item_id):
