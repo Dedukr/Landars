@@ -839,7 +839,7 @@ class OrderAdmin(admin.ModelAdmin):
     ]
     list_editable = ["status"]
     search_fields = [
-        "customer__profile__name",
+        "customer__name",
         "customer__profile__phone",
         "customer__email",
     ]

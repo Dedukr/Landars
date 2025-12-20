@@ -390,26 +390,31 @@ class OrderListView(APIView):
         if status_filter:
             orders = orders.filter(status=status_filter)
 
-            # Date filtering
-            date_from = request.query_params.get("date_from")
-            date_to = request.query_params.get("date_to")
-            if date_from:
-                orders = orders.filter(created_at__date__gte=date_from)
-            if date_to:
-                orders = orders.filter(created_at__date__lte=date_to)
+        # Date filtering
+        date_from = request.query_params.get("date_from")
+        date_to = request.query_params.get("date_to")
+        if date_from:
+            orders = orders.filter(created_at__date__gte=date_from)
+        if date_to:
+            orders = orders.filter(created_at__date__lte=date_to)
 
-            # Sorting
-            sort = request.query_params.get("sort", "-created_at")
-            if sort in [
-                "created_at",
-                "-created_at",
-                "order_date",
-                "-order_date",
+        # Sorting
+        sort = request.query_params.get("sort", "-created_at")
+        if sort in [
+            "created_at",
+            "-created_at",
+            "order_date",
+            "-order_date",
             "delivery_date",
             "-delivery_date",
             "total_price",
             "-total_price",
         ]:
+            # Map order_date to created_at for backward compatibility
+            if sort == "order_date":
+                sort = "created_at"
+            elif sort == "-order_date":
+                sort = "-created_at"
             orders = orders.order_by(sort)
 
         # Pagination
