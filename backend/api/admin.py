@@ -866,7 +866,6 @@ class OrderAdmin(admin.ModelAdmin):
         ]
         if obj:
             fields += [
-                "address",
                 "customer_phone",
                 "customer_address",
                 "get_total_items",
