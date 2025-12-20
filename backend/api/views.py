@@ -390,19 +390,21 @@ class OrderListView(APIView):
         if status_filter:
             orders = orders.filter(status=status_filter)
 
-        # Date filtering
-        date_from = request.query_params.get("date_from")
-        date_to = request.query_params.get("date_to")
-        if date_from:
-            orders = orders.filter(order_date__gte=date_from)
-        if date_to:
-            orders = orders.filter(order_date__lte=date_to)
+            # Date filtering
+            date_from = request.query_params.get("date_from")
+            date_to = request.query_params.get("date_to")
+            if date_from:
+                orders = orders.filter(created_at__date__gte=date_from)
+            if date_to:
+                orders = orders.filter(created_at__date__lte=date_to)
 
-        # Sorting
-        sort = request.query_params.get("sort", "-order_date")
-        if sort in [
-            "order_date",
-            "-order_date",
+            # Sorting
+            sort = request.query_params.get("sort", "-created_at")
+            if sort in [
+                "created_at",
+                "-created_at",
+                "order_date",
+                "-order_date",
             "delivery_date",
             "-delivery_date",
             "total_price",
@@ -1186,9 +1188,9 @@ class UserOrdersView(APIView):
             date_from = request.query_params.get("date_from")
             date_to = request.query_params.get("date_to")
             if date_from:
-                orders = orders.filter(order_date__gte=date_from)
+                orders = orders.filter(created_at__date__gte=date_from)
             if date_to:
-                orders = orders.filter(order_date__lte=date_to)
+                orders = orders.filter(created_at__date__lte=date_to)
 
             # Delivery date filtering
             delivery_date_from = request.query_params.get("delivery_date_from")
@@ -1199,8 +1201,10 @@ class UserOrdersView(APIView):
                 orders = orders.filter(delivery_date__lte=delivery_date_to)
 
             # Sorting
-            sort = request.query_params.get("sort", "-order_date")
+            sort = request.query_params.get("sort", "-created_at")
             if sort in [
+                "created_at",
+                "-created_at",
                 "order_date",
                 "-order_date",
                 "delivery_date",

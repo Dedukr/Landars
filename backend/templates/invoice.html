@@ -563,6 +563,14 @@
                         </tr>
                         <tr>
                             <td>
+                                Delivery date
+                            </td>
+                            <td>
+                                {% if order.delivery_date %}{{ order.delivery_date|date:"d M Y" }}{% else %}-{% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
                                 Delivery order ID
                             </td>
                             <td>
@@ -574,7 +582,7 @@
                                 Date
                             </td>
                             <td>
-                                {{ order.order_date|date:"d M Y" }}
+                                {{ order.created_at|date:"d M Y" }}
                             </td>
                         </tr>
                         <tr>
@@ -582,7 +590,7 @@
                                 Due Date
                             </td>
                             <td>
-                                {{ order.due_date|date:"d M Y" }}
+                                {% if order.invoice_due_date %}{{ order.invoice_due_date|date:"d M Y" }}{% else %}-{% endif %}
                             </td>
                         </tr>
                     </tbody>
@@ -686,7 +694,7 @@
         <div class="mt20 pt20 light-gray-border-top fs-10 line-height-140">
             <div class="mb10">
                 <div class="h2">
-                    £{{order.total_price}} billed due {{ order.due_date|date:"d M Y" }}
+                    £{{order.total_price}} billed due {% if order.invoice_due_date %}{{ order.invoice_due_date|date:"d M Y" }}{% else %}-{% endif %}
                 </div>
                 <!-- <div class="mt10 pb5 bold">
                     <a
@@ -884,7 +892,7 @@
             <div class="mt20">
                 <div class="flex-horizontal flex-justify">
                     <div class="nowrap">
-                        #{{ order.id }} · £{{order.total_price}} billed due {{ order.due_date|date:"d M Y" }}
+                        #{{ order.id }} · £{{order.total_price}} billed due {% if order.invoice_due_date %}{{ order.invoice_due_date|date:"d M Y" }}{% else %}-{% endif %}
                     </div>
                 </div>
             </div>

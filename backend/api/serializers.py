@@ -311,7 +311,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "delivery_fee",
             "discount",
             "status",
-            "order_date",
+            "created_at",
             "total_price",
             "total_items",
             "items",
@@ -331,7 +331,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "id",
             "delivery_date_order_id",
             "customer_name",
-            "order_date",
+            "created_at",
             "total_price",
             "total_items",
             # Shipping tracking fields are read-only (set by backend)
@@ -624,7 +624,6 @@ class OrderSerializer(serializers.ModelSerializer):
             "is_home_delivery",
             "delivery_fee",
             "discount",
-            "order_date",
             "status",
             "invoice_link",
             "payment_intent_id",
@@ -636,7 +635,7 @@ class OrderSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id",
-            "order_date",
+            "created_at",
             "sum_price",
             "total_price",
             "total_items",

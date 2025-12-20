@@ -254,7 +254,6 @@ class Order(models.Model):
         validators=[MinValueValidator(0), MaxValueValidator(100)],
         help_text="Holiday fee percentage (0-100)",
     )
-    order_date = models.DateField(auto_now_add=True, null=True)
     created_at = models.DateTimeField(
         auto_now_add=True, help_text="Exact timestamp when order was created"
     )
@@ -360,7 +359,17 @@ class Order(models.Model):
 
     @property
     def due_date(self):
-        return self.order_date + timedelta(days=7)
+        """Calculate due date: 7 days from order creation date."""
+        if self.created_at:
+            return self.created_at.date() + timedelta(days=7)
+        return None
+
+    @property
+    def invoice_due_date(self):
+        """Calculate due date for invoice: 14 days from order creation date."""
+        if self.created_at:
+            return self.created_at.date() + timedelta(days=14)
+        return None
 
     def get_order_details(self):
         return {

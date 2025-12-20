@@ -10,12 +10,21 @@ ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 ENV URL_BASE=$URL_BASE
 ENV NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=$NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
 
-# Install dependencies and build app in one layer for better caching
+# Install dependencies and build app with smart caching
 COPY package.json package-lock.json ./
 RUN npm ci --prefer-offline --no-audit --progress=false
+
+# Copy config files first (changes here should invalidate cache)
+COPY next.config.ts tsconfig.json ./
+
+# Copy source code
 COPY . .
-# Clear Next.js cache to prevent stale Server Action errors
-RUN rm -rf .next
+
+# Accept build argument to force cache clearing (use --build-arg CLEAR_CACHE=true when needed)
+ARG CLEAR_CACHE=false
+RUN if [ "$CLEAR_CACHE" = "true" ]; then rm -rf .next node_modules/.cache; fi
+
+# Build Next.js app (will use cache if dependencies/config haven't changed)
 RUN npm run build
 
 # Production image: use standalone output for minimal size
