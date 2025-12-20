@@ -147,6 +147,9 @@ class ProductAdmin(admin.ModelAdmin):
 
     fields = ["name", "description", "base_price", "holiday_fee", "categories"]
 
+    class Media:
+        js = ("admin/js/prevent_double_submit.js",)
+
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         return qs.prefetch_related("categories", "images").distinct()
@@ -225,6 +228,9 @@ class ProductCategoryAdmin(admin.ModelAdmin):
     search_fields = ["name"]
     ordering = ["parent__name", "name"]
 
+    class Media:
+        js = ("admin/js/prevent_double_submit.js",)
+
 
 class CartItemInline(admin.TabularInline):
     model = CartItem
@@ -241,6 +247,9 @@ class CartAdmin(admin.ModelAdmin):
     search_fields = ["user__name", "user__email"]
     readonly_fields = ["created_at", "updated_at", "total_items", "total_price"]
     inlines = [CartItemInline]
+
+    class Media:
+        js = ("admin/js/prevent_double_submit.js",)
 
     def total_items(self, obj):
         return obj.total_items
@@ -260,6 +269,9 @@ class CartItemAdmin(admin.ModelAdmin):
     search_fields = ["cart__user__name", "product__name"]
     readonly_fields = ["added_date", "get_total_price"]
     autocomplete_fields = ["cart", "product"]
+
+    class Media:
+        js = ("admin/js/prevent_double_submit.js",)
 
     def get_total_price(self, obj):
         return f"£{obj.get_total_price():.2f}"
@@ -283,6 +295,9 @@ class WishlistAdmin(admin.ModelAdmin):
     readonly_fields = ["created_at", "updated_at", "total_items"]
     inlines = [WishlistItemInline]
 
+    class Media:
+        js = ("admin/js/prevent_double_submit.js",)
+
     def total_items(self, obj):
         return obj.total_items
 
@@ -296,6 +311,9 @@ class WishlistItemAdmin(admin.ModelAdmin):
     search_fields = ["wishlist__user__name", "product__name"]
     readonly_fields = ["added_date"]
     autocomplete_fields = ["wishlist", "product"]
+
+    class Media:
+        js = ("admin/js/prevent_double_submit.js",)
 
 
 class DateFilter(admin.SimpleListFilter):
@@ -760,7 +778,7 @@ class OrderAdmin(admin.ModelAdmin):
     form = OrderAdminForm
 
     class Media:
-        js = ("admin/js/order_filter_cleaner.js",)
+        js = ("admin/js/order_filter_cleaner.js", "admin/js/prevent_double_submit.js",)
 
     # Class-level font configuration cache (reused across all PDF exports)
     # This significantly reduces font processing time

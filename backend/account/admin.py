@@ -45,6 +45,9 @@ class CustomUserAdmin(UserAdmin):
     ordering = ("name",)
     search_fields = ("name", "email", "profile__phone")
 
+    class Media:
+        js = ("admin/js/prevent_double_submit.js",)
+
     fieldsets = [
         (None, {"fields": ("name", "email", "password", "is_email_verified")}),
     ]
