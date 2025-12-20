@@ -898,6 +898,9 @@ class OrderAdmin(admin.ModelAdmin):
             "get_shipping_tracking_link",
             "get_shipping_label_link",
         ]
+        # Make delivery_date_order_id readonly for non-superusers
+        if not request.user.is_superuser:
+            readonly.append("delivery_date_order_id")
         return readonly  # Admins can edit customer, status, notes
 
     def get_queryset(self, request):
