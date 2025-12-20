@@ -19,10 +19,14 @@ class OrderInline(admin.TabularInline):  # or StackedInline if you want vertical
         url = reverse(
             "admin:api_order_change", args=[obj.pk]
         )  # Update "api_orders_change" to match your app
+        if obj.delivery_date:
+            date_text = obj.delivery_date.strftime("%B %d, %Y")
+        else:
+            date_text = "-"
         return format_html(
             '<a href="{}" style="color:#0a7;">🛒 {}</a>',
             url,
-            obj.delivery_date.strftime("%B %d, %Y"),
+            date_text,
         )
 
     order_link.short_description = "Order Date"
