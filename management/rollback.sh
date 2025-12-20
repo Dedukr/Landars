@@ -37,6 +37,68 @@ info() {
     echo -e "${BLUE}[$(date +'%Y-%m-%d %H:%M:%S')] INFO: $1${NC}"
 }
 
+# Get PostgreSQL container name from docker list of containers
+get_postgres_container() {
+    local container_name=""
+    
+    # First, try to get from docker ps list (most reliable)
+    container_name=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE '(postgres|pg)' | head -1)
+    
+    # If not found, try docker-compose
+    if [ -z "$container_name" ] && command -v docker-compose &> /dev/null; then
+        container_name=$(docker-compose ps postgres --format "{{.Name}}" 2>/dev/null | head -1)
+    fi
+    
+    # If still not found, try docker compose v2
+    if [ -z "$container_name" ] && command -v docker &> /dev/null; then
+        container_name=$(docker compose ps postgres --format "{{.Name}}" 2>/dev/null | head -1)
+    fi
+    
+    # Fallback to environment variable
+    if [ -z "$container_name" ] && [ -n "${POSTGRES_CONTAINER:-}" ]; then
+        container_name="$POSTGRES_CONTAINER"
+    fi
+    
+    # Verify container exists and is running
+    if [ -n "$container_name" ] && docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${container_name}$"; then
+        echo "$container_name"
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Get PostgreSQL service name for docker compose commands
+get_postgres_service() {
+    local container_name
+    container_name=$(get_postgres_container 2>/dev/null)
+    
+    # Try to extract service name from container name (docker compose format: project_service_number)
+    if echo "$container_name" | grep -qE '^[^_]+_(.+)_[0-9]+$'; then
+        echo "$container_name" | sed -E 's/^[^_]+_(.+)_[0-9]+$/\1/'
+        return 0
+    fi
+    
+    # Fallback: try to find service name from docker compose
+    local service_name=""
+    if command -v docker-compose &> /dev/null; then
+        service_name=$(docker-compose ps --services 2>/dev/null | grep -iE '(postgres|pg)' | head -1)
+    fi
+    
+    if [ -z "$service_name" ] && command -v docker &> /dev/null; then
+        service_name=$(docker compose ps --services 2>/dev/null | grep -iE '(postgres|pg)' | head -1)
+    fi
+    
+    # Final fallback
+    if [ -n "$service_name" ]; then
+        echo "$service_name"
+        return 0
+    else
+        echo "postgres"
+        return 0
+    fi
+}
+
 # Load environment variables
 load_env() {
     if [ -f "$PROJECT_DIR/.env" ]; then
@@ -219,14 +281,16 @@ restore_database() {
     log "Restoring from: $backup_path"
     
     # Start postgres
-    docker compose up -d postgres
+    local pg_service
+    pg_service=$(get_postgres_service)
+    docker compose up -d "$pg_service"
     sleep 15
     
     # Wait for postgres to be ready
     local retries=0
     local max_retries=30
     while [ $retries -lt $max_retries ]; do
-        if docker compose exec -T postgres pg_isready -U "${POSTGRES_USER}" > /dev/null 2>&1; then
+        if docker compose exec -T "$pg_service" pg_isready -U "${POSTGRES_USER}" > /dev/null 2>&1; then
             log "PostgreSQL is ready"
             break
         fi
@@ -240,20 +304,20 @@ restore_database() {
     
     # Drop and recreate database
     log "Dropping and recreating database..."
-    docker compose exec -T postgres psql -U "${POSTGRES_USER}" -d postgres -c "DROP DATABASE IF EXISTS ${POSTGRES_DB};" || true
-    docker compose exec -T postgres psql -U "${POSTGRES_USER}" -d postgres -c "CREATE DATABASE ${POSTGRES_DB};"
+    docker compose exec -T "$pg_service" psql -U "${POSTGRES_USER}" -d postgres -c "DROP DATABASE IF EXISTS ${POSTGRES_DB};" || true
+    docker compose exec -T "$pg_service" psql -U "${POSTGRES_USER}" -d postgres -c "CREATE DATABASE ${POSTGRES_DB};"
     
     # Restore from backup
     log "Restoring database dump..."
     if [ -f "${backup_path}/postgres_backup.sql.gz" ]; then
-        if zcat "${backup_path}/postgres_backup.sql.gz" | docker compose exec -T postgres psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"; then
+        if zcat "${backup_path}/postgres_backup.sql.gz" | docker compose exec -T "$pg_service" psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"; then
             log "✅ Database restored successfully"
         else
             error "Failed to restore database"
             return 1
         fi
     elif [ -f "${backup_path}/postgres_backup.sql" ]; then
-        if cat "${backup_path}/postgres_backup.sql" | docker compose exec -T postgres psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"; then
+        if cat "${backup_path}/postgres_backup.sql" | docker compose exec -T "$pg_service" psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"; then
             log "✅ Database restored successfully"
         else
             error "Failed to restore database"
@@ -312,7 +376,9 @@ run_health_checks() {
         local all_healthy=true
         
         # Check postgres
-        if docker compose exec -T postgres pg_isready -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" > /dev/null 2>&1; then
+        local pg_service
+        pg_service=$(get_postgres_service)
+        if docker compose exec -T "$pg_service" pg_isready -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" > /dev/null 2>&1; then
             log "✅ PostgreSQL is healthy"
         else
             error "❌ PostgreSQL health check failed"

@@ -63,17 +63,82 @@ check_docker_compose() {
     return 0
 }
 
+# Get PostgreSQL container name from docker list of containers
+get_postgres_container() {
+    local container_name=""
+    
+    # First, try to get from docker ps list (most reliable)
+    container_name=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE '(postgres|pg)' | head -1)
+    
+    # If not found, try docker-compose
+    if [[ -z "$container_name" ]] && command -v docker-compose &> /dev/null; then
+        container_name=$(docker-compose ps postgres --format "{{.Name}}" 2>/dev/null | head -1)
+    fi
+    
+    # If still not found, try docker compose v2
+    if [[ -z "$container_name" ]] && command -v docker &> /dev/null; then
+        container_name=$(docker compose ps postgres --format "{{.Name}}" 2>/dev/null | head -1)
+    fi
+    
+    # Fallback to environment variable
+    if [[ -z "$container_name" ]] && [[ -n "${POSTGRES_CONTAINER:-}" ]]; then
+        container_name="$POSTGRES_CONTAINER"
+    fi
+    
+    # Verify container exists and is running
+    if [[ -n "$container_name" ]] && docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${container_name}$"; then
+        echo "$container_name"
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Get PostgreSQL service name for docker compose commands
+get_postgres_service() {
+    local container_name
+    container_name=$(get_postgres_container 2>/dev/null)
+    
+    # Try to extract service name from container name (docker compose format: project_service_number)
+    if [[ "$container_name" =~ ^[^_]+_(.+)_[0-9]+$ ]]; then
+        echo "${BASH_REMATCH[1]}"
+        return 0
+    fi
+    
+    # Fallback: try to find service name from docker compose
+    local service_name=""
+    if command -v docker-compose &> /dev/null; then
+        service_name=$(docker-compose ps --services 2>/dev/null | grep -iE '(postgres|pg)' | head -1)
+    fi
+    
+    if [[ -z "$service_name" ]] && command -v docker &> /dev/null; then
+        service_name=$(docker compose ps --services 2>/dev/null | grep -iE '(postgres|pg)' | head -1)
+    fi
+    
+    # Final fallback
+    if [[ -n "$service_name" ]]; then
+        echo "$service_name"
+        return 0
+    else
+        echo "postgres"
+        return 0
+    fi
+}
+
 # Check PostgreSQL health
 check_postgres() {
     info "Checking PostgreSQL..."
     
+    local pg_service
+    pg_service=$(get_postgres_service)
+    
     local retries=0
     while [ $retries -lt $MAX_RETRIES ]; do
-        if docker compose exec -T postgres pg_isready -U "${POSTGRES_USER:-landarsfood}" -d "${POSTGRES_DB:-landarsfood}" > /dev/null 2>&1; then
+        if docker compose exec -T "$pg_service" pg_isready -U "${POSTGRES_USER:-landarsfood}" -d "${POSTGRES_DB:-landarsfood}" > /dev/null 2>&1; then
             log "✅ PostgreSQL is healthy"
             
             # Check database connectivity
-            if docker compose exec -T postgres psql -U "${POSTGRES_USER:-landarsfood}" -d "${POSTGRES_DB:-landarsfood}" -c "SELECT 1;" > /dev/null 2>&1; then
+            if docker compose exec -T "$pg_service" psql -U "${POSTGRES_USER:-landarsfood}" -d "${POSTGRES_DB:-landarsfood}" -c "SELECT 1;" > /dev/null 2>&1; then
                 log "✅ PostgreSQL database is accessible"
                 return 0
             else

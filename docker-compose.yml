@@ -9,6 +9,12 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      # AWS credentials for wal-g WAL archiving to S3
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_STORAGE_BUCKET_NAME=${AWS_STORAGE_BUCKET_NAME:-}
+      - AWS_S3_REGION_NAME=${AWS_S3_REGION_NAME:-us-east-1}
+      - S3_STORAGE_CLASS=${S3_STORAGE_CLASS:-STANDARD_IA}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - postgres_archive:/var/lib/postgresql/archive
