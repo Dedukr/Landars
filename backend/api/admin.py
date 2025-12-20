@@ -967,6 +967,20 @@ class OrderAdmin(admin.ModelAdmin):
 
         return links
 
+    def get_ordering(self, request):
+        """
+        Sort by delivery_date_order_id (descending) when a specific date is filtered.
+        Otherwise use default ordering.
+        """
+        is_single_date = self._is_single_date_filtered(request)
+        
+        if is_single_date:
+            # Sort by delivery_date_order_id descending (last to first)
+            return ["-delivery_date_order_id"]
+        
+        # Default ordering
+        return super().get_ordering(request) or ["-id"]
+
     def customer_name(self, obj):
         request = getattr(self, "request", None)
         if request and request.user.has_perm("account.change_customuser"):
