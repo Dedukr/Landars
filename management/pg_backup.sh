@@ -2734,6 +2734,14 @@ upload_to_s3() {
         return 0
     fi
     
+    # Set upload label based on backup type
+    local upload_label
+    if [[ "$backup_type" == "pitr" ]]; then
+        upload_label="PITR backup"
+    else
+        upload_label="PostgreSQL backup"
+    fi
+    
     log_info "☁️  Uploading backup to S3..."
     
     local file_name=$(basename "$file_path")
