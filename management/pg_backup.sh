@@ -382,7 +382,6 @@ init_config() {
 
     # Directory configuration
     BACKUP_BASE_DIR="${PROJECT_DIR}/db_backups"
-    ARCHIVE_DIR="${BACKUP_BASE_DIR}/postgres/wal_archive"
     LOG_DIR="${BACKUP_BASE_DIR}/logs"
 
     # Retention policies
@@ -558,8 +557,6 @@ ensure_backup_dirs() {
     mkdir -p "$BACKUP_BASE_DIR/postgresql"
     # Create archive directory for PITR backups on host
     mkdir -p "$BACKUP_BASE_DIR/archive"
-    # Always create archive directory (PITR is always enabled)
-    mkdir -p "$ARCHIVE_DIR"
     log_debug "Backup directories ensured"
 }
 
@@ -3454,7 +3451,6 @@ show_config() {
     echo "Directory Settings:"
     echo "  Project: $PROJECT_DIR"
     echo "  Backup Base: $BACKUP_BASE_DIR"
-    echo "  Archive: $ARCHIVE_DIR"
     echo ""
     echo "Container Backup Locations:"
     echo "  Dumps: /var/lib/postgresql/backups"
