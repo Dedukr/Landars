@@ -1106,9 +1106,17 @@ class OrderAdmin(admin.ModelAdmin):
     get_shipping_label_link.short_description = "Shipping Label"
 
     def save_model(self, request, obj, form, change):
-        """Save the order without calculating delivery fees here to avoid double save."""
+        """
+        Save the order without calculating delivery fees here to avoid double save.
+        
+        Note: The Order.save() method will automatically handle:
+        - Auto-assignment of delivery_date_order_id for new orders
+        - Reassignment of delivery_date_order_id when delivery_date changes
+        This happens automatically when super().save_model() calls obj.save()
+        """
         # Don't calculate delivery fees in save_model to prevent double save
         # This will be handled in save_related after inlines are processed
+        # Delivery date order ID reassignment is handled in Order.save() method
         super().save_model(request, obj, form, change)
 
     def save_formset(self, request, form, formset, change):

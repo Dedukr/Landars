@@ -443,39 +443,63 @@ class Order(models.Model):
         """
         Override save to:
         1. Auto-assign delivery_date_order_id (per delivery_date auto-increment)
-        2. Prevent duplicate orders and ensure proper delivery fee calculation.
+        2. Reassign delivery_date_order_id when delivery_date changes
+        3. Prevent duplicate orders and ensure proper delivery fee calculation.
 
         The delivery_date_order_id is calculated atomically using database locks
         to ensure thread-safety in concurrent scenarios.
         """
         from django.db import transaction
         from django.utils import timezone
+        from django.db.models import Max
 
-        # Auto-assign delivery_date_order_id for orders without one
-        # Assign for both new orders and existing orders that don't have it set
-        if self.delivery_date and not self.delivery_date_order_id:
-            with transaction.atomic():
-                # Use select_for_update to lock rows and prevent race conditions
-                # This ensures thread-safety when multiple orders are created
-                # simultaneously for the same delivery_date
-                from django.db.models import Max
+        # Check if delivery_date has changed for existing orders
+        old_delivery_date = None
+        needs_reassignment = False
+        
+        if self.pk:
+            try:
+                old_instance = Order.objects.get(pk=self.pk)
+                old_delivery_date = old_instance.delivery_date
+                # Check if delivery_date changed
+                if old_delivery_date != self.delivery_date:
+                    needs_reassignment = True
+            except Order.DoesNotExist:
+                # New order, will be handled below
+                pass
 
-                # Lock all orders with the same delivery_date to prevent concurrent inserts
-                # from getting the same delivery_date_order_id
-                locked_orders = Order.objects.filter(
-                    delivery_date=self.delivery_date
-                ).select_for_update()
+        # Auto-assign or reassign delivery_date_order_id
+        # Conditions:
+        # 1. New order without delivery_date_order_id
+        # 2. Existing order where delivery_date changed
+        # 3. Order without delivery_date_order_id (shouldn't happen, but handle it)
+        if self.delivery_date:
+            if not self.delivery_date_order_id or needs_reassignment:
+                with transaction.atomic():
+                    # Use select_for_update to lock rows and prevent race conditions
+                    # This ensures thread-safety when multiple orders are created
+                    # simultaneously for the same delivery_date
+                    
+                    # Lock all orders with the same delivery_date to prevent concurrent inserts
+                    # from getting the same delivery_date_order_id
+                    # Exclude current order to avoid locking ourselves
+                    locked_orders = Order.objects.filter(
+                        delivery_date=self.delivery_date
+                    ).exclude(pk=self.pk if self.pk else None).select_for_update()
 
-                # Get the maximum delivery_date_order_id for this delivery_date
-                # This query runs within the locked transaction
-                max_order = locked_orders.aggregate(
-                    max_id=Max("delivery_date_order_id")
-                )
-                max_id = max_order["max_id"]
+                    # Get the maximum delivery_date_order_id for this delivery_date
+                    # This query runs within the locked transaction
+                    max_order = locked_orders.aggregate(
+                        max_id=Max("delivery_date_order_id")
+                    )
+                    max_id = max_order["max_id"]
 
-                # If no orders exist for this delivery_date, start at 1
-                # Otherwise, increment by 1
-                self.delivery_date_order_id = (max_id + 1) if max_id else 1
+                    # If no orders exist for this delivery_date, start at 1
+                    # Otherwise, increment by 1
+                    self.delivery_date_order_id = (max_id + 1) if max_id else 1
+        else:
+            # No delivery_date, clear the order_id
+            self.delivery_date_order_id = None
 
         # Check for potential duplicates before saving
         if not self.pk and self.customer:
