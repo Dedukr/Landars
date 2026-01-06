@@ -122,6 +122,31 @@ log_command_separator() {
     fi
 }
 
+# Visual separator for stdout (console output)
+print_command_start() {
+    local command_name="$1"
+    local command_args="$2"
+    local separator_line="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    echo ""
+    echo -e "${CYAN}${separator_line}${NC}"
+    if [[ -n "$command_args" ]]; then
+        echo -e "${CYAN}$command_name $command_args${NC}"
+    else
+        echo -e "${CYAN}$command_name${NC}"
+    fi
+    echo -e "${CYAN}${separator_line}${NC}"
+    echo ""
+}
+
+print_command_end() {
+    local separator_line="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    echo ""
+    echo -e "${CYAN}${separator_line}${NC}"
+    echo ""
+}
+
 # Enhanced logging functions with colors and emojis
 # Logs to both stdout/stderr (with colors) and daily log file (without colors)
 log_info() {
@@ -3583,81 +3608,94 @@ main() {
     # Log command separator to file
     log_command_separator "$command" "$command_args"
     
+    # Print visual separator to stdout
+    print_command_start "$command" "$command_args"
+    
     # Validate configuration
     if ! validate_config; then
         log_error "Configuration validation failed"
+        print_command_end "$command" 1
         exit 1
     fi
     
-    # Execute command
+    # Execute command and capture exit code
+    local exit_code=0
     case "$command" in
         "backup"|"pg-backup"|"postgresql")
-            create_postgresql_backup
+            create_postgresql_backup || exit_code=$?
             ;;
         "full-backup"|"full"|"all")
-            create_full_backup
+            create_full_backup || exit_code=$?
             ;;
         "restore"|"pg-restore")
             # Pass all remaining arguments to restore function (handles --force flag)
             shift
-            restore_postgresql_backup "$@"
+            restore_postgresql_backup "$@" || exit_code=$?
             ;;
         "promote")
             # Pass all remaining arguments to promote function
             shift
-            promote_database "$@"
+            promote_database "$@" || exit_code=$?
             ;;
         "pitr-restore"|"restore-pitr")
             # Pass all remaining arguments to restore function (handles --target-time, --target-lsn, etc.)
             shift
-            restore_pitr_backup "$@"
+            restore_pitr_backup "$@" || exit_code=$?
             ;;
         "pitr-backup"|"pitr")
-            create_pitr_backup
+            create_pitr_backup || exit_code=$?
             ;;
         "pitr-check"|"pitr-status")
             # Pass remaining arguments (handles --force flag)
             shift
-            check_pitr_status "$@"
+            check_pitr_status "$@" || exit_code=$?
             ;;
         "stats"|"stat"|"stats"|"statistics"|"status")
-            show_statistics
+            show_statistics || exit_code=$?
             ;;
         "health"|"health-check"|"check")
-            health_check
+            health_check || exit_code=$?
             ;;
         "cleanup"|"clean")
-            cleanup_all
+            cleanup_all || exit_code=$?
             ;;
         "wal-cleanup")
-            cleanup_wal_files
+            cleanup_wal_files || exit_code=$?
             ;;
         "s3-cleanup")
-            cleanup_s3_backups
+            cleanup_s3_backups || exit_code=$?
             ;;
         "config"|"configuration")
-            show_config
+            show_config || exit_code=$?
             ;;
         "databases"|"list-databases"|"list-db"|"db-list")
-            list_databases
+            list_databases || exit_code=$?
             ;;
         "wal-list"|"list-wal"|"wal-files"|"list-wal-files")
-            list_wal_files
+            list_wal_files || exit_code=$?
             ;;
         "version"|"-v"|"--version")
-            show_version
+            show_version || exit_code=$?
             ;;
         "help"|"-h"|"--help")
-            show_usage
+            show_usage || exit_code=$?
             ;;
         *)
             log_error "Unknown command: $command"
             echo ""
             show_usage
+            print_command_end "$command" 1
             exit 1
             ;;
     esac
+    
+    # Print end separator
+    print_command_end "$command" "$exit_code"
+    
+    # Return exit code
+    return $exit_code
 }
 
-# Run main function with all arguments
+# Run main function with all arguments and exit with its return code
 main "$@"
+exit $?
