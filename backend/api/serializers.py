@@ -196,10 +196,8 @@ class ProductListSerializer(serializers.ModelSerializer):
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
-    product_name = serializers.CharField(source="product.name", read_only=True)
-    product_price = serializers.DecimalField(
-        source="product.price", max_digits=10, decimal_places=2, read_only=True
-    )
+    product_name = serializers.SerializerMethodField()
+    product_price = serializers.SerializerMethodField()
     total_price = serializers.SerializerMethodField()
 
     class Meta:
@@ -214,10 +212,22 @@ class OrderItemSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "product_name", "product_price", "total_price"]
 
+    def get_product_name(self, obj):
+        """Return stored item name if product is deleted, otherwise current product name."""
+        if obj.item_name:
+            return obj.item_name
+        return obj.product.name if obj.product else "Deleted product"
+
+    def get_product_price(self, obj):
+        """Return stored item price if product is deleted, otherwise current product price."""
+        if obj.item_price is not None and not obj.product:
+            return obj.item_price
+        return obj.product.price if obj.product else Decimal("0.00")
+
     def get_total_price(self, obj):
-        if obj.product and obj.quantity:
-            return round(obj.product.price * obj.quantity, 2)
-        return Decimal("0.00")
+        """Use the model's get_total_price method which handles deleted products."""
+        total = obj.get_total_price()
+        return total if total != "" else Decimal("0.00")
 
     def validate_quantity(self, value):
         if value <= 0:
@@ -566,14 +576,8 @@ class CartSerializer(serializers.ModelSerializer):
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
-    product_name = serializers.CharField(source="product.name", read_only=True)
-    product_price = serializers.DecimalField(
-        source="product.price",
-        max_digits=10,
-        decimal_places=2,
-        min_value=Decimal("0"),
-        read_only=True,
-    )
+    product_name = serializers.SerializerMethodField()
+    product_price = serializers.SerializerMethodField()
     product_image_url = serializers.SerializerMethodField()
     total_price = serializers.SerializerMethodField()
 
@@ -590,13 +594,27 @@ class OrderItemSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "total_price"]
 
+    def get_product_name(self, obj):
+        """Return stored item name if product is deleted, otherwise current product name."""
+        if obj.item_name:
+            return obj.item_name
+        return obj.product.name if obj.product else "Deleted product"
+
+    def get_product_price(self, obj):
+        """Return stored item price if product is deleted, otherwise current product price."""
+        if obj.item_price is not None and not obj.product:
+            return obj.item_price
+        return obj.product.price if obj.product else Decimal("0.00")
+
     def get_product_image_url(self, obj):
         # Return the image URL if exists
-        if hasattr(obj.product, "image") and obj.product.image:
-            return obj.product.image.url
+        if obj.product and hasattr(obj.product, "images"):
+            first_image = obj.product.images.first()
+            return first_image.image_url if first_image else None
         return None
 
     def get_total_price(self, obj):
+        """Use the model's get_total_price method which handles deleted products."""
         return str(obj.get_total_price())
 
 

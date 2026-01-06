@@ -25,6 +25,7 @@ from openpyxl.utils import get_column_letter
 from shipping.models import ShippingDetails
 
 from .forms import (
+    OrderItemInlineForm,
     OrderItemInlineFormSet,
     ProductImageAdminForm,
     ProductImageInlineForm,
@@ -670,16 +671,23 @@ def calculate_total_items(modeladmin, request, queryset):
 
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
+    form = OrderItemInlineForm
     formset = OrderItemInlineFormSet
     min_num = 1
     extra = 1
     readonly_fields = ["get_total_price"]
+    fields = ["product", "quantity", "get_total_price"]
     autocomplete_fields = ["product"]
 
     def get_total_price(self, obj):
-        if obj and obj.product and obj.quantity:
-            return round(obj.product.price * obj.quantity, 2)
-        return "0.00"
+        """
+        Calculate total price using stored price if product is deleted.
+        """
+        if obj:
+            total = obj.get_total_price()
+            if total != "":
+                return f"£{total:.2f}"
+        return "£0.00"
 
     get_total_price.short_description = "Total Price"
 

@@ -6,6 +6,7 @@ from django import forms
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.forms.models import BaseInlineFormSet
+from django.utils.html import format_html
 
 from .models import Order, OrderItem, ProductImage
 from .r2_storage import (
@@ -233,6 +234,117 @@ class ProductImageInlineForm(forms.ModelForm):
             instance.save()
 
         return instance
+
+
+class QuantityLabelWidget(forms.Widget):
+    """
+    Custom widget that displays quantity as a text label (for deleted products).
+    """
+    
+    def __init__(self, quantity=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.quantity = quantity
+    
+    def render(self, name, value, attrs=None, renderer=None):
+        # Display quantity as text label with transparent background
+        quantity_display = str(self.quantity) if self.quantity is not None else "0"
+        return format_html(
+            '<div style="padding: 5px 0; background-color: transparent; color: var(--body-fg, #333);">{}</div>'
+            '<input type="hidden" name="{}" value="{}">',
+            quantity_display,
+            name,
+            quantity_display
+        )
+
+
+class DeletedProductWidget(forms.TextInput):
+    """
+    Custom widget that displays stored product info when product is deleted.
+    """
+    
+    def __init__(self, item_name=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.item_name = item_name
+        self.attrs.update({
+            "readonly": True,
+            "disabled": True,  # Disable to prevent form submission (value stays None)
+            "style": "background-color: transparent; border: none; padding: 0; width: 100%;",
+            "class": "readonly-product-field"
+        })
+    
+    def format_value(self, value):
+        """Return the stored item name with indicator."""
+        if self.item_name:
+            return self.item_name  # Return just the name, we'll add styling in render
+        return "Product deleted (no stored info)"
+    
+    def render(self, name, value, attrs=None, renderer=None):
+        # Use the formatted value for display only
+        formatted_value = self.format_value(value)
+        
+        # If we have an item name, format it with HTML to make "(no longer available)" red
+        if self.item_name:
+            html_content = format_html(
+                '<span style="color: var(--body-fg, inherit);">{}</span> '
+                '<span style="color: #d32f2f;">(no longer available)</span>',
+                self.item_name
+            )
+            # Create a div that displays the HTML content with transparent background
+            # Using CSS variables for theme compatibility (falls back to inherit for light theme)
+            return format_html(
+                '<div style="padding: 5px 0; background-color: transparent; color: var(--body-fg, #333);">{}</div>'
+                '<input type="hidden" name="{}" value="">',
+                html_content,
+                name
+            )
+        else:
+            # Fallback for items without stored info
+            return format_html(
+                '<div style="padding: 5px 0; background-color: transparent; color: var(--body-quiet-color, #999); font-style: italic;">{}</div>'
+                '<input type="hidden" name="{}" value="">',
+                formatted_value,
+                name
+            )
+
+
+class OrderItemInlineForm(forms.ModelForm):
+    """
+    Custom form for OrderItem inline that displays stored info when product is deleted.
+    """
+    
+    class Meta:
+        model = OrderItem
+        fields = ["product", "quantity"]
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        instance = kwargs.get("instance")
+        
+        # If product is deleted but we have stored info, replace the product field widget
+        # with a readonly text field showing the stored info
+        if instance and instance.pk and not instance.product and instance.item_name:
+            # Replace the ForeignKey widget with our custom widget
+            self.fields["product"].widget = DeletedProductWidget(item_name=instance.item_name)
+            # Make it not required since it's deleted
+            self.fields["product"].required = False
+            # Add help text
+            self.fields["product"].help_text = "This product has been deleted. Historical information is preserved."
+            # Replace quantity field with a text label widget (similar to product info)
+            self.fields["quantity"].widget = QuantityLabelWidget(quantity=instance.quantity)
+            # Store original product value (None) to preserve it
+            self._deleted_product = True
+        else:
+            self._deleted_product = False
+    
+    def clean_product(self):
+        """
+        Ensure that deleted products remain None (not changed).
+        """
+        product = self.cleaned_data.get("product")
+        # If this was a deleted product, keep it as None
+        if self._deleted_product:
+            return None
+        return product
 
 
 class OrderItemInlineFormSet(BaseInlineFormSet):

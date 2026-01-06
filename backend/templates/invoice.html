@@ -748,7 +748,7 @@
                     <tr class="line-item-row subtitled">
                         <td colspan="2">
                             <div style="word-break: break-word; padding-left: 0px; padding-right: 5px;">
-                                {{ item.product.name }}
+                                {% if item.item_name %}{{ item.item_name }}{% else %}{{ item.product.name|default:"Deleted product" }}{% endif %}
                             </div>
                         </td>
                         <td>
@@ -758,7 +758,7 @@
                         </td>
                         <td class="break-word">
                             <div>
-                                £{{ item.product.price }}
+                                £{% if item.item_price %}{{ item.item_price }}{% else %}{{ item.product.price|default:"0.00" }}{% endif %}
                             </div>
                         </td>
                         <td>

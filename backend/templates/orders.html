@@ -114,14 +114,14 @@
                 {% if order.prefetched_items %}
                     {% for item in order.prefetched_items %}
                     <tr>
-                        <td style="width:60%">{{ item.product.name }}</td>
+                        <td style="width:60%">{% if item.item_name %}{{ item.item_name }}{% else %}{{ item.product.name|default:"Deleted product" }}{% endif %}</td>
                         <td align="center" style="width:20%">{{ item.quantity }}</td>
                     </tr>
                     {% endfor %}
                 {% else %}
                     {% for item in order.items.all %}
                     <tr>
-                        <td style="width:60%">{{ item.product.name }}</td>
+                        <td style="width:60%">{% if item.item_name %}{{ item.item_name }}{% else %}{{ item.product.name|default:"Deleted product" }}{% endif %}</td>
                         <td align="center" style="width:20%">{{ item.quantity }}</td>
                     </tr>
                     {% endfor %}

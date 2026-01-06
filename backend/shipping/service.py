@@ -477,10 +477,15 @@ class ShippingService:
         # Prepare parcel items for Sendcloud
         parcel_items = []
         for item in order.items.all():
-            if item.product:
+            # Use stored item name if product is deleted, otherwise use product name
+            item_name = item.item_name if item.item_name else (
+                item.product.name if item.product else "Deleted product"
+            )
+            # Only include items that have a name (skip completely invalid items)
+            if item_name and item_name != "Deleted product":
                 parcel_items.append(
                     {
-                        "description": item.product.name,
+                        "description": item_name,
                         "quantity": int(item.quantity),
                         "weight": str(float(item.quantity)),  # TODO: use actual weight
                         "value": str(item.get_total_price()),

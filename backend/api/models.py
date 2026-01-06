@@ -648,24 +648,74 @@ class OrderItem(models.Model):
         blank=False,
         null=False,
     )
+    # Historical data fields - store item information at time of purchase
+    item_name = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Stored item name at time of purchase (preserved if product is deleted)",
+    )
+    item_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(0)],
+        help_text="Stored item price at time of purchase (preserved if product is deleted)",
+    )
 
     class Meta:
         verbose_name_plural = "Order Items"
 
     def __str__(self):
-        return f"{self.product.name if self.product else 'Deleted product'} - {self.quantity}"
+        name = self.item_name if self.item_name else (self.product.name if self.product else "Deleted product")
+        return f"{name} - {self.quantity}"
+
+    def save(self, *args, **kwargs):
+        """
+        Automatically populate item_name and item_price when product exists.
+        These fields are only set if they're not already populated, ensuring
+        historical data is never overwritten.
+        """
+        # Only populate if product exists and fields are not already set
+        if self.product:
+            if not self.item_name:
+                self.item_name = self.product.name
+            if self.item_price is None:
+                self.item_price = self.product.price
+        
+        super().save(*args, **kwargs)
 
     def get_total_price(self):
-        return (
-            round(self.product.price * self.quantity, 2)
-            if self.product and self.quantity
-            else ""
+        """
+        Calculate total price using stored price if product is deleted,
+        otherwise use current product price.
+        """
+        if not self.quantity:
+            return ""
+        
+        # Use stored price if product is deleted, otherwise use current product price
+        price = self.item_price if (self.item_price is not None and not self.product) else (
+            self.product.price if self.product else self.item_price
         )
+        
+        if price is None:
+            return ""
+        
+        return round(price * self.quantity, 2)
 
     def get_item_details(self):
+        """
+        Return item details using stored information when product is deleted.
+        """
+        product_id = self.product.id if self.product else None
+        product_name = self.item_name if self.item_name else (
+            self.product.name if self.product else "Deleted product"
+        )
+        
         return {
-            "product_id": self.product.id,
-            "product_name": self.product.name,
+            "product_id": product_id,
+            "product_name": product_name,
             "quantity": self.quantity,
             "total_price": str(self.get_total_price()),
         }

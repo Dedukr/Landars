@@ -1098,9 +1098,7 @@ restore_postgresql_backup() {
     if [[ "$promote_flag" == "true" ]]; then
         log_info ""
         log_info "✅ Database has been promoted to live: '$DB_NAME'"
-        if [[ -n "$old_db_name" ]]; then
-            log_info "   Old database preserved as: '$old_db_name'"
-        fi
+        # Note: Old database name (if preserved) is already logged in the promotion summary above
     elif [[ "$force_flag" != "true" ]]; then
         log_info ""
         log_info "💡 The database has been restored to '$target_db_name' (safe mode)"
