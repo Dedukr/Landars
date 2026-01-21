@@ -95,5 +95,5 @@ class InvoiceAdmin(admin.ModelAdmin):
 
 @admin.register(InvoiceNumberSequence)
 class InvoiceNumberSequenceAdmin(admin.ModelAdmin):
-    list_display = ["id", "last_number", "updated_at"]
-    readonly_fields = ["id", "updated_at"]
+    list_display = ["id", "last_number"]
+    readonly_fields = ["id"]

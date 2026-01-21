@@ -500,6 +500,9 @@ def create_and_upload_invoice(modeladmin, request, queryset):
                         order.save(update_fields=["invoice_link"])
 
                     success_count += 1
+                    
+                    # Small delay to prevent overwhelming WeasyPrint and reduce crash risk
+                    time.sleep(0.1)
 
             except Exception as e:
                 error_count += 1

@@ -649,26 +649,39 @@
                             <strong>Address:</strong>
                         </div>
 
+                        {% if invoice.billing_address_snapshot.address_line %}
                         <div class="">
                             {{ invoice.billing_address_snapshot.address_line }}
                         </div>
+                        {% endif %}
+                        {% if invoice.billing_address_snapshot.address_line2 %}
                         <div class="">
                             {{ invoice.billing_address_snapshot.address_line2 }}
                         </div>
+                        {% endif %}
+                        {% if invoice.billing_address_snapshot.city %}
                         <div class="">
                             {{ invoice.billing_address_snapshot.city }}
                         </div>
+                        {% endif %}
+                        {% if invoice.billing_address_snapshot.postal_code %}
                         <div class="">
                             {{ invoice.billing_address_snapshot.postal_code }}
                         </div>
+                        {% endif %}
                     </div>
+                    {% endif %}
+                    {% if invoice.customer_snapshot.phone %}
                     <div class="address-phone">
                         <strong>Phone:</strong>
                         <div class="">
                             {{ invoice.customer_snapshot.phone }}
                         </div>
                     </div>
+                    {% endif %}
+                    {% if invoice.customer_snapshot.email %}
                     <div>{{ invoice.customer_snapshot.email }}</div>
+                    {% endif %}
                 </div>
 
             </div>

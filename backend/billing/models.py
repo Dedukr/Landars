@@ -14,7 +14,6 @@ class InvoiceNumberSequence(models.Model):
     """
 
     last_number = models.PositiveBigIntegerField(default=0)
-    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Invoice Number Sequence"
@@ -232,12 +231,34 @@ class Invoice(models.Model):
         self.seller_snapshot = dict(getattr(settings, "BUSINESS_INFO", {}) or {})
 
         # Delivery/due date snapshots
-        self.delivery_date = getattr(order, "delivery_date", None)
-        self.delivery_date_order_id = getattr(order, "delivery_date_order_id", None)
+        # Validate that required fields are present
+        delivery_date = getattr(order, "delivery_date", None)
+        delivery_date_order_id = getattr(order, "delivery_date_order_id", None)
+        
+        if delivery_date is None or delivery_date_order_id is None:
+            missing_fields = []
+            if delivery_date is None:
+                missing_fields.append("delivery_date")
+            if delivery_date_order_id is None:
+                missing_fields.append("delivery_date_order_id")
+            raise ValidationError(
+                f"Order {order.id} is missing required information for invoice creation: {', '.join(missing_fields)}. "
+                f"Please update the order with the missing information before creating an invoice."
+            )
+        
+        self.delivery_date = delivery_date
+        self.delivery_date_order_id = delivery_date_order_id
 
         # Totals snapshot
         self.holiday_fee_percent = Decimal(str(order.holiday_fee))
-        self.holiday_fee_amount = Decimal(str(order.holiday_fee_amount))
+
+        # Calculate holiday fee amount with proper quantization to 2 decimal places
+        # The order.holiday_fee_amount property may return more than 2 decimal places,
+        # so we must quantize it to match the field's decimal_places=2 constraint
+        if self.holiday_fee_percent > 0:
+            holiday_fee_amount = Decimal(str(order.holiday_fee_amount))
+            self.holiday_fee_amount = holiday_fee_amount.quantize(Decimal("0.01"))
+
         self.delivery_fee_amount = Decimal(str(order.delivery_fee))
         self.discount_amount = Decimal(str(order.discount))
         self.total_amount = Decimal(str(order.total_price))
@@ -340,11 +361,14 @@ class Invoice(models.Model):
         Render invoice.html, generate a PDF and upload to S3.
         Stores the resulting S3 key on this Invoice as `invoice_link`.
         """
+        import gc
         import os
         import tempfile
         import time
+        from pathlib import Path
 
         from weasyprint import HTML
+        from weasyprint.text.fonts import FontConfiguration
 
         if self.invoice_link:
             # immutable once set; don't regenerate
@@ -366,6 +390,11 @@ class Invoice(models.Model):
             },
         )
 
+        # Setup font configuration with cache to prevent crashes
+        cache_dir = Path("/tmp/weasyprint_cache")
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        font_config = FontConfiguration()
+
         # Generate PDF with a persistent temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf", mode="wb") as tmp:
             tmp_path = tmp.name
@@ -373,10 +402,35 @@ class Invoice(models.Model):
         try:
             # base_url helps WeasyPrint resolve relative URLs
             base_url = request.build_absolute_uri("/")
-            HTML(string=html_string, base_url=base_url).write_pdf(target=tmp_path)
+            
+            # Use font_config and cache to prevent crashes
+            try:
+                HTML(
+                    string=html_string,
+                    base_url=base_url,
+                ).write_pdf(
+                    target=tmp_path,
+                    font_config=font_config,
+                    optimize_images=True,
+                    jpeg_quality=85,
+                    dpi=150,
+                    cache=cache_dir,
+                )
+            except Exception as pdf_error:
+                # Clean up temp file on PDF generation failure
+                try:
+                    if os.path.exists(tmp_path):
+                        os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise ValueError(f"PDF generation failed: {str(pdf_error)}") from pdf_error
 
             if not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
                 raise ValueError("PDF generation failed (empty/missing file).")
+            
+            # Force garbage collection after PDF generation to free memory
+            del html_string, font_config
+            gc.collect()
 
             # Upload with retries
             s3 = self._get_s3_client()
