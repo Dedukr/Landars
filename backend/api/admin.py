@@ -141,14 +141,14 @@ class ProductImageInline(admin.TabularInline):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ["name", "get_price", "get_categories"]
-    list_filter = ["categories"]
+    list_display = ["name", "get_price", "get_vat_display", "get_categories"]
+    list_filter = ["categories", "vat"]
     filter_horizontal = ["categories"]
     search_fields = ["name"]
     ordering = ["name"]
     inlines = [ProductImageInline]
 
-    fields = ["name", "description", "base_price", "holiday_fee", "categories"]
+    fields = ["name", "description", "base_price", "holiday_fee", "vat", "categories"]
 
     class Media:
         js = ("admin/js/prevent_double_submit.js",)
@@ -162,6 +162,13 @@ class ProductAdmin(admin.ModelAdmin):
         return f"£{obj.price}"
 
     get_price.short_description = "Final Price"
+
+    def get_vat_display(self, obj):
+        """Display VAT percentage."""
+        vat_percent = obj.vat_percentage * Decimal("100")
+        return f"{vat_percent:.0f}%"
+
+    get_vat_display.short_description = "VAT"
 
     def get_readable_categories(self, obj):
         return ", ".join(obj.get_categories)
@@ -407,10 +414,11 @@ def upload_invoice_to_s3(file_path, s3_key, max_retries=3):
     raise Exception(f"Failed to upload invoice to S3: {str(last_exception)}")
 
 
-@admin.action(description="Create & Upload Invoice")
+@admin.action(description="Create Accounting Invoice + Upload PDF")
 def create_and_upload_invoice(modeladmin, request, queryset):
     """
-    Create and upload invoices for selected orders with robust error handling,
+    Create accounting invoices (billing.Invoice) AND upload PDF invoices for selected orders with
+    robust error handling,
     memory management, and optimization.
 
     Features:
@@ -422,19 +430,13 @@ def create_and_upload_invoice(modeladmin, request, queryset):
     - Memory management with garbage collection
     - Optimized PDF generation settings
     - Progress tracking and validation
+    - Immutable accounting invoice snapshot creation (billing.Invoice + line items)
     """
     import gc
     import logging
-    import os
     import time
 
     from django.db import transaction
-    from weasyprint import HTML
-
-    # Get shared font configuration (reused across all PDF generations)
-    # This significantly reduces font processing time and prevents crashes
-    # Access via modeladmin's class (OrderAdmin) to reuse the cached font config
-    font_config, cache_dir = modeladmin.__class__._get_font_config()
 
     # Count orders for progress tracking
     order_count = queryset.count()
@@ -451,17 +453,9 @@ def create_and_upload_invoice(modeladmin, request, queryset):
     )
 
     # Optimize queryset to avoid N+1 queries
-    from django.db.models import Prefetch
-
     optimized_queryset = (
-        queryset.select_related("customer", "customer__profile")
-        .prefetch_related(
-            Prefetch(
-                "items",
-                queryset=OrderItem.objects.select_related("product"),
-                to_attr="prefetched_items",
-            )
-        )
+        queryset.select_related("customer", "customer__profile", "address")
+        .prefetch_related("items", "items__product")
         .order_by("id")
     )
 
@@ -473,12 +467,6 @@ def create_and_upload_invoice(modeladmin, request, queryset):
         chunk_size = 15
     else:
         chunk_size = min(10, order_count)  # Smaller chunks for small batches
-
-    # Optimize PDF settings based on batch size
-    # For large batches, use faster settings
-    use_fast_mode = order_count > 50
-    pdf_dpi = 120 if use_fast_mode else 150  # Lower DPI = faster
-    jpeg_quality = 75 if use_fast_mode else 85  # Lower quality = faster
 
     success_count = 0
     error_count = 0
@@ -497,68 +485,21 @@ def create_and_upload_invoice(modeladmin, request, queryset):
 
                 # Use database transaction for atomicity
                 with transaction.atomic():
-                    # Render invoice template to HTML
-                    html_string = render_to_string(
-                                    "invoice.html",
-                                    {
-                                        "order": order,
-                                        "business": settings.BUSINESS_INFO,
-                                    },
+                    from billing.models import Invoice
+
+                    invoice = Invoice.create_and_publish_from_order(
+                        order=order, request=request
                     )
 
-                    # Generate PDF with optimized settings
-                    # Use persistent temp file to avoid premature deletion
-                    with tempfile.NamedTemporaryFile(
-                        delete=False, suffix=".pdf", mode="wb"
-                    ) as tmp_pdf:
-                        tmp_pdf_path = tmp_pdf.name
-
-                    try:
-                        # Generate PDF with font configuration reuse and optimizations
-                        # Using optimized settings based on batch size
-                        HTML(
-                            string=html_string,
-                            base_url=request.build_absolute_uri("/"),
-                        ).write_pdf(
-                            target=tmp_pdf_path,
-                            font_config=font_config,  # Reuse font config
-                            optimize_images=True,  # Optimize images
-                            jpeg_quality=jpeg_quality,  # Optimized quality
-                            dpi=pdf_dpi,  # Optimized DPI
-                            cache=cache_dir,  # Use font cache
-                        )
-
-                        # Validate PDF was created and has content
-                        if not os.path.exists(tmp_pdf_path):
-                            raise FileNotFoundError(
-                                f"PDF file was not created for order {order.id}"
-                            )
-
-                        file_size = os.path.getsize(tmp_pdf_path)
-                        if file_size == 0:
-                            raise ValueError(f"PDF file is empty for order {order.id}")
-
-                        # Upload to S3 with retry logic
-                        s3_key = f"invoices/order_{order.id}.pdf"
-                        upload_invoice_to_s3(tmp_pdf_path, s3_key, max_retries=3)
-
-                        # Save the S3 key to the order
-                        order.invoice_link = s3_key
+                    # Backward compat: keep the Order.invoice_link in sync for existing UI/code paths
+                    if (
+                        invoice.invoice_link
+                        and order.invoice_link != invoice.invoice_link
+                    ):
+                        order.invoice_link = invoice.invoice_link
                         order.save(update_fields=["invoice_link"])
 
-                        success_count += 1
-
-                    finally:
-                        # Always clean up temp file
-                        if os.path.exists(tmp_pdf_path):
-                            try:
-                                os.unlink(tmp_pdf_path)
-                            except OSError:
-                                # Suppress warning messages - only show errors
-                                pass
-
-                    # Clean up HTML string immediately
-                    del html_string
+                    success_count += 1
 
             except Exception as e:
                 error_count += 1
@@ -789,7 +730,10 @@ class OrderAdmin(admin.ModelAdmin):
     form = OrderAdminForm
 
     class Media:
-        js = ("admin/js/order_filter_cleaner.js", "admin/js/prevent_double_submit.js",)
+        js = (
+            "admin/js/order_filter_cleaner.js",
+            "admin/js/prevent_double_submit.js",
+        )
 
     # Class-level font configuration cache (reused across all PDF exports)
     # This significantly reduces font processing time
@@ -981,11 +925,11 @@ class OrderAdmin(admin.ModelAdmin):
         Otherwise use default ordering.
         """
         is_single_date = self._is_single_date_filtered(request)
-        
+
         if is_single_date:
             # Sort by delivery_date_order_id descending (last to first)
             return ["-delivery_date_order_id"]
-        
+
         # Default ordering
         return super().get_ordering(request) or ["-id"]
 
@@ -1011,7 +955,7 @@ class OrderAdmin(admin.ModelAdmin):
 
         if not order.delivery_fee_manual:
             from shipping.service import ShippingService
-            
+
             # Sausage category name
             post_suitable_category = "Sausages and Marinated products"
             for item in items:
@@ -1116,7 +1060,7 @@ class OrderAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         """
         Save the order without calculating delivery fees here to avoid double save.
-        
+
         Note: The Order.save() method will automatically handle:
         - Auto-assignment of delivery_date_order_id for new orders
         - Reassignment of delivery_date_order_id when delivery_date changes
@@ -1184,10 +1128,19 @@ class OrderAdmin(admin.ModelAdmin):
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
     def get_invoice(self, obj):
+        invoice = getattr(obj, "invoice", None)
+        if invoice and getattr(invoice, "invoice_link", ""):
+            try:
+                url = invoice.get_presigned_invoice_url(expires_in=300)
+                return format_html('<a href="{}" target="_blank">Invoice</a>', url)
+            except Exception:
+                # fallback below
+                pass
+
         if not obj.invoice_link:
             return "No invoice"
 
-        # Generate presigned url
+        # Backward compat (old Order.invoice_link)
         s3 = get_s3_client()
         url = s3.generate_presigned_url(
             "get_object",
@@ -1326,7 +1279,7 @@ class OrderAdmin(admin.ModelAdmin):
         font_config,
         cache_dir,
         filename,
-                    request,
+        request,
         pdf_merger_available,
     ):
         """

@@ -143,6 +143,10 @@ class Product(models.Model):
         validators=[MinValueValidator(0)],
         help_text="Additional holiday fee applied to the product",
     )
+    vat = models.BooleanField(
+        default=False,
+        help_text="Check to apply 20% VAT, uncheck for 0% VAT",
+    )
     # image = models.ImageField(
     #     upload_to="products/", blank=True, null=True
     # )
@@ -161,6 +165,11 @@ class Product(models.Model):
         """Calculate final price as base_price + holiday_fee."""
         return self.base_price + self.holiday_fee
 
+    @property
+    def vat_percentage(self):
+        """Return VAT percentage: 20% if VAT is checked, 0% otherwise."""
+        return Decimal("0.2") if self.vat else Decimal("0")
+
     def get_categories(self):
         return [
             cat.name for cat in self.categories.all().order_by("parent__name", "name")
@@ -176,6 +185,7 @@ class Product(models.Model):
             "base_price": str(self.base_price),
             "holiday_fee": str(self.holiday_fee),
             "price": str(self.price),
+            "vat": self.vat_percentage,
             "primary_image": primary_image.image_url if primary_image else None,
         }
 
@@ -357,19 +367,6 @@ class Order(models.Model):
     def total_items(self):
         return sum(item.quantity for item in self.items.all())
 
-    @property
-    def due_date(self):
-        """Calculate due date: 7 days from order creation date."""
-        if self.created_at:
-            return self.created_at.date() + timedelta(days=7)
-        return None
-
-    @property
-    def invoice_due_date(self):
-        """Calculate due date for invoice: 14 days from order creation date."""
-        if self.created_at:
-            return self.created_at.date() + timedelta(days=14)
-        return None
 
     def get_order_details(self):
         return {

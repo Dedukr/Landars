@@ -41,8 +41,8 @@ services:
   backend:
     image: dedukr/landar-backend:latest
     build:
-      context: .
-      dockerfile: ./backend/Dockerfile
+      context: ./backend
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
     env_file:
@@ -168,7 +168,7 @@ volumes:
   static_volume:
     external: true
     name: landars_static_volume
-    
+
   postgres_data:
     external: true
     name: landars_postgres_data
@@ -180,4 +180,3 @@ volumes:
   postgres_backups:
     external: true
     name: landars_postgres_backups
-

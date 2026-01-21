@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     "account",
     "api",
     "storages",
+    "billing",
     "shipping",
 ]
 

@@ -38,7 +38,7 @@ RUN set -euo pipefail; \
     echo "✓ Build dependencies installed and verified"
 
 # Install Python dependencies
-COPY ./backend/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Production stage
@@ -88,14 +88,8 @@ WORKDIR /backend
 COPY --from=builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
 
-# Copy application code (only backend directory)
-COPY ./backend .
-
-# Copy sequence fix script
-# COPY management/fix_identity_columns.py /tmp/fix_identity_columns.py
-
-# Copy migration script (from project root management directory)
-COPY ./management/migrate_to_postgres.py /tmp/migrate_to_postgres.py
+# Copy application code
+COPY . .
 
 # Collect static files
 RUN python manage.py collectstatic --noinput

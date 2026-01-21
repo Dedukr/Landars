@@ -343,6 +343,12 @@
             word-wrap: break-word;
             word-break: initial;
             text-align: right;
+            padding-left: 20px;
+        }
+
+        /* Add spacing to header columns 2-5 */
+        .line-item-table-dynamic-column-widths .table-headers td:not(:first-child) {
+            padding-left: 20px;
         }
 
         /* Same style used for line-item-row, however we're only targeting th last cell because that's the only area where amount values can render and trigger overflows */
@@ -544,7 +550,7 @@
             <div class="width-100 pr15 border-box-box-sizing">
                 <div class="brand-logo-container">
                     <div class="h1 logo-gray">
-                        {{business.name}}
+                        {{ invoice.seller_snapshot.name }}
                     </div>
                 </div>
             </div>
@@ -558,7 +564,7 @@
                                 Invoice number
                             </td>
                             <td>
-                                #{{ order.id }}
+                                #{{ invoice.invoice_number }}
                             </td>
                         </tr>
                         <tr>
@@ -566,7 +572,7 @@
                                 Delivery date
                             </td>
                             <td>
-                                {% if order.delivery_date %}{{ order.delivery_date|date:"d M Y" }}{% else %}-{% endif %}
+                                {{ invoice.delivery_date|date:"d M Y" }}
                             </td>
                         </tr>
                         <tr>
@@ -574,7 +580,7 @@
                                 Delivery order ID
                             </td>
                             <td>
-                                {{ order.delivery_date_order_id }}
+                                {{ invoice.delivery_date_order_id }}
                             </td>
                         </tr>
                         <tr>
@@ -582,7 +588,7 @@
                                 Date
                             </td>
                             <td>
-                                {{ order.created_at|date:"d M Y" }}
+                                {{ invoice.created_at|date:"d M Y" }}
                             </td>
                         </tr>
                         <tr>
@@ -590,7 +596,7 @@
                                 Due Date
                             </td>
                             <td>
-                                {% if order.invoice_due_date %}{{ order.invoice_due_date|date:"d M Y" }}{% else %}-{% endif %}
+                                {{ invoice.due_date|date:"d M Y" }}
                             </td>
                         </tr>
                     </tbody>
@@ -600,20 +606,20 @@
         <div class="flex-horizontal flex-align-start break-word">
             <div class="width-100 pr15 border-box-box-sizing">
                 <div class="address-merchant-name bold">
-                    {{business.name}}
+                    {{ invoice.seller_snapshot.name }}
                 </div>
                 <div class="address-lines">
                     <div>
-                        {{business.address}}
+                        {{ invoice.seller_snapshot.address }}
                     </div>
                     <div>
-                        {{business.city}}
+                        {{ invoice.seller_snapshot.city }}
                     </div>
                     <div>
-                        {{business.postal_code}}
+                        {{ invoice.seller_snapshot.postal_code }}
                     </div>
                     <div>
-                        {{business.country}}
+                        {{ invoice.seller_snapshot.country }}
                     </div>
                 </div>
                 <!-- <div class="address-phone">
@@ -634,7 +640,7 @@
                         <strong>Bill to</strong>
                     </div>
                     <div class="break-word">
-                        {{ order.customer.name }}
+                        {{ invoice.customer_snapshot.name }}
                     </div>
                 </div>
                 <div class="">
@@ -643,36 +649,26 @@
                             <strong>Address:</strong>
                         </div>
 
-                        {% if order.customer.profile.address.address_line %}
                         <div class="">
-                            {{ order.customer.profile.address.address_line }}
+                            {{ invoice.billing_address_snapshot.address_line }}
                         </div>
-                        {% endif %}
-                        {% if order.customer.profile.address.address_line2 %}
                         <div class="">
-                            {{ order.customer.profile.address.address_line2 }}
+                            {{ invoice.billing_address_snapshot.address_line2 }}
                         </div>
-                        {% endif %}
-                        {% if order.customer.profile.address.city %}
                         <div class="">
-                            {{ order.customer.profile.address.city }}
+                            {{ invoice.billing_address_snapshot.city }}
                         </div>
-                        {% endif %}
-                        {% if order.customer.profile.address.postal_code %}
                         <div class="">
-                            {{ order.customer.profile.address.postal_code }}
+                            {{ invoice.billing_address_snapshot.postal_code }}
                         </div>
-                        {% endif %}
                     </div>
                     <div class="address-phone">
                         <strong>Phone:</strong>
                         <div class="">
-                            {{ order.customer.profile.phone }}
+                            {{ invoice.customer_snapshot.phone }}
                         </div>
                     </div>
-                    {% if order.customer.email %}
-                    <div>{{ order.customer.email }}</div>
-                    {% endif %}
+                    <div>{{ invoice.customer_snapshot.email }}</div>
                 </div>
 
             </div>
@@ -682,19 +678,20 @@
                 Bank Details
             </div>
             <div class="">
-                Business Name: {{business.account_name}}
+                Business Name: {{ invoice.seller_snapshot.account_name }}
             </div>
             <div class="">
-                Account Number: {{business.account_number}}
+                Account Number: {{ invoice.seller_snapshot.account_number }}
             </div>
             <div class="">
-                Sort Code: {{business.sort_code}}
+                Sort Code: {{ invoice.seller_snapshot.sort_code }}
             </div>
         </div>
         <div class="mt20 pt20 light-gray-border-top fs-10 line-height-140">
             <div class="mb10">
                 <div class="h2">
-                    £{{order.total_price}} billed due {% if order.invoice_due_date %}{{ order.invoice_due_date|date:"d M Y" }}{% else %}-{% endif %}
+                    £{{ invoice.total|floatformat:2 }} billed due
+                    {{invoice.due_date|date:"d M Y" }}
                 </div>
                 <!-- <div class="mt10 pb5 bold">
                     <a
@@ -708,35 +705,11 @@
             <table cellpadding="0" cellspacing="0" class="line-item-table line-item-table-dynamic-column-widths">
                 <tbody>
                     <tr class="table-headers">
-                        <td class="width-50 center-valign">
-                            Description
-                        </td>
-                        <td>
-                        </td>
-                        <td class="width-1 align-right center-valign">
-                            Qty
-                        </td>
-                        <td class="width-40-px">
-                        </td>
-                        <td class="width-1 align-right center-valign">
-                            <div class="line-height-1point3">
-                                Unit price
-                            </div>
-                        </td>
-                        <td class="width-40-px">
-
-                        </td>
-                        <td class="width-0 center-valign">
-
-                        </td>
-                        <td class="width-0">
-
-                        </td>
-                        <td class="width-1 nowrap align-right center-valign align-right">
-                            <div class="line-height-1point3">
-                                Amount
-                            </div>
-                        </td>
+                        <td class="width-50 center-valign">Product</td>
+                        <td class="width-1 nowrap align-right center-valign">Qty</td>
+                        <td class="width-1 nowrap align-right center-valign">Unit price</td>
+                        <td class="width-1 nowrap align-right center-valign">VAT</td>
+                        <td class="width-1 nowrap align-right center-valign">Total</td>
                     </tr>
                     <tr>
                         <td colspan="5" height="5"
@@ -744,140 +717,122 @@
                             &nbsp;
                         </td>
                     </tr>
-                    {% for item in order.items.all %}
+                    {% for item in invoice.line_items.all %}
                     <tr class="line-item-row subtitled">
-                        <td colspan="2">
+                        <td>
                             <div style="word-break: break-word; padding-left: 0px; padding-right: 5px;">
-                                {% if item.item_name %}{{ item.item_name }}{% else %}{{ item.product.name|default:"Deleted product" }}{% endif %}
+                                {{ item.description }}
                             </div>
-                        </td>
-                        <td>
-                            {{ item.quantity }}
-                        </td>
-                        <td>
-                        </td>
-                        <td class="break-word">
-                            <div>
-                                £{% if item.item_price %}{{ item.item_price }}{% else %}{{ item.product.price|default:"0.00" }}{% endif %}
-                            </div>
-                        </td>
-                        <td>
-                        </td>
-                        <td>
-                        </td>
-                        <td>
                         </td>
                         <td class="break-word align-right">
-                            <div>
-                                £{{ item.get_total_price }}
-                            </div>
+                            {{ item.quantity|floatformat:0 }}
+                        </td>
+                        <td class="break-word align-right">
+                            £{{ item.unit_price|floatformat:2 }}
+                        </td>
+                        <td class="break-word align-right">
+                            £{{ item.unit_vat_amount|floatformat:2 }}
+                        </td>
+                        <td class="break-word align-right">
+                            £{{ item.line_total|floatformat:2 }}
                         </td>
                     </tr>
                     <tr>
                         <td colspan="5" height="15"
-                            style=" border: 0; border-collapse: collapse; margin: 0; padding: 0; height: 15px; font-size: 1px; line-height: 1px; mso-line-height-rule: exactly;">
+                            style=" border: 0; border-collapse: collapse; margin: 0; padding: 0; height: 15px; font-size: 1px; line-height: 1px;">
                             &nbsp;
                         </td>
                     </tr>
                     {% endfor %}
-                    <!-- <tr class="summary-amount-border ">
-                        <td>
-                        </td>
-                        <td colspan="8">
-                        </td>
-                    </tr>
-                    <tr class="summary-amount  ">
-                        <td>
-                        </td>
-                        <td colspan="7">
-                            Subtotal
-                        </td>
-                        <td class="break-word align-right">
-                            £150.00
-                        </td>
-                    </tr> -->
                     <tr class="summary-amount-border mt30">
                         <td>
                         </td>
-                        <td colspan="8">
+                        <td colspan="4">
                         </td>
                     </tr>
-                    <tr class="summary-amount bold">
-                        <td>
-                        </td>
-                        <td colspan="7">
-                            Total
-                        </td>
-                        <td class="break-word align-right">
-                            £{{order.sum_price}}
-                        </td>
-                    </tr>
-                    <tr class="summary-amount-border mt30">
-                        <td>
-                        </td>
-                        <td colspan="8">
-                        </td>
-                    </tr>
-                    {% if order.holiday_fee > 0 %}
                     <tr class="summary-amount">
                         <td>
                         </td>
-                        <td colspan="7">
-                            Holiday Fee ({{order.holiday_fee}}%)
+                        <td colspan="3">
+                            Delivery fee
                         </td>
                         <td class="break-word align-right">
-                            £{{order.holiday_fee_amount|floatformat:2}}
+                            £{{ invoice.delivery_fee_amount|floatformat:2 }}
                         </td>
                     </tr>
+                    {% if invoice.holiday_fee_percent > 0 %}
                     <tr class="summary-amount-border mt30">
                         <td>
                         </td>
-                        <td colspan="8">
+                        <td colspan="4">
+                        </td>
+                    </tr>
+                    <tr class="summary-amount">
+                        <td>
+                        </td>
+                        <td colspan="3">
+                            Holiday Fee ({{invoice.holiday_fee_percent|floatformat:0}}%)
+                        </td>
+                        <td class="break-word align-right">
+                            £{{ invoice.holiday_fee_amount|floatformat:2 }}
                         </td>
                     </tr>
                     {% endif %}
-                    <tr class="summary-amount">
-                        <td>
-                        </td>
-                        <td colspan="7">
-                            Delivery
-                        </td>
-                        <td class="break-word align-right">
-                            £{{order.delivery_fee}}
-                        </td>
-                    </tr>
+                    {% if invoice.discount_amount > 0 %}
                     <tr class="summary-amount-border mt30">
                         <td>
                         </td>
-                        <td colspan="8">
+                        <td colspan="4">
                         </td>
                     </tr>
-                    {% if order.discount > 0 %}
                     <tr class="summary-amount">
                         <td>
                         </td>
-                        <td colspan="7">
+                        <td colspan="3">
                             Discount
                         </td>
                         <td class="break-word align-right">
-                            - £{{order.discount}}
-                        </td>
-                    </tr>
-                    <tr class="summary-amount-border mt30">
-                        <td>
-                        </td>
-                        <td colspan="8">
+                            - £{{ invoice.discount_amount|floatformat:2 }}
                         </td>
                     </tr>
                     {% endif %}
+                    <tr class="summary-amount-border mt30">
+                        <td>
+                        </td>
+                        <td colspan="4">
+                        </td>
+                    </tr>
                     <tr class="summary-amount bold">
                         <td>
                         </td>
-                        <td colspan="7">
-                            Amount due
+                        <td colspan="3">
+                            Subtotal (ex VAT)
                         </td>
                         <td class="break-word align-right">
-                            £{{order.total_price}}
+                            £{{ invoice.subtotal_ex_vat|floatformat:2 }}
+                        </td>
+                    </tr>
+                    <tr class="summary-amount">
+                        <td></td>
+                        <td colspan="3">
+                            VAT total
+                        </td>
+                        <td class="break-word align-right">
+                            £{{ invoice.total_vat|floatformat:2 }}
+                        </td>
+                    </tr>
+                    <tr class="summary-amount-border mt30">
+                        <td></td>
+                        <td colspan="4"></td>
+                    </tr>
+                    <tr class="summary-amount bold">
+                        <td>
+                        </td>
+                        <td colspan="3">
+                            Amount due (inc VAT)
+                        </td>
+                        <td class="break-word align-right">
+                            £{{ invoice.total|floatformat:2 }}
                         </td>
                     </tr>
                 </tbody>
@@ -887,12 +842,13 @@
             <div class="fs-10">
             </div>
         </div>
-        <div class="mt30 pt30 light-gray-border-top fs-10 line-height-140"
+        <div class="mt30 light-gray-border-top fs-10 line-height-140"
             style=" padding-bottom: 40px; margin-left: 40px; margin-right: 40px; overflow:hidden; ">
             <div class="mt20">
                 <div class="flex-horizontal flex-justify">
                     <div class="nowrap">
-                        #{{ order.id }} · £{{order.total_price}} billed due {% if order.invoice_due_date %}{{ order.invoice_due_date|date:"d M Y" }}{% else %}-{% endif %}
+                        #{{ invoice.invoice_number }} · £{{ invoice.total|floatformat:2 }} billed due 
+                        {{invoice.due_date|date:"d M Y" }}
                     </div>
                 </div>
             </div>
