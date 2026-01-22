@@ -7,23 +7,37 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0035_migrate_order_date_to_created_at'),
+        ("api", "0035_migrate_order_date_to_created_at"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='orderitem',
-            name='item_name',
-            field=models.CharField(blank=True, help_text='Stored item name at time of purchase (preserved if product is deleted)', max_length=255, null=True),
+            model_name="orderitem",
+            name="item_name",
+            field=models.CharField(
+                blank=True,
+                help_text="Stored item name at time of purchase (preserved if product is deleted)",
+                max_length=255,
+                null=True,
+            ),
         ),
         migrations.AddField(
-            model_name='orderitem',
-            name='item_price',
-            field=models.DecimalField(blank=True, decimal_places=2, help_text='Stored item price at time of purchase (preserved if product is deleted)', max_digits=10, null=True, validators=[django.core.validators.MinValueValidator(0)]),
+            model_name="orderitem",
+            name="item_price",
+            field=models.DecimalField(
+                blank=True,
+                decimal_places=2,
+                help_text="Stored item price at time of purchase (preserved if product is deleted)",
+                max_digits=10,
+                null=True,
+                validators=[django.core.validators.MinValueValidator(0)],
+            ),
         ),
         migrations.AddField(
-            model_name='product',
-            name='vat',
-            field=models.BooleanField(default=False, help_text='Check to apply 20% VAT, uncheck for 0% VAT'),
+            model_name="product",
+            name="vat",
+            field=models.BooleanField(
+                default=False, help_text="Check to apply 20% VAT, uncheck for 0% VAT"
+            ),
         ),
     ]

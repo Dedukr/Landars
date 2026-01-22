@@ -623,6 +623,23 @@ class OrderItemInline(admin.TabularInline):
     fields = ["product", "quantity", "get_total_price"]
     autocomplete_fields = ["product"]
 
+    def get_product_name(self, obj):
+        """
+        Display the stored historical item name (what was actually ordered),
+        or current product name if no historical name is stored.
+        """
+        if obj:
+            # Show stored historical name if available, otherwise current product name
+            if obj.item_name:
+                return obj.item_name
+            elif obj.product:
+                return obj.product.name
+            else:
+                return "Deleted product"
+        return "-"
+    
+    get_product_name.short_description = "Item Name (Ordered)"
+
     def get_total_price(self, obj):
         """
         Calculate total price using stored price if product is deleted.
