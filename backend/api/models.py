@@ -670,11 +670,13 @@ class OrderItem(models.Model):
 
     def save(self, *args, **kwargs):
         """
-        Automatically populate item_name and item_price when product exists.
-        These fields are only set if they're not already populated, ensuring
-        historical data is never overwritten.
+        Automatically populate item_name and item_price snapshots from product.
+        Only populates if snapshots are empty (fallback for programmatic creation).
+        
+        Note: When saving through admin form, the form's save() method handles
+        snapshot updates. This method only acts as a fallback.
         """
-        # Only populate if product exists and fields are not already set
+        # Only populate snapshots if they're empty (fallback for non-form saves)
         if self.product:
             if not self.item_name:
                 self.item_name = self.product.name
