@@ -307,9 +307,36 @@ class DeletedProductWidget(forms.TextInput):
             )
 
 
+class ItemNameDisplayWidget(forms.Widget):
+    """
+    Custom widget that displays item_name as text but preserves product_id in hidden input.
+    Prevents column misalignment in admin inline tables.
+    """
+    
+    def __init__(self, item_name=None, product_id=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.item_name = item_name
+        self.product_id = product_id
+    
+    def render(self, name, value, attrs=None, renderer=None):
+        # Display item_name as text, preserve product_id in hidden input
+        display_text = self.item_name or "-"
+        product_id_value = str(self.product_id) if self.product_id else ""
+        
+        return format_html(
+            '<div style="padding: 5px 0; background-color: transparent; color: var(--body-fg, #333);">{}</div>'
+            '<input type="hidden" name="{}" value="{}">',
+            display_text,
+            name,
+            product_id_value
+        )
+
+
 class OrderItemInlineForm(forms.ModelForm):
     """
-    Custom form for OrderItem inline that displays stored info when product is deleted.
+    Custom form for OrderItem inline.
+    Automatically syncs item_name and item_price snapshots when product changes.
+    For existing items, displays item_name instead of product field.
     """
     
     class Meta:
@@ -320,31 +347,70 @@ class OrderItemInlineForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         instance = kwargs.get("instance")
         
-        # If product is deleted but we have stored info, replace the product field widget
-        # with a readonly text field showing the stored info
-        if instance and instance.pk and not instance.product and instance.item_name:
-            # Replace the ForeignKey widget with our custom widget
-            self.fields["product"].widget = DeletedProductWidget(item_name=instance.item_name)
-            # Make it not required since it's deleted
+        # For existing items, replace product widget with item_name display
+        if instance and instance.pk:
+            # Use custom widget that displays item_name but preserves product_id
+            item_name = instance.item_name or (instance.product.name if instance.product else "Deleted product")
+            product_id = instance.product_id if instance.product else None
+            self.fields["product"].widget = ItemNameDisplayWidget(
+                item_name=item_name,
+                product_id=product_id
+            )
             self.fields["product"].required = False
-            # Add help text
-            self.fields["product"].help_text = "This product has been deleted. Historical information is preserved."
-            # Replace quantity field with a text label widget (similar to product info)
-            self.fields["quantity"].widget = QuantityLabelWidget(quantity=instance.quantity)
-            # Store original product value (None) to preserve it
+        
+        # Handle deleted products
+        if instance and instance.pk and not instance.product and instance.item_name:
             self._deleted_product = True
         else:
             self._deleted_product = False
     
     def clean_product(self):
         """
-        Ensure that deleted products remain None (not changed).
+        Ensure that deleted products remain None.
         """
         product = self.cleaned_data.get("product")
+        
         # If this was a deleted product, keep it as None
         if self._deleted_product:
             return None
+        
         return product
+    
+    def save(self, commit=True):
+        """
+        Update snapshots only when:
+        1. A new order item is added (product is set)
+        2. An existing order item's product is changed in the form
+        
+        Snapshots are NOT updated when just saving the order without changing products.
+        """
+        instance = super().save(commit=False)
+        
+        if instance.product:
+            if not instance.pk:
+                # New order item - populate snapshots from product
+                instance.item_name = instance.product.name
+                instance.item_price = instance.product.price
+            else:
+                # Existing order item - check if product was changed
+                try:
+                    original = OrderItem.objects.get(pk=instance.pk)
+                    original_product_id = original.product_id if original.product else None
+                    new_product_id = instance.product_id if instance.product else None
+                    
+                    # Only update snapshots if product_id actually changed in the form
+                    if original_product_id != new_product_id:
+                        instance.item_name = instance.product.name
+                        instance.item_price = instance.product.price
+                except OrderItem.DoesNotExist:
+                    # Shouldn't happen, but handle gracefully
+                    instance.item_name = instance.product.name
+                    instance.item_price = instance.product.price
+        
+        if commit:
+            instance.save()
+        return instance
+    
 
 
 class OrderItemInlineFormSet(BaseInlineFormSet):
