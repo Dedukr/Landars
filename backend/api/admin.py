@@ -17,7 +17,7 @@ from django.db.models.functions import Round
 from django.forms import ModelForm
 from django.http import HttpResponse, HttpResponseRedirect
 from django.template.loader import render_to_string
-from django.urls import reverse
+from django.urls import path, reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from openpyxl import Workbook
@@ -575,10 +575,29 @@ def mark_orders_pending(modeladmin, request, queryset):
 
 @admin.action(description="Mark selected orders as Paid")
 def mark_orders_paid(modeladmin, request, queryset):
+    from billing.models import Invoice
+    from django.utils import timezone
+
     updated = queryset.update(status="paid")
+    
+    # Update related invoices to mark them as paid
+    invoice_updated = 0
+    for order in queryset.select_related("invoice"):
+        invoice = getattr(order, "invoice", None)
+        if invoice and invoice.status != Invoice.Status.PAID:
+            invoice.amount_paid = invoice.total_amount
+            invoice.status = Invoice.Status.PAID
+            invoice.paid_at = timezone.now()
+            invoice.save(update_fields=["amount_paid", "status", "paid_at"])
+            invoice_updated += 1
+    
+    message = f"{updated} order(s) marked as paid."
+    if invoice_updated > 0:
+        message += f" {invoice_updated} invoice(s) updated."
+    
     modeladmin.message_user(
         request,
-        f"{updated} order(s) marked as paid.",
+        message,
         level=messages.SUCCESS,
     )
 
@@ -876,7 +895,9 @@ class OrderAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         self.request = request  # Save request for later use
-        return super().get_queryset(request)
+        qs = super().get_queryset(request)
+        # Prefetch invoice to avoid N+1 queries when displaying invoice column
+        return qs.select_related("invoice")
 
     def _is_single_date_filtered(self, request):
         """
@@ -1089,7 +1110,32 @@ class OrderAdmin(admin.ModelAdmin):
         # Don't calculate delivery fees in save_model to prevent double save
         # This will be handled in save_related after inlines are processed
         # Delivery date order ID reassignment is handled in Order.save() method
+        
+        # Track if status changed to "paid" to update invoice
+        status_changed_to_paid = False
+        if change and "status" in form.changed_data and obj.status == "paid":
+            status_changed_to_paid = True
+        
         super().save_model(request, obj, form, change)
+        
+        # Update related invoice when order status changes to "paid"
+        if status_changed_to_paid:
+            self._update_invoice_to_paid(obj)
+
+    def _update_invoice_to_paid(self, order):
+        """
+        Update the related invoice when order status changes to "paid".
+        Sets amount_paid to total_amount, status to PAID, and paid_at to now.
+        """
+        from billing.models import Invoice
+        from django.utils import timezone
+
+        invoice = getattr(order, "invoice", None)
+        if invoice and invoice.status != Invoice.Status.PAID:
+            invoice.amount_paid = invoice.total_amount
+            invoice.status = Invoice.Status.PAID
+            invoice.paid_at = timezone.now()
+            invoice.save(update_fields=["amount_paid", "status", "paid_at"])
 
     def save_formset(self, request, form, formset, change):
         """
@@ -1148,31 +1194,111 @@ class OrderAdmin(admin.ModelAdmin):
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
     def get_invoice(self, obj):
+        """
+        Display invoice download link if exists, otherwise show "Create invoice" button.
+        """
         invoice = getattr(obj, "invoice", None)
         if invoice and getattr(invoice, "invoice_link", ""):
             try:
                 url = invoice.get_presigned_invoice_url(expires_in=300)
-                return format_html('<a href="{}" target="_blank">Invoice</a>', url)
+                return format_html(
+                    '<a href="{}" target="_blank" class="button" style="background-color: #28a745; color: white; padding: 5px 10px; text-decoration: none; border-radius: 3px;">Download</a>',
+                    url,
+                )
             except Exception:
                 # fallback below
                 pass
 
-        if not obj.invoice_link:
-            return "No invoice"
+        # Check for backward compat (old Order.invoice_link)
+        if obj.invoice_link:
+            s3 = get_s3_client()
+            try:
+                url = s3.generate_presigned_url(
+                    "get_object",
+                    Params={
+                        "Bucket": settings.AWS_STORAGE_BUCKET_NAME,
+                        "Key": obj.invoice_link,
+                    },
+                    ExpiresIn=300,
+                )
+                return format_html(
+                    '<a href="{}" target="_blank" class="button" style="background-color: #28a745; color: white; padding: 5px 10px; text-decoration: none; border-radius: 3px;">Download</a>',
+                    url,
+                )
+            except Exception:
+                pass
 
-        # Backward compat (old Order.invoice_link)
-        s3 = get_s3_client()
-        url = s3.generate_presigned_url(
-            "get_object",
-            Params={
-                "Bucket": settings.AWS_STORAGE_BUCKET_NAME,
-                "Key": obj.invoice_link,
-            },
-            ExpiresIn=300,
+        # No invoice exists - show "Create invoice" button
+        create_url = reverse(
+            "admin:api_order_create_invoice", kwargs={"order_id": obj.id}
         )
-        return format_html('<a href="{}" target="_blank">Invoice</a>', url)
+        return format_html(
+            '<a href="{}" class="button" style="background-color: #417690; color: white; padding: 5px 10px; text-decoration: none; border-radius: 3px;">Create</a>',
+            create_url,
+        )
 
     get_invoice.short_description = "Invoice"
+
+    def get_urls(self):
+        """Add custom URL for single-order invoice creation."""
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "<int:order_id>/create-invoice/",
+                self.admin_site.admin_view(self.create_invoice_view),
+                name="api_order_create_invoice",
+            ),
+        ]
+        return custom_urls + urls
+
+    def create_invoice_view(self, request, order_id):
+        """
+        Create invoice for a single order and redirect back to order list.
+        """
+        from django.db import transaction
+
+        try:
+            order = Order.objects.get(pk=order_id)
+        except Order.DoesNotExist:
+            self.message_user(
+                request, f"Order {order_id} not found.", level=messages.ERROR
+            )
+            return HttpResponseRedirect(reverse("admin:api_order_changelist"))
+
+        try:
+            with transaction.atomic():
+                from billing.models import Invoice
+
+                invoice = Invoice.create_and_publish_from_order(
+                    order=order, request=request
+                )
+
+                # Backward compat: keep the Order.invoice_link in sync
+                if invoice.invoice_link and order.invoice_link != invoice.invoice_link:
+                    order.invoice_link = invoice.invoice_link
+                    order.save(update_fields=["invoice_link"])
+
+                self.message_user(
+                    request,
+                    f"Invoice created successfully for Order #{order.id}.",
+                    level=messages.SUCCESS,
+                )
+        except Exception as e:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(
+                f"Failed to create invoice for order {order_id}: {str(e)}",
+                exc_info=True,
+            )
+            self.message_user(
+                request,
+                f"Failed to create invoice: {str(e)}",
+                level=messages.ERROR,
+            )
+
+        # Redirect back to order list or order detail page
+        return HttpResponseRedirect(reverse("admin:api_order_changelist"))
 
     def export_orders_pdf(self, request, queryset):
         """

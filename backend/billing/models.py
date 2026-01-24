@@ -234,7 +234,7 @@ class Invoice(models.Model):
         # Validate that required fields are present
         delivery_date = getattr(order, "delivery_date", None)
         delivery_date_order_id = getattr(order, "delivery_date_order_id", None)
-        
+
         if delivery_date is None or delivery_date_order_id is None:
             missing_fields = []
             if delivery_date is None:
@@ -245,7 +245,7 @@ class Invoice(models.Model):
                 f"Order {order.id} is missing required information for invoice creation: {', '.join(missing_fields)}. "
                 f"Please update the order with the missing information before creating an invoice."
             )
-        
+
         self.delivery_date = delivery_date
         self.delivery_date_order_id = delivery_date_order_id
 
@@ -402,7 +402,7 @@ class Invoice(models.Model):
         try:
             # base_url helps WeasyPrint resolve relative URLs
             base_url = request.build_absolute_uri("/")
-            
+
             # Use font_config and cache to prevent crashes
             try:
                 HTML(
@@ -423,11 +423,13 @@ class Invoice(models.Model):
                         os.unlink(tmp_path)
                 except OSError:
                     pass
-                raise ValueError(f"PDF generation failed: {str(pdf_error)}") from pdf_error
+                raise ValueError(
+                    f"PDF generation failed: {str(pdf_error)}"
+                ) from pdf_error
 
             if not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
                 raise ValueError("PDF generation failed (empty/missing file).")
-            
+
             # Force garbage collection after PDF generation to free memory
             del html_string, font_config
             gc.collect()

@@ -8,7 +8,12 @@ from .models import Invoice, InvoiceLineItem, InvoiceNumberSequence
 class InvoiceLineItemInline(admin.TabularInline):
     model = InvoiceLineItem
     extra = 0
+    max_num = 0  # Prevent adding new line items
     can_delete = False
+
+    def has_add_permission(self, request, obj=None):
+        """Prevent adding new line items - invoices are immutable."""
+        return False
 
     def get_vat_display(self, obj):
         """Display VAT rate as percentage using InvoiceLineItem's method."""
@@ -19,8 +24,10 @@ class InvoiceLineItemInline(admin.TabularInline):
     readonly_fields = [
         "description",
         "quantity",
+        "unit_gross",
         "unit_price",
         "line_total",
+        "vat_rate",
         "get_vat_display",
         "vat_amount",
     ]
@@ -53,8 +60,72 @@ class InvoiceAdmin(admin.ModelAdmin):
 
     invoice_pdf_link.short_description = "Invoice"
 
+    def customer_display(self, obj: Invoice):
+        """Format customer snapshot as human-readable HTML."""
+        if not obj.customer_snapshot:
+            return "-"
+        snapshot = obj.customer_snapshot
+        lines = []
+        if snapshot.get("name"):
+            lines.append(f"<strong>{snapshot['name']}</strong>")
+        if snapshot.get("email"):
+            lines.append(f"Email: {snapshot['email']}")
+        if snapshot.get("phone"):
+            lines.append(f"Phone: {snapshot['phone']}")
+        return format_html("<br>".join(lines)) if lines else "-"
+
+    customer_display.short_description = "Customer"
+
+    def billing_address_display(self, obj: Invoice):
+        """Format billing address snapshot as human-readable HTML."""
+        if not obj.billing_address_snapshot:
+            return "-"
+        snapshot = obj.billing_address_snapshot
+        lines = []
+        if snapshot.get("address_line"):
+            lines.append(snapshot["address_line"])
+        if snapshot.get("address_line2"):
+            lines.append(snapshot["address_line2"])
+        if snapshot.get("city") or snapshot.get("postal_code"):
+            city_postal = ", ".join(
+                filter(None, [snapshot.get("city"), snapshot.get("postal_code")])
+            )
+            lines.append(city_postal)
+        return format_html("<br>".join(lines)) if lines else "-"
+
+    billing_address_display.short_description = "Billing Address"
+
+    def seller_display(self, obj: Invoice):
+        """Format seller snapshot as human-readable HTML."""
+        if not obj.seller_snapshot:
+            return "-"
+        snapshot = obj.seller_snapshot
+        lines = []
+        if snapshot.get("name"):
+            lines.append(f"<strong>{snapshot['name']}</strong>")
+        if snapshot.get("address"):
+            lines.append(snapshot["address"])
+        if snapshot.get("city"):
+            lines.append(snapshot["city"])
+        if snapshot.get("postal_code"):
+            lines.append(snapshot["postal_code"])
+        if snapshot.get("country"):
+            lines.append(snapshot["country"])
+        if snapshot.get("email"):
+            lines.append(f"Email: {snapshot['email']}")
+        if snapshot.get("phone"):
+            lines.append(f"Phone: {snapshot['phone']}")
+        return format_html("<br>".join(lines)) if lines else "-"
+
+    seller_display.short_description = "Seller"
+
     # Hide raw storage key from admin UI; show `invoice_pdf_link` instead.
-    exclude = ["invoice_link"]
+    exclude = [
+        "invoice_link",
+        "customer_snapshot",
+        "billing_address_snapshot",
+        "seller_snapshot",
+    ]
 
     list_display = [
         "invoice_number",
@@ -74,9 +145,9 @@ class InvoiceAdmin(admin.ModelAdmin):
         "order",
         "invoice_pdf_link",
         "created_at",
-        "customer_snapshot",
-        "billing_address_snapshot",
-        "seller_snapshot",
+        "customer_display",
+        "billing_address_display",
+        "seller_display",
         "delivery_date",
         "delivery_date_order_id",
         "due_date",
