@@ -22,6 +22,7 @@ from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
+from billing.models import CreditNote
 from shipping.models import ShippingDetails
 
 from .forms import (
@@ -612,6 +613,82 @@ def mark_orders_cancelled(modeladmin, request, queryset):
     )
 
 
+@admin.action(description="Create Credit Note")
+def create_credit_note_and_void_invoice(modeladmin, request, queryset):
+    """
+    Create credit notes for selected orders' invoices and void the invoices.
+    This action:
+    - Creates a credit note with all snapshots copied from the invoice
+    - Generates and uploads the credit note PDF to S3
+    - Voids the original invoice
+    - Marks the order as cancelled
+    """
+    success_count = 0
+    error_count = 0
+    skipped_count = 0
+    errors = []
+
+    for order in queryset.select_related("invoice"):
+        try:
+            # Check if order has an invoice
+            invoice = getattr(order, "invoice", None)
+            if not invoice:
+                skipped_count += 1
+                errors.append(f"Order #{order.id}: No invoice exists")
+                continue
+
+            # Check if invoice already has a credit note
+            try:
+                existing_credit_note = invoice.credit_note
+                if existing_credit_note:
+                    skipped_count += 1
+                    errors.append(
+                        f"Order #{order.id}: Invoice already has Credit Note #{existing_credit_note.credit_note_number}"
+                    )
+                    continue
+            except CreditNote.DoesNotExist:
+                pass
+
+            # Create credit note and void invoice
+            credit_note = CreditNote.create_and_publish_from_invoice(
+                invoice=invoice,
+                reason="Order cancelled/refunded via admin action",
+                request=request,
+            )
+
+            # Mark order as cancelled
+            order.status = "cancelled"
+            order.save(update_fields=["status"])
+
+            success_count += 1
+
+        except Exception as e:
+            error_count += 1
+            errors.append(f"Order #{order.id}: {str(e)}")
+
+    # Build result message
+    if success_count > 0:
+        modeladmin.message_user(
+            request,
+            f"Successfully created {success_count} credit note(s) and voided invoice(s).",
+            level=messages.SUCCESS,
+        )
+
+    if skipped_count > 0:
+        modeladmin.message_user(
+            request,
+            f"Skipped {skipped_count} order(s): {'; '.join(errors[:5])}{'...' if len(errors) > 5 else ''}",
+            level=messages.WARNING,
+        )
+
+    if error_count > 0:
+        modeladmin.message_user(
+            request,
+            f"Failed to process {error_count} order(s). Check logs for details.",
+            level=messages.ERROR,
+        )
+
+
 @admin.action(description="Get the total income")
 def calculate_sum(modeladmin, request, queryset):
     total_sum = sum(order.total_price for order in queryset)
@@ -799,14 +876,14 @@ class OrderAdmin(admin.ModelAdmin):
 
     actions = [
         create_and_upload_invoice,
+        create_credit_note_and_void_invoice,
         mark_orders_paid,
         mark_orders_cancelled,
         mark_orders_pending,
         calculate_sum,
         calculate_total_items,
-        retry_shipment_creation,
+        # retry_shipment_creation,
         "export_orders_pdf",
-        "food_summary_csv",
         "food_summary_excel",
     ]
 

@@ -1,0 +1,893 @@
+<!DOCTYPE html
+    PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-US" xml:lang="en-US">
+
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <style>
+        html,
+        body,
+        span {
+            border: 0 !important;
+            margin: 0 !important;
+            outline: 0 !important;
+            text-decoration: none !important;
+        }
+
+        a,
+        span,
+        td,
+        th {
+            -webkit-font-smoothing: antialiased !important;
+        }
+
+        table {
+            border-collapse: separate;
+        }
+
+        .footer,
+        .footer-space {
+            height: auto;
+        }
+
+        .footer-space {
+            padding-top: 20px;
+        }
+
+        @media only print {
+            .footer {
+                position: fixed;
+                bottom: 0px;
+            }
+        }
+
+        #header,
+        #footer {
+            padding: 0 !important;
+        }
+
+        html {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        /* typography */
+        body {
+            color: #000000;
+            font-size: 12px;
+            line-height: 150%;
+            font-weight: 400;
+        }
+
+        a {
+            color: #635bff;
+        }
+
+        .blue {
+            color: #635bff;
+        }
+
+        .mid-gray {
+            color: #757575;
+        }
+
+        .logo-gray {
+            color: RGB(128, 128, 128);
+        }
+
+        .light-gray {
+            color: #bfbfbf;
+        }
+
+        /* Credit note specific - red accent for credit amounts */
+        .credit-red {
+            color: #dc3545;
+        }
+
+        .h1 {
+            font-weight: 600;
+            font-size: 24px;
+            line-height: 130%;
+        }
+
+        .h2 {
+            font-weight: 600;
+            font-size: 18px;
+            line-height: 130%;
+        }
+
+        .h3 {
+            font-weight: 600;
+            font-size: 16px;
+            line-height: 130%;
+        }
+
+        .bold {
+            font-weight: 600;
+        }
+
+        .medium {
+            font-weight: 500;
+        }
+
+        .regular {
+            font-weight: 400;
+        }
+
+        .caption {
+            font-size: 9.5px;
+            line-height: 140%;
+            letter-spacing: 0%;
+        }
+
+        .nowrap {
+            white-space: nowrap;
+        }
+
+        .break-word {
+            word-wrap: break-word;
+            word-break: break-word;
+        }
+
+        .fs-10 {
+            font-size: 10px;
+        }
+
+        .fs-7point5 {
+            font-size: 7.5px;
+        }
+
+        /* widths */
+        .width-0 {
+            width: 0%;
+        }
+
+        .width-1 {
+            width: 1%;
+        }
+
+        .width-12point5 {
+            width: 12.5%;
+        }
+
+        .width-16point7 {
+            width: 16.7%;
+        }
+
+        .width-25 {
+            width: 25%;
+        }
+
+        .width-40 {
+            width: 40%;
+        }
+
+        .width-40-px {
+            width: 40px;
+        }
+
+        .width-45 {
+            width: 45%;
+        }
+
+        .width-50 {
+            width: 50%;
+        }
+
+        .width-60 {
+            width: 60%;
+        }
+
+        .width-100 {
+            width: 100%;
+        }
+
+        /* margin classes */
+        .mb5 {
+            margin-bottom: 5px;
+        }
+
+        .mb10 {
+            margin-bottom: 10px;
+        }
+
+        .mb20 {
+            margin-bottom: 20px;
+        }
+
+        .mb30 {
+            margin-bottom: 30px;
+        }
+
+        .mt3 {
+            margin-top: 3px;
+        }
+
+        .mt5 {
+            margin-top: 5px;
+        }
+
+        .mt10 {
+            margin-top: 10px;
+        }
+
+        .mt15 {
+            margin-top: 15px;
+        }
+
+        .mt20 {
+            margin-top: 20px;
+        }
+
+        .mt30 {
+            margin-top: 30px;
+        }
+
+        /* padding classes */
+        .pr5 {
+            padding-right: 5px;
+        }
+
+        .pr8 {
+            padding-right: 8px;
+        }
+
+        .pr15 {
+            padding-right: 15px;
+        }
+
+        .pt10 {
+            padding-top: 10px;
+        }
+
+        .pt20 {
+            padding-top: 20px;
+        }
+
+        .pt30 {
+            padding-top: 30px;
+        }
+
+        .pb5 {
+            padding-bottom: 5px;
+        }
+
+        .pb10 {
+            padding-bottom: 10px;
+        }
+
+        .pb30 {
+            padding-bottom: 30px;
+        }
+
+        .flex-horizontal {
+            display: flex !important;
+            flex-direction: row !important;
+        }
+
+        .flex-justify {
+            -webkit-box-pack: justify;
+        }
+
+        .flex-align-start {
+            -webkit-box-align: start;
+        }
+
+        /* text alignment */
+        .align-right {
+            text-align: right;
+        }
+
+        /* misc */
+        .logo-img {
+            max-width: 168px;
+            max-height: 54px;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .light-gray-border-top {
+            border-top: 1px solid #ebebeb;
+        }
+
+        .light-gray-border-bottom {
+            border-bottom: 1px solid #ebebeb;
+        }
+
+        .line-height-140 {
+            line-height: 140%;
+        }
+
+        .line-height-100 {
+            line-height: 100%;
+        }
+
+        /* summary item table */
+        .summary-item-table {
+            width: 100%;
+            overflow: hidden;
+            table-layout: fixed;
+        }
+
+        /* line item table */
+        .line-item-table {
+            width: 100%;
+            overflow: hidden;
+            table-layout: fixed;
+        }
+
+        .summary-item-table.line-item-table-dynamic-column-widths {
+            table-layout: auto;
+        }
+
+        .line-item-table.line-item-table-dynamic-column-widths {
+            table-layout: auto;
+        }
+
+        .line-item-table-dynamic-column-widths .line-item-row td:not(:first-child) {
+            max-width: calc(100vw / 6);
+            word-wrap: break-word;
+            word-break: initial;
+            text-align: right;
+            padding-left: 20px;
+        }
+
+        .line-item-table-dynamic-column-widths .table-headers td:not(:first-child) {
+            padding-left: 20px;
+        }
+
+        .line-item-table-dynamic-column-widths .summary-amount td:last-child {
+            max-width: calc(100vw / 6);
+            word-wrap: break-word;
+            word-break: initial;
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .line_items_table_title {
+            position: relative;
+            page-break-after: avoid;
+        }
+
+        .line-item-table tbody tr:nth-child(-n + 2) {
+            position: relative;
+            page-break-after: avoid;
+        }
+
+        .line-height-1point3 {
+            line-height: 1.3;
+        }
+
+        .bottom-valign {
+            vertical-align: bottom;
+        }
+
+        .center-valign {
+            vertical-align: center;
+        }
+
+        .table-headers>td {
+            padding-bottom: 5px;
+            font-size: 10px;
+            border-bottom: 1px solid #000000;
+        }
+
+        .line-item-row {
+            page-break-inside: avoid;
+        }
+
+        .line-item-row>td {
+            vertical-align: top;
+            padding-top: 5px;
+            padding-bottom: 5px;
+        }
+
+        .line-item-row.subtitled>td {
+            padding-bottom: 0px;
+        }
+
+        .line-item-row>td:last-child {
+            text-align: right;
+        }
+
+        .line-item-row.subtitle>td {
+            border-top: none;
+            padding-top: 0px;
+            text-align: left;
+        }
+
+        .summary-amount-padding>td:not(:first-child) {
+            padding-top: 5px;
+            padding-bottom: 5px;
+        }
+
+        .summary-amount-withsubtitle-padding>td:not(:first-child) {
+            padding-top: 5px;
+            padding-bottom: 0px;
+        }
+
+        .summary-amount-subtitle>td:not(:first-child) {
+            padding-top: 0px;
+            padding-bottom: 5px;
+        }
+
+        /* row borders */
+        .line-item-row>td {
+            border-top: 1px solid #ebebeb;
+        }
+
+        .table-headers+.line-item-row>td {
+            border-top: none;
+        }
+
+        .summary-amount-border>td:not(:first-child) {
+            border-top: 1px solid #ebebeb;
+        }
+
+        .summary-amount-border.dark-top-border>td:not(:first-child) {
+            border-top: 1px solid #000000;
+        }
+
+        .summary-amount-border.no-border>td:not(:first-child) {
+            border-top: none;
+        }
+
+        /* metadata */
+        .metadata tr:first-child td {
+            font-weight: 600;
+        }
+
+        .metadata td:first-child {
+            padding-right: 8px;
+        }
+
+        .metadata td {
+            font-weight: 500;
+            max-width: 166px;
+            vertical-align: top;
+            word-wrap: break-word;
+        }
+
+        .maintain-newlines {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            word-break: break-word;
+        }
+
+        .avoid-page-break {
+            page-break-inside: avoid;
+        }
+
+        .break-before-page {
+            break-before: page;
+        }
+
+        .border-box-box-sizing {
+            box-sizing: border-box;
+        }
+
+        /* Credit note specific styles */
+        .credit-note-badge {
+            display: inline-block;
+            background-color: #dc3545;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+
+        .reference-box {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px 15px;
+            margin-bottom: 20px;
+        }
+
+        .reference-box .label {
+            font-size: 10px;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .reference-box .value {
+            font-weight: 600;
+            color: #000;
+        }
+    </style>
+    <style>
+        body {
+            font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        }
+
+        @font-face {
+            font-family: 'Inter';
+            font-weight: 400;
+            font-display: swap;
+            src: url('https://b.stripecdn.com/manage-statics-srv/assets/fonts/inter/Inter-Regular.woff2') format('woff2');
+        }
+
+        @font-face {
+            font-family: 'Inter';
+            font-weight: 500;
+            font-display: swap;
+            src: url('https://b.stripecdn.com/manage-statics-srv/assets/fonts/inter/Inter-Medium.woff2') format('woff2');
+        }
+
+        @font-face {
+            font-family: 'Inter';
+            font-weight: 600;
+            font-display: swap;
+            src: url('https://b.stripecdn.com/manage-statics-srv/assets/fonts/inter/Inter-SemiBold.woff2') format('woff2');
+        }
+    </style>
+</head>
+
+<body>
+    <div class="width-100">
+        <div style="height: 40px;" class="width-100">
+            <!-- Red header bar for credit note distinction -->
+            <div style="height: 4px; background-color: #dc3545;" class="width-100 brand-color-header">
+                &nbsp;
+            </div>
+        </div>
+    </div>
+    <div style="margin-left: 40px; margin-right: 40px; overflow:hidden; min-height: 700px;">
+        <div class="flex-horizontal flex-justify flex-align-start mb20">
+            <div class="width-100 pr15 border-box-box-sizing">
+                <div class="h1">
+                    Credit Note
+                    <span class="credit-note-badge">Cancellation</span>
+                </div>
+            </div>
+            <div class="width-100 pr15 border-box-box-sizing">
+                <div class="brand-logo-container hidden">
+                    <img class="logo-img brand-logo-img" src="data:image/png;base64,">
+                </div>
+            </div>
+            <div class="width-100 pr15 border-box-box-sizing">
+                <div class="brand-logo-container">
+                    <div class="h1 logo-gray">
+                        {{ credit_note.seller_snapshot.name }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reference to original invoice -->
+        <div class="reference-box">
+            <div class="label">This credit note cancels</div>
+            <div class="value">Invoice #{{ credit_note.invoice.invoice_number }} dated {{ credit_note.invoice.created_at|date:"d M Y" }}</div>
+        </div>
+
+        <div class="mb20" style="width: 100%;">
+            <div class="mb20">
+                <table cellpadding="0" cellspacing="0" class="metadata">
+                    <tbody>
+                        <tr>
+                            <td>
+                                Credit note number
+                            </td>
+                            <td>
+                                #{{ credit_note.credit_note_number }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                Original invoice
+                            </td>
+                            <td>
+                                #{{ credit_note.invoice.invoice_number }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                Original delivery date
+                            </td>
+                            <td>
+                                {{ credit_note.delivery_date|date:"d M Y" }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                Original delivery order ID
+                            </td>
+                            <td>
+                                {{ credit_note.delivery_date_order_id }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                Credit note date
+                            </td>
+                            <td>
+                                {{ credit_note.created_at|date:"d M Y" }}
+                            </td>
+                        </tr>
+                        {% if credit_note.reason %}
+                        <tr>
+                            <td>
+                                Reason
+                            </td>
+                            <td>
+                                {{ credit_note.reason }}
+                            </td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="flex-horizontal flex-align-start break-word">
+            <div class="width-100 pr15 border-box-box-sizing">
+                <div class="address-merchant-name bold">
+                    {{ credit_note.seller_snapshot.name }}
+                </div>
+                <div class="address-lines">
+                    <div>
+                        {{ credit_note.seller_snapshot.address }}
+                    </div>
+                    <div>
+                        {{ credit_note.seller_snapshot.city }}
+                    </div>
+                    <div>
+                        {{ credit_note.seller_snapshot.postal_code }}
+                    </div>
+                    <div>
+                        {{ credit_note.seller_snapshot.country }}
+                    </div>
+                </div>
+            </div>
+            <div class="flex-horizontal flex-justify pr15 border-box-box-sizing width-100">
+                <div class="width-50" style="margin-right: 30px;">
+                    <div class="bold font-size-16 text-align-center">
+                        <strong>Credit to</strong>
+                    </div>
+                    <div class="break-word">
+                        {{ credit_note.customer_snapshot.name }}
+                    </div>
+                </div>
+                <div class="">
+                    <div class="address-lines">
+                        <div class="">
+                            <strong>Address:</strong>
+                        </div>
+
+                        {% if credit_note.billing_address_snapshot.address_line %}
+                        <div class="">
+                            {{ credit_note.billing_address_snapshot.address_line }}
+                        </div>
+                        {% endif %}
+                        {% if credit_note.billing_address_snapshot.address_line2 %}
+                        <div class="">
+                            {{ credit_note.billing_address_snapshot.address_line2 }}
+                        </div>
+                        {% endif %}
+                        {% if credit_note.billing_address_snapshot.city %}
+                        <div class="">
+                            {{ credit_note.billing_address_snapshot.city }}
+                        </div>
+                        {% endif %}
+                        {% if credit_note.billing_address_snapshot.postal_code %}
+                        <div class="">
+                            {{ credit_note.billing_address_snapshot.postal_code }}
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% if credit_note.customer_snapshot.phone %}
+                    <div class="address-phone">
+                        <strong>Phone:</strong>
+                        <div class="">
+                            {{ credit_note.customer_snapshot.phone }}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if credit_note.customer_snapshot.email %}
+                    <div>{{ credit_note.customer_snapshot.email }}</div>
+                    {% endif %}
+                </div>
+
+            </div>
+        </div>
+        <div class="">
+            <div class="h2">
+                Bank Details
+            </div>
+            <div class="">
+                Business Name: {{ credit_note.seller_snapshot.account_name }}
+            </div>
+            <div class="">
+                Account Number: {{ credit_note.seller_snapshot.account_number }}
+            </div>
+            <div class="">
+                Sort Code: {{ credit_note.seller_snapshot.sort_code }}
+            </div>
+        </div>
+        <div class="mt20 pt20 light-gray-border-top fs-10 line-height-140">
+            <div class="mb10">
+                <div class="h2 credit-red">
+                    £{{ credit_note.total|floatformat:2 }} credited
+                </div>
+                <div class="mt5 mid-gray">
+                    This credit note cancels Invoice #{{ credit_note.invoice.invoice_number }}
+                </div>
+            </div>
+        </div>
+        <div class="line_items_table_title mt20">
+            <table cellpadding="0" cellspacing="0" class="line-item-table line-item-table-dynamic-column-widths">
+                <tbody>
+                    <tr class="table-headers">
+                        <td class="width-50 center-valign">Product</td>
+                        <td class="width-1 nowrap align-right center-valign">Qty</td>
+                        <td class="width-1 nowrap align-right center-valign">Unit price</td>
+                        <td class="width-1 nowrap align-right center-valign">VAT</td>
+                        <td class="width-1 nowrap align-right center-valign">Credit</td>
+                    </tr>
+                    <tr>
+                        <td colspan="5" height="5"
+                            style=" border: 0; border-collapse: collapse; margin: 0; padding: 0; height: 10px; font-size: 1px; line-height: 1px; mso-line-height-rule: exactly;">
+                            &nbsp;
+                        </td>
+                    </tr>
+                    {% for item in credit_note.line_items.all %}
+                    <tr class="line-item-row subtitled">
+                        <td>
+                            <div style="word-break: break-word; padding-left: 0px; padding-right: 5px;">
+                                {{ item.description }}
+                            </div>
+                        </td>
+                        <td class="break-word align-right">
+                            {{ item.quantity|floatformat:0 }}
+                        </td>
+                        <td class="break-word align-right">
+                            £{{ item.unit_price|floatformat:2 }}
+                        </td>
+                        <td class="break-word align-right">
+                            £{{ item.unit_vat_amount|floatformat:2 }}
+                        </td>
+                        <td class="break-word align-right credit-red">
+                            -£{{ item.line_total|floatformat:2 }}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colspan="5" height="15"
+                            style=" border: 0; border-collapse: collapse; margin: 0; padding: 0; height: 15px; font-size: 1px; line-height: 1px;">
+                            &nbsp;
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    <tr class="summary-amount-border mt30">
+                        <td>
+                        </td>
+                        <td colspan="4">
+                        </td>
+                    </tr>
+                    <tr class="summary-amount">
+                        <td>
+                        </td>
+                        <td colspan="3">
+                            Delivery fee
+                        </td>
+                        <td class="break-word align-right credit-red">
+                            -£{{ credit_note.delivery_fee_amount|floatformat:2 }}
+                        </td>
+                    </tr>
+                    {% if credit_note.holiday_fee_percent > 0 %}
+                    <tr class="summary-amount-border mt30">
+                        <td>
+                        </td>
+                        <td colspan="4">
+                        </td>
+                    </tr>
+                    <tr class="summary-amount">
+                        <td>
+                        </td>
+                        <td colspan="3">
+                            Holiday Fee ({{credit_note.holiday_fee_percent|floatformat:0}}%)
+                        </td>
+                        <td class="break-word align-right credit-red">
+                            -£{{ credit_note.holiday_fee_amount|floatformat:2 }}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% if credit_note.discount_amount > 0 %}
+                    <tr class="summary-amount-border mt30">
+                        <td>
+                        </td>
+                        <td colspan="4">
+                        </td>
+                    </tr>
+                    <tr class="summary-amount">
+                        <td>
+                        </td>
+                        <td colspan="3">
+                            Discount reversal
+                        </td>
+                        <td class="break-word align-right">
+                            +£{{ credit_note.discount_amount|floatformat:2 }}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    <tr class="summary-amount-border mt30">
+                        <td>
+                        </td>
+                        <td colspan="4">
+                        </td>
+                    </tr>
+                    <tr class="summary-amount bold">
+                        <td>
+                        </td>
+                        <td colspan="3">
+                            Subtotal (ex VAT)
+                        </td>
+                        <td class="break-word align-right credit-red">
+                            -£{{ credit_note.subtotal_ex_vat|floatformat:2 }}
+                        </td>
+                    </tr>
+                    <tr class="summary-amount">
+                        <td></td>
+                        <td colspan="3">
+                            VAT total
+                        </td>
+                        <td class="break-word align-right credit-red">
+                            -£{{ credit_note.total_vat|floatformat:2 }}
+                        </td>
+                    </tr>
+                    <tr class="summary-amount-border mt30">
+                        <td></td>
+                        <td colspan="4"></td>
+                    </tr>
+                    <tr class="summary-amount bold">
+                        <td>
+                        </td>
+                        <td colspan="3">
+                            Total credit (inc VAT)
+                        </td>
+                        <td class="break-word align-right credit-red">
+                            -£{{ credit_note.total|floatformat:2 }}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="pb30 avoid-page-break">
+            </div>
+            <div class="fs-10">
+            </div>
+        </div>
+        <div class="mt30 light-gray-border-top fs-10 line-height-140"
+            style=" padding-bottom: 40px; margin-left: 40px; margin-right: 40px; overflow:hidden; ">
+            <div class="mt20">
+                <div class="flex-horizontal flex-justify">
+                    <div class="nowrap">
+                        Credit Note #{{ credit_note.credit_note_number }} · £{{ credit_note.total|floatformat:2 }} credited · 
+                        Cancels Invoice #{{ credit_note.invoice.invoice_number }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <script>
+            window.addEventListener('load', function () {
+                const params = {};
+                location.search.substring(1).split('&').forEach(function (s) {
+                    const nameValue = s.split('=', 2);
+                    params[nameValue[0]] = decodeURIComponent(nameValue[1]);
+                });
+                const element = document.getElementsByClassName('page-number')[0];
+                if (element) {
+                    element.innerHTML = element.innerHTML
+                        .replace('[page_number]', params.page)
+                        .replace('[num_pages]', params.topage);
+                }
+            });
+        </script>
+</body>
+
+</html>
