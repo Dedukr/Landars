@@ -7,7 +7,13 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from account.models import CustomUser
-from billing.models import CreditNote, Invoice
+from billing.models import (
+    CreditNote,
+    Invoice,
+    create_credit_note,
+    create_invoice,
+    get_s3_client,
+)
 from django.conf import settings
 from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
@@ -357,64 +363,7 @@ class DateFilter(admin.SimpleListFilter):
         return queryset
 
 
-def get_s3_client():
-    # Lazy import to avoid hanging during Django autodiscovery (especially with iCloud Drive)
-    import boto3
-
-    return boto3.client(
-        "s3",
-        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-        region_name=getattr(settings, "AWS_S3_REGION_NAME", None),
-    )
-
-
-def upload_invoice_to_s3(file_path, s3_key, max_retries=3):
-    """
-    Upload invoice to S3 with retry logic and error handling.
-
-    Args:
-        file_path: Path to the PDF file to upload
-        s3_key: S3 key (path) where the file should be stored
-        max_retries: Maximum number of retry attempts
-
-    Returns:
-        str: The S3 key if successful
-
-    Raises:
-        Exception: If upload fails after all retries
-    """
-    import os
-    import time
-
-    s3_client = get_s3_client()
-    bucket = settings.AWS_STORAGE_BUCKET_NAME
-
-    # Validate file exists and is readable
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"Invoice file not found: {file_path}")
-
-    if not os.access(file_path, os.R_OK):
-        raise PermissionError(f"Cannot read invoice file: {file_path}")
-
-    # Retry logic for network issues
-    last_exception = None
-    for attempt in range(1, max_retries + 1):
-        try:
-            s3_client.upload_file(file_path, bucket, s3_key)
-            return s3_key
-        except Exception as e:
-            last_exception = e
-            if attempt < max_retries:
-                # Exponential backoff: wait 1s, 2s, 4s...
-                wait_time = 2 ** (attempt - 1)
-                time.sleep(wait_time)
-            else:
-                raise Exception(
-                    f"Failed to upload invoice to S3 after {max_retries} attempts: {str(e)}"
-                ) from last_exception
-
-    raise Exception(f"Failed to upload invoice to S3: {str(last_exception)}")
+# Removed: get_s3_client and upload_invoice_to_s3 - now using unified functions from billing.models
 
 
 @admin.action(description="Create Accounting Invoice + Upload PDF")
@@ -488,11 +437,7 @@ def create_and_upload_invoice(modeladmin, request, queryset):
 
                 # Use database transaction for atomicity
                 with transaction.atomic():
-                    from billing.models import Invoice
-
-                    invoice = Invoice.create_and_publish_from_order(
-                        order=order, request=request
-                    )
+                    invoice = create_invoice(order=order, request=request)
 
                     # Backward compat: keep the Order.invoice_link in sync for existing UI/code paths
                     if (
@@ -619,6 +564,103 @@ def mark_orders_cancelled(modeladmin, request, queryset):
     )
 
 
+@admin.action(description="Create Credit Note")
+def create_credit_note_for_invoices(modeladmin, request, queryset):
+    """
+    Create credit notes for invoices of selected orders.
+    For each order, creates a credit note for the latest invoice (if it exists and doesn't already have one).
+    This will void the invoices.
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    success_count = 0
+    error_count = 0
+    skipped_count = 0
+    errors = []
+    warnings = []
+
+    # Optimize queryset to avoid N+1 queries
+    optimized_queryset = queryset.prefetch_related(
+        "invoices", "invoices__credit_note"
+    ).order_by("id")
+
+    for order in optimized_queryset:
+        try:
+            # Get the latest invoice for this order
+            try:
+                invoice = order.invoices.latest("created_at")
+            except Invoice.DoesNotExist:
+                warnings.append(f"Order #{order.id}: No invoice found. Skipped.")
+                skipped_count += 1
+                continue
+
+            # Check if invoice already has a credit note
+            try:
+                existing_credit_note = invoice.credit_note
+                if existing_credit_note:
+                    warnings.append(
+                        f"Order #{order.id}: Invoice #{invoice.invoice_number} already has "
+                        f"Credit Note #{existing_credit_note.credit_note_number}. Skipped."
+                    )
+                    skipped_count += 1
+                    continue
+            except CreditNote.DoesNotExist:
+                pass
+
+            # Create credit note using unified function
+            credit_note = create_credit_note(
+                invoice=invoice,
+                reason="Information about the order has been changed",
+                request=request,
+            )
+
+            # Update order status to cancelled
+            order.status = "cancelled"
+            order.save(update_fields=["status"])
+
+            success_count += 1
+            logger.info(
+                f"Created credit note #{credit_note.credit_note_number} "
+                f"for invoice #{invoice.invoice_number} (order #{order.id})"
+            )
+
+        except Exception as e:
+            error_count += 1
+            error_msg = f"Order #{order.id}: {str(e)}"
+            errors.append(error_msg)
+            logger.error(error_msg, exc_info=True)
+
+    # Display results
+    if success_count > 0:
+        modeladmin.message_user(
+            request,
+            f"Successfully created {success_count} credit note(s).",
+            level=messages.SUCCESS,
+        )
+
+    if warnings:
+        warning_display = "\n".join(warnings[:10])
+        if len(warnings) > 10:
+            warning_display += f"\n... and {len(warnings) - 10} more warnings."
+        modeladmin.message_user(
+            request,
+            f"Warnings:\n{warning_display}",
+            level=messages.WARNING,
+        )
+
+    if error_count > 0:
+        error_display = "\n".join(errors[:10])
+        if len(errors) > 10:
+            error_display += f"\n... and {len(errors) - 10} more errors."
+        modeladmin.message_user(
+            request,
+            f"Failed to create {error_count} credit note(s):\n{error_display}",
+            level=messages.ERROR,
+        )
+
+
 @admin.action(description="Issue Credit Note & Create New Invoice")
 def create_credit_note_and_new_invoice(modeladmin, request, queryset):
     """
@@ -679,17 +721,17 @@ def create_credit_note_and_new_invoice(modeladmin, request, queryset):
                             )
                         else:
                             # Create credit note for existing invoice (this automatically voids the invoice)
-                            credit_note = CreditNote.create_and_publish_from_invoice(
+                            credit_note = create_credit_note(
                                 invoice=existing_invoice,
-                                reason="Invoice replaced with new invoice via admin action",
+                                reason="Information about the order has been changed",
                                 request=request,
                             )
                             credit_note_count += 1
                     except CreditNote.DoesNotExist:
                         # No credit note exists, create one
-                        credit_note = CreditNote.create_and_publish_from_invoice(
+                        credit_note = create_credit_note(
                             invoice=existing_invoice,
-                            reason="Invoice replaced with new invoice via admin action",
+                            reason="Information about the order has been changed",
                             request=request,
                         )
                         credit_note_count += 1
@@ -697,9 +739,7 @@ def create_credit_note_and_new_invoice(modeladmin, request, queryset):
                 # Step 2: Create new invoice for the order
                 # The old invoice remains linked (voided, with credit note)
                 # Since we changed to ForeignKey, we can have multiple invoices per order
-                new_invoice = Invoice.create_and_publish_from_order(
-                    order=order, request=request
-                )
+                new_invoice = create_invoice(order=order, request=request)
 
                 # Update order's invoice_link for backward compatibility
                 if (
@@ -1083,10 +1123,11 @@ class OrderAdmin(admin.ModelAdmin):
 
     actions = [
         # create_and_upload_invoice,
+        create_credit_note_for_invoices,
         create_credit_note_and_new_invoice,
         mark_orders_paid,
-        mark_orders_cancelled,
-        mark_orders_pending,
+        # mark_orders_cancelled,
+        # mark_orders_pending,
         calculate_sum,
         calculate_total_items,
         # retry_shipment_creation,
@@ -1508,8 +1549,8 @@ class OrderAdmin(admin.ModelAdmin):
 
         # Check for backward compat (old Order.invoice_link)
         if obj.invoice_link:
-            s3 = get_s3_client()
             try:
+                s3 = get_s3_client()
                 url = s3.generate_presigned_url(
                     "get_object",
                     Params={
@@ -1693,8 +1734,6 @@ class OrderAdmin(admin.ModelAdmin):
         logger = logging.getLogger(__name__)
 
         try:
-            from billing.models import Invoice
-
             # Count existing invoices and get their IDs before creation
             existing_invoices = list(order.invoices.values_list("id", flat=True))
             existing_invoice_count = len(existing_invoices)
@@ -1704,10 +1743,8 @@ class OrderAdmin(admin.ModelAdmin):
                 f"Existing invoices: {existing_invoice_count} (IDs: {existing_invoices})"
             )
 
-            # Create invoice (this has its own transaction)
-            invoice = Invoice.create_and_publish_from_order(
-                order=order, request=request
-            )
+            # Create invoice using unified function (this has its own transaction)
+            invoice = create_invoice(order=order, request=request)
 
             # Refresh order to get latest invoice count
             order.refresh_from_db()
@@ -1740,6 +1777,7 @@ class OrderAdmin(admin.ModelAdmin):
                 raise ValueError(error_msg)
 
             # Verify invoice exists in database
+            from billing.models import Invoice
             if not Invoice.objects.filter(pk=invoice.pk).exists():
                 error_msg = (
                     f"Invoice {invoice.pk} was returned but does not exist in database."

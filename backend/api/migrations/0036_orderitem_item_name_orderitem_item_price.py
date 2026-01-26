@@ -32,12 +32,5 @@ class Migration(migrations.Migration):
                 null=True,
                 validators=[django.core.validators.MinValueValidator(0)],
             ),
-        ),
-        migrations.AddField(
-            model_name="product",
-            name="vat",
-            field=models.BooleanField(
-                default=False, help_text="Check to apply 20% VAT, uncheck for 0% VAT"
-            ),
-        ),
+        )
     ]

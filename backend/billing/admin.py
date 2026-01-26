@@ -1,14 +1,14 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.urls import reverse
 from django.utils.html import format_html
 
 from .models import (
     CreditNote,
     CreditNoteLineItem,
-    CreditNoteNumberSequence,
+    DocumentNumberSequence,
     Invoice,
     InvoiceLineItem,
-    InvoiceNumberSequence,
+    create_credit_note,
 )
 
 
@@ -188,12 +188,98 @@ class InvoiceAdmin(admin.ModelAdmin):
         "voided_at",
     ]
     inlines = [InvoiceLineItemInline]
+    actions = ["create_credit_note_action"]
+
+    @admin.action(description="Create Credit Note for selected invoices")
+    def create_credit_note_action(self, request, queryset):
+        """
+        Create credit notes for selected invoices.
+        This will void the invoices and create credit notes with PDFs.
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        success_count = 0
+        error_count = 0
+        skipped_count = 0
+        errors = []
+        warnings = []
+
+        for invoice in queryset:
+            try:
+                # Check if invoice already has a credit note
+                try:
+                    existing_credit_note = invoice.credit_note
+                    if existing_credit_note:
+                        warnings.append(
+                            f"Invoice #{invoice.invoice_number} already has "
+                            f"Credit Note #{existing_credit_note.credit_note_number}. Skipped."
+                        )
+                        skipped_count += 1
+                        continue
+                except CreditNote.DoesNotExist:
+                    pass
+
+                # Create credit note using unified function
+                credit_note = create_credit_note(
+                    invoice=invoice,
+                    reason="Information about the order has been changed",
+                    request=request,
+                )
+
+                # Update order status to cancelled
+                if invoice.order:
+                    invoice.order.status = "cancelled"
+                    invoice.order.save(update_fields=["status"])
+
+                success_count += 1
+                logger.info(
+                    f"Created credit note #{credit_note.credit_note_number} "
+                    f"for invoice #{invoice.invoice_number} and cancelled order"
+                )
+
+            except Exception as e:
+                error_count += 1
+                error_msg = f"Invoice #{invoice.invoice_number}: {str(e)}"
+                errors.append(error_msg)
+                logger.error(error_msg, exc_info=True)
+
+        # Display results
+        if success_count > 0:
+            self.message_user(
+                request,
+                f"Successfully created {success_count} credit note(s).",
+                level=messages.SUCCESS,
+            )
+
+        if warnings:
+            warning_display = "\n".join(warnings[:10])
+            if len(warnings) > 10:
+                warning_display += f"\n... and {len(warnings) - 10} more warnings."
+            self.message_user(
+                request,
+                f"Warnings:\n{warning_display}",
+                level=messages.WARNING,
+            )
+
+        if error_count > 0:
+            error_display = "\n".join(errors[:10])
+            if len(errors) > 10:
+                error_display += f"\n... and {len(errors) - 10} more errors."
+            self.message_user(
+                request,
+                f"Failed to create {error_count} credit note(s):\n{error_display}",
+                level=messages.ERROR,
+            )
 
 
-@admin.register(InvoiceNumberSequence)
-class InvoiceNumberSequenceAdmin(admin.ModelAdmin):
-    list_display = ["id", "last_number"]
-    readonly_fields = ["id"]
+@admin.register(DocumentNumberSequence)
+class DocumentNumberSequenceAdmin(admin.ModelAdmin):
+    list_display = ["document_type", "last_number"]
+    readonly_fields = ["document_type"]
+    list_filter = ["document_type"]
+    search_fields = ["document_type"]
 
 
 class CreditNoteLineItemInline(admin.TabularInline):
@@ -357,7 +443,3 @@ class CreditNoteAdmin(admin.ModelAdmin):
     inlines = [CreditNoteLineItemInline]
 
 
-@admin.register(CreditNoteNumberSequence)
-class CreditNoteNumberSequenceAdmin(admin.ModelAdmin):
-    list_display = ["id", "last_number"]
-    readonly_fields = ["id"]

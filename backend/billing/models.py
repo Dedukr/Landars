@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import time
 from decimal import Decimal
 
 from django.conf import settings
@@ -8,19 +10,135 @@ from django.db import models, transaction
 from django.utils import timezone
 
 
-class InvoiceNumberSequence(models.Model):
+class DocumentNumberSequence(models.Model):
     """
-    Singleton-style row used to allocate sequential invoice numbers safely.
+    Unified sequence model for allocating sequential numbers for different document types.
+    Each document type has its own sequence row.
     """
 
+    class DocumentType(models.TextChoices):
+        INVOICE = "INVOICE", "Invoice"
+        CREDIT_NOTE = "CREDIT_NOTE", "Credit Note"
+
+    document_type = models.CharField(
+        max_length=20,
+        choices=DocumentType.choices,
+        unique=True,
+        help_text="Type of document this sequence is for.",
+    )
     last_number = models.PositiveBigIntegerField(default=0)
 
     class Meta:
-        verbose_name = "Invoice Number Sequence"
-        verbose_name_plural = "Invoice Number Sequences"
+        verbose_name = "Document Number Sequence"
+        verbose_name_plural = "Document Number Sequences"
+        ordering = ["document_type"]
 
     def __str__(self) -> str:
-        return f"Invoice sequence (last={self.last_number})"
+        return f"{self.get_document_type_display()} sequence (last={self.last_number})"
+
+
+# ============================================================================
+# Unified utility functions for invoice/credit note creation and S3 uploads
+# ============================================================================
+
+def get_s3_client():
+    """Get S3 client for file uploads."""
+    import boto3
+
+    return boto3.client(
+        "s3",
+        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+        region_name=getattr(settings, "AWS_S3_REGION_NAME", None),
+    )
+
+
+def upload_file_to_s3(file_path: str, s3_key: str, max_retries: int = 3) -> str:
+    """
+    Unified function to upload any file to S3 bucket.
+
+    Args:
+        file_path: Path to the file to upload
+        s3_key: S3 key (path) where the file should be stored
+        max_retries: Maximum number of retry attempts
+
+    Returns:
+        str: The S3 key if successful
+
+    Raises:
+        FileNotFoundError: If file doesn't exist
+        PermissionError: If file cannot be read
+        Exception: If upload fails after all retries
+    """
+    # Validate file exists and is readable
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}")
+
+    if not os.access(file_path, os.R_OK):
+        raise PermissionError(f"Cannot read file: {file_path}")
+
+    s3_client = get_s3_client()
+    bucket = settings.AWS_STORAGE_BUCKET_NAME
+
+    # Retry logic for network issues
+    last_exception = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            s3_client.upload_file(file_path, bucket, s3_key)
+            return s3_key
+        except Exception as e:
+            last_exception = e
+            if attempt < max_retries:
+                # Exponential backoff: wait 1s, 2s, 4s...
+                wait_time = 2 ** (attempt - 1)
+                time.sleep(wait_time)
+            else:
+                raise Exception(
+                    f"Failed to upload file to S3 after {max_retries} attempts: {str(e)}"
+                ) from last_exception
+
+    raise Exception(f"Failed to upload file to S3: {str(last_exception)}")
+
+
+def create_invoice(order, request):
+    """
+    Unified function to create an invoice from an order and upload PDF to S3.
+    Also updates the order status to "pending".
+
+    Args:
+        order: The order to create an invoice for
+        request: Django request object (for PDF generation)
+
+    Returns:
+        Invoice: The created invoice instance
+    """
+    invoice = Invoice.create_and_publish_from_order(order=order, request=request)
+    
+    # Update order status to pending
+    order.status = "pending"
+    order.save(update_fields=["status"])
+    
+    return invoice
+
+
+def create_credit_note(invoice, reason: str = "", request=None):
+    """
+    Unified function to create a credit note from an invoice and upload PDF to S3.
+    This will void the existing invoice.
+
+    Args:
+        invoice: The invoice to create a credit note for
+        reason: Reason for issuing the credit note
+        request: Django request object (for PDF generation)
+
+    Returns:
+        CreditNote: The created credit note instance
+    """
+    if request is None:
+        raise ValueError("Request object is required for PDF generation")
+    return CreditNote.create_and_publish_from_invoice(
+        invoice=invoice, reason=reason, request=request
+    )
 
 
 class Invoice(models.Model):
@@ -189,8 +307,9 @@ class Invoice(models.Model):
         Allocate the next sequential invoice number atomically.
         """
         with transaction.atomic():
-            seq, _ = InvoiceNumberSequence.objects.select_for_update().get_or_create(
-                pk=1, defaults={"last_number": 0}
+            seq, _ = DocumentNumberSequence.objects.select_for_update().get_or_create(
+                document_type=DocumentNumberSequence.DocumentType.INVOICE,
+                defaults={"last_number": 0},
             )
             seq.last_number += 1
             seq.save(update_fields=["last_number"])
@@ -331,17 +450,6 @@ class Invoice(models.Model):
         self.vat_amount = vat_total.quantize(Decimal("0.01"))
         self.save(update_fields=["vat_amount"])
 
-    @staticmethod
-    def _get_s3_client():
-        import boto3
-
-        return boto3.client(
-            "s3",
-            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-            region_name=getattr(settings, "AWS_S3_REGION_NAME", None),
-        )
-
     def get_presigned_invoice_url(self, expires_in: int = 300) -> str:
         """
         Return a presigned URL for the stored invoice PDF.
@@ -349,7 +457,7 @@ class Invoice(models.Model):
         if not self.invoice_link:
             raise ValidationError("Invoice has no stored PDF (invoice_link is empty).")
 
-        s3 = self._get_s3_client()
+        s3 = get_s3_client()
         return s3.generate_presigned_url(
             "get_object",
             Params={
@@ -437,25 +545,12 @@ class Invoice(models.Model):
             del html_string, font_config
             gc.collect()
 
-            # Upload with retries
-            s3 = self._get_s3_client()
-            bucket = settings.AWS_STORAGE_BUCKET_NAME
+            # Upload with retries using unified function
             s3_key = f"invoices/invoice_{self.invoice_number}.pdf"
-
-            last_exc = None
-            for attempt in range(1, max_retries + 1):
-                try:
-                    s3.upload_file(tmp_path, bucket, s3_key)
-                    self.invoice_link = s3_key
-                    self.save(update_fields=["invoice_link"])
-                    return s3_key
-                except Exception as e:
-                    last_exc = e
-                    if attempt < max_retries:
-                        time.sleep(2 ** (attempt - 1))
-                    else:
-                        raise
-            raise last_exc  # pragma: no cover
+            upload_file_to_s3(tmp_path, s3_key, max_retries=max_retries)
+            self.invoice_link = s3_key
+            self.save(update_fields=["invoice_link"])
+            return s3_key
         finally:
             try:
                 if os.path.exists(tmp_path):
@@ -471,18 +566,21 @@ class Invoice(models.Model):
         - snapshots customer/address/seller + totals
         - creates immutable line items
         - generates/uploads PDF and stores invoice_link
-        
+
         Args:
             order: The order to create an invoice for
             request: Django request object (for PDF generation)
         """
         import logging
+
         logger = logging.getLogger(__name__)
-        
+
         # Get existing invoice IDs to verify we create a new one
-        existing_invoice_ids = set(order.invoices.values_list('id', flat=True))
-        logger.info(f"Creating new invoice for order {order.id}. Existing invoice IDs: {existing_invoice_ids}")
-        
+        existing_invoice_ids = set(order.invoices.values_list("id", flat=True))
+        logger.info(
+            f"Creating new invoice for order {order.id}. Existing invoice IDs: {existing_invoice_ids}"
+        )
+
         # Create new invoice - always create a new one
         # Use transaction.atomic() to ensure all-or-nothing creation
         with transaction.atomic():
@@ -491,51 +589,62 @@ class Invoice(models.Model):
             invoice.issue_from_order()
             # Allocate invoice number before save() since it's now required
             invoice.allocate_invoice_number_if_needed()
-            
-            logger.info(f"About to save invoice with number {invoice.invoice_number} for order {order.id}")
-            
+
+            logger.info(
+                f"About to save invoice with number {invoice.invoice_number} for order {order.id}"
+            )
+
             # Save the invoice - this will raise an exception if validation fails
             invoice.save()
-            
-            logger.info(f"Invoice saved with ID {invoice.pk}, invoice_number {invoice.invoice_number}")
-            
+
+            logger.info(
+                f"Invoice saved with ID {invoice.pk}, invoice_number {invoice.invoice_number}"
+            )
+
             # Verify the invoice was actually saved and has a primary key
             if invoice.pk is None:
                 raise ValidationError("Invoice was not saved - primary key is None")
-            
+
             # Verify this is a new invoice (not an existing one)
             if invoice.pk in existing_invoice_ids:
                 raise ValidationError(
                     f"Invoice with ID {invoice.pk} already existed. This should not happen."
                 )
-            
+
             # Build line items after invoice is saved
             try:
                 invoice.build_line_items_from_order()
                 logger.info(f"Line items built for invoice {invoice.pk}")
             except Exception as e:
-                logger.error(f"Error building line items for invoice {invoice.pk}: {e}", exc_info=True)
+                logger.error(
+                    f"Error building line items for invoice {invoice.pk}: {e}",
+                    exc_info=True,
+                )
                 raise
-            
+
             # Ensure PDF is uploaded and invoice_link is set
             # Note: PDF generation can fail, but we still want the invoice to exist
             try:
                 invoice.generate_and_upload_pdf(request)
                 logger.info(f"PDF generated and uploaded for invoice {invoice.pk}")
             except Exception as e:
-                logger.warning(f"PDF generation failed for invoice {invoice.pk}, but invoice was created: {e}")
+                logger.warning(
+                    f"PDF generation failed for invoice {invoice.pk}, but invoice was created: {e}"
+                )
                 # Don't raise - invoice is still valid without PDF initially
-            
+
             # Refresh from database to ensure we have the latest state
             invoice.refresh_from_db()
-            
+
             # Final verification that the invoice exists in the database
             if not cls.objects.filter(pk=invoice.pk).exists():
                 raise ValidationError(
                     f"Invoice {invoice.pk} was created but does not exist in database after save."
                 )
-            
-            logger.info(f"Successfully created invoice {invoice.pk} (number {invoice.invoice_number}) for order {order.id}")
+
+            logger.info(
+                f"Successfully created invoice {invoice.pk} (number {invoice.invoice_number}) for order {order.id}"
+            )
             return invoice
 
     def apply_payment(self, amount: Decimal, paid_at: timezone.datetime | None = None):
@@ -580,21 +689,6 @@ class Invoice(models.Model):
 
         self.full_clean()
         super().save(*args, **kwargs)
-
-
-class CreditNoteNumberSequence(models.Model):
-    """
-    Singleton-style row used to allocate sequential credit note numbers safely.
-    """
-
-    last_number = models.PositiveBigIntegerField(default=0)
-
-    class Meta:
-        verbose_name = "Credit Note Number Sequence"
-        verbose_name_plural = "Credit Note Number Sequences"
-
-    def __str__(self) -> str:
-        return f"Credit note sequence (last={self.last_number})"
 
 
 class CreditNote(models.Model):
@@ -732,8 +826,9 @@ class CreditNote(models.Model):
         Allocate the next sequential credit note number atomically.
         """
         with transaction.atomic():
-            seq, _ = CreditNoteNumberSequence.objects.select_for_update().get_or_create(
-                pk=1, defaults={"last_number": 0}
+            seq, _ = DocumentNumberSequence.objects.select_for_update().get_or_create(
+                document_type=DocumentNumberSequence.DocumentType.CREDIT_NOTE,
+                defaults={"last_number": 0},
             )
             seq.last_number += 1
             seq.save(update_fields=["last_number"])
@@ -772,7 +867,9 @@ class CreditNote(models.Model):
         Create line item snapshots by copying from the original invoice's line items.
         """
         if self.pk is None:
-            raise ValidationError("Credit note must be saved before building line items.")
+            raise ValidationError(
+                "Credit note must be saved before building line items."
+            )
 
         # Prevent rebuilding if line items exist (immutability)
         if self.line_items.exists():
@@ -792,25 +889,16 @@ class CreditNote(models.Model):
                 vat_amount=item.vat_amount,
             )
 
-    @staticmethod
-    def _get_s3_client():
-        import boto3
-
-        return boto3.client(
-            "s3",
-            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-            region_name=getattr(settings, "AWS_S3_REGION_NAME", None),
-        )
-
     def get_presigned_credit_note_url(self, expires_in: int = 300) -> str:
         """
         Return a presigned URL for the stored credit note PDF.
         """
         if not self.credit_note_link:
-            raise ValidationError("Credit note has no stored PDF (credit_note_link is empty).")
+            raise ValidationError(
+                "Credit note has no stored PDF (credit_note_link is empty)."
+            )
 
-        s3 = self._get_s3_client()
+        s3 = get_s3_client()
         return s3.generate_presigned_url(
             "get_object",
             Params={
@@ -898,25 +986,12 @@ class CreditNote(models.Model):
             del html_string, font_config
             gc.collect()
 
-            # Upload with retries
-            s3 = self._get_s3_client()
-            bucket = settings.AWS_STORAGE_BUCKET_NAME
+            # Upload with retries using unified function
             s3_key = f"credit_notes/credit_note_{self.credit_note_number}.pdf"
-
-            last_exc = None
-            for attempt in range(1, max_retries + 1):
-                try:
-                    s3.upload_file(tmp_path, bucket, s3_key)
-                    self.credit_note_link = s3_key
-                    self.save(update_fields=["credit_note_link"])
-                    return s3_key
-                except Exception as e:
-                    last_exc = e
-                    if attempt < max_retries:
-                        time.sleep(2 ** (attempt - 1))
-                    else:
-                        raise
-            raise last_exc  # pragma: no cover
+            upload_file_to_s3(tmp_path, s3_key, max_retries=max_retries)
+            self.credit_note_link = s3_key
+            self.save(update_fields=["credit_note_link"])
+            return s3_key
         finally:
             try:
                 if os.path.exists(tmp_path):
@@ -955,7 +1030,9 @@ class CreditNote(models.Model):
             if invoice.status != Invoice.Status.VOID:
                 invoice.status = Invoice.Status.VOID
                 invoice.voided_at = timezone.now()
-                invoice.void_reason = f"Cancelled by Credit Note #{credit_note.credit_note_number}"
+                invoice.void_reason = (
+                    f"Cancelled by Credit Note #{credit_note.credit_note_number}"
+                )
                 invoice.save(update_fields=["status", "voided_at", "void_reason"])
 
             # Generate and upload PDF
