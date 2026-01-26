@@ -6,8 +6,8 @@ import tempfile
 from datetime import date, timedelta
 from decimal import Decimal
 
-import boto3
 from account.models import CustomUser
+from billing.models import CreditNote, Invoice
 from django.conf import settings
 from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
@@ -22,7 +22,6 @@ from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
-from billing.models import CreditNote
 from shipping.models import ShippingDetails
 
 from .forms import (
@@ -359,6 +358,9 @@ class DateFilter(admin.SimpleListFilter):
 
 
 def get_s3_client():
+    # Lazy import to avoid hanging during Django autodiscovery (especially with iCloud Drive)
+    import boto3
+
     return boto3.client(
         "s3",
         aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
@@ -501,7 +503,7 @@ def create_and_upload_invoice(modeladmin, request, queryset):
                         order.save(update_fields=["invoice_link"])
 
                     success_count += 1
-                    
+
                     # Small delay to prevent overwhelming WeasyPrint and reduce crash risk
                     time.sleep(0.1)
 
@@ -580,22 +582,26 @@ def mark_orders_paid(modeladmin, request, queryset):
     from django.utils import timezone
 
     updated = queryset.update(status="paid")
-    
+
     # Update related invoices to mark them as paid
     invoice_updated = 0
-    for order in queryset.select_related("invoice"):
-        invoice = getattr(order, "invoice", None)
+    for order in queryset.prefetch_related("invoices"):
+        # Get the latest invoice for this order
+        try:
+            invoice = order.invoices.latest("created_at")
+        except Invoice.DoesNotExist:
+            invoice = None
         if invoice and invoice.status != Invoice.Status.PAID:
             invoice.amount_paid = invoice.total_amount
             invoice.status = Invoice.Status.PAID
             invoice.paid_at = timezone.now()
             invoice.save(update_fields=["amount_paid", "status", "paid_at"])
             invoice_updated += 1
-    
+
     message = f"{updated} order(s) marked as paid."
     if invoice_updated > 0:
         message += f" {invoice_updated} invoice(s) updated."
-    
+
     modeladmin.message_user(
         request,
         message,
@@ -613,78 +619,144 @@ def mark_orders_cancelled(modeladmin, request, queryset):
     )
 
 
-@admin.action(description="Create Credit Note")
-def create_credit_note_and_void_invoice(modeladmin, request, queryset):
+@admin.action(description="Issue Credit Note & Create New Invoice")
+def create_credit_note_and_new_invoice(modeladmin, request, queryset):
     """
-    Create credit notes for selected orders' invoices and void the invoices.
-    This action:
-    - Creates a credit note with all snapshots copied from the invoice
-    - Generates and uploads the credit note PDF to S3
-    - Voids the original invoice
-    - Marks the order as cancelled
+    For orders with existing invoices:
+    1. Creates a credit note for the existing invoice (voids it)
+    2. Creates a new invoice for the order
+
+    For orders without invoices:
+    - Creates a new invoice directly
+
+    This action is useful for correcting invoices or reissuing them.
     """
+    import gc
+    import logging
+    import time
+
+    from billing.models import Invoice
+    from django.db import transaction
+    from django.utils import timezone
+
+    logger = logging.getLogger(__name__)
+
     success_count = 0
     error_count = 0
     skipped_count = 0
+    credit_note_count = 0
     errors = []
+    warnings = []
 
-    for order in queryset.select_related("invoice"):
+    # Optimize queryset to avoid N+1 queries
+    optimized_queryset = (
+        queryset.select_related("customer", "customer__profile", "address")
+        .prefetch_related(
+            "items", "items__product", "invoices", "invoices__credit_note"
+        )
+        .order_by("id")
+    )
+
+    for order in optimized_queryset:
         try:
-            # Check if order has an invoice
-            invoice = getattr(order, "invoice", None)
-            if not invoice:
-                skipped_count += 1
-                errors.append(f"Order #{order.id}: No invoice exists")
-                continue
+            with transaction.atomic():
+                # Step 1: If order has an invoice, void it and create credit note
+                # Get the latest (most recent) invoice for this order
+                try:
+                    existing_invoice = order.invoices.latest("created_at")
+                except Invoice.DoesNotExist:
+                    existing_invoice = None
 
-            # Check if invoice already has a credit note
-            try:
-                existing_credit_note = invoice.credit_note
-                if existing_credit_note:
-                    skipped_count += 1
-                    errors.append(
-                        f"Order #{order.id}: Invoice already has Credit Note #{existing_credit_note.credit_note_number}"
-                    )
-                    continue
-            except CreditNote.DoesNotExist:
-                pass
+                if existing_invoice:
+                    # Check if invoice already has a credit note
+                    try:
+                        existing_credit_note = existing_invoice.credit_note
+                        if existing_credit_note:
+                            warnings.append(
+                                f"Order #{order.id}: Invoice #{existing_invoice.invoice_number} "
+                                f"already has Credit Note #{existing_credit_note.credit_note_number}. "
+                                f"Skipping credit note creation."
+                            )
+                        else:
+                            # Create credit note for existing invoice (this automatically voids the invoice)
+                            credit_note = CreditNote.create_and_publish_from_invoice(
+                                invoice=existing_invoice,
+                                reason="Invoice replaced with new invoice via admin action",
+                                request=request,
+                            )
+                            credit_note_count += 1
+                    except CreditNote.DoesNotExist:
+                        # No credit note exists, create one
+                        credit_note = CreditNote.create_and_publish_from_invoice(
+                            invoice=existing_invoice,
+                            reason="Invoice replaced with new invoice via admin action",
+                            request=request,
+                        )
+                        credit_note_count += 1
 
-            # Create credit note and void invoice
-            credit_note = CreditNote.create_and_publish_from_invoice(
-                invoice=invoice,
-                reason="Order cancelled/refunded via admin action",
-                request=request,
-            )
+                # Step 2: Create new invoice for the order
+                # The old invoice remains linked (voided, with credit note)
+                # Since we changed to ForeignKey, we can have multiple invoices per order
+                new_invoice = Invoice.create_and_publish_from_order(
+                    order=order, request=request
+                )
 
-            # Mark order as cancelled
-            order.status = "cancelled"
-            order.save(update_fields=["status"])
+                # Update order's invoice_link for backward compatibility
+                if (
+                    new_invoice.invoice_link
+                    and order.invoice_link != new_invoice.invoice_link
+                ):
+                    order.invoice_link = new_invoice.invoice_link
+                    order.save(update_fields=["invoice_link"])
 
-            success_count += 1
+                success_count += 1
+
+                # Small delay to prevent overwhelming WeasyPrint
+                time.sleep(0.1)
 
         except Exception as e:
             error_count += 1
-            errors.append(f"Order #{order.id}: {str(e)}")
+            error_msg = f"Order #{order.id}: {str(e)}"
+            errors.append(error_msg)
+            logger.error(error_msg, exc_info=True)
+            continue
 
-    # Build result message
+    # Force garbage collection after processing
+    gc.collect()
+
+    # Build result messages
     if success_count > 0:
+        message_parts = [f"Successfully processed {success_count} order(s)."]
+        if credit_note_count > 0:
+            message_parts.append(
+                f"{credit_note_count} credit note(s) created and {success_count} new invoice(s) issued."
+            )
+        else:
+            message_parts.append(f"{success_count} new invoice(s) created.")
+
         modeladmin.message_user(
             request,
-            f"Successfully created {success_count} credit note(s) and voided invoice(s).",
+            " ".join(message_parts),
             level=messages.SUCCESS,
         )
 
-    if skipped_count > 0:
+    if warnings:
+        warning_display = "\n".join(warnings[:5])
+        if len(warnings) > 5:
+            warning_display += f"\n... and {len(warnings) - 5} more warnings."
         modeladmin.message_user(
             request,
-            f"Skipped {skipped_count} order(s): {'; '.join(errors[:5])}{'...' if len(errors) > 5 else ''}",
+            f"Warnings:\n{warning_display}",
             level=messages.WARNING,
         )
 
     if error_count > 0:
+        error_display = "\n".join(errors[:10])
+        if len(errors) > 10:
+            error_display += f"\n... and {len(errors) - 10} more errors."
         modeladmin.message_user(
             request,
-            f"Failed to process {error_count} order(s). Check logs for details.",
+            f"Failed to process {error_count} order(s):\n{error_display}",
             level=messages.ERROR,
         )
 
@@ -733,7 +805,7 @@ class OrderItemInline(admin.TabularInline):
             else:
                 return "Deleted product"
         return "-"
-    
+
     get_product_name.short_description = "Item Name (Ordered)"
 
     def get_total_price(self, obj):
@@ -774,6 +846,141 @@ class ShippingDetailsInline(admin.StackedInline):
         "shipping_status",
         "shipping_error_message",
     ]
+
+
+class InvoiceInline(admin.TabularInline):
+    """Simple tabular inline for displaying invoices with links."""
+
+    model = Invoice
+    fk_name = "order"
+    extra = 0
+    can_delete = False
+    ordering = ["created_at"]  # Show oldest invoices first
+    fields = ["invoice_info"]
+    readonly_fields = ["invoice_info"]
+    verbose_name = "Document"
+    verbose_name_plural = "Documents"
+
+    def has_add_permission(self, request, obj=None):
+        """Prevent adding invoices through inline."""
+        return False
+
+    def get_queryset(self, request):
+        """Customize queryset if needed."""
+        qs = super().get_queryset(request)
+        return qs.select_related("order")
+
+    def invoice_info(self, obj):
+        """Display invoice number, status, view details link, and download link.
+        Also displays credit note if it exists."""
+        if not obj:
+            return "-"
+
+        invoice_url = reverse("admin:billing_invoice_change", args=[obj.pk])
+        status_badge = self._get_status_badge(obj.status, "invoice")
+
+        # Build the display: Invoice#4 VOID View Details 📄 Download
+        invoice_parts = [
+            format_html("<strong>Invoice#{}</strong>", obj.invoice_number),
+            status_badge,
+        ]
+
+        # Add View Details link
+        invoice_parts.append(
+            format_html(
+                '<a href="{}" style="color: #417690; text-decoration: none;">View Details</a>',
+                invoice_url,
+            )
+        )
+
+        # Add Download link if PDF exists
+        if obj.invoice_link:
+            try:
+                pdf_url = obj.get_presigned_invoice_url(expires_in=300)
+                invoice_parts.append(
+                    format_html(
+                        '<a href="{}" target="_blank" style="color: #417690; text-decoration: none; margin-left: 4px;">📄 Download</a>',
+                        pdf_url,
+                    )
+                )
+            except Exception:
+                pass
+
+        invoice_html = format_html(" ".join(str(p) for p in invoice_parts))
+
+        # Check for credit note
+        try:
+            credit_note = obj.credit_note
+            if credit_note:
+                credit_note_url = reverse(
+                    "admin:billing_creditnote_change", args=[credit_note.pk]
+                )
+                credit_status_badge = self._get_status_badge(
+                    credit_note.status, "credit_note"
+                )
+
+                # Build credit note display: Credit Note#2 ISSUED View Details 📄 Download
+                credit_parts = [
+                    format_html(
+                        '<strong style="color: #dc3545;">Credit Note#{}</strong>',
+                        credit_note.credit_note_number,
+                    ),
+                    credit_status_badge,
+                ]
+
+                # Add View Details link
+                credit_parts.append(
+                    format_html(
+                        '<a href="{}" style="color: #dc3545; text-decoration: none;">View Details</a>',
+                        credit_note_url,
+                    )
+                )
+
+                # Add Download link if PDF exists
+                if credit_note.credit_note_link:
+                    try:
+                        credit_pdf_url = credit_note.get_presigned_credit_note_url(
+                            expires_in=300
+                        )
+                        credit_parts.append(
+                            format_html(
+                                '<a href="{}" target="_blank" style="color: #dc3545; text-decoration: none; margin-left: 4px;">📄 Download</a>',
+                                credit_pdf_url,
+                            )
+                        )
+                    except Exception:
+                        pass
+
+                credit_html = format_html(" ".join(str(p) for p in credit_parts))
+                # Return both invoice and credit note, separated by a line break
+                return format_html(
+                    '<div>{}</div><div style="margin-top: 4px; padding-left: 20px;">{}</div>',
+                    invoice_html,
+                    credit_html,
+                )
+        except CreditNote.DoesNotExist:
+            pass
+
+        return invoice_html
+
+    invoice_info.short_description = "Invoice"
+
+    def _get_status_badge(self, status, doc_type):
+        """Helper to create status badges for invoices and credit notes."""
+        colors = {
+            "ISSUED": "#17a2b8",  # blue
+            "PART_PAID": "#ffc107",  # yellow
+            "PAID": "#28a745",  # green
+            "VOID": "#dc3545",  # red
+            "APPLIED": "#6c757d",  # gray
+        }
+        color = colors.get(status, "#6c757d")
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 2px 6px; '
+            'border-radius: 3px; font-size: 10px; font-weight: 600;">{}</span>',
+            color,
+            status,
+        )
 
 
 def retry_shipment_creation(modeladmin, request, queryset):
@@ -875,8 +1082,8 @@ class OrderAdmin(admin.ModelAdmin):
         return cls._font_config, cls._font_cache_dir
 
     actions = [
-        create_and_upload_invoice,
-        create_credit_note_and_void_invoice,
+        # create_and_upload_invoice,
+        create_credit_note_and_new_invoice,
         mark_orders_paid,
         mark_orders_cancelled,
         mark_orders_pending,
@@ -917,11 +1124,14 @@ class OrderAdmin(admin.ModelAdmin):
     autocomplete_fields = ["customer"]
 
     def get_inlines(self, request, obj):
-        """Conditionally include ShippingDetailsInline only for orders with is_home_delivery=False."""
+        """Conditionally include inlines based on order state."""
         inlines = [OrderItemInline]
-        # Only show shipping details for orders that are NOT home delivery
-        if obj and not obj.is_home_delivery:
-            inlines.append(ShippingDetailsInline)
+        # Only show invoices/documents for existing orders (not when creating new)
+        if obj:
+            inlines.append(InvoiceInline)
+            # Only show shipping details for orders that are NOT home delivery
+            if not obj.is_home_delivery:
+                inlines.append(ShippingDetailsInline)
         return inlines
 
     def get_fields(self, request, obj=None):
@@ -973,8 +1183,8 @@ class OrderAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         self.request = request  # Save request for later use
         qs = super().get_queryset(request)
-        # Prefetch invoice to avoid N+1 queries when displaying invoice column
-        return qs.select_related("invoice")
+        # Prefetch invoices and their credit notes to avoid N+1 queries
+        return qs.prefetch_related("invoices", "invoices__credit_note")
 
     def _is_single_date_filtered(self, request):
         """
@@ -1187,14 +1397,14 @@ class OrderAdmin(admin.ModelAdmin):
         # Don't calculate delivery fees in save_model to prevent double save
         # This will be handled in save_related after inlines are processed
         # Delivery date order ID reassignment is handled in Order.save() method
-        
+
         # Track if status changed to "paid" to update invoice
         status_changed_to_paid = False
         if change and "status" in form.changed_data and obj.status == "paid":
             status_changed_to_paid = True
-        
+
         super().save_model(request, obj, form, change)
-        
+
         # Update related invoice when order status changes to "paid"
         if status_changed_to_paid:
             self._update_invoice_to_paid(obj)
@@ -1207,7 +1417,11 @@ class OrderAdmin(admin.ModelAdmin):
         from billing.models import Invoice
         from django.utils import timezone
 
-        invoice = getattr(order, "invoice", None)
+        # Get the latest invoice for this order
+        try:
+            invoice = order.invoices.latest("created_at")
+        except Invoice.DoesNotExist:
+            invoice = None
         if invoice and invoice.status != Invoice.Status.PAID:
             invoice.amount_paid = invoice.total_amount
             invoice.status = Invoice.Status.PAID
@@ -1274,7 +1488,13 @@ class OrderAdmin(admin.ModelAdmin):
         """
         Display invoice download link if exists, otherwise show "Create invoice" button.
         """
-        invoice = getattr(obj, "invoice", None)
+        from billing.models import Invoice
+
+        # Get the latest invoice for this order
+        try:
+            invoice = obj.invoices.latest("created_at")
+        except Invoice.DoesNotExist:
+            invoice = None
         if invoice and getattr(invoice, "invoice_link", ""):
             try:
                 url = invoice.get_presigned_invoice_url(expires_in=300)
@@ -1316,6 +1536,132 @@ class OrderAdmin(admin.ModelAdmin):
 
     get_invoice.short_description = "Invoice"
 
+    def get_invoices_and_credit_notes(self, obj):
+        """
+        Display all invoices and credit notes linked to this order.
+        Shows all invoices (oldest to newest) and their credit notes (if exist).
+        Includes inline PDF viewers for each document.
+        """
+        from billing.models import CreditNote, Invoice
+
+        items = []
+
+        # Get all invoices for this order, ordered by creation date (oldest first)
+        invoices = obj.invoices.all().order_by("created_at")
+
+        for invoice in invoices:
+            invoice_url = reverse("admin:billing_invoice_change", args=[invoice.pk])
+            status_badge = self._get_status_badge(invoice.status, "invoice")
+
+            # Try to get PDF link and embed viewer
+            pdf_section = ""
+            if invoice.invoice_link:
+                try:
+                    pdf_url = invoice.get_presigned_invoice_url(expires_in=300)
+                    pdf_section = format_html(
+                        '<div style="margin-top: 8px; margin-bottom: 16px;">'
+                        '<a href="{}" target="_blank" style="color: #417690; text-decoration: none; margin-right: 8px;" title="Download PDF">📄 Download</a>'
+                        '<iframe src="{}" style="width: 100%; height: 600px; border: 1px solid #ddd; border-radius: 4px;" title="Invoice PDF"></iframe>'
+                        "</div>",
+                        pdf_url,
+                        pdf_url,
+                    )
+                except Exception:
+                    pass
+
+            items.append(
+                format_html(
+                    '<div style="margin-bottom: 16px; padding: 8px; background-color: #f9f9f9; border-radius: 4px;">'
+                    '<div style="margin-bottom: 8px; padding: 4px 0;">'
+                    "<strong>Invoice #{}</strong> {} {}"
+                    "</div>"
+                    "{}"
+                    "</div>",
+                    invoice.invoice_number,
+                    status_badge,
+                    format_html(
+                        '<a href="{}" style="margin-left: 8px;">View Details</a>',
+                        invoice_url,
+                    ),
+                    pdf_section,
+                )
+            )
+
+            # Check for credit note on this invoice
+            try:
+                credit_note = invoice.credit_note
+                credit_note_url = reverse(
+                    "admin:billing_creditnote_change", args=[credit_note.pk]
+                )
+                credit_status_badge = self._get_status_badge(
+                    credit_note.status, "credit_note"
+                )
+
+                credit_pdf_section = ""
+                if credit_note.credit_note_link:
+                    try:
+                        credit_pdf_url = credit_note.get_presigned_credit_note_url(
+                            expires_in=300
+                        )
+                        credit_pdf_section = format_html(
+                            '<div style="margin-top: 8px; margin-bottom: 16px;">'
+                            '<a href="{}" target="_blank" style="color: #dc3545; text-decoration: none; margin-right: 8px;" title="Download PDF">📄 Download</a>'
+                            '<iframe src="{}" style="width: 100%; height: 600px; border: 1px solid #dc3545; border-radius: 4px;" title="Credit Note PDF"></iframe>'
+                            "</div>",
+                            credit_pdf_url,
+                            credit_pdf_url,
+                        )
+                    except Exception:
+                        pass
+
+                items.append(
+                    format_html(
+                        '<div style="margin-bottom: 16px; margin-left: 20px; padding: 8px; background-color: #fff5f5; border-left: 3px solid #dc3545; border-radius: 4px;">'
+                        '<div style="margin-bottom: 8px; padding: 4px 0; color: #dc3545;">'
+                        "↳ <strong>Credit Note #{}</strong> {} {}"
+                        "</div>"
+                        "{}"
+                        "</div>",
+                        credit_note.credit_note_number,
+                        credit_status_badge,
+                        format_html(
+                            '<a href="{}" style="margin-left: 8px;">View Details</a>',
+                            credit_note_url,
+                        ),
+                        credit_pdf_section,
+                    )
+                )
+            except CreditNote.DoesNotExist:
+                pass
+
+        if not items:
+            return format_html(
+                '<span style="color: #999; font-style: italic;">No invoices or credit notes</span>'
+            )
+
+        return format_html(
+            '<div style="line-height: 1.8;">{}</div>', format_html("".join(items))
+        )
+
+    get_invoices_and_credit_notes.short_description = "Invoices & Credit Notes"
+
+    def _get_status_badge(self, status, doc_type):
+        """Helper to create status badges for invoices and credit notes."""
+        colors = {
+            "ISSUED": "#17a2b8",  # blue
+            "PART_PAID": "#ffc107",  # yellow
+            "PAID": "#28a745",  # green
+            "VOID": "#dc3545",  # red
+            "APPLIED": "#6c757d",  # gray
+        }
+        color = colors.get(status, "#6c757d")
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 2px 6px; '
+            'border-radius: 3px; font-size: 10px; font-weight: 600;">{}</span>',
+            color,
+            status,
+        )
+
     def get_urls(self):
         """Add custom URL for single-order invoice creation."""
         urls = super().get_urls()
@@ -1342,24 +1688,93 @@ class OrderAdmin(admin.ModelAdmin):
             )
             return HttpResponseRedirect(reverse("admin:api_order_changelist"))
 
+        import logging
+
+        logger = logging.getLogger(__name__)
+
         try:
-            with transaction.atomic():
-                from billing.models import Invoice
+            from billing.models import Invoice
 
-                invoice = Invoice.create_and_publish_from_order(
-                    order=order, request=request
+            # Count existing invoices and get their IDs before creation
+            existing_invoices = list(order.invoices.values_list("id", flat=True))
+            existing_invoice_count = len(existing_invoices)
+
+            logger.info(
+                f"[ADMIN] Creating new invoice for order {order.id}. "
+                f"Existing invoices: {existing_invoice_count} (IDs: {existing_invoices})"
+            )
+
+            # Create invoice (this has its own transaction)
+            invoice = Invoice.create_and_publish_from_order(
+                order=order, request=request
+            )
+
+            # Refresh order to get latest invoice count
+            order.refresh_from_db()
+
+            # Verify a new invoice was actually created
+            new_invoices = list(order.invoices.values_list("id", flat=True))
+            new_invoice_count = len(new_invoices)
+
+            logger.info(
+                f"[ADMIN] Invoice creation completed for order {order.id}. "
+                f"New invoice count: {new_invoice_count} (IDs: {new_invoices}), "
+                f"Invoice ID: {invoice.id}, Invoice Number: {invoice.invoice_number}"
+            )
+
+            if new_invoice_count <= existing_invoice_count:
+                error_msg = (
+                    f"Expected new invoice to be created, but invoice count did not increase. "
+                    f"Before: {existing_invoice_count} (IDs: {existing_invoices}), "
+                    f"After: {new_invoice_count} (IDs: {new_invoices})"
                 )
+                logger.error(f"[ADMIN] {error_msg}")
+                raise ValueError(error_msg)
 
-                # Backward compat: keep the Order.invoice_link in sync
-                if invoice.invoice_link and order.invoice_link != invoice.invoice_link:
-                    order.invoice_link = invoice.invoice_link
-                    order.save(update_fields=["invoice_link"])
-
-                self.message_user(
-                    request,
-                    f"Invoice created successfully for Order #{order.id}.",
-                    level=messages.SUCCESS,
+            if invoice.id in existing_invoices:
+                error_msg = (
+                    f"Created invoice ID {invoice.id} already existed before creation. "
+                    f"This indicates the invoice was not actually created."
                 )
+                logger.error(f"[ADMIN] {error_msg}")
+                raise ValueError(error_msg)
+
+            # Verify invoice exists in database
+            if not Invoice.objects.filter(pk=invoice.pk).exists():
+                error_msg = (
+                    f"Invoice {invoice.pk} was returned but does not exist in database."
+                )
+                logger.error(f"[ADMIN] {error_msg}")
+                raise ValueError(error_msg)
+
+            # Verify invoice is linked to the order
+            invoice.refresh_from_db()
+            if invoice.order_id != order.id:
+                error_msg = f"Invoice {invoice.pk} is not linked to order {order.id} (linked to {invoice.order_id})"
+                logger.error(f"[ADMIN] {error_msg}")
+                raise ValueError(error_msg)
+
+            # Double-check by querying invoices for this order
+            order_invoices = list(order.invoices.values_list("id", flat=True))
+            if invoice.id not in order_invoices:
+                error_msg = (
+                    f"Invoice {invoice.id} exists but is not in order.invoices. "
+                    f"Order invoices: {order_invoices}"
+                )
+                logger.error(f"[ADMIN] {error_msg}")
+                raise ValueError(error_msg)
+
+            # Backward compat: keep the Order.invoice_link in sync
+            if invoice.invoice_link and order.invoice_link != invoice.invoice_link:
+                order.invoice_link = invoice.invoice_link
+                order.save(update_fields=["invoice_link"])
+
+            self.message_user(
+                request,
+                f"Invoice #{invoice.invoice_number} (ID: {invoice.id}) created successfully for Order #{order.id}. "
+                f"Total invoices for this order: {new_invoice_count}.",
+                level=messages.SUCCESS,
+            )
         except Exception as e:
             import logging
 

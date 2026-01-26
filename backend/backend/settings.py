@@ -226,8 +226,9 @@ def get_database_config():
         "HOST": PG_HOST,
         "PORT": os.getenv("POSTGRES_PORT", "5432"),
         "OPTIONS": {
-            "connect_timeout": 10,
+            "connect_timeout": 5,
         },
+        "CONN_MAX_AGE": 0,  # Disable persistent connections to avoid hanging
     }
 
 

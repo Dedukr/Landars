@@ -31,10 +31,11 @@ class Invoice(models.Model):
         VOID = "VOID", "Void"
 
     # Immutable link to source order (invoice is an accounting snapshot of the order at issuance)
-    order = models.OneToOneField(
+    # Changed to ForeignKey to allow multiple invoices per order (e.g., original + replacement)
+    order = models.ForeignKey(
         "api.Order",
         on_delete=models.PROTECT,
-        related_name="invoice",
+        related_name="invoices",
     )
 
     invoice_number = models.PositiveBigIntegerField(
@@ -100,8 +101,10 @@ class Invoice(models.Model):
         ]
 
     def __str__(self) -> str:
+        """Return string representation of invoice."""
         num = self.invoice_number if self.invoice_number is not None else "—"
-        return f"Invoice #{num} (order {self.order_id})"
+        order_ref = f"order {self.order_id}" if self.order_id else "orphaned"
+        return f"Invoice #{num} ({order_ref})"
 
     @property
     def due_date(self):
@@ -464,24 +467,75 @@ class Invoice(models.Model):
     def create_and_publish_from_order(cls, *, order, request):
         """
         Production entrypoint: create invoice from order and publish it in one transaction.
+        Always creates a new invoice, even if one already exists for the order.
         - snapshots customer/address/seller + totals
         - creates immutable line items
         - generates/uploads PDF and stores invoice_link
-        Idempotent: if invoice exists, it ensures PDF exists.
+        
+        Args:
+            order: The order to create an invoice for
+            request: Django request object (for PDF generation)
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Get existing invoice IDs to verify we create a new one
+        existing_invoice_ids = set(order.invoices.values_list('id', flat=True))
+        logger.info(f"Creating new invoice for order {order.id}. Existing invoice IDs: {existing_invoice_ids}")
+        
+        # Create new invoice - always create a new one
+        # Use transaction.atomic() to ensure all-or-nothing creation
         with transaction.atomic():
-            invoice = getattr(order, "invoice", None)
-            if not invoice:
-                # Populate snapshots BEFORE first save (save() calls full_clean()).
-                invoice = cls(order=order)
-                invoice.issue_from_order()
-                # Allocate invoice number before save() since it's now required
-                invoice.allocate_invoice_number_if_needed()
-                invoice.save()
+            # Populate snapshots BEFORE first save (save() calls full_clean()).
+            invoice = cls(order=order)
+            invoice.issue_from_order()
+            # Allocate invoice number before save() since it's now required
+            invoice.allocate_invoice_number_if_needed()
+            
+            logger.info(f"About to save invoice with number {invoice.invoice_number} for order {order.id}")
+            
+            # Save the invoice - this will raise an exception if validation fails
+            invoice.save()
+            
+            logger.info(f"Invoice saved with ID {invoice.pk}, invoice_number {invoice.invoice_number}")
+            
+            # Verify the invoice was actually saved and has a primary key
+            if invoice.pk is None:
+                raise ValidationError("Invoice was not saved - primary key is None")
+            
+            # Verify this is a new invoice (not an existing one)
+            if invoice.pk in existing_invoice_ids:
+                raise ValidationError(
+                    f"Invoice with ID {invoice.pk} already existed. This should not happen."
+                )
+            
+            # Build line items after invoice is saved
+            try:
                 invoice.build_line_items_from_order()
-
+                logger.info(f"Line items built for invoice {invoice.pk}")
+            except Exception as e:
+                logger.error(f"Error building line items for invoice {invoice.pk}: {e}", exc_info=True)
+                raise
+            
             # Ensure PDF is uploaded and invoice_link is set
-            invoice.generate_and_upload_pdf(request)
+            # Note: PDF generation can fail, but we still want the invoice to exist
+            try:
+                invoice.generate_and_upload_pdf(request)
+                logger.info(f"PDF generated and uploaded for invoice {invoice.pk}")
+            except Exception as e:
+                logger.warning(f"PDF generation failed for invoice {invoice.pk}, but invoice was created: {e}")
+                # Don't raise - invoice is still valid without PDF initially
+            
+            # Refresh from database to ensure we have the latest state
+            invoice.refresh_from_db()
+            
+            # Final verification that the invoice exists in the database
+            if not cls.objects.filter(pk=invoice.pk).exists():
+                raise ValidationError(
+                    f"Invoice {invoice.pk} was created but does not exist in database after save."
+                )
+            
+            logger.info(f"Successfully created invoice {invoice.pk} (number {invoice.invoice_number}) for order {order.id}")
             return invoice
 
     def apply_payment(self, amount: Decimal, paid_at: timezone.datetime | None = None):

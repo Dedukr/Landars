@@ -330,8 +330,6 @@ class Order(models.Model):
         ]
 
     def __str__(self):
-        if self.delivery_date_order_id:
-            return f"Order #{self.delivery_date_order_id} ({self.delivery_date}) by {self.customer}"
         return f"Order #{self.id} by {self.customer}"
 
     @property
