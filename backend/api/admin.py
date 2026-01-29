@@ -1133,6 +1133,7 @@ class OrderAdmin(admin.ModelAdmin):
         # retry_shipment_creation,
         "export_orders_pdf",
         "food_summary_excel",
+        "export_vat_summary_file",
     ]
 
     list_display = [
@@ -2394,3 +2395,62 @@ class OrderAdmin(admin.ModelAdmin):
         return response
 
     food_summary_excel.short_description = "Export Food Summary as Excel"
+
+    def export_vat_summary_file(self, request, queryset):
+        """
+        Export selected orders to Excel with: order date, client full name,
+        sum ex VAT, VAT sum, total sum.
+        """
+        VAT_RATE = Decimal("0.20")
+
+        def order_summary(order):
+            items_net = Decimal("0")
+            items_vat = Decimal("0")
+            for item in order.items.select_related("product").all():
+                line_gross = Decimal(str(item.get_total_price() or 0))
+                vat_rate = VAT_RATE if (item.product and getattr(item.product, "vat", False)) else Decimal("0")
+                if vat_rate > 0:
+                    line_net = (line_gross / (Decimal("1") + vat_rate)).quantize(Decimal("0.01"))
+                else:
+                    line_net = line_gross
+                line_vat = (line_gross - line_net).quantize(Decimal("0.01"))
+                items_net += line_net
+                items_vat += line_vat
+            sum_ex_vat = (items_net + order.delivery_fee + order.holiday_fee_amount - order.discount).quantize(Decimal("0.01"))
+            return {
+                "order_date": order.delivery_date.strftime("%Y-%m-%d") if order.delivery_date else "",
+                "client_full_name": order.customer.name if order.customer else "",
+                "sum_ex_vat": float(sum_ex_vat),
+                "vat_sum": float(items_vat),
+                "total_sum": float(order.total_price),
+            }
+
+        queryset = queryset.prefetch_related("items__product").order_by("delivery_date", "id")
+        rows = [order_summary(order) for order in queryset]
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Orders Summary"
+        ws.append(["Order date", "Client full name", "Sum ex VAT", "VAT sum", "Total sum"])
+        for r in rows:
+            ws.append([r["order_date"], r["client_full_name"], r["sum_ex_vat"], r["vat_sum"], r["total_sum"]])
+
+        for col in ws.columns:
+            max_length = max(len(str(cell.value or "")) for cell in col)
+            col_letter = get_column_letter(col[0].column)
+            ws.column_dimensions[col_letter].width = min(max_length + 2, 50)
+
+        delivery_dates = queryset.values_list("delivery_date", flat=True).distinct()
+        filename = (
+            ", ".join(sorted({d.strftime("%d-%b-%Y") for d in delivery_dates if d}))
+            or "orders"
+        ) + "_summary.xlsx"
+
+        response = HttpResponse(
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        wb.save(response)
+        return response
+
+    export_vat_summary_file.short_description = "Export VAT Summary"
