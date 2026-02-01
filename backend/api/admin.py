@@ -1132,7 +1132,8 @@ class OrderAdmin(admin.ModelAdmin):
         calculate_total_items,
         # retry_shipment_creation,
         "export_orders_pdf",
-        "food_summary_excel",
+        # "food_summary_excel",
+        "food_summary_csv",
         "export_vat_summary_file",
     ]
 
