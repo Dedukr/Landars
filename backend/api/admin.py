@@ -50,6 +50,26 @@ from .models import (
 )
 
 
+def _phone_to_whatsapp_url(phone):
+    """
+    Build a WhatsApp link for a UK phone number.
+    Format: https://wa.me/[number] with no +, spaces, dashes, or leading 0.
+    UK: 44 + 10-digit number (e.g. 07911123456 -> 447911123456).
+    """
+    if not phone:
+        return None
+    digits = "".join(c for c in str(phone) if c.isdigit())
+    # Strip leading zeros so 00447911123456 and 07911123456 normalize correctly
+    digits = digits.lstrip("0") or "0"
+    if digits == "0":
+        return None
+    # UK local format: 10 digits starting with 7 (e.g. 7911123456 from 07911123456)
+    if len(digits) == 10 and digits[0] == "7":
+        digits = "44" + digits
+    # Already international UK (44...); leave as is
+    return f"https://wa.me/{digits}"
+
+
 class OrderAdminForm(ModelForm):
     """Custom form for Order admin."""
 
@@ -1313,11 +1333,20 @@ class OrderAdmin(admin.ModelAdmin):
         return obj.customer.name if obj.customer else "No Customer"
 
     def customer_phone(self, obj):
-        return (
-            obj.customer.profile.phone
-            if obj.customer and obj.customer.profile
-            else "No Phone"
-        )
+        phone = None
+        if obj.customer and obj.customer.profile:
+            phone = obj.customer.profile.phone
+        if not phone or not phone.strip():
+            return "No Phone"
+        display = phone.strip()
+        whatsapp_url = _phone_to_whatsapp_url(display)
+        if whatsapp_url:
+            return format_html(
+                '<a href="{}" target="_blank" rel="noopener">{}</a>',
+                whatsapp_url,
+                display,
+            )
+        return display
 
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)
