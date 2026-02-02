@@ -2914,6 +2914,87 @@ cleanup_s3_backups() {
 }
 
 #########################################################################
+# SPACE USAGE AND FREE SPACE
+#########################################################################
+
+# Show disk usage for backup dirs (sorted by size, biggest first) and optionally run cleanup
+show_space_usage() {
+    local run_cleanup=false
+    [[ "${1:-}" == "--run-cleanup" || "${1:-}" == "-r" ]] && run_cleanup=true
+    
+    log_info "💾 Backup and log disk usage (biggest first)"
+    echo ""
+    
+    # Collect host dirs with size in KB for sorting (du -sk = size in KB)
+    local tmp_list
+    tmp_list=$(mktemp 2>/dev/null || echo "/tmp/pg_backup_space_$$")
+    : > "$tmp_list"
+    for dir in "$BACKUP_BASE_DIR/postgresql" "$BACKUP_BASE_DIR/archive" "$BACKUP_BASE_DIR/logs" "$BACKUP_BASE_DIR/log"; do
+        if [[ -d "$dir" ]]; then
+            local kb
+            kb=$(du -sk "$dir" 2>/dev/null | cut -f1)
+            [[ -n "$kb" ]] && printf "%s\t%s\n" "$kb" "$(basename "$dir") ($dir)" >> "$tmp_list"
+        fi
+    done
+    
+    # Container dirs (if postgres is running)
+    local pg_service
+    pg_service=$(get_postgres_service 2>/dev/null)
+    if [[ -n "$pg_service" ]]; then
+        local container_backup_dir="/var/lib/postgresql/backups"
+        local container_archive_dir="/var/lib/postgresql/archive"
+        local c_backup_kb c_archive_kb
+        c_backup_kb=$(docker compose exec -T "$pg_service" sh -c "du -sk $container_backup_dir 2>/dev/null | cut -f1" 2>/dev/null | tr -d ' ')
+        c_archive_kb=$(docker compose exec -T "$pg_service" sh -c "du -sk $container_archive_dir 2>/dev/null | cut -f1" 2>/dev/null | tr -d ' ')
+        [[ -n "$c_backup_kb" ]] && printf "%s\t%s\n" "$c_backup_kb" "container: backups (SQL dumps)" >> "$tmp_list"
+        [[ -n "$c_archive_kb" ]] && printf "%s\t%s\n" "$c_archive_kb" "container: archive (PITR/WAL)" >> "$tmp_list"
+    fi
+    
+    # Sort by size descending and print with human-readable size (portable: no numfmt)
+    echo -e "${CYAN}Directory / location (biggest first):${NC}"
+    if [[ -s "$tmp_list" ]]; then
+        sort -rn -k1 -t"	" "$tmp_list" 2>/dev/null | while IFS=$'\t' read -r kb label; do
+            local hr
+            if [[ $kb -ge 1048576 ]]; then
+                hr=$(awk "BEGIN { printf \"%.1fG\", $kb/1024/1024 }")
+            elif [[ $kb -ge 1024 ]]; then
+                hr=$(awk "BEGIN { printf \"%.1fM\", $kb/1024 }")
+            else
+                hr="${kb}K"
+            fi
+            printf "  %10s  %s\n" "$hr" "$label"
+        done
+    else
+        echo "  (no backup dirs found)"
+    fi
+    rm -f "$tmp_list"
+    
+    local base_size
+    base_size=$(du -sh "$BACKUP_BASE_DIR" 2>/dev/null | cut -f1 || echo "N/A")
+    echo ""
+    echo -e "${CYAN}Total backup base:${NC} $base_size ($BACKUP_BASE_DIR)"
+    echo ""
+    
+    echo -e "${CYAN}Retention (what cleanup keeps):${NC}"
+    echo "  SQL dumps: $SQL_RETENTION_DAYS days"
+    echo "  PITR base: $PITR_RETENTION_COUNT most recent"
+    echo "  WAL:       $WAL_RETENTION_DAYS days"
+    echo "  Logs:      $LOG_RETENTION_DAYS days"
+    echo "  S3:        $S3_RETENTION_DAYS days"
+    echo ""
+    echo -e "${CYAN}To free space:${NC}"
+    echo "  1. Run cleanup:  $0 cleanup"
+    echo "  2. Reduce retention in .env: SQL_RETENTION_DAYS, PITR_RETENTION_COUNT, WAL_RETENTION_DAYS, LOG_RETENTION_DAYS"
+    echo "  3. Run cleanup more often (e.g. daily in crontab)"
+    echo ""
+    
+    if [[ "$run_cleanup" == true ]]; then
+        log_info "Running cleanup (--run-cleanup)..."
+        cleanup_all || true
+    fi
+}
+
+#########################################################################
 # MONITORING AND STATISTICS
 #########################################################################
 
@@ -3225,19 +3306,79 @@ cleanup_old_pitr_backups() {
     fi
 }
 
+# Cleanup old PITR copies on host (db_backups/archive/*.tar.gz) - keep same count as container
+cleanup_old_pitr_host_backups() {
+    log_info "🧹 Cleaning up old PITR host copies (keeping $PITR_RETENTION_COUNT most recent in db_backups/archive/)..."
+    local host_archive_dir="$BACKUP_BASE_DIR/archive"
+    local deleted_count=0
+    
+    if [[ ! -d "$host_archive_dir" ]] || [[ $PITR_RETENTION_COUNT -lt 1 ]]; then
+        return 0
+    fi
+    
+    # List pitr_basebackup_*.tar.gz by modification time (newest first), delete all but first PITR_RETENTION_COUNT
+    local files_to_delete
+    files_to_delete=$(find "$host_archive_dir" -maxdepth 1 -type f -name 'pitr_basebackup_*.tar.gz' -printf '%T@\t%p\n' 2>/dev/null | sort -rn | tail -n +$((PITR_RETENTION_COUNT + 1)) | cut -f2)
+    # Portable fallback (no -printf): use stat or ls -t
+    if [[ -z "$files_to_delete" ]]; then
+        files_to_delete=$(ls -t "$host_archive_dir"/pitr_basebackup_*.tar.gz 2>/dev/null | tail -n +$((PITR_RETENTION_COUNT + 1)))
+    fi
+    
+    if [[ -n "$files_to_delete" ]]; then
+        while IFS= read -r f; do
+            if [[ -n "$f" && -f "$f" ]]; then
+                rm -f "$f" && ((++deleted_count))
+            fi
+        done <<< "$files_to_delete"
+    fi
+    
+    if [[ $deleted_count -gt 0 ]]; then
+        log_info "Deleted $deleted_count old PITR host copy(ies) from $host_archive_dir"
+    else
+        log_info "No old PITR host copies to delete"
+    fi
+}
+
 # Cleanup old log files (retention is double the longest backup retention)
+# Also rotates and prunes crontab logs in BACKUP_BASE_DIR/log (pitr-backup.log, sql-backup.log, etc.)
 cleanup_old_logs() {
     log_info "🧹 Cleaning up old log files (retention: $LOG_RETENTION_DAYS days)..."
     local deleted_count=0
     local log_dir="${LOG_DIR}"
     
-    # Delete log files older than LOG_RETENTION_DAYS (default: double SQL retention)
+    # 1. Script daily logs (BACKUP_BASE_DIR/logs/backup_*.log)
     if [[ -d "$log_dir" ]]; then
         deleted_count=$(find "$log_dir" -name "backup_*.log" -type f -mtime +$LOG_RETENTION_DAYS -delete -print 2>/dev/null | wc -l)
     fi
     
+    # 2. Crontab logs (BACKUP_BASE_DIR/log/*.log) - rotate then delete old archives
+    local crontab_log_dir="${BACKUP_BASE_DIR}/log"
+    if [[ -d "$crontab_log_dir" ]]; then
+        # Rotate: copy current crontab log to .YYYY-MM-DD and truncate (so today keeps appending)
+        local rotate_date
+        rotate_date=$(date +%Y-%m-%d 2>/dev/null)
+        for f in "$crontab_log_dir"/*.log; do
+            [[ ! -f "$f" ]] && continue
+            # Skip already-archived names (e.g. pitr-backup.log.2025-01-15)
+            [[ "$f" == *.[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] ]] && continue
+            if [[ -s "$f" ]]; then
+                if cp "$f" "${f}.${rotate_date}" 2>/dev/null; then
+                    : > "$f"
+                    log_debug "Rotated crontab log: $(basename "$f") -> $(basename "$f").${rotate_date}"
+                fi
+            fi
+        done
+        # Delete archived crontab logs older than LOG_RETENTION_DAYS
+        local crontab_deleted
+        crontab_deleted=$(find "$crontab_log_dir" -type f -name '*.log.[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' -mtime +$LOG_RETENTION_DAYS -delete -print 2>/dev/null | wc -l)
+        deleted_count=$((deleted_count + crontab_deleted))
+        if [[ $crontab_deleted -gt 0 ]]; then
+            log_info "Deleted $crontab_deleted old crontab log archive(s) from $crontab_log_dir"
+        fi
+    fi
+    
     if [[ $deleted_count -gt 0 ]]; then
-        log_info "Deleted $deleted_count old log files (older than $LOG_RETENTION_DAYS days)"
+        log_info "Deleted $deleted_count old log file(s) (older than $LOG_RETENTION_DAYS days)"
     else
         log_info "No old log files to delete"
     fi
@@ -3312,10 +3453,11 @@ cleanup_all() {
     echo ""
     ((++current_step))
     
-    # 2. Cleanup old PITR base backups
+    # 2. Cleanup old PITR base backups (container + host copy)
     log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     log_info "📦 Step $current_step/$total_steps: Cleaning up old PITR base backups (keeping $PITR_RETENTION_COUNT most recent)..."
     cleanup_old_pitr_backups
+    cleanup_old_pitr_host_backups
     echo ""
     ((++current_step))
     
@@ -3423,6 +3565,7 @@ show_usage() {
     echo "  stats                     Show comprehensive backup statistics"
     echo "  health                    Run system health check"
     echo "  cleanup                   Clean up old backups (local + S3)"
+    echo "  space [--run-cleanup]     Show disk usage; optional: run cleanup"
     echo "  wal-cleanup               Clean up old WAL files from archive"
     echo "  s3-cleanup                Clean up old S3 backups only"
     echo ""
@@ -3658,6 +3801,10 @@ main() {
             ;;
         "cleanup"|"clean")
             cleanup_all || exit_code=$?
+            ;;
+        "space"|"free"|"disk"|"usage")
+            shift
+            show_space_usage "$@" || exit_code=$?
             ;;
         "wal-cleanup")
             cleanup_wal_files || exit_code=$?
