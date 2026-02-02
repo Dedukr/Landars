@@ -25,6 +25,7 @@ from django.http import HttpResponse, HttpResponseRedirect
 from django.template.loader import render_to_string
 from django.urls import path, reverse
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
@@ -68,6 +69,36 @@ def _phone_to_whatsapp_url(phone):
         digits = "44" + digits
     # Already international UK (44...); leave as is
     return f"https://wa.me/{digits}"
+
+
+def _phone_display_with_links(phone_str):
+    """
+    Split phone string by '+' and render each part as a WhatsApp link, preserving
+    the original text (including labels like "(сын)"). Joins with ' + '.
+
+    """
+    if not phone_str or not phone_str.strip():
+        return None
+    parts = [p.strip() for p in phone_str.strip().split("+") if p.strip()]
+    if not parts:
+        return None
+    link_parts = []
+    for part in parts:
+        whatsapp_url = _phone_to_whatsapp_url(part)
+        # Restore leading + in display so original format is visible
+        display_text = "+" + part
+        if whatsapp_url:
+            link_parts.append(
+                format_html(
+                    '<a href="{}" target="_blank" rel="noopener">{}</a>',
+                    whatsapp_url,
+                    display_text,
+                )
+            )
+        else:
+            # No valid number in this part (e.g. only text); show as-is
+            link_parts.append(display_text)
+    return mark_safe(" + ".join(str(p) for p in link_parts))
 
 
 class OrderAdminForm(ModelForm):
@@ -1338,15 +1369,9 @@ class OrderAdmin(admin.ModelAdmin):
             phone = obj.customer.profile.phone
         if not phone or not phone.strip():
             return "No Phone"
-        display = phone.strip()
-        whatsapp_url = _phone_to_whatsapp_url(display)
-        if whatsapp_url:
-            return format_html(
-                '<a href="{}" target="_blank" rel="noopener">{}</a>',
-                whatsapp_url,
-                display,
-            )
-        return display
+        # Support multiple numbers separated by '+'; show original text with tel: links
+        result = _phone_display_with_links(phone)
+        return result if result else phone.strip()
 
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)
