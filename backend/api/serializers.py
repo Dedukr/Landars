@@ -219,8 +219,8 @@ class OrderItemSerializer(serializers.ModelSerializer):
         return obj.product.name if obj.product else "Deleted product"
 
     def get_product_price(self, obj):
-        """Return stored item price if product is deleted, otherwise current product price."""
-        if obj.item_price is not None and not obj.product:
+        """Return price at order time (item_price) when set, else current product price."""
+        if obj.item_price is not None:
             return obj.item_price
         return obj.product.price if obj.product else Decimal("0.00")
 
@@ -601,8 +601,8 @@ class OrderItemSerializer(serializers.ModelSerializer):
         return obj.product.name if obj.product else "Deleted product"
 
     def get_product_price(self, obj):
-        """Return stored item price if product is deleted, otherwise current product price."""
-        if obj.item_price is not None and not obj.product:
+        """Return price at order time (item_price) when set, else current product price."""
+        if obj.item_price is not None:
             return obj.item_price
         return obj.product.price if obj.product else Decimal("0.00")
 

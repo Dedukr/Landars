@@ -685,15 +685,15 @@ class OrderItem(models.Model):
 
     def get_total_price(self):
         """
-        Calculate total price using stored price if product is deleted,
-        otherwise use current product price.
+        Calculate total price using the price at time of order (item_price snapshot).
+        Only falls back to current product.price when item_price was never set (legacy data).
         """
         if not self.quantity:
             return ""
         
-        # Use stored price if product is deleted, otherwise use current product price
-        price = self.item_price if (self.item_price is not None and not self.product) else (
-            self.product.price if self.product else self.item_price
+        # Prefer snapshot price whenever available so order/invoice totals stay consistent
+        price = self.item_price if self.item_price is not None else (
+            self.product.price if self.product else None
         )
         
         if price is None:
