@@ -22,7 +22,6 @@ export default function OrdersPage() {
     error,
     stats,
     fetchOrders,
-    cancelOrder,
     reorderItems,
   } = useOrders(filters);
 
@@ -42,15 +41,6 @@ export default function OrdersPage() {
       // Show success message or redirect to cart
     } catch (error) {
       console.error("Failed to reorder:", error);
-    }
-  };
-
-  const handleCancelOrder = async (orderId: number) => {
-    try {
-      await cancelOrder(orderId);
-      fetchOrders(); // Refresh orders
-    } catch (error) {
-      console.error("Failed to cancel order:", error);
     }
   };
 
@@ -210,7 +200,6 @@ export default function OrdersPage() {
                 key={order.id}
                 order={order}
                 onReorder={() => handleReorder(order.id)}
-                onCancel={() => handleCancelOrder(order.id)}
               />
             ))}
           </div>

@@ -466,38 +466,38 @@ export default function OrderDetailPage() {
                     </p>
                   </div>
 
-                  {order.delivery_date && (
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <svg
-                          className="w-5 h-5"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          style={{ color: "var(--accent)" }}
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                          />
-                        </svg>
-                        <p
-                          className="text-sm font-semibold"
-                          style={{ color: "var(--foreground)" }}
-                        >
-                          Delivery Date
-                        </p>
-                      </div>
-                      <p
-                        className="text-sm"
-                        style={{ color: "var(--muted-foreground)" }}
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        style={{ color: "var(--accent)" }}
                       >
-                        {formatDate(order.delivery_date)}
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                        />
+                      </svg>
+                      <p
+                        className="text-sm font-semibold"
+                        style={{ color: "var(--foreground)" }}
+                      >
+                        Delivery Date
                       </p>
                     </div>
-                  )}
+                    <p
+                      className="text-sm"
+                      style={{ color: "var(--muted-foreground)" }}
+                    >
+                      {order.delivery_date
+                        ? formatDate(order.delivery_date)
+                        : "Not specified"}
+                    </p>
+                  </div>
                 </div>
 
                 <div className="space-y-4">
@@ -530,6 +530,17 @@ export default function OrderDetailPage() {
                     >
                       {order.is_home_delivery ? "Home Delivery" : "Collection"}
                     </p>
+                    {!order.is_home_delivery &&
+                      (order.shipping_carrier || order.shipping_service_name) && (
+                      <p
+                        className="text-sm mt-1"
+                        style={{ color: "var(--muted-foreground)" }}
+                      >
+                        {order.shipping_carrier && order.shipping_service_name
+                          ? `${order.shipping_carrier} - ${order.shipping_service_name}`
+                          : order.shipping_carrier || order.shipping_service_name}
+                      </p>
+                    )}
                   </div>
 
                   {order.notes && (
@@ -767,7 +778,7 @@ export default function OrderDetailPage() {
               </div>
             )}
 
-            {/* Payment Information */}
+            {/* Payment Information - commented out
             {order.payment_intent_id && (
               <div
                 className="rounded-xl shadow-sm p-6 border"
@@ -818,7 +829,7 @@ export default function OrderDetailPage() {
                   </div>
                 </div>
               </div>
-            )}
+            )} */}
           </div>
 
           {/* Sidebar - Order Summary */}
@@ -1006,15 +1017,27 @@ export default function OrderDetailPage() {
                       style={{ color: "var(--muted-foreground)" }}
                     >
                       If you have any questions about your order, please contact
-                      our customer support team at{" "}
-                      <a
-                        href={`mailto:${process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "support@foodplatform.com"}`}
-                        className="underline"
-                        style={{ color: "var(--accent)" }}
-                      >
-                        {process.env.NEXT_PUBLIC_SUPPORT_EMAIL ??
-                          "support@foodplatform.com"}
-                      </a>
+                      our customer support team on{" "}
+                      {(() => {
+                        const phone = process.env.NEXT_PUBLIC_SUPPORT_PHONE ?? "";
+                        const digits = phone.replace(/\D/g, "");
+                        const whatsAppUrl = digits
+                          ? `https://api.whatsapp.com/send?phone=${digits}`
+                          : null;
+                        return whatsAppUrl ? (
+                          <a
+                            href={whatsAppUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline"
+                            style={{ color: "var(--accent)" }}
+                          >
+                            WhatsApp
+                          </a>
+                        ) : (
+                          "WhatsApp"
+                        );
+                      })()}
                       .
                     </p>
                   </div>
