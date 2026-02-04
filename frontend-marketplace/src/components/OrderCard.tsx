@@ -24,8 +24,8 @@ interface Order {
   is_home_delivery: boolean;
   delivery_fee: string;
   discount: string;
-  order_date: string;
-  status: "pending" | "paid" | "cancelled";
+  created_at: string;
+  status: "pending" | "paid" | "issued" | "cancelled";
   invoice_link?: string;
   items: OrderItem[];
   total_price: string;
@@ -53,6 +53,13 @@ const statusConfig = {
     borderColor: "border-green-200",
     icon: "✅",
   },
+  issued: {
+    label: "Issued",
+    color: "text-blue-600",
+    bgColor: "bg-blue-50",
+    borderColor: "border-blue-200",
+    icon: "📦",
+  },
   cancelled: {
     label: "Cancelled",
     color: "text-red-600",
@@ -71,15 +78,22 @@ export default function OrderCard({
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   const statusInfo = statusConfig[order.status];
-  const canCancel = order.status === "pending" || order.status === "paid";
-  const canReorder = order.status === "paid" || order.status === "cancelled";
+  const canCancel = order.status === "pending" || order.status === "paid" || order.status === "issued";
+  const canReorder = order.status === "paid" || order.status === "issued" || order.status === "cancelled";
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
+  const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString) return "—";
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return "—";
+      return date.toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+    } catch {
+      return "—";
+    }
   };
 
   const formatCurrency = (amount: string) => {
@@ -123,7 +137,7 @@ export default function OrderCard({
                 className="text-sm"
                 style={{ color: "var(--foreground)", opacity: 0.7 }}
               >
-                Placed on {formatDate(order.order_date)}
+                Placed on {formatDate(order.created_at)}
               </p>
             </div>
           </div>

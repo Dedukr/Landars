@@ -205,7 +205,7 @@ class ProductAdmin(admin.ModelAdmin):
     ordering = ["name"]
     inlines = [ProductImageInline]
 
-    fields = ["name", "description", "base_price", "holiday_fee", "vat", "categories"]
+    fields = ["name", "description", "base_price", "holiday_fee", "vat", "weight", "categories"]
 
     class Media:
         js = ("admin/js/prevent_double_submit.js",)

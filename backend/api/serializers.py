@@ -244,6 +244,7 @@ class OrderSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source="customer.name", read_only=True)
     total_price = serializers.SerializerMethodField()
     total_items = serializers.SerializerMethodField()
+    total_weight = serializers.SerializerMethodField()
     shipping_method_id = serializers.IntegerField(
         source="shipping_details.shipping_method_id",
         allow_null=True,
@@ -324,6 +325,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "created_at",
             "total_price",
             "total_items",
+            "total_weight",
             "items",
             # Shipping fields
             "shipping_method_id",
@@ -362,6 +364,9 @@ class OrderSerializer(serializers.ModelSerializer):
 
     def get_total_items(self, obj):
         return obj.total_items
+
+    def get_total_weight(self, obj):
+        return str(obj.total_weight)
 
     def validate_delivery_date(self, value):
         # Allow past dates; business logic can handle downstream
@@ -546,6 +551,7 @@ class CartSerializer(serializers.ModelSerializer):
     total_price = serializers.SerializerMethodField()
     sum_price = serializers.SerializerMethodField()
     total_items = serializers.SerializerMethodField()
+    total_weight = serializers.SerializerMethodField()
 
     class Meta:
         model = Cart
@@ -560,6 +566,7 @@ class CartSerializer(serializers.ModelSerializer):
             "sum_price",
             "total_price",
             "total_items",
+            "total_weight",
             "created_at",
             "updated_at",
         ]
@@ -573,6 +580,9 @@ class CartSerializer(serializers.ModelSerializer):
 
     def get_total_items(self, obj):
         return float(obj.total_items)
+
+    def get_total_weight(self, obj):
+        return str(obj.total_weight)
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -643,6 +653,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "delivery_fee",
             "discount",
             "status",
+            "created_at",
             "invoice_link",
             "payment_intent_id",
             "payment_status",

@@ -147,6 +147,13 @@ class Product(models.Model):
         default=False,
         help_text="Check to apply 20% VAT, uncheck for 0% VAT",
     )
+    weight = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=1,
+        validators=[MinValueValidator(0)],
+        help_text="Weight of the product",
+    )
     # image = models.ImageField(
     #     upload_to="products/", blank=True, null=True
     # )
@@ -272,6 +279,7 @@ class Order(models.Model):
         choices=[
             ("pending", "Pending"),
             ("paid", "Paid"),
+            ("issued", "Issued"),
             ("cancelled", "Cancelled"),
         ],
         default="pending",
@@ -364,6 +372,16 @@ class Order(models.Model):
     @property
     def total_items(self):
         return sum(item.quantity for item in self.items.all())
+
+    @property
+    def total_weight(self):
+        """Calculate the total weight of all items in the order."""
+        total = Decimal(0)
+        for item in self.items.all():
+            # Use product weight if available, otherwise fall back to 0
+            if item.product and item.product.weight:
+                total += item.product.weight * item.quantity
+        return total
 
 
     def get_order_details(self):
@@ -816,6 +834,15 @@ class Cart(models.Model):
     def total_items(self):
         """Calculate the total number of items in the cart."""
         return sum(item.quantity for item in self.items.all())
+
+    @property
+    def total_weight(self):
+        """Calculate the total weight of all items in the cart."""
+        total = Decimal(0)
+        for item in self.items.all():
+            if item.product and item.product.weight:
+                total += item.product.weight * item.quantity
+        return total
 
 
 # CartItem model

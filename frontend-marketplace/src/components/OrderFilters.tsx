@@ -19,12 +19,13 @@ export default function OrderFilters({
     { value: "", label: "All Statuses" },
     { value: "pending", label: "Pending" },
     { value: "paid", label: "Paid" },
+    { value: "issued", label: "Issued" },
     { value: "cancelled", label: "Cancelled" },
   ];
 
   const sortOptions = [
-    { value: "-order_date", label: "Newest First" },
-    { value: "order_date", label: "Oldest First" },
+    { value: "-created_at", label: "Newest First" },
+    { value: "created_at", label: "Oldest First" },
     { value: "-delivery_date", label: "Delivery Date (Latest)" },
     { value: "delivery_date", label: "Delivery Date (Earliest)" },
     { value: "-total_price", label: "Highest Amount" },
@@ -36,12 +37,12 @@ export default function OrderFilters({
       status: "",
       dateFrom: "",
       dateTo: "",
-      sort: "-order_date",
+      sort: "-created_at",
     });
   };
 
   const hasActiveFilters = Object.values(filters).some(
-    (value) => value !== "" && value !== "-order_date"
+    (value) => value !== "" && value !== "-created_at"
   );
 
   return (
@@ -224,12 +225,12 @@ export default function OrderFilters({
                   </button>
                 </span>
               )}
-              {filters.sort !== "-order_date" && (
+              {filters.sort !== "-created_at" && (
                 <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
                   Sort:{" "}
                   {sortOptions.find((opt) => opt.value === filters.sort)?.label}
                   <button
-                    onClick={() => onFilterChange({ sort: "-order_date" })}
+                    onClick={() => onFilterChange({ sort: "-created_at" })}
                     className="ml-1 text-blue-600 hover:text-blue-800"
                   >
                     ×

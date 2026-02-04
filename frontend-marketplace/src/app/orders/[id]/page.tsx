@@ -36,7 +36,7 @@ interface Order {
   is_home_delivery: boolean;
   delivery_fee: string;
   discount: string;
-  order_date: string;
+  created_at: string;
   status: string;
   invoice_link: string;
   customer_address: string;
@@ -77,6 +77,15 @@ const statusConfig = {
     bgColor: "rgba(22, 163, 74, 0.1)",
     borderColor: "rgba(22, 163, 74, 0.3)",
     progress: 50,
+  },
+  issued: {
+    label: "Issued",
+    description: "Order has been issued and is ready for processing",
+    icon: "📦",
+    color: "var(--accent)",
+    bgColor: "rgba(59, 130, 246, 0.1)",
+    borderColor: "rgba(59, 130, 246, 0.3)",
+    progress: 75,
   },
   cancelled: {
     label: "Cancelled",
@@ -167,13 +176,25 @@ export default function OrderDetailPage() {
   const statusInfo =
     statusConfig[order.status as keyof typeof statusConfig] ||
     statusConfig.pending;
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-GB", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
+  const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString) {
+      return "Date not available";
+    }
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) {
+        return "Invalid date";
+      }
+      return date.toLocaleDateString("en-GB", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+    } catch (error) {
+      console.error("Error formatting date:", error);
+      return "Invalid date";
+    }
   };
 
   // const formatTime = (dateString: string) => {
@@ -229,7 +250,7 @@ export default function OrderDetailPage() {
                   className="font-medium"
                   style={{ color: "var(--foreground)" }}
                 >
-                  {formatDate(order.order_date)}
+                  {formatDate(order.created_at)}
                 </span>
                 <span style={{ color: "var(--muted-foreground)" }}>
                   order placed.
@@ -834,7 +855,7 @@ export default function OrderDetailPage() {
                       : (
                           order.items?.reduce((sum, item) => {
                             const price = parseFloat(
-                              item.total_price || item.get_total_price || "0"
+                              item.total_price || item.get_total_price || "0",
                             );
                             return sum + price;
                           }, 0) || 0
@@ -987,11 +1008,12 @@ export default function OrderDetailPage() {
                       If you have any questions about your order, please contact
                       our customer support team at{" "}
                       <a
-                        href="mailto:support@foodplatform.com"
+                        href={`mailto:${process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "support@foodplatform.com"}`}
                         className="underline"
                         style={{ color: "var(--accent)" }}
                       >
-                        support@foodplatform.com
+                        {process.env.NEXT_PUBLIC_SUPPORT_EMAIL ??
+                          "support@foodplatform.com"}
                       </a>
                       .
                     </p>

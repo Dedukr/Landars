@@ -13,7 +13,7 @@ export default function OrdersPage() {
     status: "",
     dateFrom: "",
     dateTo: "",
-    sort: "-order_date",
+    sort: "-created_at",
   });
 
   const {

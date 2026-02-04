@@ -23,8 +23,8 @@ interface Order {
   is_home_delivery: boolean;
   delivery_fee: string;
   discount: string;
-  order_date: string;
-  status: "pending" | "paid" | "cancelled";
+  created_at: string;
+  status: "pending" | "paid" | "issued" | "cancelled";
   invoice_link?: string;
   items: OrderItem[];
   total_price: string;
