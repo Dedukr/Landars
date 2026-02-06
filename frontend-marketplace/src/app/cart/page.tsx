@@ -7,9 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import CheckoutProgress from "@/components/CheckoutProgress";
 import CartItemsList from "@/components/CartItemsList";
 import ProductRecommendations from "@/components/ProductRecommendations";
-import DeliveryFeeInfo from "@/components/DeliveryFeeInfo";
 import SubtotalDisplay from "@/components/cart/SubtotalDisplay";
-import DeliveryFeeDisplay from "@/components/cart/DeliveryFeeDisplay";
 import TotalDisplay from "@/components/cart/TotalDisplay";
 import DiscountDisplay from "@/components/cart/DiscountDisplay";
 import CartItemsCountDisplay from "@/components/cart/CartItemsCountDisplay";
@@ -59,8 +57,6 @@ export default function CartPage() {
     increaseQuantity,
   } = useCartItems(products);
   const { addToCart, isLoading: cartIsLoading } = useCart();
-  const [couponCode, setCouponCode] = useState("");
-  const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
   const [savedItems, setSavedItems] = useState<number[]>([]);
   const [cartData, setCartData] = useState<CartData | null>(null);
 
@@ -71,11 +67,6 @@ export default function CartPage() {
     try {
       const data = await httpClient.get<CartData>("/api/cart/");
       setCartData(data);
-
-      // If cart has discount, set applied coupon
-      if (data.discount && parseFloat(data.discount) > 0) {
-        setAppliedCoupon("save10"); // Assume save10 if discount exists
-      }
     } catch (error) {
       console.error("Failed to fetch cart data:", error);
     }
@@ -115,103 +106,18 @@ export default function CartPage() {
     cart
   );
 
-  // Use discount from cart if available, otherwise calculate from applied coupon
-  // If coupon is applied but cart discount doesn't match current subtotal, recalculate
-  const calculatedDiscount = appliedCoupon ? subtotal * 0.1 : 0;
-  const cartDiscount = cartData?.discount ? parseFloat(cartData.discount) : 0;
+  // Use discount from cart data
+  const discount = cartData?.discount ? parseFloat(cartData.discount) : 0;
 
-  // Update cart discount if coupon is applied and discount doesn't match
-  // Debounce to prevent excessive API calls; no refetch to avoid cascades
-  useEffect(() => {
-    if (cartIsLoading) return; // Skip during cart updates
-
-    if (appliedCoupon && user && subtotal > 0) {
-      const expectedDiscount = subtotal * 0.1;
-      if (Math.abs(cartDiscount - expectedDiscount) > 0.01) {
-        const timeoutId = setTimeout(async () => {
-          try {
-            await httpClient.put("/api/cart/", {
-              discount: expectedDiscount,
-            });
-            // Update local cartData to avoid extra refetch
-            setCartData((prev) =>
-              prev ? { ...prev, discount: expectedDiscount.toString() } : prev
-            );
-          } catch (error) {
-            console.error("Failed to update discount:", error);
-          }
-        }, 800); // Gentle debounce to batch updates
-
-        return () => clearTimeout(timeoutId);
-      }
-    }
-  }, [subtotal, appliedCoupon, user, cartDiscount, cartIsLoading]);
-
-  const discount = cartDiscount > 0 ? cartDiscount : calculatedDiscount;
-
-  // Dynamic delivery fee calculation
-  const { deliveryCalculation, deliveryBreakdown } = useDeliveryFee({
+  // Calculate delivery type for display (to show Post Delivery indicator)
+  const { deliveryCalculation } = useDeliveryFee({
     products: cartProducts,
     subtotal: subtotal,
     discount: discount,
   });
 
-  // Use backend's preassigned delivery fee (calculated using Royal Mail map)
-  // Backend automatically calculates delivery fee when items are added/updated
-  const cartDeliveryFee = cartData?.delivery_fee
-    ? parseFloat(cartData.delivery_fee)
-    : 0;
-  const cartIsHomeDelivery = cartData?.is_home_delivery ?? true;
-
-  // Use backend delivery fee if available, otherwise fall back to frontend calculation
-  const displayDeliveryFee =
-    cartDeliveryFee > 0 ? cartDeliveryFee : deliveryCalculation.deliveryFee;
-  const displayIsHomeDelivery = cartData
-    ? cartIsHomeDelivery
-    : deliveryCalculation.isHomeDelivery;
-
-  // Calculate total using backend delivery fee (preassigned Royal Mail pricing)
-  const total = subtotal + displayDeliveryFee - discount;
-
-  const handleApplyCoupon = async () => {
-    if (
-      typeof couponCode === "string" &&
-      couponCode.toLowerCase() === "save10"
-    ) {
-      const discountAmount = subtotal * 0.1; // 10% discount
-
-      try {
-        // Save discount to cart
-        await httpClient.put("/api/cart/", {
-          discount: discountAmount,
-        });
-
-        setAppliedCoupon(couponCode);
-        setCouponCode("");
-
-        // Refetch cart data to get updated values
-        await fetchCartData();
-      } catch (error) {
-        console.error("Failed to apply coupon:", error);
-      }
-    }
-  };
-
-  const handleRemoveCoupon = async () => {
-    try {
-      // Remove discount from cart
-      await httpClient.put("/api/cart/", {
-        discount: 0,
-      });
-
-      setAppliedCoupon(null);
-
-      // Refetch cart data to get updated values
-      await fetchCartData();
-    } catch (error) {
-      console.error("Failed to remove coupon:", error);
-    }
-  };
+  // Calculate total based only on product prices (subtotal - discount, no delivery fee)
+  const total = subtotal - discount;
 
   const handleSaveForLater = useCallback(
     (productId: number) => {
@@ -472,7 +378,77 @@ export default function CartPage() {
                   </div>
                   <div className="p-6 space-y-4">
                     {/* Delivery Type Information */}
-                    {!deliveryCalculation.isHomeDelivery && (
+                    <div
+                      className="p-3 rounded-md"
+                      style={{
+                        background: "var(--info-bg)",
+                        border: "1px solid var(--info-border)",
+                      }}
+                    >
+                      <div className="flex items-center">
+                        <div className="flex-shrink-0">
+                          <span className="text-lg mr-2">
+                            {deliveryCalculation.isHomeDelivery ? "🏠" : "📦"}
+                          </span>
+                        </div>
+                        <div>
+                          <h4
+                            className="text-sm font-medium"
+                            style={{ color: "var(--info-text)" }}
+                          >
+                            {deliveryCalculation.isHomeDelivery
+                              ? "Home Delivery"
+                              : "Post Delivery"}
+                          </h4>
+                          <p
+                            className="text-xs mt-1"
+                            style={{ color: "var(--info-text)", opacity: 0.9 }}
+                          >
+                            {deliveryCalculation.isHomeDelivery
+                              ? "This order will be delivered directly to your address."
+                              : "This order is suitable for Royal Mail post delivery."}
+                          </p>
+                        </div>
+                      </div>
+                      {deliveryCalculation.totalWeight > 0 && (
+                        <p
+                          className="mt-2 text-xs"
+                          style={{ color: "var(--info-text)", opacity: 0.9 }}
+                        >
+                          Estimated parcel weight:{" "}
+                          {deliveryCalculation.totalWeight.toFixed(1)}kg
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Free delivery progress for sausage-only post orders */}
+                    {deliveryCalculation.hasSausages &&
+                      !deliveryCalculation.isHomeDelivery &&
+                      !deliveryCalculation.overweight &&
+                      subtotal < 220 && (
+                        <div
+                          className="p-3 rounded-md"
+                          style={{
+                            background: "var(--success-bg)",
+                            border: "1px solid var(--success-border)",
+                          }}
+                        >
+                          <p
+                            className="text-sm font-medium"
+                            style={{ color: "var(--success-text)" }}
+                          >
+                            Spend{" "}
+                            <span className="font-semibold">
+                              £{(220 - subtotal).toFixed(2)}
+                            </span>{" "}
+                            more to qualify for free post delivery on sausages
+                            (orders over £220).
+                          </p>
+                        </div>
+                      )}
+
+                    {/* Perishable content notice for sausages */}
+                    {deliveryCalculation.hasSausages && (
                       <div
                         className="p-3 rounded-md"
                         style={{
@@ -480,171 +456,25 @@ export default function CartPage() {
                           border: "1px solid var(--info-border)",
                         }}
                       >
-                        <div className="flex items-center">
-                          <div className="flex-shrink-0">
-                            <span className="text-lg mr-2">📦</span>
-                          </div>
-                          <div>
-                            <h4
-                              className="text-sm font-medium"
-                              style={{ color: "var(--info-text)" }}
-                            >
-                              Post Delivery
-                            </h4>
-                          </div>
-                        </div>
+                        <p
+                          className="text-xs"
+                          style={{ color: "var(--info-text)", opacity: 0.9 }}
+                        >
+                          This order contains chilled sausages and marinated
+                          products. Please ensure someone is available to
+                          receive the delivery promptly.
+                        </p>
                       </div>
                     )}
 
-                    {/* Delivery Fee Information */}
-                    <DeliveryFeeInfo />
-
-                    {/* Delivery Date - Based on Order Model */}
-                    {/* <div className="space-y-2">
-                      <label
-                        htmlFor="deliveryDate"
-                        className="block text-sm font-medium"
-                        style={{ color: "var(--foreground)" }}
-                      >
-                        Delivery Date
-                      </label>
-                      <input
-                        type="date"
-                        id="deliveryDate"
-                        min={new Date().toISOString().split("T")[0]}
-                        className="w-full px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:border-transparent"
-                        style={{
-                          background: "var(--card-bg)",
-                          color: "var(--foreground)",
-                          border: "1px solid var(--sidebar-border)",
-                        }}
-                      />
-                    </div> */}
-
-                    {/* Coupon Code */}
-                    <div>
-                      <label
-                        htmlFor="coupon"
-                        className="block text-sm font-medium mb-2"
-                        style={{ color: "var(--foreground)" }}
-                      >
-                        Coupon Code
-                      </label>
-                      {appliedCoupon ? (
-                        <div
-                          className="flex items-center justify-between p-3 rounded-md"
-                          style={{
-                            background: "var(--success-bg)",
-                            border: "1px solid var(--success-border)",
-                          }}
-                        >
-                          <div className="flex items-center">
-                            <svg
-                              className="w-5 h-5 mr-2"
-                              fill="currentColor"
-                              viewBox="0 0 20 20"
-                              style={{ color: "var(--success)" }}
-                            >
-                              <path
-                                fillRule="evenodd"
-                                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                                clipRule="evenodd"
-                              />
-                            </svg>
-                            <span
-                              className="text-sm font-medium"
-                              style={{ color: "var(--success-text)" }}
-                            >
-                              {appliedCoupon} applied
-                            </span>
-                          </div>
-                          <button
-                            onClick={handleRemoveCoupon}
-                            className="text-sm"
-                            style={{ color: "var(--success)" }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.opacity = "0.8";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.opacity = "1";
-                            }}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex">
-                          <input
-                            type="text"
-                            id="coupon"
-                            value={couponCode}
-                            onChange={(e) => setCouponCode(e.target.value)}
-                            placeholder="Enter coupon code"
-                            className="flex-1 px-3 py-2 rounded-l-md focus:outline-none focus:ring-2 focus:border-transparent"
-                            style={{
-                              background: "var(--card-bg)",
-                              color: "var(--foreground)",
-                              border: "1px solid var(--sidebar-border)",
-                            }}
-                          />
-                          <button
-                            onClick={handleApplyCoupon}
-                            className="px-4 py-2 rounded-r-md focus:outline-none focus:ring-2"
-                            style={{
-                              background: "var(--primary)",
-                              color: "white",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background =
-                                "var(--primary-hover)";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background =
-                                "var(--primary)";
-                            }}
-                          >
-                            Apply
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Order Summary - Matching Order Model */}
+                    {/* Order Summary - Products only (no delivery fee) */}
                     <div className="space-y-3">
                       <SubtotalDisplay subtotal={subtotal} />
 
-                      {/* Dynamic Delivery Fee - Based on Order Model Logic */}
-                      <DeliveryFeeDisplay
-                        deliveryFee={displayDeliveryFee}
-                        isFree={displayDeliveryFee === 0}
-                        reasoning={
-                          deliveryBreakdown.overweight
-                            ? deliveryBreakdown.reasoning
-                            : displayDeliveryFee === 0
-                            ? "Free delivery for orders over £220"
-                            : displayIsHomeDelivery
-                            ? "Home delivery"
-                            : `Royal Mail post delivery (weight-based)`
-                        }
-                        hasSausages={!displayIsHomeDelivery}
-                        weight={deliveryBreakdown.weight}
-                        dependsOnCourier={
-                          deliveryBreakdown.dependsOnCourier ||
-                          deliveryBreakdown.overweight
-                        }
-                        overweight={deliveryBreakdown.overweight}
-                      />
-
-                      {/* Discount - Based on Order Model */}
+                      {/* Discount */}
                       <DiscountDisplay discount={discount} />
 
-                      {/* Total - Order Model Calculation: sum_price + delivery_fee - discount 
-                          Based on Order.total_price = sum_price + delivery_fee - discount
-                          Delivery fee logic: 
-                          - Sausages: is_home_delivery=False, Royal Mail pricing (0-5kg=£4.44, 5-10kg=£5.82, 10-20kg=£9.25)
-                          - Other products: is_home_delivery=True, delivery_fee=£10
-                          - Free delivery if total > £220
-                      */}
+                      {/* Total - Products only: subtotal - discount */}
                       <TotalDisplay total={total} />
                     </div>
 
@@ -654,7 +484,7 @@ export default function CartPage() {
                       style={{ borderTop: "1px solid var(--sidebar-border)" }}
                     >
                       <div
-                        className="flex items-center space-x-4 text-sm"
+                        className="flex items-center text-sm"
                         style={{ color: "var(--foreground)", opacity: 0.7 }}
                       >
                         <div className="flex items-center">
@@ -670,20 +500,6 @@ export default function CartPage() {
                             />
                           </svg>
                           Secure checkout
-                        </div>
-                        <div className="flex items-center">
-                          <svg
-                            className="w-4 h-4 mr-1"
-                            fill="currentColor"
-                            viewBox="0 0 20 20"
-                          >
-                            <path
-                              fillRule="evenodd"
-                              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                          30-day returns
                         </div>
                       </div>
                     </div>

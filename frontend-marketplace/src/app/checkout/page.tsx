@@ -152,6 +152,8 @@ export default function CheckoutPage() {
   const [checkoutStep] = useState<1 | 2 | 3>(2); // 1=Cart, 2=Shipping & Payment, 3=Review
   const [orderDetails] = useState<OrderDetails | null>(null);
   const [cartData, setCartData] = useState<CartData | null>(null);
+  const [couponCode, setCouponCode] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
 
   // Shipping options state
   const {
@@ -203,6 +205,11 @@ export default function CheckoutPage() {
           ...prev,
           notes: data.notes || "",
         }));
+      }
+
+      // If cart has discount, set applied coupon
+      if (data.discount && parseFloat(data.discount) > 0) {
+        setAppliedCoupon("save10"); // Assume save10 if discount exists
       }
     } catch (error) {
       console.error("Failed to fetch cart data:", error);
@@ -374,6 +381,47 @@ export default function CheckoutPage() {
       (!cartIsHomeDelivery && shippingOptions.length === 0) ||
       isOverweightSausageOrder, // Depends on courier if no options loaded yet or overweight
     overweight: isOverweightSausageOrder,
+  };
+
+  // Coupon code handlers
+  const handleApplyCoupon = async () => {
+    if (
+      typeof couponCode === "string" &&
+      couponCode.toLowerCase() === "save10"
+    ) {
+      const discountAmount = cartSubtotal * 0.1; // 10% discount
+
+      try {
+        // Save discount to cart
+        await httpClient.put("/api/cart/", {
+          discount: discountAmount,
+        });
+
+        setAppliedCoupon(couponCode);
+        setCouponCode("");
+
+        // Refetch cart data to get updated values
+        await fetchCartData();
+      } catch (error) {
+        console.error("Failed to apply coupon:", error);
+      }
+    }
+  };
+
+  const handleRemoveCoupon = async () => {
+    try {
+      // Remove discount from cart
+      await httpClient.put("/api/cart/", {
+        discount: 0,
+      });
+
+      setAppliedCoupon(null);
+
+      // Refetch cart data to get updated values
+      await fetchCartData();
+    } catch (error) {
+      console.error("Failed to remove coupon:", error);
+    }
   };
 
   // Fetch user profile data
@@ -1005,6 +1053,94 @@ export default function CheckoutPage() {
 
                   {/* Delivery Fee Information */}
                   <DeliveryFeeInfo />
+
+                  {/* Coupon Code */}
+                  <div>
+                    <label
+                      htmlFor="coupon"
+                      className="block text-sm font-medium mb-2"
+                      style={{ color: "var(--foreground)" }}
+                    >
+                      Coupon Code
+                    </label>
+                    {appliedCoupon ? (
+                      <div
+                        className="flex items-center justify-between p-3 rounded-md"
+                        style={{
+                          background: "var(--success-bg)",
+                          border: "1px solid var(--success-border)",
+                        }}
+                      >
+                        <div className="flex items-center">
+                          <svg
+                            className="w-5 h-5 mr-2"
+                            fill="currentColor"
+                            viewBox="0 0 20 20"
+                            style={{ color: "var(--success)" }}
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                          <span
+                            className="text-sm font-medium"
+                            style={{ color: "var(--success-text)" }}
+                          >
+                            {appliedCoupon} applied
+                          </span>
+                        </div>
+                        <button
+                          onClick={handleRemoveCoupon}
+                          className="text-sm"
+                          style={{ color: "var(--success)" }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.opacity = "0.8";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.opacity = "1";
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex">
+                        <input
+                          type="text"
+                          id="coupon"
+                          value={couponCode}
+                          onChange={(e) => setCouponCode(e.target.value)}
+                          placeholder="Enter coupon code"
+                          className="flex-1 px-3 py-2 rounded-l-md focus:outline-none focus:ring-2 focus:border-transparent"
+                          style={{
+                            background: "var(--card-bg)",
+                            color: "var(--foreground)",
+                            border: "1px solid var(--sidebar-border)",
+                          }}
+                        />
+                        <button
+                          onClick={handleApplyCoupon}
+                          className="px-4 py-2 rounded-r-md focus:outline-none focus:ring-2"
+                          style={{
+                            background: "var(--primary)",
+                            color: "white",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background =
+                              "var(--primary-hover)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background =
+                              "var(--primary)";
+                          }}
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Order Summary - mirror cart view */}
                   <div className="space-y-3">

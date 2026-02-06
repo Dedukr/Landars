@@ -22,15 +22,17 @@ interface WishlistItemProps {
   isSelected: boolean;
   onRemove: (productId: number) => void;
   onSelect: (productId: number, selected: boolean) => void;
+  onAddToCart?: (productName: string) => void;
 }
 
 const WishlistItem = memo<WishlistItemProps>(
-  ({ product, isRemoving, isSelected, onRemove, onSelect }) => {
+  ({ product, isRemoving, isSelected, onRemove, onSelect, onAddToCart }) => {
     const { addToCart } = useCart();
 
     const handleAddToCart = useCallback(() => {
       addToCart(product.id, 1);
-    }, [addToCart, product.id]);
+      onAddToCart?.(product.name);
+    }, [addToCart, product.id, product.name, onAddToCart]);
 
     const handleRemove = useCallback(() => {
       onRemove(product.id);
@@ -40,7 +42,7 @@ const WishlistItem = memo<WishlistItemProps>(
       (e: React.ChangeEvent<HTMLInputElement>) => {
         onSelect(product.id, e.target.checked);
       },
-      [onSelect, product.id]
+      [onSelect, product.id],
     );
 
     return (
@@ -202,7 +204,7 @@ const WishlistItem = memo<WishlistItemProps>(
         </div>
       </div>
     );
-  }
+  },
 );
 
 WishlistItem.displayName = "WishlistItem";
