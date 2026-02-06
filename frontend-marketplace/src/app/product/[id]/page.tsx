@@ -439,8 +439,6 @@ export default function ProductPage() {
               >
                 <li>• Fresh, locally sourced ingredients</li>
                 <li>• Sustainable packaging</li>
-                <li>• Free delivery on orders over £25</li>
-                <li>• 30-day satisfaction guarantee</li>
               </ul>
             </div>
           </div>
