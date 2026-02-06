@@ -1206,13 +1206,13 @@ class OrderAdmin(admin.ModelAdmin):
 
     actions = [
         # create_and_upload_invoice,
-        create_credit_note_for_invoices,
         create_credit_note_and_new_invoice,
         mark_orders_paid,
         # mark_orders_cancelled,
         # mark_orders_pending,
         calculate_sum,
         calculate_total_items,
+        create_credit_note_for_invoices,
         # retry_shipment_creation,
         "export_orders_pdf",
         # "food_summary_excel",
