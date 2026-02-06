@@ -9,8 +9,8 @@ import { Textarea } from "@/components/ui/Textarea";
 import { httpClient } from "@/utils/httpClient";
 import DeliveryFeeInfo from "@/components/DeliveryFeeInfo";
 import LoadingSpinner from "@/components/LoadingSpinner";
-import StripeProvider from "@/components/StripeProvider";
-import StripePaymentForm from "@/components/StripePaymentForm";
+// import StripeProvider from "@/components/StripeProvider";
+// import StripePaymentForm from "@/components/StripePaymentForm";
 import { Button } from "@/components/ui/Button";
 import OrderReviewItem from "@/components/OrderReviewItem";
 import DiscountDisplay from "@/components/cart/DiscountDisplay";
@@ -148,7 +148,7 @@ export default function CheckoutPage() {
   const [orderCompleted, setOrderCompleted] = useState(false);
   const [, setProfileData] = useState<ProfileData | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  // const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [checkoutStep] = useState<1 | 2 | 3>(2); // 1=Cart, 2=Shipping & Payment, 3=Review
   const [orderDetails] = useState<OrderDetails | null>(null);
   const [cartData, setCartData] = useState<CartData | null>(null);
@@ -310,8 +310,17 @@ export default function CheckoutPage() {
     ) || 0;
   const isOverweightSausageOrder = !cartIsHomeDelivery && cartTotalWeight > 20;
 
+  // Check if address is filled (required for delivery fee calculation)
+  const isAddressFilled =
+    shippingForm.postal_code.trim() && shippingForm.address_line.trim();
+
   // Calculate delivery fee - use API price from selected shipping option, or first available option
   const getDeliveryFeeFromAPI = (): number => {
+    // If address is not filled, don't use any delivery fee
+    if (!isAddressFilled) {
+      return 0;
+    }
+
     if (cartIsHomeDelivery) {
       return cartDeliveryFee;
     }
@@ -330,18 +339,22 @@ export default function CheckoutPage() {
       return parseFloat(shippingOptions[0].price);
     }
 
-    // Fallback to cart fee if no shipping options available
-    return cartDeliveryFee;
+    // If address is filled but no shipping options yet, don't use cart fee
+    // Wait for shipping options to be fetched
+    return 0;
   };
 
   const apiDeliveryFee = getDeliveryFeeFromAPI();
 
   // Helper function to get delivery fee reasoning (simplified for display)
   const getDeliveryFeeReasoning = () => {
+    if (!isAddressFilled) {
+      return "Enter address to calculate delivery fee";
+    }
     if (isOverweightSausageOrder) {
       return "We can ship sausage orders up to 20kg. Please split your order or contact us for assistance.";
     }
-    if (cartDeliveryFee === 0) {
+    if (cartDeliveryFee === 0 && cartIsHomeDelivery) {
       return "Free delivery";
     }
     if (cartIsHomeDelivery) {
@@ -358,18 +371,24 @@ export default function CheckoutPage() {
         shippingOptions[0].price
       ).toFixed(2)}`;
     }
-    return "Depends on courier";
+    return "Calculating delivery fee...";
   };
 
   // Calculate display delivery fee - use API price for post delivery, otherwise cart fee
-  const displayDeliveryFee = !cartIsHomeDelivery
-    ? apiDeliveryFee
-    : cartDeliveryFee;
+  // Only use delivery fee if address is filled
+  const displayDeliveryFee =
+    !isAddressFilled
+      ? 0
+      : !cartIsHomeDelivery
+        ? apiDeliveryFee
+        : cartDeliveryFee;
 
-  // Calculate display total - use API delivery fee in calculation
-  const displayTotal = !cartIsHomeDelivery
-    ? cartSubtotal + apiDeliveryFee - cartDiscount
-    : cartTotal;
+  // Calculate display total - only include delivery fee if address is filled
+  const displayTotal = !isAddressFilled
+    ? cartSubtotal - cartDiscount // No delivery fee if address not filled
+    : !cartIsHomeDelivery
+      ? cartSubtotal + apiDeliveryFee - cartDiscount
+      : cartTotal;
 
   const deliveryDisplayProps = {
     deliveryFee: displayDeliveryFee,
@@ -547,36 +566,36 @@ export default function CheckoutPage() {
   );
 
   // Create payment intent when component mounts - using cart total
-  const createPaymentIntent = useCallback(async () => {
-    // Use displayTotal for payment intent (includes shipping price if selected)
-    const totalForPayment = displayTotal > 0 ? displayTotal : cartTotal;
-    if (!user || totalForPayment <= 0) return;
+  // const createPaymentIntent = useCallback(async () => {
+  //   // Use displayTotal for payment intent (includes shipping price if selected)
+  //   const totalForPayment = displayTotal > 0 ? displayTotal : cartTotal;
+  //   if (!user || totalForPayment <= 0) return;
 
-    try {
-      const response = await httpClient.post<{
-        client_secret: string;
-        payment_intent_id: string;
-      }>("/api/payments/create-payment-intent/", {
-        amount: Math.round(totalForPayment * 100), // Convert to cents
-        currency: "gbp",
-        metadata: {
-          user_id: user.id.toString(),
-          order_type: "food_delivery",
-        },
-      });
+  //   try {
+  //     const response = await httpClient.post<{
+  //       client_secret: string;
+  //       payment_intent_id: string;
+  //     }>("/api/payments/create-payment-intent/", {
+  //       amount: Math.round(totalForPayment * 100), // Convert to cents
+  //       currency: "gbp",
+  //       metadata: {
+  //         user_id: user.id.toString(),
+  //         order_type: "food_delivery",
+  //       },
+  //     });
 
-      setClientSecret(response.client_secret);
-    } catch (error) {
-      console.error("Failed to create payment intent:", error);
-      setErrors({ payment: "Failed to initialize payment. Please try again." });
-    }
-  }, [user, cartTotal, displayTotal]);
+  //     setClientSecret(response.client_secret);
+  //   } catch (error) {
+  //     console.error("Failed to create payment intent:", error);
+  //     setErrors({ payment: "Failed to initialize payment. Please try again." });
+  //   }
+  // }, [user, cartTotal, displayTotal]);
 
-  useEffect(() => {
-    if (user && (displayTotal > 0 || cartTotal > 0) && cartData) {
-      createPaymentIntent();
-    }
-  }, [user, cartTotal, displayTotal, cartData, createPaymentIntent]);
+  // useEffect(() => {
+  //   if (user && (displayTotal > 0 || cartTotal > 0) && cartData) {
+  //     createPaymentIntent();
+  //   }
+  // }, [user, cartTotal, displayTotal, cartData, createPaymentIntent]);
 
   // Form validation for shipping fields
   const validateShippingForm = (): boolean => {
@@ -627,22 +646,121 @@ export default function CheckoutPage() {
   // Card formatting is now handled by Stripe Elements
 
   // Handle payment success
-  const handlePaymentSuccess = async (paymentIntent: {
-    id: string;
-    status: string;
-    amount: number;
-    currency: string;
-  }) => {
+  // const handlePaymentSuccess = async (paymentIntent: {
+  //   id: string;
+  //   status: string;
+  //   amount: number;
+  //   currency: string;
+  // }) => {
+  //   setSubmitting(true);
+  //   try {
+  //     // Create order with payment intent ID and shipping info
+  //     // If shipping option is selected, use its price as delivery_fee
+  //     const orderData: {
+  //       notes: string;
+  //       discount: string;
+  //       is_home_delivery: boolean;
+  //       payment_intent_id: string;
+  //       payment_status: string;
+  //       address: {
+  //         address_line: string;
+  //         address_line2: string;
+  //         city: string;
+  //         postal_code: string;
+  //         country: string;
+  //       };
+  //       delivery_fee: string;
+  //       shipping_method_id?: number;
+  //       shipping_carrier?: string;
+  //       shipping_service_name?: string;
+  //       shipping_cost?: string;
+  //     } = {
+  //       notes: cartData?.notes || shippingForm.notes,
+  //       discount: cartData?.discount || "0",
+  //       delivery_fee:
+  //         selectedShippingOption?.price || cartData?.delivery_fee || "0",
+  //       is_home_delivery: cartData?.is_home_delivery ?? true,
+  //       payment_intent_id: paymentIntent.id,
+  //       payment_status: "paid",
+  //       address: {
+  //         address_line: shippingForm.address_line,
+  //         address_line2: shippingForm.address_line2,
+  //         city: shippingForm.city,
+  //         postal_code: shippingForm.postal_code,
+  //         country: "GB", // Default to UK
+  //       },
+  //     };
+
+  //     // If shipping option is selected, add shipping metadata
+  //     if (selectedShippingOption?.price) {
+  //       orderData.shipping_method_id = selectedShippingOption.id;
+  //       orderData.shipping_carrier = selectedShippingOption.carrier;
+  //       orderData.shipping_service_name = selectedShippingOption.name;
+  //       orderData.shipping_cost = selectedShippingOption.price;
+  //     }
+
+  //     const order = await httpClient.post<{ id: number }>(
+  //       "/api/orders/",
+  //       orderData
+  //     );
+
+  //     setOrderCompleted(true);
+
+  //     // Save shipping information if checkbox is checked
+  //     if (shippingForm.saveShippingInfo) {
+  //       try {
+  //         await httpClient.put("/api/auth/profile/update/", {
+  //           email: shippingForm.email,
+  //           phone: shippingForm.phone,
+  //           address: {
+  //             address_line: shippingForm.address_line,
+  //             address_line2: shippingForm.address_line2,
+  //             city: shippingForm.city,
+  //             postal_code: shippingForm.postal_code,
+  //             country: "GB",
+  //           },
+  //         });
+  //       } catch (profileError) {
+  //         console.error("Failed to save shipping information:", profileError);
+  //         // Don't block the order if profile saving fails
+  //       }
+  //     }
+
+  //     // Clear cart context (backend already deleted the cart instance)
+  //     clearCart();
+
+  //     // Redirect to order detail page for successful confirmation
+  //     router.push(`/orders/${order.id}`);
+  //   } catch (error) {
+  //     console.error("Order creation failed:", error);
+  //     setErrors({
+  //       submit:
+  //         "Payment succeeded but order creation failed. Please contact support.",
+  //     });
+  //   } finally {
+  //     setSubmitting(false);
+  //   }
+  // };
+
+  // Handle payment error
+  // const handlePaymentError = (error: string) => {
+  //   setErrors({ payment: error });
+  // };
+
+  // Handle place order without payment
+  const handlePlaceOrder = async () => {
+    // Validate shipping form first
+    if (!validateShippingForm()) {
+      return;
+    }
+
     setSubmitting(true);
     try {
-      // Create order with payment intent ID and shipping info
-      // If shipping option is selected, use its price as delivery_fee
+      // Create order without payment intent
       const orderData: {
         notes: string;
         discount: string;
         is_home_delivery: boolean;
-        payment_intent_id: string;
-        payment_status: string;
         address: {
           address_line: string;
           address_line2: string;
@@ -661,8 +779,6 @@ export default function CheckoutPage() {
         delivery_fee:
           selectedShippingOption?.price || cartData?.delivery_fee || "0",
         is_home_delivery: cartData?.is_home_delivery ?? true,
-        payment_intent_id: paymentIntent.id,
-        payment_status: "paid",
         address: {
           address_line: shippingForm.address_line,
           address_line2: shippingForm.address_line2,
@@ -715,17 +831,11 @@ export default function CheckoutPage() {
     } catch (error) {
       console.error("Order creation failed:", error);
       setErrors({
-        submit:
-          "Payment succeeded but order creation failed. Please contact support.",
+        submit: "Failed to place order. Please try again.",
       });
     } finally {
       setSubmitting(false);
     }
-  };
-
-  // Handle payment error
-  const handlePaymentError = (error: string) => {
-    setErrors({ payment: error });
   };
 
   // No outer form submit; payment handled by StripePaymentForm
@@ -938,7 +1048,7 @@ export default function CheckoutPage() {
               )}
 
               {/* Payment Information */}
-              <div
+              {/* <div
                 className="rounded-lg shadow-sm p-6"
                 style={{
                   background: "var(--card-bg)",
@@ -998,6 +1108,50 @@ export default function CheckoutPage() {
                       style={{ color: "var(--destructive)" }}
                     >
                       {errors.payment}
+                    </p>
+                  </div>
+                )}
+              </div> */}
+
+              {/* Place Order Button */}
+              <div className="mt-6">
+                <Button
+                  onClick={handlePlaceOrder}
+                  disabled={submitting}
+                  fullWidth
+                  style={{
+                    background: "var(--primary)",
+                    color: "white",
+                    padding: "0.75rem 1.5rem",
+                    fontSize: "1rem",
+                    fontWeight: "600",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!submitting) {
+                      e.currentTarget.style.background = "var(--primary-hover)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!submitting) {
+                      e.currentTarget.style.background = "var(--primary)";
+                    }
+                  }}
+                >
+                  {submitting ? "Placing Order..." : "Place Order"}
+                </Button>
+                {errors.submit && (
+                  <div
+                    className="mt-4 p-3 rounded-md"
+                    style={{
+                      background: "var(--destructive-bg)",
+                      border: "1px solid var(--destructive-border)",
+                    }}
+                  >
+                    <p
+                      className="text-sm"
+                      style={{ color: "var(--destructive)" }}
+                    >
+                      {errors.submit}
                     </p>
                   </div>
                 )}

@@ -73,32 +73,64 @@ def _phone_to_whatsapp_url(phone):
 
 def _phone_display_with_links(phone_str):
     """
-    Split phone string by '+' and render each part as a WhatsApp link, preserving
-    the original text (including labels like "(сын)"). Joins with ' + '.
+    Display phone number exactly as stored, making it clickable for WhatsApp.
+    Preserves original format including all characters, spaces, dashes, + signs, etc.
+    Only uses stripped digits internally for WhatsApp URL generation.
 
     """
     if not phone_str or not phone_str.strip():
         return None
-    parts = [p.strip() for p in phone_str.strip().split("+") if p.strip()]
-    if not parts:
-        return None
-    link_parts = []
-    for part in parts:
-        whatsapp_url = _phone_to_whatsapp_url(part)
-        # Restore leading + in display so original format is visible
-        display_text = "+" + part
-        if whatsapp_url:
-            link_parts.append(
-                format_html(
-                    '<a href="{}" target="_blank" rel="noopener">{}</a>',
-                    whatsapp_url,
-                    display_text,
+    
+    # Store original text before any processing - keep it exactly as stored
+    original_text = phone_str.strip()
+    
+    # Handle multiple phone numbers separated by '+' (preserve original format)
+    if "+" in original_text:
+        parts = original_text.split("+")
+        link_parts = []
+        for i, part in enumerate(parts):
+            part = part.strip()
+            if not part:
+                continue
+            
+            # For each part, try to create WhatsApp link using stripped digits
+            # but display the original part text
+            whatsapp_url = _phone_to_whatsapp_url(part)
+            
+            # Preserve the original part text including any formatting
+            display_text = part
+            
+            # Add back the '+' separator if not the first part
+            if i > 0:
+                display_text = "+" + display_text
+            
+            if whatsapp_url:
+                link_parts.append(
+                    format_html(
+                        '<a href="{}" target="_blank" rel="noopener">{}</a>',
+                        whatsapp_url,
+                        display_text,
+                    )
                 )
+            else:
+                # No valid number in this part; show original text as-is
+                link_parts.append(display_text)
+        
+        return mark_safe(" ".join(str(p) for p in link_parts))
+    else:
+        # Single phone number - preserve original format
+        whatsapp_url = _phone_to_whatsapp_url(original_text)
+        
+        if whatsapp_url:
+            # Make it clickable while preserving original format exactly
+            return format_html(
+                '<a href="{}" target="_blank" rel="noopener">{}</a>',
+                whatsapp_url,
+                original_text,
             )
         else:
-            # No valid number in this part (e.g. only text); show as-is
-            link_parts.append(display_text)
-    return mark_safe(" + ".join(str(p) for p in link_parts))
+            # No valid number found, just return original text as-is
+            return original_text
 
 
 class OrderAdminForm(ModelForm):

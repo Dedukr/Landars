@@ -182,6 +182,9 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
           await httpClient.post("/api/wishlist/", {
             productId: productId,
           });
+
+          // Reload from backend to ensure sync
+          await loadWishlistFromBackend();
         } catch (error) {
           console.error("Failed to add to wishlist:", error);
           // Revert optimistic update on error
@@ -199,7 +202,7 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
         });
       }
     },
-    [user, token]
+    [user, token, loadWishlistFromBackend]
   );
 
   const removeFromWishlist = useCallback(
@@ -216,6 +219,9 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
             method: "DELETE",
             body: JSON.stringify({ productId: productId }),
           });
+
+          // Reload from backend to ensure sync
+          await loadWishlistFromBackend();
         } catch (error) {
           console.error("Failed to remove from wishlist:", error);
           // Revert optimistic update on error
@@ -226,7 +232,7 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
         setWishlist((prev: number[]) => prev.filter((id) => id !== productId));
       }
     },
-    [user, token]
+    [user, token, loadWishlistFromBackend]
   );
 
   const isInWishlist = useCallback(
@@ -251,6 +257,9 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
             body: JSON.stringify({ productId: productId }),
           });
         }
+
+        // Reload from backend to ensure sync
+        await loadWishlistFromBackend();
       } catch (error) {
         console.error("Failed to clear wishlist:", error);
         // Revert optimistic update on error
@@ -261,7 +270,7 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
       setWishlist([]);
       localStorage.removeItem("guest_wishlist");
     }
-  }, [user, token, wishlist]);
+  }, [user, token, wishlist, loadWishlistFromBackend]);
 
   // Memoize the context value to prevent unnecessary re-renders
   const contextValue = useMemo(

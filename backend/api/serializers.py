@@ -636,6 +636,7 @@ class OrderSerializer(serializers.ModelSerializer):
     customer_name = serializers.SerializerMethodField()
     customer_phone = serializers.SerializerMethodField()
     customer_address = serializers.SerializerMethodField()
+    invoice_link = serializers.SerializerMethodField()
     address = AddressSerializer(read_only=True)
 
     class Meta:
@@ -668,6 +669,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "sum_price",
             "total_price",
             "total_items",
+            "invoice_link",
         ]
 
     def get_sum_price(self, obj):
@@ -695,3 +697,42 @@ class OrderSerializer(serializers.ModelSerializer):
             address = obj.address
             return f"{address.address_line + ', ' if address.address_line else ''}{address.address_line2 + ', ' if address.address_line2 else ''}{address.city + ', ' if address.city else ''}{address.postal_code if address.postal_code else ''}"
         return obj.customer_address
+
+    def get_invoice_link(self, obj):
+        """
+        Return presigned URL for invoice PDF if available.
+        Checks Invoice model first, then falls back to Order.invoice_link.
+        """
+        from billing.models import Invoice
+        from django.conf import settings
+
+        # Try to get invoice from Invoice model (preferred)
+        try:
+            invoice = obj.invoices.latest("created_at")
+            if invoice and invoice.invoice_link:
+                try:
+                    return invoice.get_presigned_invoice_url(expires_in=3600)  # 1 hour expiry
+                except Exception:
+                    pass
+        except Invoice.DoesNotExist:
+            pass
+
+        # Fallback to Order.invoice_link (backward compatibility)
+        if obj.invoice_link:
+            try:
+                from billing.models import get_s3_client
+
+                s3 = get_s3_client()
+                url = s3.generate_presigned_url(
+                    "get_object",
+                    Params={
+                        "Bucket": settings.AWS_STORAGE_BUCKET_NAME,
+                        "Key": obj.invoice_link,
+                    },
+                    ExpiresIn=3600,  # 1 hour expiry
+                )
+                return url
+            except Exception:
+                return None
+
+        return None
