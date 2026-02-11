@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from account.serializers import AddressSerializer
 from django.db import transaction
+from django.db.models import Q
 from rest_framework import serializers
 from shipping.models import ShippingDetails
 
@@ -60,6 +61,7 @@ class ProductImageSerializer(serializers.ModelSerializer):
 
 class ProductReviewSerializer(serializers.ModelSerializer):
     user_name = serializers.SerializerMethodField()
+    is_verified_purchase = serializers.SerializerMethodField()
 
     def get_user_name(self, obj):
         """
@@ -81,10 +83,34 @@ class ProductReviewSerializer(serializers.ModelSerializer):
             or "Anonymous"
         )
 
+    def get_is_verified_purchase(self, obj):
+        """
+        Check if the reviewer has purchased this product (has a paid order containing it).
+        """
+        from .models import OrderItem
+        
+        user = getattr(obj, "user", None)
+        product = getattr(obj, "product", None)
+        
+        if not user or not product:
+            return False
+        
+        # Check if user has any paid orders containing this product
+        # Check both by product FK and by item_name (in case product was deleted)
+        has_purchased = OrderItem.objects.filter(
+            order__customer=user,
+            order__status__in=["paid", "issued"],  # Consider both paid and issued as purchased
+        ).filter(
+            # Match by product FK or by stored item_name
+            Q(product=product) | Q(item_name=product.name)
+        ).exists()
+        
+        return has_purchased
+
     class Meta:
         model = ProductReview
-        fields = ["id", "user", "user_name", "rating", "comment", "created_at"]
-        read_only_fields = ["id", "user", "user_name", "created_at"]
+        fields = ["id", "user", "user_name", "rating", "comment", "created_at", "is_verified_purchase"]
+        read_only_fields = ["id", "user", "user_name", "created_at", "is_verified_purchase"]
 
 
 class ProductSerializer(ProductImageValidationMixin, serializers.ModelSerializer):

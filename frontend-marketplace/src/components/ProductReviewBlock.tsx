@@ -14,6 +14,7 @@ export interface Review {
   rating: number;
   comment: string;
   created_at: string;
+  is_verified_purchase?: boolean;
 }
 
 interface ProductReviewBlockProps {
@@ -366,6 +367,18 @@ export default function ProductReviewBlock({ productId }: ProductReviewBlockProp
                           <span className="font-medium text-sm" style={{ color: "var(--foreground)" }}>
                             {review.user_name}
                           </span>
+                          {review.is_verified_purchase && (
+                            <span
+                              className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                              style={{
+                                background: "var(--success)",
+                                color: "white",
+                              }}
+                              title="Verified purchase"
+                            >
+                              Purchased
+                            </span>
+                          )}
                           <span className="inline-flex items-center gap-0.5 text-sm">
                             {Array.from({ length: 5 }, (_, i) => (
                               <span key={i} style={{ color: i < review.rating ? STAR_COLOR : STAR_EMPTY }}>
