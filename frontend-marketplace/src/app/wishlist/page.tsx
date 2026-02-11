@@ -1,7 +1,9 @@
 "use client";
 import React, { useState, useCallback, useMemo, useEffect } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import { getAuthUrl } from "@/utils/authHelpers";
 import { useCart } from "@/contexts/CartContext";
 import { SortOption } from "@/components/SortList";
 import WishlistStats from "@/components/WishlistStats";
@@ -19,6 +21,8 @@ interface Category {
 }
 
 export default function WishlistPage() {
+  const router = useRouter();
+  const pathname = usePathname();
   const { user } = useAuth();
   const { products, loading, stats, clearWishlist, wishlist } =
     useWishlistOptimized();
@@ -212,9 +216,7 @@ export default function WishlistPage() {
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <button
                 type="button"
-                onClick={() => {
-                  window.location.href = "/auth";
-                }}
+                onClick={() => router.push(getAuthUrl({ next: pathname }))}
                 className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-colors cursor-pointer border-0"
                 style={{
                   background: "var(--primary)",

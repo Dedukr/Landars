@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import { getAuthUrl } from "@/utils/authHelpers";
 import { httpClient } from "@/utils/httpClient";
 import { Button } from "@/components/ui/Button";
 import LoadingSpinner from "@/components/LoadingSpinner";
@@ -106,12 +107,13 @@ export default function OrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const pathname = usePathname();
   // Redirect if not authenticated
   useEffect(() => {
     if (!user && !token) {
-      router.push("/auth");
+      router.push(getAuthUrl({ next: pathname }));
     }
-  }, [user, token, router]);
+  }, [user, token, router, pathname]);
 
   // Fetch order details
   useEffect(() => {

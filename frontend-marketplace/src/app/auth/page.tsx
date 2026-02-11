@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
 import { httpClient } from "@/utils/httpClient";
+import { getSafeNextRedirect } from "@/utils/authHelpers";
 import { EmailInput } from "@/components/ui/EmailInput";
 import EmailVerificationPopup from "@/components/EmailVerificationPopup";
 
@@ -198,7 +199,8 @@ function AuthForm() {
         // Handle JWT tokens for immediate login (if verification not required)
         if (data.access && data.refresh) {
           login({ access: data.access, refresh: data.refresh }, data.user);
-          router.push("/");
+          const next = getSafeNextRedirect(searchParams.get("next"));
+          router.push(next || "/");
         }
       } catch (error: unknown) {
         // Display error message from server
@@ -237,7 +239,8 @@ function AuthForm() {
         // Handle JWT tokens for successful login
         if (data.access && data.refresh) {
           login({ access: data.access, refresh: data.refresh }, data.user);
-          router.push("/");
+          const next = getSafeNextRedirect(searchParams.get("next"));
+          router.push(next || "/");
         }
       } catch (error: unknown) {
         // Enhanced error handling for login
@@ -424,8 +427,10 @@ function AuthForm() {
     });
     setError("");
     setSuccessMessage("");
-    // Update URL to reflect the new mode
-    const newUrl = newMode ? "/auth?mode=signup" : "/auth?mode=signin";
+    // Update URL to reflect the new mode, preserve next if present
+    const nextParam = searchParams.get("next");
+    const next = nextParam ? `&next=${encodeURIComponent(nextParam)}` : "";
+    const newUrl = newMode ? `/auth?mode=signup${next}` : `/auth?mode=signin${next}`;
     router.replace(newUrl);
   };
 

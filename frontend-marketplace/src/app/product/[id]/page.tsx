@@ -12,6 +12,7 @@ import ProductGallery from "@/components/ProductGallery";
 import ProductImageCollage from "@/components/ProductImageCollage";
 // import ProductDetails from "@/components/ProductDetails";
 import ProductRecommendations from "@/components/ProductRecommendations";
+import ProductReviewBlock from "@/components/ProductReviewBlock";
 import LoadingSpinner from "@/components/LoadingSpinner";
 
 interface Product {
@@ -460,6 +461,11 @@ export default function ProductPage() {
             gridCols={{ default: 2, md: 4 }}
             className="mt-6"
           />
+        </div>
+
+        {/* Reviews */}
+        <div className="mt-12">
+          <ProductReviewBlock productId={product.id} />
         </div>
       </div>
 

@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import { getAuthUrl } from "@/utils/authHelpers";
 import { useCart } from "@/contexts/CartContext";
 import CheckoutProgress from "@/components/CheckoutProgress";
 import { Input } from "@/components/ui/Input";
@@ -133,15 +134,16 @@ interface OrderDetails {
 
 export default function CheckoutPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, token } = useAuth();
   const { cart, clearCart } = useCart();
 
   // Redirect if not authenticated
   useEffect(() => {
     if (!user && !token) {
-      router.push("/auth");
+      router.push(getAuthUrl({ next: pathname }));
     }
-  }, [user, token, router]);
+  }, [user, token, router, pathname]);
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);

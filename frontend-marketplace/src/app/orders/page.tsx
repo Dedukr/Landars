@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
+import { getAuthUrl } from "@/utils/authHelpers";
 import OrderCard from "@/components/OrderCard";
 import OrderFilters from "@/components/OrderFilters";
 import OrderStats from "@/components/OrderStats";
@@ -64,7 +65,7 @@ export default function OrdersPage() {
               your orders.
             </p>
             <Link
-              href="/auth"
+              href={getAuthUrl({ next: "/orders" })}
               className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
             >
               Sign In

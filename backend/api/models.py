@@ -210,6 +210,28 @@ class Product(models.Model):
     #         return 0
 
 
+class ProductReview(models.Model):
+    """User review for a product: rating (1-5) and optional comment."""
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name="reviews"
+    )
+    user = models.ForeignKey(
+        CustomUser, on_delete=models.CASCADE, related_name="product_reviews"
+    )
+    rating = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(5)]
+    )
+    comment = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = "Product reviews"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Review by {self.user} for {self.product.name} ({self.rating}★)"
+
+
 # Stock model
 # class Stock(models.Model):
 #     product = models.OneToOneField(

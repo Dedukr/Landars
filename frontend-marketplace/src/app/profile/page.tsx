@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
+import { getAuthUrl } from "@/utils/authHelpers";
 import { httpClient } from "@/utils/httpClient";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -271,7 +272,7 @@ export default function ProfilePage() {
               account information.
             </p>
             <Link
-              href="/auth"
+              href={getAuthUrl({ next: "/profile" })}
               className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-colors"
               style={{
                 background: "var(--primary)",

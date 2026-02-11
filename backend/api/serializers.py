@@ -13,6 +13,7 @@ from .models import (
     Product,
     ProductCategory,
     ProductImage,
+    ProductReview,
     Wishlist,
     WishlistItem,
 )
@@ -55,6 +56,35 @@ class ProductImageSerializer(serializers.ModelSerializer):
                 {"sort_order": "Sort order must be non-negative"}
             )
         return data
+
+
+class ProductReviewSerializer(serializers.ModelSerializer):
+    user_name = serializers.SerializerMethodField()
+
+    def get_user_name(self, obj):
+        """
+        Return a human-friendly display name for the reviewer.
+
+        Our CustomUser model has a `name` field and may have an `email`,
+        but does not implement `get_full_name`, so we safely fall back
+        through the available attributes.
+        """
+        user = getattr(obj, "user", None)
+        if not user:
+            return "Anonymous"
+
+        # Prefer explicit name, then email, then username
+        return (
+            getattr(user, "name", None)
+            or getattr(user, "email", None)
+            or user.get_username()
+            or "Anonymous"
+        )
+
+    class Meta:
+        model = ProductReview
+        fields = ["id", "user", "user_name", "rating", "comment", "created_at"]
+        read_only_fields = ["id", "user", "user_name", "created_at"]
 
 
 class ProductSerializer(ProductImageValidationMixin, serializers.ModelSerializer):

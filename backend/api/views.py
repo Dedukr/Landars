@@ -7,7 +7,7 @@ from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import F, Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
@@ -29,6 +29,7 @@ from .models import (
     Product,
     ProductCategory,
     ProductImage,
+    ProductReview,
     Wishlist,
     WishlistItem,
 )
@@ -46,6 +47,7 @@ from .serializers import (
     OrderItemSerializer,
     OrderSerializer,
     ProductListSerializer,
+    ProductReviewSerializer,
     ProductSerializer,
     WishlistItemSerializer,
     WishlistSerializer,
@@ -281,6 +283,46 @@ class ProductDetail(APIView):
             return Product.objects.prefetch_related("images").get(id=product_id)
         except Product.DoesNotExist:
             return None
+
+
+class ProductReviewListCreate(APIView):
+    """List reviews for a product (GET) or create a review (POST). One review per user per product."""
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
+
+    def get_product(self, product_id):
+        try:
+            return Product.objects.get(id=product_id)
+        except Product.DoesNotExist:
+            return None
+
+    def get(self, request, product_id):
+        product = self.get_product(product_id)
+        if not product:
+            return Response(
+                {"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+        reviews = product.reviews.all().select_related("user")
+        serializer = ProductReviewSerializer(reviews, many=True)
+        return Response(serializer.data)
+
+    def post(self, request, product_id):
+        product = self.get_product(product_id)
+        if not product:
+            return Response(
+                {"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+        
+        serializer = ProductReviewSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(product=product, user=request.user)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        # Log validation errors for debugging
+        logger.warning(f"ProductReview validation failed: {serializer.errors}, data: {request.data}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class CategoryList(APIView):

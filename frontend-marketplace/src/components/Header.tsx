@@ -2,9 +2,10 @@
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { getAuthUrl } from "@/utils/authHelpers";
 import { CompactThemeToggle } from "@/components/ThemeToggle";
 
 const navLinks = [
@@ -29,6 +30,9 @@ export default function Header() {
     { name: "Log Out", action: "logout" },
   ];
   const router = useRouter();
+  const pathname = usePathname();
+  const signInUrl = getAuthUrl({ mode: "signin", next: pathname });
+  const signUpUrl = getAuthUrl({ mode: "signup", next: pathname });
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -306,7 +310,7 @@ export default function Header() {
               /* Desktop Guest User - Show Login/Signup Links */
               <div className="hidden lg:flex items-center gap-2">
                 <Link
-                  href="/auth?mode=signin"
+                  href={signInUrl}
                   className="transition-colors"
                   style={{ color: "var(--foreground)" }}
                   onMouseEnter={(e) => {
@@ -319,7 +323,7 @@ export default function Header() {
                   Sign In
                 </Link>
                 <Link
-                  href="/auth?mode=signup"
+                  href={signUpUrl}
                   className="px-4 py-2 rounded transition-colors"
                   style={{
                     background: "var(--primary)",
@@ -434,7 +438,7 @@ export default function Header() {
                 /* Mobile Guest User */
                 <div className="pt-4 border-t border-gray-200 space-y-2">
                   <Link
-                    href="/auth?mode=signin"
+                    href={signInUrl}
                     onClick={() => setMobileMenuOpen(false)}
                     className="block w-full text-center py-2 px-4 rounded transition-colors"
                     style={{
@@ -452,7 +456,7 @@ export default function Header() {
                     Sign In
                   </Link>
                   <Link
-                    href="/auth?mode=signup"
+                    href={signUpUrl}
                     onClick={() => setMobileMenuOpen(false)}
                     className="block w-full text-center py-2 px-4 rounded transition-colors"
                     style={{

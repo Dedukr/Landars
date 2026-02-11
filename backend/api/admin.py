@@ -46,6 +46,7 @@ from .models import (
     Product,
     ProductCategory,
     ProductImage,
+    ProductReview,
     Wishlist,
     WishlistItem,
 )
@@ -376,6 +377,38 @@ class CartItemAdmin(admin.ModelAdmin):
         return f"£{obj.get_total_price():.2f}"
 
     get_total_price.short_description = "Total Price"
+
+
+@admin.register(ProductReview)
+class ProductReviewAdmin(admin.ModelAdmin):
+    list_display = ["product", "user", "rating", "get_rating_display", "comment_preview", "created_at"]
+    list_filter = ["rating", "created_at"]
+    search_fields = ["product__name", "user__name", "user__email", "comment"]
+    readonly_fields = ["created_at"]
+    autocomplete_fields = ["product", "user"]
+    ordering = ["-created_at"]
+    date_hierarchy = "created_at"
+
+    class Media:
+        js = ("admin/js/prevent_double_submit.js",)
+
+    def get_rating_display(self, obj):
+        """Display rating as stars."""
+        stars = "★" * obj.rating + "☆" * (5 - obj.rating)
+        return format_html('<span style="color: #f59e0b;">{}</span>', stars)
+    
+    get_rating_display.short_description = "Rating"
+
+    def comment_preview(self, obj):
+        """Show first 50 characters of comment."""
+        if not obj.comment:
+            return "-"
+        preview = obj.comment[:50]
+        if len(obj.comment) > 50:
+            preview += "..."
+        return preview
+    
+    comment_preview.short_description = "Comment"
 
 
 class WishlistItemInline(admin.TabularInline):
@@ -1310,7 +1343,44 @@ class OrderAdmin(admin.ModelAdmin):
         self.request = request  # Save request for later use
         qs = super().get_queryset(request)
         # Prefetch invoices and their credit notes to avoid N+1 queries
-        return qs.prefetch_related("invoices", "invoices__credit_note")
+        # Also prefetch order items and products for efficient product search
+        return qs.prefetch_related(
+            "invoices", 
+            "invoices__credit_note",
+            "items",
+            "items__product"
+        )
+
+    def get_search_results(self, request, queryset, search_term):
+        """
+        Override search to include product search.
+        Searches both current product names and historical item names.
+        Efficiently combines customer search with product search.
+        """
+        from django.db.models import Q
+        
+        if not search_term:
+            return super().get_search_results(request, queryset, search_term)
+        
+        # Build search query for customer fields (default Django search)
+        customer_q = Q()
+        for field in ["customer__name", "customer__profile__phone", "customer__email"]:
+            customer_q |= Q(**{f"{field}__icontains": search_term})
+        
+        # Build search query for product fields
+        product_q = Q(
+            items__product__name__icontains=search_term
+        ) | Q(
+            items__item_name__icontains=search_term
+        )
+        
+        # Combine customer and product searches
+        combined_q = customer_q | product_q
+        
+        # Apply the combined search filter
+        queryset = queryset.filter(combined_q).distinct()
+        
+        return queryset, True
 
     def _is_single_date_filtered(self, request):
         """
