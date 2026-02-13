@@ -95,6 +95,9 @@ services:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+      # Stable Server Action encryption key (fixes "Failed to find Server Action" across rebuilds).
+      # Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+      - NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=${NEXT_SERVER_ACTIONS_ENCRYPTION_KEY:-}
     depends_on:
       - backend
     healthcheck:

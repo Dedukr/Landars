@@ -216,6 +216,10 @@ ALLOWED_HOSTS=localhost,your-domain.com
 URL_BASE=https://your-domain.com
 NEXT_PUBLIC_API_BASE_URL=https://your-domain.com/api
 
+# Next.js: stable Server Action encryption (optional; prevents "Failed to find Server Action" after redeploys).
+# Generate once: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+# NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=<base64-32-bytes>
+
 # Email Configuration
 EMAIL_HOST=smtp.gmail.com
 EMAIL_PORT=587
@@ -354,6 +358,11 @@ DELETE /api/wishlist/remove/{id}/ # Remove from wishlist
 - **Failed Login Tracking**: Monitoring and alerting for suspicious activity
 - **Token Management**: Automatic cleanup of expired tokens
 - **Performance Monitoring**: Database and application performance tracking
+
+### Production bot and abuse prevention
+
+- **Nginx**: POST to `/` returns 405; root path is rate-limited to throttle crawlers and scanners.
+- **Cloudflare** (recommended): WAF rule to block POST `/`, Bot Fight Mode, and optional rate limiting—see [docs/SECURITY_PRODUCTION.md](docs/SECURITY_PRODUCTION.md).
 
 ## 💾 Backup & Recovery
 
