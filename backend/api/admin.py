@@ -46,6 +46,7 @@ from .models import (
     Product,
     ProductCategory,
     ProductImage,
+    ProductReview,
     Wishlist,
     WishlistItem,
 )
@@ -73,32 +74,64 @@ def _phone_to_whatsapp_url(phone):
 
 def _phone_display_with_links(phone_str):
     """
-    Split phone string by '+' and render each part as a WhatsApp link, preserving
-    the original text (including labels like "(сын)"). Joins with ' + '.
+    Display phone number exactly as stored, making it clickable for WhatsApp.
+    Preserves original format including all characters, spaces, dashes, + signs, etc.
+    Only uses stripped digits internally for WhatsApp URL generation.
 
     """
     if not phone_str or not phone_str.strip():
         return None
-    parts = [p.strip() for p in phone_str.strip().split("+") if p.strip()]
-    if not parts:
-        return None
-    link_parts = []
-    for part in parts:
-        whatsapp_url = _phone_to_whatsapp_url(part)
-        # Restore leading + in display so original format is visible
-        display_text = "+" + part
-        if whatsapp_url:
-            link_parts.append(
-                format_html(
-                    '<a href="{}" target="_blank" rel="noopener">{}</a>',
-                    whatsapp_url,
-                    display_text,
+    
+    # Store original text before any processing - keep it exactly as stored
+    original_text = phone_str.strip()
+    
+    # Handle multiple phone numbers separated by '+' (preserve original format)
+    if "+" in original_text:
+        parts = original_text.split("+")
+        link_parts = []
+        for i, part in enumerate(parts):
+            part = part.strip()
+            if not part:
+                continue
+            
+            # For each part, try to create WhatsApp link using stripped digits
+            # but display the original part text
+            whatsapp_url = _phone_to_whatsapp_url(part)
+            
+            # Preserve the original part text including any formatting
+            display_text = part
+            
+            # Add back the '+' separator if not the first part
+            if i > 0:
+                display_text = "+" + display_text
+            
+            if whatsapp_url:
+                link_parts.append(
+                    format_html(
+                        '<a href="{}" target="_blank" rel="noopener">{}</a>',
+                        whatsapp_url,
+                        display_text,
+                    )
                 )
+            else:
+                # No valid number in this part; show original text as-is
+                link_parts.append(display_text)
+        
+        return mark_safe(" ".join(str(p) for p in link_parts))
+    else:
+        # Single phone number - preserve original format
+        whatsapp_url = _phone_to_whatsapp_url(original_text)
+        
+        if whatsapp_url:
+            # Make it clickable while preserving original format exactly
+            return format_html(
+                '<a href="{}" target="_blank" rel="noopener">{}</a>',
+                whatsapp_url,
+                original_text,
             )
         else:
-            # No valid number in this part (e.g. only text); show as-is
-            link_parts.append(display_text)
-    return mark_safe(" + ".join(str(p) for p in link_parts))
+            # No valid number found, just return original text as-is
+            return original_text
 
 
 class OrderAdminForm(ModelForm):
@@ -205,7 +238,7 @@ class ProductAdmin(admin.ModelAdmin):
     ordering = ["name"]
     inlines = [ProductImageInline]
 
-    fields = ["name", "description", "base_price", "holiday_fee", "vat", "categories"]
+    fields = ["name", "description", "base_price", "holiday_fee", "vat", "weight", "categories"]
 
     class Media:
         js = ("admin/js/prevent_double_submit.js",)
@@ -344,6 +377,38 @@ class CartItemAdmin(admin.ModelAdmin):
         return f"£{obj.get_total_price():.2f}"
 
     get_total_price.short_description = "Total Price"
+
+
+@admin.register(ProductReview)
+class ProductReviewAdmin(admin.ModelAdmin):
+    list_display = ["product", "user", "rating", "get_rating_display", "comment_preview", "created_at"]
+    list_filter = ["rating", "created_at"]
+    search_fields = ["product__name", "user__name", "user__email", "comment"]
+    readonly_fields = ["created_at"]
+    autocomplete_fields = ["product", "user"]
+    ordering = ["-created_at"]
+    date_hierarchy = "created_at"
+
+    class Media:
+        js = ("admin/js/prevent_double_submit.js",)
+
+    def get_rating_display(self, obj):
+        """Display rating as stars."""
+        stars = "★" * obj.rating + "☆" * (5 - obj.rating)
+        return format_html('<span style="color: #f59e0b;">{}</span>', stars)
+    
+    get_rating_display.short_description = "Rating"
+
+    def comment_preview(self, obj):
+        """Show first 50 characters of comment."""
+        if not obj.comment:
+            return "-"
+        preview = obj.comment[:50]
+        if len(obj.comment) > 50:
+            preview += "..."
+        return preview
+    
+    comment_preview.short_description = "Comment"
 
 
 class WishlistItemInline(admin.TabularInline):
@@ -1174,13 +1239,13 @@ class OrderAdmin(admin.ModelAdmin):
 
     actions = [
         # create_and_upload_invoice,
-        create_credit_note_for_invoices,
         create_credit_note_and_new_invoice,
         mark_orders_paid,
         # mark_orders_cancelled,
         # mark_orders_pending,
         calculate_sum,
         calculate_total_items,
+        create_credit_note_for_invoices,
         # retry_shipment_creation,
         "export_orders_pdf",
         # "food_summary_excel",
@@ -1278,7 +1343,44 @@ class OrderAdmin(admin.ModelAdmin):
         self.request = request  # Save request for later use
         qs = super().get_queryset(request)
         # Prefetch invoices and their credit notes to avoid N+1 queries
-        return qs.prefetch_related("invoices", "invoices__credit_note")
+        # Also prefetch order items and products for efficient product search
+        return qs.prefetch_related(
+            "invoices", 
+            "invoices__credit_note",
+            "items",
+            "items__product"
+        )
+
+    def get_search_results(self, request, queryset, search_term):
+        """
+        Override search to include product search.
+        Searches both current product names and historical item names.
+        Efficiently combines customer search with product search.
+        """
+        from django.db.models import Q
+        
+        if not search_term:
+            return super().get_search_results(request, queryset, search_term)
+        
+        # Build search query for customer fields (default Django search)
+        customer_q = Q()
+        for field in ["customer__name", "customer__profile__phone", "customer__email"]:
+            customer_q |= Q(**{f"{field}__icontains": search_term})
+        
+        # Build search query for product fields
+        product_q = Q(
+            items__product__name__icontains=search_term
+        ) | Q(
+            items__item_name__icontains=search_term
+        )
+        
+        # Combine customer and product searches
+        combined_q = customer_q | product_q
+        
+        # Apply the combined search filter
+        queryset = queryset.filter(combined_q).distinct()
+        
+        return queryset, True
 
     def _is_single_date_filtered(self, request):
         """

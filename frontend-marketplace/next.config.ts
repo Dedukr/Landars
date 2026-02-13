@@ -5,6 +5,12 @@ const nextConfig: NextConfig = {
   trailingSlash: true,
   output: "standalone", // Enable standalone output for Docker
 
+  // Expose env to client (NEXT_PUBLIC_* are inlined at build time)
+  env: {
+    NEXT_PUBLIC_SUPPORT_PHONE: process.env.NEXT_PUBLIC_SUPPORT_PHONE ?? "",
+    NEXT_PUBLIC_SUPPORT_REPLY_TO: process.env.NEXT_PUBLIC_SUPPORT_REPLY_TO ?? "",
+  },
+
   // Image configuration - allow external image domains
   images: {
     remotePatterns: [

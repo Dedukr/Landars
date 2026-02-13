@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from account.serializers import AddressSerializer
 from django.db import transaction
+from django.db.models import Q
 from rest_framework import serializers
 from shipping.models import ShippingDetails
 
@@ -13,6 +14,7 @@ from .models import (
     Product,
     ProductCategory,
     ProductImage,
+    ProductReview,
     Wishlist,
     WishlistItem,
 )
@@ -55,6 +57,60 @@ class ProductImageSerializer(serializers.ModelSerializer):
                 {"sort_order": "Sort order must be non-negative"}
             )
         return data
+
+
+class ProductReviewSerializer(serializers.ModelSerializer):
+    user_name = serializers.SerializerMethodField()
+    is_verified_purchase = serializers.SerializerMethodField()
+
+    def get_user_name(self, obj):
+        """
+        Return a human-friendly display name for the reviewer.
+
+        Our CustomUser model has a `name` field and may have an `email`,
+        but does not implement `get_full_name`, so we safely fall back
+        through the available attributes.
+        """
+        user = getattr(obj, "user", None)
+        if not user:
+            return "Anonymous"
+
+        # Prefer explicit name, then email, then username
+        return (
+            getattr(user, "name", None)
+            or getattr(user, "email", None)
+            or user.get_username()
+            or "Anonymous"
+        )
+
+    def get_is_verified_purchase(self, obj):
+        """
+        Check if the reviewer has purchased this product (has a paid order containing it).
+        """
+        from .models import OrderItem
+        
+        user = getattr(obj, "user", None)
+        product = getattr(obj, "product", None)
+        
+        if not user or not product:
+            return False
+        
+        # Check if user has any paid orders containing this product
+        # Check both by product FK and by item_name (in case product was deleted)
+        has_purchased = OrderItem.objects.filter(
+            order__customer=user,
+            order__status__in=["paid", "issued"],  # Consider both paid and issued as purchased
+        ).filter(
+            # Match by product FK or by stored item_name
+            Q(product=product) | Q(item_name=product.name)
+        ).exists()
+        
+        return has_purchased
+
+    class Meta:
+        model = ProductReview
+        fields = ["id", "user", "user_name", "rating", "comment", "created_at", "is_verified_purchase"]
+        read_only_fields = ["id", "user", "user_name", "created_at", "is_verified_purchase"]
 
 
 class ProductSerializer(ProductImageValidationMixin, serializers.ModelSerializer):
@@ -244,6 +300,7 @@ class OrderSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source="customer.name", read_only=True)
     total_price = serializers.SerializerMethodField()
     total_items = serializers.SerializerMethodField()
+    total_weight = serializers.SerializerMethodField()
     shipping_method_id = serializers.IntegerField(
         source="shipping_details.shipping_method_id",
         allow_null=True,
@@ -324,6 +381,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "created_at",
             "total_price",
             "total_items",
+            "total_weight",
             "items",
             # Shipping fields
             "shipping_method_id",
@@ -362,6 +420,9 @@ class OrderSerializer(serializers.ModelSerializer):
 
     def get_total_items(self, obj):
         return obj.total_items
+
+    def get_total_weight(self, obj):
+        return str(obj.total_weight)
 
     def validate_delivery_date(self, value):
         # Allow past dates; business logic can handle downstream
@@ -546,6 +607,7 @@ class CartSerializer(serializers.ModelSerializer):
     total_price = serializers.SerializerMethodField()
     sum_price = serializers.SerializerMethodField()
     total_items = serializers.SerializerMethodField()
+    total_weight = serializers.SerializerMethodField()
 
     class Meta:
         model = Cart
@@ -560,6 +622,7 @@ class CartSerializer(serializers.ModelSerializer):
             "sum_price",
             "total_price",
             "total_items",
+            "total_weight",
             "created_at",
             "updated_at",
         ]
@@ -573,6 +636,9 @@ class CartSerializer(serializers.ModelSerializer):
 
     def get_total_items(self, obj):
         return float(obj.total_items)
+
+    def get_total_weight(self, obj):
+        return str(obj.total_weight)
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -626,6 +692,7 @@ class OrderSerializer(serializers.ModelSerializer):
     customer_name = serializers.SerializerMethodField()
     customer_phone = serializers.SerializerMethodField()
     customer_address = serializers.SerializerMethodField()
+    invoice_link = serializers.SerializerMethodField()
     address = AddressSerializer(read_only=True)
 
     class Meta:
@@ -643,6 +710,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "delivery_fee",
             "discount",
             "status",
+            "created_at",
             "invoice_link",
             "payment_intent_id",
             "payment_status",
@@ -657,6 +725,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "sum_price",
             "total_price",
             "total_items",
+            "invoice_link",
         ]
 
     def get_sum_price(self, obj):
@@ -684,3 +753,42 @@ class OrderSerializer(serializers.ModelSerializer):
             address = obj.address
             return f"{address.address_line + ', ' if address.address_line else ''}{address.address_line2 + ', ' if address.address_line2 else ''}{address.city + ', ' if address.city else ''}{address.postal_code if address.postal_code else ''}"
         return obj.customer_address
+
+    def get_invoice_link(self, obj):
+        """
+        Return presigned URL for invoice PDF if available.
+        Checks Invoice model first, then falls back to Order.invoice_link.
+        """
+        from billing.models import Invoice
+        from django.conf import settings
+
+        # Try to get invoice from Invoice model (preferred)
+        try:
+            invoice = obj.invoices.latest("created_at")
+            if invoice and invoice.invoice_link:
+                try:
+                    return invoice.get_presigned_invoice_url(expires_in=3600)  # 1 hour expiry
+                except Exception:
+                    pass
+        except Invoice.DoesNotExist:
+            pass
+
+        # Fallback to Order.invoice_link (backward compatibility)
+        if obj.invoice_link:
+            try:
+                from billing.models import get_s3_client
+
+                s3 = get_s3_client()
+                url = s3.generate_presigned_url(
+                    "get_object",
+                    Params={
+                        "Bucket": settings.AWS_STORAGE_BUCKET_NAME,
+                        "Key": obj.invoice_link,
+                    },
+                    ExpiresIn=3600,  # 1 hour expiry
+                )
+                return url
+            except Exception:
+                return None
+
+        return None

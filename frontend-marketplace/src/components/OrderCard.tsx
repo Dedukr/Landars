@@ -24,8 +24,8 @@ interface Order {
   is_home_delivery: boolean;
   delivery_fee: string;
   discount: string;
-  order_date: string;
-  status: "pending" | "paid" | "cancelled";
+  created_at: string;
+  status: "pending" | "paid" | "issued" | "cancelled";
   invoice_link?: string;
   items: OrderItem[];
   total_price: string;
@@ -35,7 +35,6 @@ interface Order {
 interface OrderCardProps {
   order: Order;
   onReorder: () => void;
-  onCancel: () => void;
 }
 
 const statusConfig = {
@@ -53,6 +52,13 @@ const statusConfig = {
     borderColor: "border-green-200",
     icon: "✅",
   },
+  issued: {
+    label: "Issued",
+    color: "text-blue-600",
+    bgColor: "bg-blue-50",
+    borderColor: "border-blue-200",
+    icon: "📦",
+  },
   cancelled: {
     label: "Cancelled",
     color: "text-red-600",
@@ -62,41 +68,45 @@ const statusConfig = {
   },
 };
 
+function getWhatsAppUrl(phone: string | undefined, text?: string): string | null {
+  const digits = (phone ?? "").replace(/\D/g, "");
+  if (!digits.length) return null;
+  const base = `https://api.whatsapp.com/send?phone=${digits}`;
+  return text ? `${base}&text=${encodeURIComponent(text)}` : base;
+}
+
 export default function OrderCard({
   order,
   onReorder,
-  onCancel,
 }: OrderCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   const statusInfo = statusConfig[order.status];
-  const canCancel = order.status === "pending" || order.status === "paid";
-  const canReorder = order.status === "paid" || order.status === "cancelled";
+  const canCancel = order.status === "pending" || order.status === "paid" || order.status === "issued";
+  const canReorder = order.status === "paid" || order.status === "issued" || order.status === "cancelled";
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
+  const cancelOrderWhatsAppUrl = getWhatsAppUrl(
+    process.env.NEXT_PUBLIC_SUPPORT_PHONE,
+    `Cancelling the order #${order.id}`
+  );
+
+  const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString) return "—";
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return "—";
+      return date.toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+    } catch {
+      return "—";
+    }
   };
 
   const formatCurrency = (amount: string) => {
     return `£${parseFloat(amount).toFixed(2)}`;
-  };
-
-  const handleCancelClick = () => {
-    setShowCancelConfirm(true);
-  };
-
-  const handleCancelConfirm = () => {
-    onCancel();
-    setShowCancelConfirm(false);
-  };
-
-  const handleCancelCancel = () => {
-    setShowCancelConfirm(false);
   };
 
   return (
@@ -123,7 +133,7 @@ export default function OrderCard({
                 className="text-sm"
                 style={{ color: "var(--foreground)", opacity: 0.7 }}
               >
-                Placed on {formatDate(order.order_date)}
+                Placed on {formatDate(order.created_at)}
               </p>
             </div>
           </div>
@@ -221,9 +231,11 @@ export default function OrderCard({
             </button>
           )}
 
-          {canCancel && (
-            <button
-              onClick={handleCancelClick}
+          {canCancel && cancelOrderWhatsAppUrl && (
+            <a
+              href={cancelOrderWhatsAppUrl}
+              target="_blank"
+              rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-4 py-2 border border-red-300 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 transition-colors"
             >
               <svg
@@ -240,7 +252,7 @@ export default function OrderCard({
                 />
               </svg>
               Cancel Order
-            </button>
+            </a>
           )}
 
           {order.invoice_link && (
@@ -459,44 +471,6 @@ export default function OrderCard({
               </p>
             </div>
           )}
-        </div>
-      )}
-
-      {/* Cancel Confirmation Modal */}
-      {showCancelConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div
-            className="bg-white rounded-lg p-6 max-w-md w-full mx-4"
-            style={{ background: "var(--card-bg)" }}
-          >
-            <h3
-              className="text-lg font-semibold mb-4"
-              style={{ color: "var(--foreground)" }}
-            >
-              Cancel Order #{order.id}
-            </h3>
-            <p
-              className="text-sm mb-6"
-              style={{ color: "var(--foreground)", opacity: 0.7 }}
-            >
-              Are you sure you want to cancel this order? This action cannot be
-              undone.
-            </p>
-            <div className="flex space-x-3">
-              <button
-                onClick={handleCancelConfirm}
-                className="flex-1 bg-red-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-red-700 transition-colors"
-              >
-                Yes, Cancel Order
-              </button>
-              <button
-                onClick={handleCancelCancel}
-                className="flex-1 border border-gray-300 text-gray-700 py-2 px-4 rounded-lg font-medium hover:bg-gray-50 transition-colors"
-              >
-                Keep Order
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </div>

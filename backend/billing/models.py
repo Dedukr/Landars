@@ -103,7 +103,7 @@ def upload_file_to_s3(file_path: str, s3_key: str, max_retries: int = 3) -> str:
 def create_invoice(order, request):
     """
     Unified function to create an invoice from an order and upload PDF to S3.
-    Also updates the order status to "pending".
+    Also updates the order status to "issued".
 
     Args:
         order: The order to create an invoice for
@@ -113,11 +113,11 @@ def create_invoice(order, request):
         Invoice: The created invoice instance
     """
     invoice = Invoice.create_and_publish_from_order(order=order, request=request)
-    
-    # Update order status to pending
-    order.status = "pending"
+
+    # Update order status to issued when invoice is created
+    order.status = "issued"
     order.save(update_fields=["status"])
-    
+
     return invoice
 
 

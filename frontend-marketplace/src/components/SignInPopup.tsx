@@ -1,6 +1,8 @@
 "use client";
 import React from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { getAuthUrl } from "@/utils/authHelpers";
 
 interface SignInPopupProps {
   isOpen: boolean;
@@ -8,6 +10,10 @@ interface SignInPopupProps {
 }
 
 const SignInPopup: React.FC<SignInPopupProps> = ({ isOpen, onClose }) => {
+  const pathname = usePathname();
+  const signInUrl = getAuthUrl({ mode: "signin", next: pathname });
+  const signUpUrl = getAuthUrl({ mode: "signup", next: pathname });
+
   if (!isOpen) return null;
 
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -82,7 +88,7 @@ const SignInPopup: React.FC<SignInPopupProps> = ({ isOpen, onClose }) => {
           {/* Action buttons */}
           <div className="space-y-3">
             <Link
-              href="/auth/?mode=signin"
+              href={signInUrl}
               className="w-full py-3 px-4 font-medium transition-all duration-200 block text-center"
               style={{
                 background: "var(--primary)",
@@ -104,7 +110,7 @@ const SignInPopup: React.FC<SignInPopupProps> = ({ isOpen, onClose }) => {
             </Link>
 
             <Link
-              href="/auth/?mode=signup"
+              href={signUpUrl}
               className="w-full py-3 px-4 font-medium transition-all duration-200 block text-center"
               style={{
                 background: "transparent",

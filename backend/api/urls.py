@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     ProductList,
     ProductDetail,
+    ProductReviewListCreate,
     CategoryList,
     CompressedImageUploadView,
     PresignedUploadView,
@@ -18,6 +19,11 @@ urlpatterns = [
     # Product endpoints
     path("products/", ProductList.as_view(), name="product-list"),
     path("products/<int:product_id>/", ProductDetail.as_view(), name="product-detail"),
+    path(
+        "products/<int:product_id>/reviews/",
+        ProductReviewListCreate.as_view(),
+        name="product-review-list-create",
+    ),
     # Image upload endpoints
     path(
         "images/presigned-upload/",

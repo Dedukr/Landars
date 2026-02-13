@@ -1,7 +1,9 @@
 "use client";
 import React, { useState, useCallback, useMemo, useEffect } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import { getAuthUrl } from "@/utils/authHelpers";
 import { useCart } from "@/contexts/CartContext";
 import { SortOption } from "@/components/SortList";
 import WishlistStats from "@/components/WishlistStats";
@@ -19,6 +21,8 @@ interface Category {
 }
 
 export default function WishlistPage() {
+  const router = useRouter();
+  const pathname = usePathname();
   const { user } = useAuth();
   const { products, loading, stats, clearWishlist, wishlist } =
     useWishlistOptimized();
@@ -118,13 +122,12 @@ export default function WishlistPage() {
     setTimeout(() => setShowToast(false), 3000);
   }, [selectedItems, removeItem]);
 
-  const handleSelectAll = useCallback(() => {
-    if (selectedItems.size === products.length) {
-      setSelectedItems(new Set());
-    } else {
-      setSelectedItems(new Set(products.map((p) => p.id)));
-    }
-  }, [selectedItems.size, products]);
+  const handleItemAddToCart = useCallback((productName: string) => {
+    setToastMessage(`${productName} added to cart`);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 2000);
+  }, []);
+
 
   const handleSelect = useCallback((productId: number, selected: boolean) => {
     setSelectedItems((prev) => {
@@ -150,13 +153,6 @@ export default function WishlistPage() {
     setFilterCategory(category);
   }, []);
 
-  const handleShareWishlist = useCallback(() => {
-    const wishlistUrl = `${window.location.origin}/wishlist?shared=true`;
-    navigator.clipboard.writeText(wishlistUrl);
-    setToastMessage("Wishlist link copied to clipboard!");
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
-  }, []);
 
   const filteredAndSortedProducts = useMemo(() => {
     return (
@@ -217,22 +213,33 @@ export default function WishlistPage() {
               You need to be signed in to access your wishlist and save your
               favorite products.
             </p>
-            <Link
-              href="/auth"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-colors"
-              style={{
-                background: "var(--primary)",
-                color: "white",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "var(--primary-hover)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "var(--primary)";
-              }}
-            >
-              Sign In
-            </Link>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              <button
+                type="button"
+                onClick={() => router.push(getAuthUrl({ next: pathname }))}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-colors cursor-pointer border-0"
+                style={{
+                  background: "var(--primary)",
+                  color: "white",
+                }}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  window.location.href = "/";
+                }}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-colors cursor-pointer border"
+                style={{
+                  borderColor: "var(--sidebar-border)",
+                  color: "var(--foreground)",
+                  background: "var(--card-bg)",
+                }}
+              >
+                Back to shop
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -372,54 +379,6 @@ export default function WishlistPage() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <button
-                      onClick={handleSelectAll}
-                      className="text-sm transition-colors touch-manipulation"
-                      style={{
-                        color: "var(--accent)",
-                        touchAction: "manipulation",
-                        WebkitTapHighlightColor: "transparent",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.opacity = "0.8";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.opacity = "1";
-                      }}
-                      onTouchStart={(e) => {
-                        e.currentTarget.style.opacity = "0.8";
-                      }}
-                      onTouchEnd={(e) => {
-                        e.currentTarget.style.opacity = "1";
-                      }}
-                    >
-                      {selectedItems.size === products.length
-                        ? "Deselect All"
-                        : "Select All"}
-                    </button>
-                    <button
-                      onClick={handleShareWishlist}
-                      className="text-sm transition-colors touch-manipulation"
-                      style={{
-                        color: "var(--accent)",
-                        touchAction: "manipulation",
-                        WebkitTapHighlightColor: "transparent",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.opacity = "0.8";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.opacity = "1";
-                      }}
-                      onTouchStart={(e) => {
-                        e.currentTarget.style.opacity = "0.8";
-                      }}
-                      onTouchEnd={(e) => {
-                        e.currentTarget.style.opacity = "1";
-                      }}
-                    >
-                      Share Wishlist
-                    </button>
-                    <button
                       onClick={clearWishlist}
                       className="text-sm transition-colors touch-manipulation"
                       style={{
@@ -451,6 +410,7 @@ export default function WishlistPage() {
                 selectedItems={selectedItems}
                 onRemove={removeItem}
                 onSelect={handleSelect}
+                onAddToCart={handleItemAddToCart}
               />
             </div>
 

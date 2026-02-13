@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import { getAuthUrl } from "@/utils/authHelpers";
 import { httpClient } from "@/utils/httpClient";
 import { Button } from "@/components/ui/Button";
 import LoadingSpinner from "@/components/LoadingSpinner";
@@ -36,7 +37,7 @@ interface Order {
   is_home_delivery: boolean;
   delivery_fee: string;
   discount: string;
-  order_date: string;
+  created_at: string;
   status: string;
   invoice_link: string;
   customer_address: string;
@@ -78,6 +79,15 @@ const statusConfig = {
     borderColor: "rgba(22, 163, 74, 0.3)",
     progress: 50,
   },
+  issued: {
+    label: "Issued",
+    description: "Order has been issued and is ready for processing",
+    icon: "📦",
+    color: "var(--accent)",
+    bgColor: "rgba(59, 130, 246, 0.1)",
+    borderColor: "rgba(59, 130, 246, 0.3)",
+    progress: 75,
+  },
   cancelled: {
     label: "Cancelled",
     description: "This order has been cancelled",
@@ -97,12 +107,13 @@ export default function OrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const pathname = usePathname();
   // Redirect if not authenticated
   useEffect(() => {
     if (!user && !token) {
-      router.push("/auth");
+      router.push(getAuthUrl({ next: pathname }));
     }
-  }, [user, token, router]);
+  }, [user, token, router, pathname]);
 
   // Fetch order details
   useEffect(() => {
@@ -167,13 +178,25 @@ export default function OrderDetailPage() {
   const statusInfo =
     statusConfig[order.status as keyof typeof statusConfig] ||
     statusConfig.pending;
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-GB", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
+  const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString) {
+      return "Date not available";
+    }
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) {
+        return "Invalid date";
+      }
+      return date.toLocaleDateString("en-GB", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+    } catch (error) {
+      console.error("Error formatting date:", error);
+      return "Invalid date";
+    }
   };
 
   // const formatTime = (dateString: string) => {
@@ -229,7 +252,7 @@ export default function OrderDetailPage() {
                   className="font-medium"
                   style={{ color: "var(--foreground)" }}
                 >
-                  {formatDate(order.order_date)}
+                  {formatDate(order.created_at)}
                 </span>
                 <span style={{ color: "var(--muted-foreground)" }}>
                   order placed.
@@ -445,38 +468,38 @@ export default function OrderDetailPage() {
                     </p>
                   </div>
 
-                  {order.delivery_date && (
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <svg
-                          className="w-5 h-5"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          style={{ color: "var(--accent)" }}
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                          />
-                        </svg>
-                        <p
-                          className="text-sm font-semibold"
-                          style={{ color: "var(--foreground)" }}
-                        >
-                          Delivery Date
-                        </p>
-                      </div>
-                      <p
-                        className="text-sm"
-                        style={{ color: "var(--muted-foreground)" }}
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        style={{ color: "var(--accent)" }}
                       >
-                        {formatDate(order.delivery_date)}
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                        />
+                      </svg>
+                      <p
+                        className="text-sm font-semibold"
+                        style={{ color: "var(--foreground)" }}
+                      >
+                        Delivery Date
                       </p>
                     </div>
-                  )}
+                    <p
+                      className="text-sm"
+                      style={{ color: "var(--muted-foreground)" }}
+                    >
+                      {order.delivery_date
+                        ? formatDate(order.delivery_date)
+                        : "Not specified"}
+                    </p>
+                  </div>
                 </div>
 
                 <div className="space-y-4">
@@ -509,6 +532,17 @@ export default function OrderDetailPage() {
                     >
                       {order.is_home_delivery ? "Home Delivery" : "Collection"}
                     </p>
+                    {!order.is_home_delivery &&
+                      (order.shipping_carrier || order.shipping_service_name) && (
+                      <p
+                        className="text-sm mt-1"
+                        style={{ color: "var(--muted-foreground)" }}
+                      >
+                        {order.shipping_carrier && order.shipping_service_name
+                          ? `${order.shipping_carrier} - ${order.shipping_service_name}`
+                          : order.shipping_carrier || order.shipping_service_name}
+                      </p>
+                    )}
                   </div>
 
                   {order.notes && (
@@ -746,7 +780,7 @@ export default function OrderDetailPage() {
               </div>
             )}
 
-            {/* Payment Information */}
+            {/* Payment Information - commented out
             {order.payment_intent_id && (
               <div
                 className="rounded-xl shadow-sm p-6 border"
@@ -797,7 +831,7 @@ export default function OrderDetailPage() {
                   </div>
                 </div>
               </div>
-            )}
+            )} */}
           </div>
 
           {/* Sidebar - Order Summary */}
@@ -834,7 +868,7 @@ export default function OrderDetailPage() {
                       : (
                           order.items?.reduce((sum, item) => {
                             const price = parseFloat(
-                              item.total_price || item.get_total_price || "0"
+                              item.total_price || item.get_total_price || "0",
                             );
                             return sum + price;
                           }, 0) || 0
@@ -924,29 +958,40 @@ export default function OrderDetailPage() {
                 </Button>
 
                 {order.invoice_link && (
-                  <Button
-                    onClick={() => window.open(order.invoice_link, "_blank")}
-                    variant="ghost"
-                    fullWidth
-                    size="lg"
-                    icon={
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                        />
-                      </svg>
-                    }
+                  <button
+                    onClick={() => {
+                      if (order.invoice_link) {
+                        window.open(order.invoice_link, "_blank", "noopener,noreferrer");
+                      }
+                    }}
+                    className="w-full px-6 py-3 text-base font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 min-h-[48px]"
+                    style={{
+                      background: "rgba(34, 197, 94, 0.15)", // Light transparent green
+                      color: "rgb(22, 163, 74)", // Darker green text
+                      border: "1px solid rgba(34, 197, 94, 0.3)",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "rgba(34, 197, 94, 0.25)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "rgba(34, 197, 94, 0.15)";
+                    }}
                   >
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                      />
+                    </svg>
                     Download Invoice
-                  </Button>
+                  </button>
                 )}
               </div>
 
@@ -985,14 +1030,27 @@ export default function OrderDetailPage() {
                       style={{ color: "var(--muted-foreground)" }}
                     >
                       If you have any questions about your order, please contact
-                      our customer support team at{" "}
-                      <a
-                        href="mailto:support@foodplatform.com"
-                        className="underline"
-                        style={{ color: "var(--accent)" }}
-                      >
-                        support@foodplatform.com
-                      </a>
+                      our customer support team on{" "}
+                      {(() => {
+                        const phone = process.env.NEXT_PUBLIC_SUPPORT_PHONE ?? "";
+                        const digits = phone.replace(/\D/g, "");
+                        const whatsAppUrl = digits
+                          ? `https://api.whatsapp.com/send?phone=${digits}`
+                          : null;
+                        return whatsAppUrl ? (
+                          <a
+                            href={whatsAppUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline"
+                            style={{ color: "var(--accent)" }}
+                          >
+                            WhatsApp
+                          </a>
+                        ) : (
+                          "WhatsApp"
+                        );
+                      })()}
                       .
                     </p>
                   </div>

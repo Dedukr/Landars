@@ -1,6 +1,7 @@
 "use client";
 import React, { memo, useCallback } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useCart } from "@/contexts/CartContext";
 
 interface Product {
@@ -22,15 +23,17 @@ interface WishlistItemProps {
   isSelected: boolean;
   onRemove: (productId: number) => void;
   onSelect: (productId: number, selected: boolean) => void;
+  onAddToCart?: (productName: string) => void;
 }
 
 const WishlistItem = memo<WishlistItemProps>(
-  ({ product, isRemoving, isSelected, onRemove, onSelect }) => {
+  ({ product, isRemoving, isSelected, onRemove, onSelect, onAddToCart }) => {
     const { addToCart } = useCart();
 
     const handleAddToCart = useCallback(() => {
       addToCart(product.id, 1);
-    }, [addToCart, product.id]);
+      onAddToCart?.(product.name);
+    }, [addToCart, product.id, product.name, onAddToCart]);
 
     const handleRemove = useCallback(() => {
       onRemove(product.id);
@@ -40,7 +43,7 @@ const WishlistItem = memo<WishlistItemProps>(
       (e: React.ChangeEvent<HTMLInputElement>) => {
         onSelect(product.id, e.target.checked);
       },
-      [onSelect, product.id]
+      [onSelect, product.id],
     );
 
     return (
@@ -62,86 +65,97 @@ const WishlistItem = memo<WishlistItemProps>(
               style={{ accentColor: "var(--primary)" }}
             />
           </div>
-          <div className="flex-shrink-0">
-            {product.image_url ? (
-              <Image
-                src={product.image_url}
-                alt={product.name}
-                width={80}
-                height={80}
-                className="w-20 h-20 object-cover rounded-lg"
-              />
-            ) : (
-              <div
-                className="w-20 h-20 rounded-lg flex items-center justify-center"
-                style={{ background: "var(--sidebar-bg)" }}
-              >
-                <span className="text-2xl">🍎</span>
-              </div>
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3
-              className="text-lg font-medium"
-              style={{ color: "var(--foreground)" }}
+          <div className="flex flex-1 min-w-0 items-center space-x-4">
+            <Link
+              href={`/product/${product.id}`}
+              className="flex-shrink-0 no-underline"
             >
-              {product.name}
-            </h3>
-            {product.description && (
-              <p
-                className="text-sm mt-1 line-clamp-2"
-                style={{ color: "var(--foreground)", opacity: 0.7 }}
+              {product.image_url ? (
+                <Image
+                  src={product.image_url}
+                  alt={product.name}
+                  width={80}
+                  height={80}
+                  className="w-20 h-20 object-cover rounded-lg"
+                />
+              ) : (
+                <div
+                  className="w-20 h-20 rounded-lg flex items-center justify-center"
+                  style={{ background: "var(--sidebar-bg)" }}
+                >
+                  <span className="text-2xl">🍎</span>
+                </div>
+              )}
+            </Link>
+            <div className="flex-1 min-w-0">
+              <Link
+                href={`/product/${product.id}`}
+                className="no-underline"
+                style={{ color: "inherit" }}
               >
-                {product.description}
-              </p>
-            )}
-            {product.categories && product.categories.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-2">
-                {product.categories.map((category, idx) => (
+                <h3
+                  className="text-lg font-medium hover:opacity-80 transition-opacity"
+                  style={{ color: "var(--foreground)" }}
+                >
+                  {product.name}
+                </h3>
+              </Link>
+              {product.description && (
+                <p
+                  className="text-sm mt-1 line-clamp-2"
+                  style={{ color: "var(--foreground)", opacity: 0.7 }}
+                >
+                  {product.description}
+                </p>
+              )}
+              {product.categories && product.categories.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {product.categories.map((category, idx) => (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium"
+                      style={{
+                        background: "var(--sidebar-bg)",
+                        color: "var(--foreground)",
+                      }}
+                    >
+                      {category}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="mt-2 flex items-center space-x-4">
+                <div
+                  className="text-lg font-semibold"
+                  style={{ color: "var(--foreground)" }}
+                >
+                  £{parseFloat(product.price).toFixed(2)}
+                </div>
+                {product.original_price &&
+                  parseFloat(product.original_price) >
+                    parseFloat(product.price) && (
+                    <div
+                      className="text-sm line-through"
+                      style={{
+                        color: "var(--foreground)",
+                        opacity: 0.5,
+                      }}
+                    >
+                      £{parseFloat(product.original_price).toFixed(2)}
+                    </div>
+                  )}
+                {product.discount_percentage && (
                   <span
-                    key={idx}
                     className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium"
                     style={{
-                      background: "var(--sidebar-bg)",
-                      color: "var(--foreground)",
+                      background: "var(--accent)",
+                      color: "#fff",
                     }}
                   >
-                    {category}
+                    -{product.discount_percentage}%
                   </span>
-                ))}
-              </div>
-            )}
-            <div className="mt-2 flex items-center space-x-4">
-              <div
-                className="text-lg font-semibold"
-                style={{ color: "var(--foreground)" }}
-              >
-                £{parseFloat(product.price).toFixed(2)}
-              </div>
-              {product.original_price &&
-                parseFloat(product.original_price) >
-                  parseFloat(product.price) && (
-                  <div
-                    className="text-sm line-through"
-                    style={{
-                      color: "var(--foreground)",
-                      opacity: 0.5,
-                    }}
-                  >
-                    £{parseFloat(product.original_price).toFixed(2)}
-                  </div>
                 )}
-              {product.discount_percentage && (
-                <span
-                  className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium"
-                  style={{
-                    background: "var(--accent)",
-                    color: "#fff",
-                  }}
-                >
-                  -{product.discount_percentage}%
-                </span>
-              )}
+              </div>
             </div>
           </div>
           <div className="flex flex-col items-end space-y-2">
@@ -202,7 +216,7 @@ const WishlistItem = memo<WishlistItemProps>(
         </div>
       </div>
     );
-  }
+  },
 );
 
 WishlistItem.displayName = "WishlistItem";

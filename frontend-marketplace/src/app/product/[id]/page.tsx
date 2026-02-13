@@ -12,6 +12,7 @@ import ProductGallery from "@/components/ProductGallery";
 import ProductImageCollage from "@/components/ProductImageCollage";
 // import ProductDetails from "@/components/ProductDetails";
 import ProductRecommendations from "@/components/ProductRecommendations";
+import ProductReviewBlock from "@/components/ProductReviewBlock";
 import LoadingSpinner from "@/components/LoadingSpinner";
 
 interface Product {
@@ -439,8 +440,6 @@ export default function ProductPage() {
               >
                 <li>• Fresh, locally sourced ingredients</li>
                 <li>• Sustainable packaging</li>
-                <li>• Free delivery on orders over £25</li>
-                <li>• 30-day satisfaction guarantee</li>
               </ul>
             </div>
           </div>
@@ -462,6 +461,11 @@ export default function ProductPage() {
             gridCols={{ default: 2, md: 4 }}
             className="mt-6"
           />
+        </div>
+
+        {/* Reviews */}
+        <div className="mt-12">
+          <ProductReviewBlock productId={product.id} />
         </div>
       </div>
 

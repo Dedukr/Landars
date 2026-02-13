@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
+import { getAuthUrl } from "@/utils/authHelpers";
 import OrderCard from "@/components/OrderCard";
 import OrderFilters from "@/components/OrderFilters";
 import OrderStats from "@/components/OrderStats";
@@ -13,7 +14,7 @@ export default function OrdersPage() {
     status: "",
     dateFrom: "",
     dateTo: "",
-    sort: "-order_date",
+    sort: "-created_at",
   });
 
   const {
@@ -22,7 +23,6 @@ export default function OrdersPage() {
     error,
     stats,
     fetchOrders,
-    cancelOrder,
     reorderItems,
   } = useOrders(filters);
 
@@ -42,15 +42,6 @@ export default function OrdersPage() {
       // Show success message or redirect to cart
     } catch (error) {
       console.error("Failed to reorder:", error);
-    }
-  };
-
-  const handleCancelOrder = async (orderId: number) => {
-    try {
-      await cancelOrder(orderId);
-      fetchOrders(); // Refresh orders
-    } catch (error) {
-      console.error("Failed to cancel order:", error);
     }
   };
 
@@ -74,7 +65,7 @@ export default function OrdersPage() {
               your orders.
             </p>
             <Link
-              href="/auth"
+              href={getAuthUrl({ next: "/orders" })}
               className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
             >
               Sign In
@@ -210,7 +201,6 @@ export default function OrdersPage() {
                 key={order.id}
                 order={order}
                 onReorder={() => handleReorder(order.id)}
-                onCancel={() => handleCancelOrder(order.id)}
               />
             ))}
           </div>

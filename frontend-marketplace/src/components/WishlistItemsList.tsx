@@ -21,10 +21,11 @@ interface WishlistItemsListProps {
   selectedItems: Set<number>;
   onRemove: (productId: number) => void;
   onSelect: (productId: number, selected: boolean) => void;
+  onAddToCart?: (productName: string) => void;
 }
 
 const WishlistItemsList = memo<WishlistItemsListProps>(
-  ({ products, removingIds, selectedItems, onRemove, onSelect }) => {
+  ({ products, removingIds, selectedItems, onRemove, onSelect, onAddToCart }) => {
     const handleSelect = useCallback(
       (productId: number, selected: boolean) => {
         onSelect(productId, selected);
@@ -61,6 +62,7 @@ const WishlistItemsList = memo<WishlistItemsListProps>(
               isSelected={selectedItems.has(product.id)}
               onRemove={onRemove}
               onSelect={handleSelect}
+              onAddToCart={onAddToCart}
             />
           ))}
         </div>
