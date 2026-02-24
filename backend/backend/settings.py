@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     "storages",
     "billing",
     "shipping",
+    "reconciliation",
 ]
 
 MIDDLEWARE = [

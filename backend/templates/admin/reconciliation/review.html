@@ -1,0 +1,92 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static %}
+
+{% block title %}Review Bank Transactions{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:reconciliation_banktransaction_changelist' %}">Bank Transactions</a>
+&rsaquo; Review
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>Review Bank Transactions</h1>
+
+<div class="module">
+    <form method="get" action="{% url 'admin:reconciliation_banktransaction_review' %}">
+        <div style="margin-bottom: 20px;">
+            <label for="status">Status:</label>
+            <select name="status" id="status">
+                <option value="">All</option>
+                {% for value, label in status_choices %}
+                <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            
+            <label for="q" style="margin-left: 20px;">Search:</label>
+            <input type="text" name="q" id="q" value="{{ search_query }}" placeholder="Payer name, amount, order ID...">
+            
+            <input type="submit" value="Filter" class="default">
+            <a href="{% url 'admin:reconciliation_banktransaction_review' %}" class="button">Clear</a>
+        </div>
+    </form>
+</div>
+
+<div class="module">
+    <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+            <tr>
+                <th style="border: 1px solid #ddd; padding: 8px;">ID</th>
+                <th style="border: 1px solid #ddd; padding: 8px;">Date</th>
+                <th style="border: 1px solid #ddd; padding: 8px;">Payer</th>
+                <th style="border: 1px solid #ddd; padding: 8px;">Amount</th>
+                <th style="border: 1px solid #ddd; padding: 8px;">Status</th>
+                <th style="border: 1px solid #ddd; padding: 8px;">Matched Order</th>
+                <th style="border: 1px solid #ddd; padding: 8px;">Confidence</th>
+                <th style="border: 1px solid #ddd; padding: 8px;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for txn in transactions %}
+            <tr>
+                <td style="border: 1px solid #ddd; padding: 8px;">{{ txn.id }}</td>
+                <td style="border: 1px solid #ddd; padding: 8px;">{{ txn.statement_date }}</td>
+                <td style="border: 1px solid #ddd; padding: 8px;">{{ txn.payer_name }}</td>
+                <td style="border: 1px solid #ddd; padding: 8px;">£{{ txn.amount }}</td>
+                <td style="border: 1px solid #ddd; padding: 8px;">
+                    <span style="padding: 3px 8px; border-radius: 3px; 
+                        {% if txn.match_status == 'matched' %}background-color: #28a745; color: white;
+                        {% elif txn.match_status == 'suggested' %}background-color: #ffc107; color: black;
+                        {% elif txn.match_status == 'unmatched' %}background-color: #dc3545; color: white;
+                        {% elif txn.match_status == 'rejected' %}background-color: #6c757d; color: white;
+                        {% endif %}">
+                        {{ txn.get_match_status_display }}
+                    </span>
+                </td>
+                <td style="border: 1px solid #ddd; padding: 8px;">
+                    {% if txn.matched_order %}
+                    <a href="{% url 'admin:api_order_change' txn.matched_order.id %}">Order #{{ txn.matched_order.id }}</a>
+                    {% else %}-{% endif %}
+                </td>
+                <td style="border: 1px solid #ddd; padding: 8px;">{% if txn.confidence_score %}{{ txn.confidence_score }}%{% else %}—{% endif %}</td>
+                <td style="border: 1px solid #ddd; padding: 8px;">
+                    <a href="{% url 'admin:reconciliation_banktransaction_change' txn.id %}">View</a>
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="8" style="border: 1px solid #ddd; padding: 8px; text-align: center;">
+                    No transactions found.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="module">
+    <p><strong>Total:</strong> {{ transactions|length }} transaction{{ transactions|length|pluralize }}</p>
+</div>
+{% endblock %}
