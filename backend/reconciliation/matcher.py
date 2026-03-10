@@ -26,6 +26,24 @@ class TransactionMatcher:
     # Amount tolerance: order total may differ from transaction amount by up to this (pounds)
     AMOUNT_TOLERANCE_POUNDS = Decimal("1")
 
+    # Common company / noise tokens to ignore in payer names
+    NAME_STOPWORDS = {
+        "ltd",
+        "limited",
+        "plc",
+        "inc",
+        "co",
+        "company",
+        "uk",
+        "gb",
+        "llp",
+        "holdings",
+        "trading",
+        "ta",
+        "t/a",
+        "the",
+    }
+
     def __init__(self, transaction: BankTransaction):
         self.transaction = transaction
 
@@ -58,7 +76,12 @@ class TransactionMatcher:
         norm = self._normalize_name(name)
         if not norm:
             return []
-        tokens = [w for w in norm.split() if len(w) > 1 or (len(w) == 1 and w.isalpha())]
+        tokens = [
+            w
+            for w in norm.split()
+            if (len(w) > 1 or (len(w) == 1 and w.isalpha()))
+            and w not in self.NAME_STOPWORDS
+        ]
         return tokens
 
     def calculate_name_similarity(self, name1: str, name2: str) -> float:
@@ -121,7 +144,24 @@ class TransactionMatcher:
             for t1 in tokens1:
                 for t2 in tokens2:
                     if t1 in t2 or t2 in t1:
-                        partial = max(partial, 0.7 if len(t1) <= 2 or len(t2) <= 2 else 0.85)
+                        partial = max(
+                            partial,
+                            0.7 if len(t1) <= 2 or len(t2) <= 2 else 0.85,
+                        )
+
+        # Token-level fuzzy matching: for each token, find best fuzzy match in the other name
+        token_pair_scores: List[float] = []
+        for t1 in tokens1:
+            best = 0.0
+            for t2 in tokens2:
+                ratio = SequenceMatcher(None, t1, t2).ratio()
+                if ratio > best:
+                    best = ratio
+            if best:
+                token_pair_scores.append(best)
+        token_pair_score = (
+            sum(token_pair_scores) / len(token_pair_scores) if token_pair_scores else 0.0
+        )
 
         # Combine: take best signals so one clear match scores highest
         scores = [
@@ -131,6 +171,7 @@ class TransactionMatcher:
             token_sort_ratio * 0.95,
             sequence_ratio * 0.9,
             partial,
+            token_pair_score * 0.9,
         ]
         return min(1.0, max(scores) if scores else 0.0)
     
@@ -206,7 +247,13 @@ class TransactionMatcher:
         if date_score >= 0.7 and name_score >= 0.7:
             weighted = min(1.0, weighted + 0.10)
         score = int(weighted * 100)
-        return min(100, score)
+        score = min(100, score)
+
+        # Cap confidence when name is only partial: strong surname/name match required for 100%
+        # so e.g. "CHEKAVSKA Y" £96 favours "Yana Chekavska" over "Anastasiia Pervushyna"
+        if name_score < 0.8:
+            score = min(score, 92)
+        return score
     
     def build_matching_reason(
         self,
