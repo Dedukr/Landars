@@ -567,6 +567,16 @@
                                 #{{ invoice.invoice_number }}
                             </td>
                         </tr>
+                        {% if business.invoice_code %}
+                        <tr>
+                            <td>
+                                Invoice code
+                            </td>
+                            <td>
+                                {{ business.invoice_code }}
+                            </td>
+                        </tr>
+                        {% endif %}
                         <tr>
                             <td>
                                 Delivery date
