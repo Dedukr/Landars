@@ -1,6 +1,5 @@
-import React, { useState } from "react";
+import React from "react";
 import Image from "next/image";
-import { MagnifyingGlassIcon, XMarkIcon } from "@heroicons/react/24/outline";
 
 interface ProductGalleryProps {
   images: string[];
@@ -13,22 +12,6 @@ const ProductGallery: React.FC<ProductGalleryProps> = ({
   selectedImage,
   onImageSelect,
 }) => {
-  const [isZoomed, setIsZoomed] = useState(false);
-  const [zoomPosition, setZoomPosition] = useState({ x: 0, y: 0 });
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isZoomed) return;
-
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
-    setZoomPosition({ x, y });
-  };
-
-  const handleZoomToggle = () => {
-    setIsZoomed(!isZoomed);
-  };
-
   if (images.length === 0) {
     return (
       <div
@@ -52,39 +35,14 @@ const ProductGallery: React.FC<ProductGalleryProps> = ({
           border: "1px solid var(--sidebar-border)",
         }}
       >
-        <div
-          className="relative w-full h-full cursor-zoom-in"
-          onMouseMove={handleMouseMove}
-          onMouseLeave={() => setIsZoomed(false)}
-          onClick={handleZoomToggle}
-        >
+        <div className="relative w-full h-full">
           <Image
             src={images[selectedImage]}
             alt={`Product image ${selectedImage + 1}`}
             fill
-            className={`object-cover transition-transform duration-300 ${
-              isZoomed ? "scale-150" : "scale-100"
-            }`}
-            style={{
-              transformOrigin: `${zoomPosition.x}% ${zoomPosition.y}%`,
-            }}
+            className="object-cover"
             priority
           />
-
-          {/* Zoom overlay */}
-          {isZoomed && (
-            <div className="absolute inset-0 bg-black bg-opacity-20 flex items-center justify-center">
-              <div
-                className="bg-opacity-90 rounded-full p-2"
-                style={{ background: "var(--card-bg)" }}
-              >
-                <MagnifyingGlassIcon
-                  className="w-6 h-6"
-                  style={{ color: "var(--foreground)" }}
-                />
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -124,34 +82,6 @@ const ProductGallery: React.FC<ProductGalleryProps> = ({
               />
             </button>
           ))}
-        </div>
-      )}
-
-      {/* Zoom Modal */}
-      {isZoomed && (
-        <div className="fixed inset-0 z-50 bg-black bg-opacity-75 flex items-center justify-center p-4">
-          <div className="relative max-w-4xl max-h-full">
-            <button
-              onClick={() => setIsZoomed(false)}
-              className="absolute top-4 right-4 z-10 bg-opacity-90 rounded-full p-2 hover:bg-opacity-100 transition-colors"
-              style={{ background: "var(--card-bg)" }}
-            >
-              <XMarkIcon
-                className="w-6 h-6"
-                style={{ color: "var(--foreground)" }}
-              />
-            </button>
-            <div className="relative w-full h-full">
-              <Image
-                src={images[selectedImage]}
-                alt={`Product image ${selectedImage + 1} - zoomed`}
-                width={800}
-                height={800}
-                className="w-full h-full object-contain"
-                priority
-              />
-            </div>
-          </div>
         </div>
       )}
     </div>

@@ -1,7 +1,6 @@
 "use client";
-import React, { useState } from "react";
+import React from "react";
 import Image from "next/image";
-import { XMarkIcon } from "@heroicons/react/24/outline";
 
 interface ProductImageCollageProps {
   images: string[];
@@ -17,33 +16,11 @@ const ProductImageCollage: React.FC<ProductImageCollageProps> = ({
   className = "",
   onImageClick,
 }) => {
-  const [selectedImage, setSelectedImage] = useState<number | null>(null);
-  const [isZoomed, setIsZoomed] = useState(false);
-  const [zoomPosition, setZoomPosition] = useState({ x: 50, y: 50 });
-
   // Filter out null/undefined images
   const validImages = images.filter((img) => img && img.trim() !== "");
 
   const handleImageClick = (index: number) => {
-    if (onImageClick) {
-      onImageClick(index);
-    } else {
-      setSelectedImage(index);
-      setIsZoomed(true);
-    }
-  };
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isZoomed) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
-    setZoomPosition({ x, y });
-  };
-
-  const handleCloseZoom = () => {
-    setIsZoomed(false);
-    setSelectedImage(null);
+    onImageClick?.(index);
   };
 
   // If no images, show placeholder
@@ -69,26 +46,18 @@ const ProductImageCollage: React.FC<ProductImageCollageProps> = ({
           background: "var(--card-bg)",
           border: "1px solid var(--sidebar-border)",
         }}
+        onClick={() => handleImageClick(0)}
+        onKeyDown={(e) => e.key === "Enter" && handleImageClick(0)}
+        role={onImageClick ? "button" : undefined}
+        tabIndex={onImageClick ? 0 : undefined}
       >
-        <div
-          className="relative w-full h-full cursor-zoom-in"
-          onMouseMove={handleMouseMove}
-          onMouseLeave={() => setIsZoomed(false)}
-          onClick={() => handleImageClick(0)}
-        >
-          <Image
-            src={validImages[0]}
-            alt={alt}
-            fill
-            className={`object-cover transition-transform duration-300 ${
-              isZoomed ? "scale-150" : "scale-100"
-            }`}
-            style={{
-              transformOrigin: `${zoomPosition.x}% ${zoomPosition.y}%`,
-            }}
-            priority
-          />
-        </div>
+        <Image
+          src={validImages[0]}
+          alt={alt}
+          fill
+          className="object-cover"
+          priority
+        />
       </div>
     );
   }
@@ -254,37 +223,6 @@ const ProductImageCollage: React.FC<ProductImageCollageProps> = ({
           </div>
         ))}
       </div>
-
-      {/* Zoom Modal */}
-      {isZoomed && selectedImage !== null && (
-        <div
-          className="fixed inset-0 z-50 bg-black bg-opacity-75 flex items-center justify-center p-4"
-          onClick={handleCloseZoom}
-        >
-          <div className="relative max-w-4xl max-h-full">
-            <button
-              onClick={handleCloseZoom}
-              className="absolute top-4 right-4 z-10 bg-opacity-90 rounded-full p-2 hover:bg-opacity-100 transition-colors"
-              style={{ background: "var(--card-bg)" }}
-            >
-              <XMarkIcon
-                className="w-6 h-6"
-                style={{ color: "var(--foreground)" }}
-              />
-            </button>
-            <div className="relative w-full h-full">
-              <Image
-                src={validImages[selectedImage]}
-                alt={`${alt} - Image ${selectedImage + 1} - zoomed`}
-                width={800}
-                height={800}
-                className="w-full h-full object-contain"
-                priority
-              />
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 };
