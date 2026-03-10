@@ -13,6 +13,10 @@ const nextConfig: NextConfig = {
 
   // Image configuration - allow external image domains
   images: {
+    // We already serve fully-optimized images from the CDN, so disable
+    // Next.js' built-in image optimizer to avoid heavy /_next/image work.
+    // This makes Next serve the source URLs directly.
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: "https",
@@ -56,11 +60,6 @@ const nextConfig: NextConfig = {
         pathname: "/**",
       },
     ],
-    // Allow unoptimized images if needed (fallback)
-    unoptimized: false,
-    // Image optimization settings
-    formats: ["image/avif", "image/webp"],
-    minimumCacheTTL: 60,
   },
 
   // Proxy API calls to backend
