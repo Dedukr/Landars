@@ -335,7 +335,57 @@ class TransactionMatcher:
                 candidates.append(order)
         
         return candidates
-    
+
+    def find_name_only_candidates(self) -> List[Order]:
+        """
+        Find additional candidate orders based primarily on payer/customer name,
+        even when the amount does not match.
+        Optimised to keep the candidate set small:
+        - reuse the same date window as amount-based matching
+        - restrict to orders whose customer name contains at least one
+          significant token from the payer name
+        - only fetch a limited number of candidates and a minimal set
+          of fields.
+        """
+        tokens = self._name_tokens(self.transaction.payer_name or "")
+        if not tokens:
+            return []
+
+        window_days = self.DATE_WINDOW_DAYS
+        tx_date = self._transaction_date_for_matching()
+
+        if tx_date:
+            date_start = tx_date - timedelta(days=window_days)
+            date_end = tx_date + timedelta(days=window_days)
+            base_qs = Order.objects.filter(
+                Q(created_at__date__gte=date_start, created_at__date__lte=date_end)
+                | Q(delivery_date__gte=date_start, delivery_date__lte=date_end)
+            )
+        else:
+            # No transaction date - consider all orders
+            base_qs = Order.objects.all()
+
+        # Build a simple name filter: any token contained in customer name.
+        name_filter = Q()
+        for t in tokens:
+            # Skip very short tokens (already filtered in _name_tokens, but be safe)
+            if len(t) < 2:
+                continue
+            name_filter |= Q(customer__name__icontains=t)
+
+        if not name_filter:
+            return []
+
+        orders_qs = (
+            base_qs.filter(name_filter)
+            .select_related("customer")
+            .only("id", "created_at", "delivery_date", "customer__name")
+            .distinct()
+        )
+
+        # Hard cap to avoid pathological cases
+        return list(orders_qs[:200])
+
     def match_transaction(self) -> List[Dict]:
         """
         Match transaction to orders and return ranked suggestions.
@@ -343,18 +393,17 @@ class TransactionMatcher:
         Returns list of dicts with keys: order, confidence_score, matching_reason
         """
         candidates = self.find_candidate_orders()
-        
-        if not candidates:
-            return []
-        
-        suggestions = []
-        
+
+        suggestions: List[Dict] = []
+        candidate_ids = set()
+
+        # Primary suggestions: amount matches (existing behaviour)
+        tx_date = self._transaction_date_for_matching()
         for order in candidates:
             # Candidates already passed amount filter, so amount_score = 1.0
             amount_score = 1.0
 
             # Date score: use best of creation date and delivery date vs transaction date (Jan/Feb → 2026)
-            tx_date = self._transaction_date_for_matching()
             score_created = self.calculate_date_score(order.created_at, tx_date)
             score_delivery = 0.0
             if order.delivery_date:
@@ -384,17 +433,72 @@ class TransactionMatcher:
                     order,
                     amount_score,
                     date_score,
-                    name_score
+                    name_score,
                 )
-                
-                suggestions.append({
-                    'order': order,
-                    'confidence_score': confidence,
-                    'matching_reason': reason,
-                })
-        
+
+                suggestions.append(
+                    {
+                        "order": order,
+                        "confidence_score": confidence,
+                        "matching_reason": reason,
+                        "amount_matches": True,
+                    }
+                )
+                if order.id is not None:
+                    candidate_ids.add(order.id)
+
+        # Additional suggestions: strong name match even if amount mismatch.
+        name_candidates = self.find_name_only_candidates()
+        for order in name_candidates:
+            # Skip orders we already have as amount-matching suggestions
+            if order.id in candidate_ids:
+                continue
+
+            customer_name = order.customer.name if order.customer else ""
+            name_score = self.calculate_name_similarity(
+                self.transaction.payer_name,
+                customer_name,
+            )
+
+            # Only suggest reasonably strong name matches
+            if name_score < 0.7:
+                continue
+
+            score_created = self.calculate_date_score(order.created_at, tx_date)
+            score_delivery = 0.0
+            if order.delivery_date:
+                score_delivery = self.calculate_date_score(
+                    order.delivery_date,
+                    tx_date,
+                )
+            date_score = max(score_created, score_delivery)
+
+            amount_score = 0.0  # by definition for these candidates
+
+            # Name-first confidence: keep below automatic-match levels
+            weighted = 0.6 * name_score + 0.4 * date_score
+            confidence = int(weighted * 70)  # cap at 70
+            if confidence <= 0:
+                continue
+
+            reason = self.build_matching_reason(
+                order,
+                amount_score,
+                date_score,
+                name_score,
+            )
+
+            suggestions.append(
+                {
+                    "order": order,
+                    "confidence_score": confidence,
+                    "matching_reason": reason,
+                    "amount_matches": False,
+                }
+            )
+
         # Sort by confidence (highest first)
-        suggestions.sort(key=lambda x: x['confidence_score'], reverse=True)
+        suggestions.sort(key=lambda x: x["confidence_score"], reverse=True)
         
         return suggestions
     
@@ -410,13 +514,18 @@ class TransactionMatcher:
         if not suggestions:
             return None
 
-        # Any 100% confidence → match to that order (suggestions sorted by confidence desc)
-        perfect = [s for s in suggestions if s['confidence_score'] == 100]
+        # Any 100% confidence with amount match → match to that order
+        # (suggestions are sorted by confidence desc)
+        perfect = [
+            s
+            for s in suggestions
+            if s.get("amount_matches", False) and s["confidence_score"] == 100
+        ]
         if perfect:
-            return perfect[0]['order']
+            return perfect[0]["order"]
 
-        # Only one option → match it
+        # Only one option → match it (even if amount didn't match but name/date are very strong)
         if len(suggestions) == 1:
-            return suggestions[0]['order']
+            return suggestions[0]["order"]
 
         return None

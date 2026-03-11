@@ -403,6 +403,7 @@ def upload_statement_view(request):
                 
                 for txn in transactions:
                     matcher = TransactionMatcher(txn)
+                    # Run full matching (amount + optimised name-based suggestions)
                     suggestions = matcher.match_transaction()
                     
                     # Create match suggestions
