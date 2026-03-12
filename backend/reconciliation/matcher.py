@@ -17,8 +17,8 @@ from reconciliation.models import BankTransaction, ReconciliationMatch
 class TransactionMatcher:
     """Matches bank transactions to orders."""
 
-    # Date window (days): look for price match only within ±N days of transaction date
-    DATE_WINDOW_DAYS = 30
+    # Date window (days): look for matches within ±N days of transaction date
+    DATE_WINDOW_DAYS = 60
 
     # Jan/Feb transactions are matched to orders in Jan/Feb of this year
     JANUARY_FEBRUARY_MATCH_YEAR = 2026
@@ -42,7 +42,38 @@ class TransactionMatcher:
         "ta",
         "t/a",
         "the",
+        # Bank/remittance phrases that often appear after the actual payer name
+        "automated",
+        "credit",
+        "refund",
+        "payment",
+        "transfer",
+        "direct",
+        "debit",
+        "standing",
+        "order",
+        "faster",
+        "fps",
+        "mobile",
+        "online",
+        "branch",
+        "chq",
+        "cheque",
+        "pos",
     }
+
+    # Trailing phrases to strip from payer name for name-only matching (longest first)
+    PAYER_NAME_STRIP_SUFFIXES = (
+        "automated credit",
+        "faster payment",
+        "standing order",
+        "direct debit",
+        "credit",
+        "refund",
+        "payment",
+        "transfer",
+        "fps",
+    )
 
     def __init__(self, transaction: BankTransaction):
         self.transaction = transaction
@@ -70,6 +101,24 @@ class TransactionMatcher:
         s = re.sub(r"[.,;:'\"]", " ", s)
         s = re.sub(r"\s+", " ", s)
         return s.strip()
+
+    def _payer_name_for_name_matching(self) -> str:
+        """
+        Payer name with common bank/remittance suffixes stripped, for use in
+        name-only candidate finding and similarity. E.g. "VOLODYMYR HUDKO Automated Credit"
+        -> "VOLODYMYR HUDKO" so we match by person name only.
+        """
+        raw = (self.transaction.payer_name or "").strip()
+        if not raw:
+            return ""
+        lower = raw.lower()
+        for suffix in self.PAYER_NAME_STRIP_SUFFIXES:
+            if lower.endswith(suffix):
+                # Remove the suffix and any trailing spaces
+                raw = raw[: -len(suffix)].strip()
+                lower = raw.lower()
+                break
+        return raw
 
     def _name_tokens(self, name: str) -> List[str]:
         """Tokenize name into words (drop single-char except initial-like)."""
@@ -102,7 +151,7 @@ class TransactionMatcher:
         if not n1 or not n2:
             return 0.0
 
-        # Exact match
+        # Exact match (after normalization)
         if n1 == n2:
             return 1.0
 
@@ -114,6 +163,19 @@ class TransactionMatcher:
 
         set1 = set(tokens1)
         set2 = set(tokens2)
+
+        # Same set of tokens (handles "VOLODYMYR HUDKO" vs "Volodymyr Hudko" and "HUDKO VOLODYMYR")
+        if set1 == set2:
+            return 1.0
+
+        # All tokens of the shorter name appear in the longer and surname matches
+        short_tokens, long_tokens = (tokens1, tokens2) if len(tokens1) <= len(tokens2) else (tokens2, tokens1)
+        short_set, long_set = set(short_tokens), set(long_tokens)
+        if short_set <= long_set:
+            surname_short = short_tokens[-1] if short_tokens else ""
+            surname_long = long_tokens[-1] if long_tokens else ""
+            if surname_short == surname_long and len(surname_short) > 1:
+                return 0.92  # strong match (e.g. "Volodymyr Hudko" in "Volodymyr Hudko Jr")
 
         # Surname (last token) match – strong signal
         surname1 = tokens1[-1] if tokens1 else ""
@@ -338,16 +400,16 @@ class TransactionMatcher:
 
     def find_name_only_candidates(self) -> List[Order]:
         """
-        Find additional candidate orders based primarily on payer/customer name,
-        even when the amount does not match.
-        Optimised to keep the candidate set small:
-        - reuse the same date window as amount-based matching
-        - restrict to orders whose customer name contains at least one
-          significant token from the payer name
-        - only fetch a limited number of candidates and a minimal set
-          of fields.
+        Find additional candidate orders by name within the date frame, even when
+        amount differs. E.g. "17 Dec VOLODYMYR HUDKO £98" can suggest "Order #1386
+        24 Dec Volodymyr Hudko £70.50".
+        - Use payer name with bank suffixes stripped so we match on person name only.
+        - Date window same as amount-based matching (created_at or delivery_date).
+        - Restrict to orders whose customer name contains at least one name token.
+        - Prefer orders closest in date to the transaction, then cap size.
         """
-        tokens = self._name_tokens(self.transaction.payer_name or "")
+        clean_payer = self._payer_name_for_name_matching()
+        tokens = self._name_tokens(clean_payer or self.transaction.payer_name or "")
         if not tokens:
             return []
 
@@ -357,34 +419,64 @@ class TransactionMatcher:
         if tx_date:
             date_start = tx_date - timedelta(days=window_days)
             date_end = tx_date + timedelta(days=window_days)
-            base_qs = Order.objects.filter(
+            date_q = (
                 Q(created_at__date__gte=date_start, created_at__date__lte=date_end)
                 | Q(delivery_date__gte=date_start, delivery_date__lte=date_end)
             )
+            # Statement year can be wrong; include same month in next year for Nov/Dec transactions
+            if tx_date.month >= 11:
+                next_year_start = date(tx_date.year + 1, tx_date.month, 1)
+                next_year_end = date(tx_date.year + 1, 12, 31)
+                date_q = date_q | (
+                    Q(created_at__date__gte=next_year_start, created_at__date__lte=next_year_end)
+                    | Q(delivery_date__gte=next_year_start, delivery_date__lte=next_year_end)
+                )
+            base_qs = Order.objects.filter(date_q)
         else:
-            # No transaction date - consider all orders
             base_qs = Order.objects.all()
 
-        # Build a simple name filter: any token contained in customer name.
-        name_filter = Q()
-        for t in tokens:
-            # Skip very short tokens (already filtered in _name_tokens, but be safe)
-            if len(t) < 2:
-                continue
-            name_filter |= Q(customer__name__icontains=t)
-
-        if not name_filter:
+        # Require customer to be non-null and match at least one significant token.
+        # This is intentionally not too strict so we still get suggestions when
+        # only part of the name matches or the order uses a slightly different
+        # spelling/ordering of the name.
+        name_filter = Q(customer__isnull=False)
+        tokens_for_filter = [t for t in tokens if len(t) >= 2]
+        if not tokens_for_filter:
             return []
+
+        token_filter = Q()
+        for t in tokens_for_filter:
+            token_filter |= Q(customer__name__icontains=t)
+
+        if not token_filter:
+            return []
+
+        name_filter &= token_filter
 
         orders_qs = (
             base_qs.filter(name_filter)
             .select_related("customer")
-            .only("id", "created_at", "delivery_date", "customer__name")
             .distinct()
         )
 
-        # Hard cap to avoid pathological cases
-        return list(orders_qs[:200])
+        candidates = list(orders_qs[:500])
+        if not candidates or not tx_date:
+            return candidates[:200]
+
+        def _order_date(o: Order):
+            o_date = o.created_at.date() if o.created_at else None
+            if o.delivery_date and (o_date is None or abs((o.delivery_date - tx_date).days) < abs((o_date - tx_date).days)):
+                return o.delivery_date
+            return o_date
+
+        def _days_from_tx(o: Order) -> int:
+            d = _order_date(o)
+            if d is None:
+                return 9999
+            return abs((d - tx_date).days)
+
+        candidates.sort(key=_days_from_tx)
+        return candidates[:200]
 
     def match_transaction(self) -> List[Dict]:
         """
@@ -447,21 +539,22 @@ class TransactionMatcher:
                 if order.id is not None:
                     candidate_ids.add(order.id)
 
-        # Additional suggestions: strong name match even if amount mismatch.
+        # Additional suggestions: strong name match in date frame even if amount differs.
         name_candidates = self.find_name_only_candidates()
+        payer_name_for_match = self._payer_name_for_name_matching() or self.transaction.payer_name or ""
         for order in name_candidates:
-            # Skip orders we already have as amount-matching suggestions
             if order.id in candidate_ids:
                 continue
 
             customer_name = order.customer.name if order.customer else ""
             name_score = self.calculate_name_similarity(
-                self.transaction.payer_name,
+                payer_name_for_match,
                 customer_name,
             )
 
-            # Only suggest reasonably strong name matches
-            if name_score < 0.7:
+            # Suggest even for partial surname/name matches; 0.3 filters out only
+            # clearly unrelated names while keeping fuzzy/partial similarities.
+            if name_score < 0.3:
                 continue
 
             score_created = self.calculate_date_score(order.created_at, tx_date)

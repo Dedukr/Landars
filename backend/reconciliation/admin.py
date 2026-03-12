@@ -121,7 +121,8 @@ class BankTransactionAdmin(admin.ModelAdmin):
             conf = f' (confidence: {obj.confidence_score}%)' if obj.confidence_score else ' (manual match)'
             return format_html('<strong>Matched to Order #{} {}</strong>', order_id, conf)
         
-        suggestions = ReconciliationMatch.objects.filter(transaction=obj).order_by('-confidence_score')[:5]
+        # Show all suggestions, ordered by confidence (highest first)
+        suggestions = ReconciliationMatch.objects.filter(transaction=obj).order_by('-confidence_score')
         if not suggestions:
             return 'No suggestions available'
         
