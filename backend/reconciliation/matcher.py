@@ -706,6 +706,8 @@ class TransactionMatcher:
 
         - If any suggestion has 100% confidence: match to that order (ignore others).
         - Else if there is only one suggestion: match to it.
+        - Else if the top suggestion is significantly better than the second-best
+          (by a confidence margin), match to the top suggestion.
         """
         suggestions = self.match_transaction()
         if not suggestions:
@@ -724,5 +726,16 @@ class TransactionMatcher:
         # Only one option → match it (even if amount didn't match but name/date are very strong)
         if len(suggestions) == 1:
             return suggestions[0]["order"]
+
+        # Multiple options: if the top option is clearly better than the second-best
+        # by a healthy margin, auto-match to the top. A margin of 20 points
+        # (e.g. 90 vs 70) is conservative enough to avoid ambiguous auto-matches
+        # while still capturing clear winners.
+        if len(suggestions) >= 2:
+            top = suggestions[0]
+            second = suggestions[1]
+            diff = top["confidence_score"] - second["confidence_score"]
+            if diff >= 20:
+                return top["order"]
 
         return None
