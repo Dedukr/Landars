@@ -381,6 +381,7 @@ BUSINESS_INFO = {
     "account_number": os.getenv("BUSINESS_ACCOUNT_NUMBER", "Account Number"),
     "sort_code": os.getenv("BUSINESS_SORT_CODE", "Sort Code"),
     "invoice_code": os.getenv("INVOICE_CODE", ""),
+    "tax_code": os.getenv("TAX_CODE", ""),
 }
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

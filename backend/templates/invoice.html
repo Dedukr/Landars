@@ -270,6 +270,7 @@
 
         .flex-justify {
             -webkit-box-pack: justify;
+            justify-content: space-between;
         }
 
         .flex-align-start {
@@ -567,16 +568,6 @@
                                 #{{ invoice.invoice_number }}
                             </td>
                         </tr>
-                        {% if business.invoice_code %}
-                        <tr>
-                            <td>
-                                Invoice code
-                            </td>
-                            <td>
-                                {{ business.invoice_code }}
-                            </td>
-                        </tr>
-                        {% endif %}
                         <tr>
                             <td>
                                 Delivery date
@@ -872,6 +863,11 @@
                         #{{ invoice.invoice_number }} · £{{ invoice.total|floatformat:2 }} billed due 
                         {{invoice.due_date|date:"d M Y" }}
                     </div>
+                    {% if business.tax_code %}
+                    <div class="nowrap align-right">
+                        Tax code: {{ business.tax_code }}
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
