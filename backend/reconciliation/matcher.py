@@ -352,21 +352,23 @@ class TransactionMatcher:
         Overall confidence (0-100).
 
         Amount is still a gate (we don't consider non-matching amounts here),
-        but once it passes, the score is driven primarily by name and date:
+        but once it passes, the score is driven primarily by name and date.
+        Name similarity is treated as more important than amount, so a strong
+        name match will outrank a weak one even when both amounts match.
 
-        - Amount: fixed 20% (gate / sanity check).
-        - Of the remaining 80%, name gets a larger share when name_score is
+        - Amount: fixed 10% (gate / sanity check).
+        - Of the remaining 90%, name gets a larger share when name_score is
           high (dynamic allocation) so the best name match stands out.
         - Bonus: +10% when both date and name are strong (>= 0.7).
         """
         if amount_score == 0:
             return 0  # No match if amount doesn't match
 
-        # Dynamic allocation: name gets 25–65% of the 80% slice by similarity
+        # Dynamic allocation: name gets 40–80% of the 90% slice by similarity
         # (so high name similarity pushes one candidate clearly above others)
-        name_share = 0.25 + 0.40 * name_score  # 0.25 when name=0, 0.65 when name=1
+        name_share = 0.40 + 0.40 * name_score  # 0.40 when name=0, 0.80 when name=1
         date_share = 1.0 - name_share
-        weighted = amount_score * 0.20 + 0.80 * (
+        weighted = amount_score * 0.10 + 0.90 * (
             name_share * name_score + date_share * date_score
         )
         if date_score >= 0.7 and name_score >= 0.7:
@@ -581,7 +583,8 @@ class TransactionMatcher:
         suggestions: List[Dict] = []
         candidate_ids = set()
 
-        # Primary suggestions: amount matches (existing behaviour)
+        # Primary suggestions: amount matches (existing behaviour, but name is
+        # still the main driver of confidence)
         tx_date = self._transaction_date_for_matching()
         for order in candidates:
             # Candidates already passed amount filter, so amount_score = 1.0
@@ -602,8 +605,9 @@ class TransactionMatcher:
 
             # Drop weak name matches entirely – even when amount matches – so we
             # only show suggestions where the customer name is at least a partial
-            # match to the payer name.
-            if name_score < 0.5:
+            # match to the payer name. A higher threshold (0.6) makes name
+            # similarity more important than amount.
+            if name_score < 0.6:
                 continue
 
             # Calculate confidence (amount_score is always 1.0 for candidates)
@@ -650,9 +654,9 @@ class TransactionMatcher:
             )
 
             # Drop weak name matches entirely – only keep when similarity is at
-            # least "partial" (>= 0.5). Anything below that is considered too
-            # weak to be useful as a suggestion.
-            if name_score < 0.5:
+            # least a reasonably strong partial (>= 0.6). Anything below that is
+            # considered too weak to be useful as a suggestion.
+            if name_score < 0.6:
                 continue
 
             score_created = self.calculate_date_score(order.created_at, tx_date)
@@ -666,9 +670,11 @@ class TransactionMatcher:
 
             amount_score = 0.0  # by definition for these candidates
 
-            # Name-first confidence: keep below automatic-match levels
-            weighted = 0.6 * name_score + 0.4 * date_score
-            confidence = int(weighted * 70)  # cap at 70
+            # Name-first confidence: allow strong name-only matches to outrank
+            # weak name matches even when amount matches, but still keep them
+            # below automatic-match levels (which require both amount and strong name).
+            weighted = 0.7 * name_score + 0.3 * date_score
+            confidence = int(weighted * 85)  # cap at 85 for name-only matches
             if confidence <= 0:
                 continue
 
