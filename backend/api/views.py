@@ -101,10 +101,9 @@ class ProductList(APIView):
         if cached_response:
             return Response(cached_response)
 
-        # Optimize database queries with select_related and prefetch_related
+        # Optimize database queries: prefetch categories (and parent) to avoid N+1 in serializer
         products = (
-            Product.objects.select_related()
-            .prefetch_related("categories", "images")
+            Product.objects.prefetch_related("categories__parent", "images")
             .all()
         )
 

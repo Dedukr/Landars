@@ -1,0 +1,13 @@
+{% extends "admin/change_list.html" %}
+{% load i18n admin_urls static %}
+
+{% block content %}
+<div id="reconciliation-upload" style="margin-bottom: 24px; padding: 16px; background: #f8f8f8; border: 1px solid #ddd; border-radius: 4px;">
+  <form method="post" action="{% url 'admin:reconciliation_statementbatch_upload' %}" enctype="multipart/form-data" style="display: flex; align-items: center; gap: 12px;">
+    {% csrf_token %}
+    <input type="file" name="pdf_file" accept=".pdf" required>
+    <input type="submit" value="Upload and match" class="default">
+  </form>
+</div>
+{{ block.super }}
+{% endblock %}

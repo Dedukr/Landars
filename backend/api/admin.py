@@ -4,7 +4,7 @@ import os
 import sys
 import tempfile
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from account.models import CustomUser
 from billing.models import (
@@ -18,8 +18,9 @@ from django.conf import settings
 from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Sum
-from django.db.models.functions import Round
+from django.db.models import Count, DecimalField, F, Q, Sum, Value
+from django.db.models.expressions import ExpressionWrapper
+from django.db.models.functions import Coalesce, Round
 from django.forms import ModelForm
 from django.http import HttpResponse, HttpResponseRedirect
 from django.template.loader import render_to_string
@@ -1264,6 +1265,7 @@ class OrderAdmin(admin.ModelAdmin):
         "get_total_price",
         "status",
         "get_invoice",
+        "get_matched_transaction_link",
     ]
     list_display_links = ["id", "delivery_date", "customer_name"]
     list_filter = [
@@ -1309,6 +1311,7 @@ class OrderAdmin(admin.ModelAdmin):
                 "get_holiday_fee_amount",
                 "get_total_price",
                 "get_invoice",
+                "get_matched_transaction_link",
                 "is_home_delivery",
             ]
             if not request.user.has_perm("account.change_customuser"):
@@ -1330,6 +1333,7 @@ class OrderAdmin(admin.ModelAdmin):
             "get_holiday_fee_amount",
             "get_total_price",
             "get_invoice",
+            "get_matched_transaction_link",
             # Shipping fields are read-only (managed by system)
             "get_shipping_tracking_link",
             "get_shipping_label_link",
@@ -1353,33 +1357,62 @@ class OrderAdmin(admin.ModelAdmin):
 
     def get_search_results(self, request, queryset, search_term):
         """
-        Override search to include product search.
-        Searches both current product names and historical item names.
-        Efficiently combines customer search with product search.
+        Override search to include product search and order total price.
+        Searches customer, product names, historical item names, and order price.
         """
-        from django.db.models import Q
-        
         if not search_term:
             return super().get_search_results(request, queryset, search_term)
-        
+
         # Build search query for customer fields (default Django search)
         customer_q = Q()
         for field in ["customer__name", "customer__profile__phone", "customer__email"]:
             customer_q |= Q(**{f"{field}__icontains": search_term})
-        
+
         # Build search query for product fields
         product_q = Q(
             items__product__name__icontains=search_term
         ) | Q(
             items__item_name__icontains=search_term
         )
-        
-        # Combine customer and product searches
+
         combined_q = customer_q | product_q
-        
-        # Apply the combined search filter
+
+        # If search term is numeric, also search by order total price
+        search_stripped = search_term.strip()
+        try:
+            price_value = Decimal(search_stripped)
+            price_value = round(price_value, 2)
+            # Annotate with computed total (sum_price * (1 + holiday_fee/100) + delivery_fee - discount)
+            # Product.price is a property (base_price + holiday_fee); use DB fields in ORM
+            sum_price_expr = Sum(
+                ExpressionWrapper(
+                    Coalesce(
+                        F("items__item_price"),
+                        F("items__product__base_price") + F("items__product__holiday_fee"),
+                    )
+                    * F("items__quantity"),
+                    output_field=DecimalField(),
+                ),
+                default=Decimal("0"),
+            )
+            total_price_expr = Round(
+                ExpressionWrapper(
+                    F("_sum_price") * (Value(1) + F("holiday_fee") / Value(100))
+                    + F("delivery_fee")
+                    - F("discount"),
+                    output_field=DecimalField(),
+                ),
+                2,
+            )
+            queryset = queryset.annotate(_sum_price=sum_price_expr).annotate(
+                _total_price=total_price_expr
+            )
+            combined_q = combined_q | Q(_total_price=price_value)
+        except (InvalidOperation, ValueError, TypeError):
+            # Not a valid number; skip price search
+            pass
+
         queryset = queryset.filter(combined_q).distinct()
-        
         return queryset, True
 
     def _is_single_date_filtered(self, request):
@@ -1734,6 +1767,33 @@ class OrderAdmin(admin.ModelAdmin):
         )
 
     get_invoice.short_description = "Invoice"
+
+    def get_matched_transaction_link(self, obj):
+        """Link to the bank transaction if this order is matched in reconciliation."""
+        if not obj or not obj.pk:
+            return ""
+        from reconciliation.models import BankTransaction
+
+        txns = obj.bank_transactions.filter(
+            match_status=BankTransaction.MatchStatus.MATCHED
+        ).order_by("-matched_at")[:5]
+        if not txns:
+            return ""
+        links = []
+        for txn in txns:
+            url = reverse(
+                "admin:reconciliation_banktransaction_change", args=[txn.id]
+            )
+            links.append(
+                format_html(
+                    '<a href="{}">Txn #{}</a>',
+                    url,
+                    txn.id,
+                )
+            )
+        return mark_safe(", ".join(str(link) for link in links)) if links else ""
+
+    get_matched_transaction_link.short_description = "Transaction"
 
     def get_invoices_and_credit_notes(self, obj):
         """
