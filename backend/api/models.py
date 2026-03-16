@@ -160,9 +160,10 @@ class Product(models.Model):
 
     class Meta:
         verbose_name_plural = "Products"
-        # Ensure product names are unique within their category
         ordering = ["name"]
-        # Ensure products are ordered by category and then by name
+        indexes = [
+            models.Index(fields=["name"]),
+        ]
 
     def __str__(self):
         return self.name

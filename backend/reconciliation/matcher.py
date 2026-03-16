@@ -8,12 +8,30 @@ import re
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from difflib import SequenceMatcher
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
-from api.models import Order
-from django.db.models import Q
+from api.models import Order, OrderItem
+from account.models import CustomUser
+from django.db.models import (
+    DecimalField,
+    ExpressionWrapper,
+    F,
+    Q,
+    Subquery,
+    OuterRef,
+    Sum,
+    Value,
+)
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from reconciliation.models import BankTransaction, ReconciliationMatch
+
+
+_SIMILAR_CUSTOMERS_CACHE: Dict[str, List[int]] = {}
+# Cache (normalized_name1, normalized_name2) -> score to avoid recomputing in batch
+_SIMILARITY_SCORE_CACHE: Dict[Tuple[str, str], float] = {}
+# Max size to avoid unbounded growth in long-running processes
+_SIMILARITY_CACHE_MAXSIZE = 2000
 
 
 class TransactionMatcher:
@@ -144,6 +162,7 @@ class TransactionMatcher:
         - Sequence ratio for typos and spelling (difflib)
         - Partial match (one name contained in the other)
         - Combined so the best-matching candidate gets the highest score.
+        Results are cached by (normalized1, normalized2) to speed up batch matching.
         """
         if not name1 or not name2:
             return 0.0
@@ -153,21 +172,34 @@ class TransactionMatcher:
         if not n1 or not n2:
             return 0.0
 
+        # Cache lookup (symmetric key so (a,b) and (b,a) hit same entry)
+        cache_key = tuple(sorted([n1, n2]))
+        if cache_key in _SIMILARITY_SCORE_CACHE:
+            return _SIMILARITY_SCORE_CACHE[cache_key]
+        if len(_SIMILARITY_SCORE_CACHE) >= _SIMILARITY_CACHE_MAXSIZE:
+            # Drop oldest half to avoid unbounded growth
+            keys_to_drop = list(_SIMILARITY_SCORE_CACHE.keys())[: _SIMILARITY_CACHE_MAXSIZE // 2]
+            for k in keys_to_drop:
+                _SIMILARITY_SCORE_CACHE.pop(k, None)
+
         # Exact match (after normalization)
         if n1 == n2:
+            _SIMILARITY_SCORE_CACHE[cache_key] = 1.0
             return 1.0
 
         tokens1 = self._name_tokens(name1)
         tokens2 = self._name_tokens(name2)
         if not tokens1 or not tokens2:
-            # Fallback: raw sequence ratio
-            return SequenceMatcher(None, n1, n2).ratio()
+            fallback = SequenceMatcher(None, n1, n2).ratio()
+            _SIMILARITY_SCORE_CACHE[cache_key] = fallback
+            return fallback
 
         set1 = set(tokens1)
         set2 = set(tokens2)
 
         # Same set of tokens (handles "VOLODYMYR HUDKO" vs "Volodymyr Hudko" and "HUDKO VOLODYMYR")
         if set1 == set2:
+            _SIMILARITY_SCORE_CACHE[cache_key] = 1.0
             return 1.0
 
         # All tokens of the shorter name appear in the longer and surname matches
@@ -179,6 +211,7 @@ class TransactionMatcher:
             surname_short = short_tokens[-1] if short_tokens else ""
             surname_long = long_tokens[-1] if long_tokens else ""
             if surname_short == surname_long and len(surname_short) > 1:
+                _SIMILARITY_SCORE_CACHE[cache_key] = 0.92
                 return 0.92  # strong match (e.g. "Volodymyr Hudko" in "Volodymyr Hudko Jr")
 
         # Surname (last token) match – strong signal
@@ -264,7 +297,9 @@ class TransactionMatcher:
             partial,
             token_pair_score * 0.9,
         ]
-        return min(1.0, max(scores) if scores else 0.0)
+        result = min(1.0, max(scores) if scores else 0.0)
+        _SIMILARITY_SCORE_CACHE[cache_key] = result
+        return result
 
     def calculate_date_score(
         self, order_date: datetime, transaction_date: Optional[datetime]
@@ -340,7 +375,6 @@ class TransactionMatcher:
         score = min(100, score)
 
         # Cap confidence when name is only partial: strong surname/name match required for 100%
-        # so e.g. "CHEKAVSKA Y" £96 favours "Yana Chekavska" over "Anastasiia Pervushyna"
         if name_score < 0.8:
             score = min(score, 92)
         return score
@@ -381,62 +415,84 @@ class TransactionMatcher:
         t = Decimal(str(target)).quantize(Decimal("0.01"))
         return abs(order_dec - t) <= self.AMOUNT_TOLERANCE_POUNDS
 
+    @staticmethod
+    def _order_queryset_with_total_annotation(queryset):
+        """
+        Annotate Order queryset with _annotated_total (DB-computed total) so we can
+        filter by amount without loading all orders and computing total_price in Python.
+        Mirrors Order.total_price: sum_price + holiday_fee_amount + delivery_fee - discount.
+        """
+        # Subquery: sum of (Coalesce(item_price, product.base_price + product.holiday_fee) * quantity) per order
+        unit_price = Coalesce(
+            F("item_price"),
+            Coalesce(F("product__base_price"), Value(Decimal("0")))
+            + Coalesce(F("product__holiday_fee"), Value(Decimal("0"))),
+        )
+        line_total = ExpressionWrapper(
+            unit_price * F("quantity"),
+            output_field=DecimalField(max_digits=12, decimal_places=2),
+        )
+        items_subq = (
+            OrderItem.objects.filter(order_id=OuterRef("pk"))
+            .values("order_id")
+            .annotate(items_sum=Sum(line_total))
+            .values("items_sum")
+        )
+        zero = Value(Decimal("0"), output_field=DecimalField(max_digits=12, decimal_places=2))
+        hundred = Value(100, output_field=DecimalField())
+        one = Value(Decimal("1"), output_field=DecimalField(max_digits=5, decimal_places=2))
+        return queryset.annotate(
+            _items_sum=Coalesce(Subquery(items_subq), zero),
+        ).annotate(
+            _annotated_total=ExpressionWrapper(
+                F("_items_sum") * (one + F("holiday_fee") / hundred)
+                + F("delivery_fee")
+                - F("discount"),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            )
+        )
+
     def find_candidate_orders(self) -> List[Order]:
         """
         Find orders with price match within the date window.
-        - order total_price within ±AMOUNT_TOLERANCE_POUNDS of transaction amount
-        - order created_at OR order delivery_date within ±DATE_WINDOW_DAYS (30 days) of transaction date
+        - order total within ±AMOUNT_TOLERANCE_POUNDS of transaction amount (filtered in DB)
+        - order created_at OR delivery_date within ±DATE_WINDOW_DAYS of transaction date
         """
         target = Decimal(str(self.transaction.amount)).quantize(Decimal("0.01"))
-        window_days = self.DATE_WINDOW_DAYS
+        tol = self.AMOUNT_TOLERANCE_POUNDS
+        amount_min, amount_max = target - tol, target + tol
 
-        # Price match within date window (creation date or delivery date)
-        # Jan/Feb use normalized year so they match orders in Jan/Feb 2026
         tx_date = self._transaction_date_for_matching()
         if tx_date:
-            date_start = tx_date - timedelta(days=window_days)
-            date_end = tx_date + timedelta(days=window_days)
-            orders_qs = (
-                Order.objects.filter(
-                    Q(created_at__date__gte=date_start, created_at__date__lte=date_end)
-                    | Q(delivery_date__gte=date_start, delivery_date__lte=date_end)
-                )
-                .select_related("customer")
-                .prefetch_related("items")
-                .distinct()
-            )
+            date_start = tx_date - timedelta(days=self.DATE_WINDOW_DAYS)
+            date_end = tx_date + timedelta(days=self.DATE_WINDOW_DAYS)
+            base_qs = Order.objects.filter(
+                Q(created_at__date__gte=date_start, created_at__date__lte=date_end)
+                | Q(delivery_date__gte=date_start, delivery_date__lte=date_end)
+            ).distinct()
         else:
-            # No transaction date - match by amount only (all orders)
-            orders_qs = (
-                Order.objects.all()
-                .select_related("customer")
-                .prefetch_related("items")
-                .distinct()
-            )
+            base_qs = Order.objects.all()
 
-        # Filter by amount in Python (total_price is a property)
-        candidates = []
-        for order in orders_qs:
-            if self._amount_matches(order.total_price, target):
-                candidates.append(order)
-
-        return candidates
+        # Filter by amount in DB via annotation; then load only matching orders with relations
+        qs = self._order_queryset_with_total_annotation(base_qs).filter(
+            _annotated_total__gte=amount_min,
+            _annotated_total__lte=amount_max,
+        )
+        return list(
+            qs.select_related("customer").prefetch_related("items").distinct()
+        )
 
     def find_name_only_candidates(self) -> List[Order]:
         """
         Find additional candidate orders by name within the date frame, even when
-        amount differs. E.g. "17 Dec VOLODYMYR HUDKO £98" can suggest "Order #1386
-        24 Dec Volodymyr Hudko £70.50".
-        - Use payer name with bank suffixes stripped so we match on person name only.
-        - Date window same as amount-based matching (created_at or delivery_date).
-        - Restrict to orders whose customer name contains at least one name token.
-        - Prefer orders closest in date to the transaction, then cap size.
-        """
-        clean_payer = self._payer_name_for_name_matching()
-        tokens = self._name_tokens(clean_payer or self.transaction.payer_name or "")
-        if not tokens:
-            return []
+        amount differs.
 
+        Strategy for consistency and performance:
+        - Use the same date window as amount-based matching (created_at or delivery_date).
+        - Within that window, first find *customers* whose name is similar to the
+          payer name (using the same name similarity function).
+        - Then return all orders in the window for those customers.
+        """
         window_days = self.DATE_WINDOW_DAYS
         tx_date = self._transaction_date_for_matching()
 
@@ -444,67 +500,75 @@ class TransactionMatcher:
             date_start = tx_date - timedelta(days=window_days)
             date_end = tx_date + timedelta(days=window_days)
             date_q = Q(
-                created_at__date__gte=date_start, created_at__date__lte=date_end
-            ) | Q(delivery_date__gte=date_start, delivery_date__lte=date_end)
-            # Statement year can be wrong; include same month in next year for Nov/Dec transactions
-            if tx_date.month >= 11:
-                next_year_start = date(tx_date.year + 1, tx_date.month, 1)
-                next_year_end = date(tx_date.year + 1, 12, 31)
-                date_q = date_q | (
-                    Q(
-                        created_at__date__gte=next_year_start,
-                        created_at__date__lte=next_year_end,
-                    )
-                    | Q(
-                        delivery_date__gte=next_year_start,
-                        delivery_date__lte=next_year_end,
-                    )
-                )
+                created_at__date__gte=date_start,
+                created_at__date__lte=date_end,
+            ) | Q(
+                delivery_date__gte=date_start,
+                delivery_date__lte=date_end,
+            )
             base_qs = Order.objects.filter(date_q)
         else:
             base_qs = Order.objects.all()
 
-        # Require customer to be non-null and match at least one significant token.
-        # This is intentionally not too strict so we still get suggestions when
-        # only part of the name matches or the order uses a slightly different
-        # spelling/ordering of the name.
+        # Apply a cheap DB-side name filter to narrow down customers before
+        # running the expensive Python similarity. We look for customers whose
+        # name contains at least one significant token (>= 3 chars) from the
+        # cleaned payer name.
+        clean_payer = self._payer_name_for_name_matching()
+        tokens = self._name_tokens(clean_payer or self.transaction.payer_name or "")
+        tokens_for_filter = [t for t in tokens if len(t) >= 3]
+
         name_filter = Q(customer__isnull=False)
-        tokens_for_filter = [t for t in tokens if len(t) >= 2]
-        if not tokens_for_filter:
+        if tokens_for_filter:
+            token_q = Q()
+            for t in tokens_for_filter:
+                token_q |= Q(customer__name__icontains=t)
+            if token_q:
+                name_filter &= token_q
+                base_qs = base_qs.filter(name_filter)
+
+        # Only run expensive name similarity on customers who have orders in the date window
+        customer_ids_in_window = list(
+            base_qs.values_list("customer_id", flat=True).distinct()
+        )
+        customer_ids_in_window = [x for x in customer_ids_in_window if x is not None]
+        if not customer_ids_in_window:
             return []
 
-        token_filter = Q()
-        for t in tokens_for_filter:
-            token_filter |= Q(customer__name__icontains=t)
+        base_qs = base_qs.select_related("customer").only(
+            "id", "created_at", "delivery_date", "customer__name"
+        )
 
-        if not token_filter:
+        payer_name_for_match = (
+            self._payer_name_for_name_matching() or self.transaction.payer_name or ""
+        )
+
+        cache_key = self._normalize_name(payer_name_for_match)
+        similar_customer_ids: List[int]
+
+        # Cache key includes window so different batches don't share wrong cache
+        cache_key_with_window = f"{cache_key}|{tx_date or 'nodate'}"
+        if cache_key_with_window in _SIMILAR_CUSTOMERS_CACHE:
+            similar_customer_ids = _SIMILAR_CUSTOMERS_CACHE[cache_key_with_window]
+        else:
+            # Only compare to customers who have orders in this date window
+            customer_rows = CustomUser.objects.filter(
+                id__in=customer_ids_in_window
+            ).values_list("id", "name")
+            similar_customer_ids = []
+            for cid, cname in customer_rows:
+                score = self.calculate_name_similarity(payer_name_for_match, cname or "")
+                if score >= 0.5:
+                    similar_customer_ids.append(cid)
+            _SIMILAR_CUSTOMERS_CACHE[cache_key_with_window] = similar_customer_ids
+
+        if not similar_customer_ids:
             return []
 
-        name_filter &= token_filter
-
-        orders_qs = base_qs.filter(name_filter).select_related("customer").distinct()
-
-        candidates = list(orders_qs[:500])
-        if not candidates or not tx_date:
-            return candidates[:200]
-
-        def _order_date(o: Order):
-            o_date = o.created_at.date() if o.created_at else None
-            if o.delivery_date and (
-                o_date is None
-                or abs((o.delivery_date - tx_date).days) < abs((o_date - tx_date).days)
-            ):
-                return o.delivery_date
-            return o_date
-
-        def _days_from_tx(o: Order) -> int:
-            d = _order_date(o)
-            if d is None:
-                return 9999
-            return abs((d - tx_date).days)
-
-        candidates.sort(key=_days_from_tx)
-        return candidates[:200]
+        # Return all orders in the window for similar customers
+        return list(
+            base_qs.filter(customer_id__in=similar_customer_ids).distinct()
+        )
 
     def match_transaction(self) -> List[Dict]:
         """
