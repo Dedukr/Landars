@@ -4,6 +4,7 @@ Uses amount (via Invoice.total_amount when available, else Order.total_price),
 date proximity, and name similarity.
 """
 
+import math
 import re
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -390,7 +391,9 @@ class TransactionMatcher:
         )
         if date_score >= 0.7 and name_score >= 0.7:
             weighted = min(1.0, weighted + 0.10)
-        score = int(weighted * 100)
+
+        # Round up so that very strong matches (e.g. 99.01%) are treated as 100%.
+        score = math.ceil(weighted * 100)
         score = min(100, score)
 
         # Cap confidence when name is only partial: strong surname/name match required for 100%
