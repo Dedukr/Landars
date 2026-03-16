@@ -224,6 +224,15 @@ class TransactionMatcher:
             else 0.0
         )
 
+        # First-name similarity (handles transliteration / small spelling changes),
+        first1 = tokens1[0] if tokens1 else ""
+        first2 = tokens2[0] if tokens2 else ""
+        first_ratio = (
+            SequenceMatcher(None, first1, first2).ratio()
+            if first1 and first2
+            else 0.0
+        )
+
         # Token set: Jaccard and "token set ratio" style (best subset match)
         common = set1 & set2
         union = set1 | set2
@@ -297,6 +306,14 @@ class TransactionMatcher:
             partial,
             token_pair_score * 0.9,
         ]
+
+        # Special boost: when both surname and first-name are strong fuzzy matches
+        # (even with small spelling / transliteration differences) but tokens are
+        # not exactly equal, treat this as an almost-strong match.
+        # This directly helps cases like "Belan Maria" vs "MARIIA BIELAN".
+        if surname_ratio >= 0.8 and first_ratio >= 0.6:
+            scores.append(0.9)
+
         result = min(1.0, max(scores) if scores else 0.0)
         _SIMILARITY_SCORE_CACHE[cache_key] = result
         return result
