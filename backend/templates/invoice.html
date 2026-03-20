@@ -581,7 +581,11 @@
                                 Delivery order ID
                             </td>
                             <td>
-                                {{ invoice.delivery_date_order_id }}
+                                {% if invoice.order.delivery_date_order_id is None %}
+                                    #{{ invoice.delivery_date_order_id }}
+                                {% else %}
+                                    {{ invoice.delivery_date_order_id }}
+                                {% endif %}
                             </td>
                         </tr>
                         <tr>
@@ -860,7 +864,7 @@
             <div class="mt20">
                 <div class="flex-horizontal flex-justify">
                     <div class="nowrap">
-                        #{{ invoice.invoice_number }} · £{{ invoice.total|floatformat:2 }} billed due 
+                        #{{ invoice.invoice_number }} · £{{ invoice.total|floatformat:2 }} billed due
                         {{invoice.due_date|date:"d M Y" }}
                     </div>
                     {% if business.tax_code %}

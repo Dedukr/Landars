@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, date
-
-from django.core.management.base import BaseCommand
-from django.db import transaction
+from datetime import date, datetime
 
 from api.models import Order
+from django.core.management.base import BaseCommand
+from django.db import transaction
+from django.db.models import Exists, OuterRef
 from reconciliation.models import BankTransaction, ReconciliationMatch
 
 
@@ -15,6 +15,8 @@ class Command(BaseCommand):
         "suggestions) before a cutoff date, after showing the full list and asking for "
         "confirmation.\n"
         "2) Then mark all remaining orders up to that cutoff date as paid.\n\n"
+        "When deleting orders, invoices linked to those orders are deleted first (no credit notes "
+        "are created). Orders that have any credit note are excluded from deletion.\n"
         "This command is SAFE by default: it only shows what would be changed. "
         "Use --force to actually perform deletions and status updates."
     )
@@ -23,11 +25,11 @@ class Command(BaseCommand):
         parser.add_argument(
             "--before-date",
             type=str,
-            default="2026-01-31",
+            default="2026-02-18",
             help=(
                 "Cutoff date (YYYY-MM-DD). Orders created before this date and "
                 "without any matched/suggested bank transaction may be deleted. "
-                "Default: 2026-01-31."
+                "Default: 2026-02-18."
             ),
         )
         parser.add_argument(
@@ -46,7 +48,9 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR(f"Invalid --before-date: {cutoff_str}"))
             return
 
-        self.stdout.write(self.style.MIGRATE_HEADING("Step 1: Find old unreconciled orders to delete"))
+        self.stdout.write(
+            self.style.MIGRATE_HEADING("Step 1: Find old unreconciled orders to delete")
+        )
         candidates = self._find_deletion_candidates(cutoff_date)
 
         if not candidates:
@@ -63,7 +67,9 @@ class Command(BaseCommand):
                 f"with no matched transaction and no reconciliation suggestions."
             )
         )
-        self.stdout.write(self.style.WARNING("These orders are candidates for deletion:"))
+        self.stdout.write(
+            self.style.WARNING("These orders are candidates for deletion:")
+        )
         self.stdout.write("")
 
         for order in candidates:
@@ -93,11 +99,17 @@ class Command(BaseCommand):
 
         deleted_count = self._delete_orders(candidates)
         self.stdout.write(
-            self.style.SUCCESS(f"Deleted {deleted_count} orders created before {cutoff_date.isoformat()}.")
+            self.style.SUCCESS(
+                f"Deleted {deleted_count} orders created before {cutoff_date.isoformat()}."
+            )
         )
 
         self.stdout.write("")
-        self.stdout.write(self.style.MIGRATE_HEADING("Step 2: Mark remaining pre-cutoff orders as paid"))
+        self.stdout.write(
+            self.style.MIGRATE_HEADING(
+                "Step 2: Mark remaining pre-cutoff orders as paid"
+            )
+        )
         paid_count = self._mark_remaining_orders_paid(cutoff_date)
         self.stdout.write(
             self.style.SUCCESS(
@@ -110,15 +122,23 @@ class Command(BaseCommand):
         Find orders created before `cutoff` that:
         - are NOT referenced by any matched BankTransaction, and
         - are NOT present in any ReconciliationMatch suggestions, and
-        - are not already marked as paid.
 
         These are considered safe(r) to delete from a reconciliation perspective.
         """
-        # Base set: orders older than cutoff, not already paid
-        qs = Order.objects.filter(created_at__date__lt=cutoff).exclude(status="paid")
+        # Base set: orders older than cutoff (including status="paid")
+        qs = Order.objects.filter(created_at__date__lt=cutoff)
 
         # Never delete orders for specific trusted customers
         qs = qs.exclude(customer__name="Ukrainian St Mary’s Trust Ltd")
+
+        from billing.models import CreditNote
+
+        # Never delete orders that have any credit note linked to any of their invoices.
+        # This avoids Django PROTECT on CreditNote.invoice when deleting Invoice rows.
+        has_credit_note = Exists(
+            CreditNote.objects.filter(invoice__order_id=OuterRef("pk"))
+        )
+        qs = qs.annotate(_has_cn=has_credit_note).filter(_has_cn=False)
 
         # Exclude any order that has at least one matched transaction
         qs = qs.exclude(
@@ -140,6 +160,12 @@ class Command(BaseCommand):
 
         ids = [o.id for o in orders]
         with transaction.atomic():
+            # Delete invoices linked to these orders first.
+            # Credit notes are excluded in _find_deletion_candidates(), so this should not hit PROTECT.
+            from billing.models import Invoice
+
+            Invoice.objects.filter(order_id__in=ids).delete()
+
             deleted_info = Order.objects.filter(id__in=ids).delete()
 
         # deleted_info is a tuple (count, details_dict); we return the top-level count
@@ -161,4 +187,3 @@ class Command(BaseCommand):
             updated += 1
 
         return updated
-

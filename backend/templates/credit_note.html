@@ -565,7 +565,8 @@
         <!-- Reference to original invoice -->
         <div class="reference-box">
             <div class="label">This credit note cancels</div>
-            <div class="value">Invoice #{{ credit_note.invoice.invoice_number }} dated {{ credit_note.invoice.created_at|date:"d M Y" }}</div>
+            <div class="value">Invoice #{{ credit_note.invoice.invoice_number }} dated {{
+                credit_note.invoice.created_at|date:"d M Y" }}</div>
         </div>
 
         <div class="mb20" style="width: 100%;">
@@ -867,7 +868,8 @@
             <div class="mt20">
                 <div class="flex-horizontal flex-justify">
                     <div class="nowrap">
-                        Credit Note #{{ credit_note.credit_note_number }} · £{{ credit_note.total|floatformat:2 }} credited · 
+                        Credit Note #{{ credit_note.credit_note_number }} · £{{ credit_note.total|floatformat:2 }}
+                        credited ·
                         Cancels Invoice #{{ credit_note.invoice.invoice_number }}
                     </div>
                 </div>

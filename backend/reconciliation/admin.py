@@ -13,6 +13,7 @@ from django.views.decorators.http import require_http_methods
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db.models import Q
 
+from .batch_matching import apply_matching_for_batch, schedule_matching_for_batch
 from .models import BankTransaction, StatementBatch, ReconciliationMatch
 from .parser import StatementParser
 from .matcher import TransactionMatcher
@@ -25,9 +26,33 @@ class StatementBatchAdmin(admin.ModelAdmin):
     list_filter = ['uploaded_at']
     search_fields = ['filename']
     readonly_fields = ['uploaded_at', 'file_hash']
+    actions = ["run_matching_background", "run_matching_now"]
 
     def has_add_permission(self, request):
         return False
+
+    @admin.action(description="Run order matching in background (recommended)")
+    def run_matching_background(self, request, queryset):
+        for batch in queryset:
+            schedule_matching_for_batch(batch.id, request.user.id)
+        self.message_user(
+            request,
+            f"Matching queued for {queryset.count()} batch(es). "
+            "Wait a minute and refresh Bank transactions, or check server logs if nothing updates.",
+            messages.INFO,
+        )
+
+    @admin.action(description="Run order matching now (may time out on large batches)")
+    def run_matching_now(self, request, queryset):
+        total = 0
+        for batch in queryset:
+            apply_matching_for_batch(batch.id, request.user.id)
+            total += 1
+        self.message_user(
+            request,
+            f"Finished matching for {total} batch(es).",
+            messages.SUCCESS,
+        )
 
     def transaction_count(self, obj):
         return obj.transactions.count()
@@ -378,64 +403,36 @@ def upload_statement_view(request):
                 os.unlink(tmp_path)
                 return redirect('admin:reconciliation_statementbatch_changelist')
             
-            # Create batch and transactions
+            # Create batch and transactions (matching runs after commit in a background
+            # thread so proxies / gunicorn do not time out on large statements).
             with db_transaction.atomic():
                 batch = StatementBatch.objects.create(
                     filename=pdf_file.name,
                     file_hash=file_hash,
                     uploaded_by=request.user,
                 )
-                
-                transactions = []
-                for txn_data in transactions_data:
-                    txn = BankTransaction.objects.create(
+
+                to_create = [
+                    BankTransaction(
                         batch=batch,
-                        statement_date=txn_data['statement_date'],
-                        statement_date_parsed=txn_data['statement_date_parsed'],
-                        amount=txn_data['amount'],
-                        payer_name=txn_data['payer_name'],
-                        raw_line=txn_data['raw_line'],
+                        statement_date=txn_data["statement_date"],
+                        statement_date_parsed=txn_data["statement_date_parsed"],
+                        amount=txn_data["amount"],
+                        payer_name=txn_data["payer_name"],
+                        raw_line=txn_data["raw_line"],
                     )
-                    transactions.append(txn)
-                
-                # Run matching for all transactions
-                matched_count = 0
-                suggested_count = 0
-                
-                for txn in transactions:
-                    matcher = TransactionMatcher(txn)
-                    # Run full matching (amount + optimised name-based suggestions)
-                    suggestions = matcher.match_transaction()
-                    
-                    # Create match suggestions
-                    for suggestion in suggestions:
-                        ReconciliationMatch.objects.create(
-                            transaction=txn,
-                            suggested_order=suggestion['order'],
-                            confidence_score=suggestion['confidence_score'],
-                            matching_reason=suggestion['matching_reason'],
-                        )
-                    
-                    # Auto-match if high confidence
-                    auto_matched_order = matcher.auto_match_if_high_confidence()
-                    if auto_matched_order:
-                        conf = suggestions[0]['confidence_score'] if suggestions else None
-                        txn.mark_as_matched(auto_matched_order, request.user, "Auto-matched (high confidence)", confidence_score=conf)
-                        matched_count += 1
-                    else:
-                        if suggestions:
-                            txn.match_status = BankTransaction.MatchStatus.SUGGESTED
-                            txn.confidence_score = suggestions[0]['confidence_score']
-                            txn.matching_reason = suggestions[0]['matching_reason']
-                            suggested_count += 1
-                        else:
-                            txn.match_status = BankTransaction.MatchStatus.UNMATCHED
-                        txn.save()
-            
+                    for txn_data in transactions_data
+                ]
+                BankTransaction.objects.bulk_create(to_create, batch_size=500)
+
+            schedule_matching_for_batch(batch.id, request.user.id)
+
             messages.success(
                 request,
-                f"Uploaded {len(transactions)} transactions. "
-                f"Auto-matched: {matched_count}, Suggestions: {suggested_count}, Unmatched: {len(transactions) - matched_count - suggested_count}"
+                f"Imported {len(transactions_data)} transaction(s). "
+                "Order matching is running in the background; wait ~1–2 minutes then "
+                "refresh the bank transaction list (or use Statement batches → "
+                '"Run order matching in background" if you need to retry).',
             )
             
             os.unlink(tmp_path)

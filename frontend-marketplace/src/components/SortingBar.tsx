@@ -16,6 +16,10 @@ interface Product {
   name: string;
 }
 
+interface ProductSearchResponse {
+  results: Product[];
+}
+
 interface SortingBarProps {
   sort: string;
   setSort: (sort: string) => void;
@@ -40,8 +44,9 @@ const SortingBar: React.FC<SortingBarProps> = ({
         `/api/products/?search=${encodeURIComponent(value)}`
       );
       if (res.ok) {
-        const data: Product[] = await res.json();
-        setSuggestions(data.map((p) => p.name));
+        const data = (await res.json()) as ProductSearchResponse | Product[];
+        const results = Array.isArray(data) ? data : data.results ?? [];
+        setSuggestions(results.map((p) => p.name));
         setShowSuggestions(true);
       }
     } else {

@@ -18,7 +18,19 @@ from django.conf import settings
 from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Count, DecimalField, F, Q, Sum, Value
+from django.db.models import (
+    Case,
+    CharField,
+    Count,
+    DecimalField,
+    Exists,
+    F,
+    OuterRef,
+    Q,
+    Sum,
+    Value,
+    When,
+)
 from django.db.models.expressions import ExpressionWrapper
 from django.db.models.functions import Coalesce, Round
 from django.forms import ModelForm
@@ -38,6 +50,7 @@ from .forms import (
     ProductImageAdminForm,
     ProductImageInlineForm,
 )
+from .search_text import whole_word_regex_pattern
 from .models import (
     Cart,
     CartItem,
@@ -1359,26 +1372,71 @@ class OrderAdmin(admin.ModelAdmin):
         """
         Override search to include product search and order total price.
         Searches customer, product names, historical item names, and order price.
+
+        For product / line-item text: every significant word in the search must appear
+        on the *same* order line (product name or stored item_name), so e.g. searching
+        "buns stuffed cabbage" does not match an order that only has "Pies stuffed with cabbage".
         """
         if not search_term:
             return super().get_search_results(request, queryset, search_term)
 
-        # Build search query for customer fields (default Django search)
-        customer_q = Q()
-        for field in ["customer__name", "customer__profile__phone", "customer__email"]:
-            customer_q |= Q(**{f"{field}__icontains": search_term})
+        search_stripped = search_term.strip()
 
-        # Build search query for product fields
-        product_q = Q(
-            items__product__name__icontains=search_term
-        ) | Q(
-            items__item_name__icontains=search_term
+        # Significant words (len > 1), same tokenization as product search below.
+        terms = [t.strip() for t in search_term.split() if len(t.strip()) > 1]
+
+        # Customer: each term must match at least one contact field (AND across terms).
+        # This avoids pie-only orders matching because e.g. "bun" appeared only as a
+        # substring in a name like "Bunny" when using icontains on the full phrase or
+        # a single OR'd field.
+        customer_fields = [
+            "customer__name",
+            "customer__profile__phone",
+            "customer__email",
+        ]
+        customer_q = Q()
+        if terms:
+            for idx, term in enumerate(terms):
+                pat = whole_word_regex_pattern(term)
+                term_q = Q()
+                for field in customer_fields:
+                    term_q |= Q(**{f"{field}__iregex": pat})
+                customer_q = term_q if idx == 0 else customer_q & term_q
+        else:
+            for field in customer_fields:
+                customer_q |= Q(**{f"{field}__icontains": search_stripped})
+
+        # Product / line text: every word must appear in the *same* line's searchable
+        # label. When a product FK exists, use only catalog product__name (do not merge
+        # with item_name — a polluted or edited item_name could mention other products
+        # like "buns" on a pie line). When product is NULL (deleted), fall back to
+        # stored item_name snapshot.
+        empty_str = Value("", output_field=CharField())
+        line_items_match = OrderItem.objects.filter(order_id=OuterRef("pk")).annotate(
+            _line_text=Case(
+                When(
+                    product__isnull=False,
+                    then=F("product__name"),
+                ),
+                default=Coalesce(F("item_name"), empty_str),
+                output_field=CharField(),
+            )
         )
+        if terms:
+            for term in terms:
+                line_items_match = line_items_match.filter(
+                    _line_text__iregex=whole_word_regex_pattern(term)
+                )
+        else:
+            line_items_match = line_items_match.filter(
+                _line_text__icontains=search_stripped
+            )
+
+        product_q = Q(Exists(line_items_match))
 
         combined_q = customer_q | product_q
 
         # If search term is numeric, also search by order total price
-        search_stripped = search_term.strip()
         try:
             price_value = Decimal(search_stripped)
             price_value = round(price_value, 2)

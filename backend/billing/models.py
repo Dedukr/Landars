@@ -357,16 +357,16 @@ class Invoice(models.Model):
         delivery_date = getattr(order, "delivery_date", None)
         delivery_date_order_id = getattr(order, "delivery_date_order_id", None)
 
-        if delivery_date is None or delivery_date_order_id is None:
-            missing_fields = []
-            if delivery_date is None:
-                missing_fields.append("delivery_date")
-            if delivery_date_order_id is None:
-                missing_fields.append("delivery_date_order_id")
+        if delivery_date is None:
             raise ValidationError(
-                f"Order {order.id} is missing required information for invoice creation: {', '.join(missing_fields)}. "
+                f"Order {order.id} is missing required information for invoice creation: delivery_date. "
                 f"Please update the order with the missing information before creating an invoice."
             )
+
+        # Per-delivery-date sequence ID; legacy orders may have NULL — use PK for invoice snapshot
+        # (matches storefront pattern: delivery_date_order_id|default:order.id)
+        if delivery_date_order_id is None:
+            delivery_date_order_id = order.pk
 
         self.delivery_date = delivery_date
         self.delivery_date_order_id = delivery_date_order_id
