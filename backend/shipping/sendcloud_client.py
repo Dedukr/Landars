@@ -126,6 +126,7 @@ class SendcloudClient:
         weight_unit: str = "kilogram",
         from_country: Optional[str] = None,
         from_postal_code: Optional[str] = None,
+        sender_address_id: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         Get available shipping methods for a destination.
@@ -137,6 +138,7 @@ class SendcloudClient:
             weight_unit: Weight unit ("kilogram" or "gram")
             from_country: Sender country code (defaults to settings.SENDCLOUD_SENDER_COUNTRY)
             from_postal_code: Sender postal code (defaults to settings.SENDCLOUD_SENDER_POSTAL_CODE)
+            sender_address_id: Sendcloud sender address ID (optional query filter)
 
         Returns:
             List of shipping method dictionaries
@@ -161,6 +163,9 @@ class SendcloudClient:
             params["from_postal_code"] = (
                 from_postal_code or settings.SENDCLOUD_SENDER_POSTAL_CODE
             )
+
+        if sender_address_id is not None:
+            params["sender_address"] = sender_address_id
 
         try:
             response = self._make_request("GET", "/shipping_methods", params=params)
@@ -190,28 +195,47 @@ class SendcloudClient:
         weight: Optional[str] = None,
         order_number: Optional[str] = None,
         parcel_items: Optional[List[Dict[str, Any]]] = None,
+        sender_address: Optional[int] = None,
+        request_label: bool = True,
+        total_order_value: Optional[str] = None,
+        total_order_value_currency: str = "GBP",
+        quantity: Optional[int] = None,
         **kwargs,
     ) -> Dict[str, Any]:
         """
-        Create a parcel (shipment) with Sendcloud.
+        POST /parcels (v2): create parcel in one call with ``request_label: true``.
+
+        Typical body includes recipient fields, ``shipment: {"id": <method_id>}``,
+        ``sender_address``, weight, ``order_number``, ``parcel_items``,
+        ``total_order_value``, ``total_order_value_currency``.
+
+        **Parcel ``quantity``** (if passed) is the **multi-collo count** (number of
+        physical packages in one shipment), *not* merchandise units. Values ``> 1``
+        require Sendcloud's multi-parcel flow with ``request_label: true``. For one
+        box containing the full order, omit ``quantity`` (defaults to 1) and put
+        line **item** counts only inside ``parcel_items[].quantity``.
+
+        The JSON response ``parcel`` object includes Sendcloud parcel id, carrier,
+        tracking number, status, and label/document links when label creation succeeds.
 
         Args:
-            name: Recipient name
-            address: Street address
-            city: City
-            postal_code: Postal code
-            country: Country code (ISO 3166-1 alpha-2)
-            shipping_method_id: ID of selected shipping method
-            email: Recipient email
-            phone: Recipient phone
-            address_2: Second address line
-            weight: Parcel weight in kg
-            order_number: Your internal order number
-            parcel_items: List of items in the parcel
-            **kwargs: Additional parcel parameters
+            name Recipient name
+            address Street / house number line
+            city City
+            postal_code Postal code
+            country Country code (ISO 3166-1 alpha-2)
+            shipping_method_id Sendcloud shipping **method** id (parcel JSON key ``shipment.id``)
+            email Recipient email
+            phone Recipient phone
+            address_2 Second address line
+            weight Parcel weight in kg
+            order_number Stable external reference (e.g. internal order / dispatch ref)
+            parcel_items Line items for customs / manifest (per-item ``quantity`` is units of that SKU)
+            quantity Optional. Multi-collo package count only; omit for single-parcel orders.
+            **kwargs Additional parcel parameters forwarded into the parcel object
 
         Returns:
-            Created parcel data including tracking info and label URL
+            The ``parcel`` dict from the API (id, tracking, label URLs, carrier, etc.)
         """
         parcel_data = {
             "name": name,
@@ -234,6 +258,15 @@ class SendcloudClient:
             parcel_data["order_number"] = str(order_number)
         if parcel_items:
             parcel_data["parcel_items"] = parcel_items
+        if sender_address is not None:
+            parcel_data["sender_address"] = int(sender_address)
+        parcel_data["request_label"] = request_label
+        if total_order_value is not None:
+            parcel_data["total_order_value"] = str(total_order_value)
+        if total_order_value_currency:
+            parcel_data["total_order_value_currency"] = total_order_value_currency
+        if quantity is not None:
+            parcel_data["quantity"] = int(quantity)
 
         # Add any additional parameters
         parcel_data.update(kwargs)
@@ -246,6 +279,18 @@ class SendcloudClient:
         except SendcloudAPIError as e:
             logger.error(f"Failed to create parcel: {e}")
             raise
+
+    def download_url(self, url: str) -> bytes:
+        """Download binary content (e.g. label PDF) using the same Basic auth as the API."""
+        headers = self._get_headers()
+        try:
+            response = requests.get(url, headers=headers, timeout=60)
+            response.raise_for_status()
+            return response.content
+        except requests.exceptions.RequestException as e:
+            msg = f"Failed to download Sendcloud URL: {e}"
+            logger.error(msg)
+            raise SendcloudAPIError(msg) from e
 
     def get_parcel(self, parcel_id: int) -> Dict[str, Any]:
         """
@@ -262,6 +307,45 @@ class SendcloudClient:
             return response.get("parcel", {})
         except SendcloudAPIError as e:
             logger.error(f"Failed to get parcel {parcel_id}: {e}")
+            raise
+
+    def list_parcels(
+        self,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        GET /parcels — optional filters e.g. ``order_number``, ``tracking_number``,
+        ``external_reference`` (Sendcloud v2 docs).
+        """
+        clean: Dict[str, Any] = {}
+        if params:
+            for k, v in params.items():
+                if v is None or v == "":
+                    continue
+                clean[k] = v
+        try:
+            response = self._make_request(
+                "GET", "/parcels", params=clean or None
+            )
+            parcels = response.get("parcels")
+            if isinstance(parcels, list):
+                return parcels
+            return []
+        except SendcloudAPIError as e:
+            logger.error("Failed to list parcels: %s", e)
+            raise
+
+    def get_labels_for_parcel(self, parcel_id: int) -> Dict[str, Any]:
+        """
+        GET /labels/{parcel_id} — fresh label PDF URLs (and optional customs_declaration).
+
+        Use after create when embedded links are missing or stale, or to re-fetch later.
+        """
+        try:
+            response = self._make_request("GET", f"/labels/{parcel_id}")
+            return response if isinstance(response, dict) else {}
+        except SendcloudAPIError as e:
+            logger.error(f"Failed to get labels for parcel {parcel_id}: {e}")
             raise
 
     def cancel_parcel(self, parcel_id: int) -> bool:

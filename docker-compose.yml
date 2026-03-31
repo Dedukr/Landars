@@ -38,6 +38,26 @@ services:
         reservations:
           memory: 256M
 
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+
   backend:
     image: dedukr/landar-backend:latest
     build:
@@ -57,8 +77,13 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=${POSTGRES_PORT}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - DJANGO_CACHE_REDIS_URL=redis://redis:6379/1
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test:
@@ -79,6 +104,51 @@ services:
           memory: 1G
         reservations:
           memory: 512M
+
+  celery:
+    image: dedukr/landar-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    working_dir: /backend
+    command:
+      [
+        "celery",
+        "-A",
+        "backend",
+        "worker",
+        "-l",
+        "info",
+        "--concurrency",
+        "2",
+      ]
+    env_file:
+      - .env
+    volumes:
+      - static_volume:/backend/static
+      - ./backend/db:/backend/db
+    environment:
+      - PYTHONUNBUFFERED=1
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - DJANGO_CACHE_REDIS_URL=redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+        reservations:
+          memory: 256M
 
   frontend-marketplace:
     image: dedukr/landar-frontend-marketplace:latest
@@ -185,3 +255,6 @@ volumes:
   postgres_backups:
     external: true
     name: landars_postgres_backups
+
+  redis_data:
+    name: landars_redis_data

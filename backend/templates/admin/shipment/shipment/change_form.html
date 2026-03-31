@@ -1,0 +1,29 @@
+{% extends "admin/change_form.html" %}
+{% block after_related_objects %}
+{{ block.super }}
+{% if shipment_ops_retry %}
+<div class="module aligned" style="margin-top: 1rem;">
+  <h2>Operations</h2>
+  <p class="help">
+    Retries use stored Sendcloud parcel metadata and your own storage. “Open PDF” above always uses the saved file, not live provider label URLs.
+  </p>
+  <p class="help">
+    <strong>Recreate parcel after Sendcloud cancel:</strong> removes the local parcel row (and attempts API cancel), re-builds address/lines/weight from the <em>current</em> order, assigns a <em>new</em> Sendcloud <code>order_number</code>, clears the label in S3, then queues a new parcel create. Use when the remote parcel was cancelled or is missing and you have updated the order.
+  </p>
+  <div class="form-row" style="padding: 0.5rem 0;">
+    <form method="post" action="{{ shipment_ops_retry.retry_label_url }}" style="display: inline;">
+      {% csrf_token %}
+      <input type="submit" class="button" value="Retry label download" />
+    </form>
+    <form method="post" action="{{ shipment_ops_retry.retry_creation_url }}" style="display: inline; margin-left: 0.5rem;">
+      {% csrf_token %}
+      <input type="submit" class="button" value="Retry shipment creation" />
+    </form>
+    <form method="post" action="{{ shipment_ops_retry.recreate_parcel_url }}" style="display: inline; margin-left: 0.5rem;">
+      {% csrf_token %}
+      <input type="submit" class="button default" style="background: #ba2121; color: #fff;" value="Recreate Sendcloud parcel (new snapshot + order #)" onclick="return confirm('This deletes the local parcel row and creates a fresh Sendcloud order_number from the current order. Continue?');" />
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

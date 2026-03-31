@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     "storages",
     "billing",
     "shipping",
+    "shipment",
     "reconciliation",
 ]
 
@@ -408,6 +409,8 @@ STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 # Sendcloud Configuration
 SENDCLOUD_PUBLIC_KEY = os.getenv("SENDCLOUD_PUBLIC_KEY", "")
 SENDCLOUD_SECRET_KEY = os.getenv("SENDCLOUD_SECRET_KEY", "")
+# If the API returns HTTP 412 "User not allowed to announce", complete Sendcloud
+# onboarding (panel shipment + carrier activation) and use keys that may announce.
 SENDCLOUD_SENDER_COUNTRY = os.getenv("SENDCLOUD_SENDER_COUNTRY", "GB")
 SENDCLOUD_SENDER_POSTAL_CODE = os.getenv("SENDCLOUD_SENDER_POSTAL_CODE", "")
 SENDCLOUD_WEBHOOK_SECRET = os.getenv("SENDCLOUD_WEBHOOK_SECRET", "")
@@ -415,7 +418,7 @@ SENDCLOUD_WEBHOOK_SECRET = os.getenv("SENDCLOUD_WEBHOOK_SECRET", "")
 # Sendcloud Shipping Options Filtering
 # Only show specific carriers and services
 SENDCLOUD_ALLOWED_CARRIERS = os.getenv(
-    "SENDCLOUD_ALLOWED_CARRIERS", "royal_mail,royal_mailv2"
+    "SENDCLOUD_ALLOWED_CARRIERS", "royal_mailv2"
 ).split(",")
 SENDCLOUD_ALLOWED_SERVICES = os.getenv(
     "SENDCLOUD_ALLOWED_SERVICES", "tracked 48"
@@ -424,6 +427,78 @@ SENDCLOUD_EXCLUDE_SERVICES = os.getenv(
     "SENDCLOUD_EXCLUDE_SERVICES", "signed,tracked 24,express,large letter"
 ).split(",")
 
+# Sendcloud panel sender address (integer ID). Required for post-delivery shipment automation.
+SENDCLOUD_SENDER_ADDRESS_ID = os.getenv("SENDCLOUD_SENDER_ADDRESS_ID") or None
+# Logical option → resolved at ship time via /shipping_methods (IDs must not be stored long-term).
+# When POST_SHIPMENT_USE_WEIGHT_BASED_LOGICAL is True (default), option is picked from goods
+# weight only (packaging/tare is not added); otherwise this single value is used.
+POST_SHIPMENT_LOGICAL_OPTION = os.getenv(
+    "POST_SHIPMENT_LOGICAL_OPTION", "uk_tracked_48"
+)
+POST_SHIPMENT_USE_WEIGHT_BASED_LOGICAL = os.getenv(
+    "POST_SHIPMENT_USE_WEIGHT_BASED_LOGICAL", "True"
+).lower() in ("1", "true", "yes")
+# If set, billable kg *strictly above* this uses uk_tracked_24; at or below uses uk_tracked_48.
+_post_t24 = (os.getenv("POST_SHIPMENT_TRACKED_24_MIN_KG") or "").strip()
+POST_SHIPMENT_TRACKED_24_MIN_KG = (
+    float(_post_t24) if _post_t24 else None
+)
+# Prefix for Sendcloud parcel ``order_number`` (stable reference, see build_sendcloud_order_reference).
+SENDCLOUD_ORDER_NUMBER_PREFIX = os.getenv("SENDCLOUD_ORDER_NUMBER_PREFIX", "FP")
+# Sendcloud recommends refreshing shipping method IDs at least hourly.
+SENDCLOUD_METHODS_CACHE_TTL = int(os.getenv("SENDCLOUD_METHODS_CACHE_TTL", "3600"))
+# Shorter cache for Celery parcel tasks (still uses live API as source of truth).
+SENDCLOUD_METHODS_TASK_CACHE_TTL = int(
+    os.getenv("SENDCLOUD_METHODS_TASK_CACHE_TTL", "180")
+)
+
+# Serialize Celery runs per shipment (duplicate tasks / retries / crashes after remote create).
+SENDCLOUD_SHIPMENT_TASK_LOCK_TTL = int(
+    os.getenv("SENDCLOUD_SHIPMENT_TASK_LOCK_TTL", "900")
+)
+
+# Ideal Postcodes — UK Address Cleanse (https://docs.ideal-postcodes.co.uk/docs/api/address-cleanse)
+IDEAL_POSTCODES_API_KEY = (os.getenv("IDEAL_POSTCODES_API_KEY") or "").strip() or None
+IDEAL_POSTCODES_ENABLED = os.getenv("IDEAL_POSTCODES_ENABLED", "True").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+IDEAL_POSTCODES_CLEANSE_MIN_CONFIDENCE = float(
+    os.getenv("IDEAL_POSTCODES_CLEANSE_MIN_CONFIDENCE", "0.72")
+)
+IDEAL_POSTCODES_BASE_URL = (
+    os.getenv("IDEAL_POSTCODES_BASE_URL", "https://api.ideal-postcodes.co.uk")
+    .strip()
+    .rstrip("/")
+)
+IDEAL_POSTCODES_REQUEST_TIMEOUT = int(
+    os.getenv("IDEAL_POSTCODES_REQUEST_TIMEOUT", "15")
+)
+
+# Celery (Sendcloud post shipments and other async work)
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
+CELERY_TASK_ACCEPT_CONTENT = ["json"]
+CELERY_RESULT_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TASK_TIME_LIMIT = 300
+CELERY_TASK_SOFT_TIME_LIMIT = 240
+# Celery 6: startup broker retries are controlled separately from broker_connection_retry.
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = os.getenv(
+    "CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP", "true"
+).lower() in ("1", "true", "yes")
+
+# Shared cache (set in Docker to Redis so Gunicorn + Celery see the same keys, e.g. Sendcloud locks).
+_django_cache_redis_url = (os.getenv("DJANGO_CACHE_REDIS_URL") or "").strip()
+if _django_cache_redis_url:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": _django_cache_redis_url,
+        }
+    }
 
 # Frontend URL for email verification links - derive from URL_BASE
 def get_frontend_url():

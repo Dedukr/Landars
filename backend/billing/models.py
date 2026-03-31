@@ -100,6 +100,48 @@ def upload_file_to_s3(file_path: str, s3_key: str, max_retries: int = 3) -> str:
     raise Exception(f"Failed to upload file to S3: {str(last_exception)}")
 
 
+def upload_bytes_to_s3(
+    data: bytes,
+    s3_key: str,
+    *,
+    content_type: str = "application/octet-stream",
+    max_retries: int = 3,
+) -> str:
+    """
+    Upload raw bytes to ``AWS_STORAGE_BUCKET_NAME`` using the same client/region as
+    :func:`upload_file_to_s3` (and invoice PDF uploads).
+
+    Returns the ``s3_key`` on success.
+    """
+    if not data:
+        raise ValueError("No data to upload")
+
+    s3_client = get_s3_client()
+    bucket = settings.AWS_STORAGE_BUCKET_NAME
+    last_exception: BaseException | None = None
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            s3_client.put_object(
+                Bucket=bucket,
+                Key=s3_key,
+                Body=data,
+                ContentType=content_type,
+            )
+            return s3_key
+        except Exception as e:
+            last_exception = e
+            if attempt < max_retries:
+                wait_time = 2 ** (attempt - 1)
+                time.sleep(wait_time)
+            else:
+                raise Exception(
+                    f"Failed to upload bytes to S3 after {max_retries} attempts: {str(e)}"
+                ) from last_exception
+
+    raise Exception(f"Failed to upload bytes to S3: {str(last_exception)}")
+
+
 def create_invoice(order, request):
     """
     Unified function to create an invoice from an order and upload PDF to S3.

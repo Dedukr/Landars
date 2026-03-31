@@ -121,15 +121,23 @@ def stripe_webhook(request):
                 order.payment_status = "succeeded"
                 order.save(update_fields=["status", "payment_status"])
                 logger.info(f"Updated order {order.id} status to paid")
+            elif order.payment_status != "succeeded":
+                order.payment_status = "succeeded"
+                order.save(update_fields=["payment_status"])
 
-            # Trigger shipment creation if order has shipping method
+            # Home delivery: legacy Sendcloud path when checkout selected a method
             details = getattr(order, "shipping_details", None)
-            if details and details.shipping_method_id:
+            if details and details.shipping_method_id and order.is_home_delivery:
                 try:
                     shipping_service = ShippingService()
                     result = shipping_service.create_shipment_for_order(order)
 
-                    if result.get("success"):
+                    if result.get("skipped"):
+                        logger.info(
+                            "Order %s: legacy shipment skipped (post-delivery uses shipment app)",
+                            order.id,
+                        )
+                    elif result.get("success"):
                         logger.info(
                             f"Shipment created via webhook for order {order.id}: "
                             f"tracking={result.get('tracking_number')}"
@@ -144,10 +152,16 @@ def stripe_webhook(request):
                         f"Exception while creating shipment via webhook for order {order.id}: {e}",
                         exc_info=True,
                     )
-            else:
+            elif order.is_home_delivery:
                 logger.info(
-                    f"Order {order.id} does not have a shipping method, skipping shipment creation"
+                    "Order %s: home delivery without shipping method id; no legacy parcel",
+                    order.id,
                 )
+
+            # Post / courier: paid → ready_to_ship (snapshot + Celery run on that transition only)
+            from shipment.order_shipping import OrderShippingService
+
+            OrderShippingService.transition_to_ready_to_ship(order)
 
         except Order.DoesNotExist:
             logger.warning(

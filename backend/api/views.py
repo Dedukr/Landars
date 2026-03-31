@@ -637,6 +637,7 @@ class OrderListView(APIView):
                 order.status == "paid"
                 and shipping_details
                 and shipping_details.shipping_method_id
+                and order.is_home_delivery
             ):
                 # Import here to avoid circular imports
                 from shipping.service import ShippingService
@@ -645,7 +646,9 @@ class OrderListView(APIView):
                     shipping_service = ShippingService()
                     result = shipping_service.create_shipment_for_order(order)
 
-                    if result.get("success"):
+                    if result.get("skipped"):
+                        pass
+                    elif result.get("success"):
                         logger.info(
                             f"Shipment created for order {order.id}: "
                             f"tracking={result.get('tracking_number')}"
@@ -661,6 +664,10 @@ class OrderListView(APIView):
                         f"Exception while creating shipment for order {order.id}: {e}",
                         exc_info=True,
                     )
+
+            from shipment.order_shipping import OrderShippingService
+
+            OrderShippingService.transition_to_ready_to_ship(order)
 
             # Delete the cart instance completely after order is created
             # This ensures all cart data is transferred to the order
@@ -694,7 +701,7 @@ class OrderListView(APIView):
 
         from shipping.service import ShippingService
 
-        items = order.items.all()
+        items = order.items.select_related("product").all()
 
         if not order.delivery_fee_manual:
             # Sausage category name (compare using lowercase to match stored values)
@@ -715,8 +722,9 @@ class OrderListView(APIView):
                 if order.total_price > 220:
                     order.delivery_fee = Decimal("0")
                 else:
-                    # Use Royal Mail pricing (same as cart)
-                    total_weight = float(sum(item.quantity for item in items))
+                    total_weight = ShippingService.parcel_weight_kg_from_line_items(
+                        items
+                    )
                     order.delivery_fee = ShippingService.get_delivery_fee_by_weight(
                         total_weight
                     )
@@ -1128,7 +1136,7 @@ class CartView(APIView):
 
         from shipping.service import ShippingService
 
-        items = cart.items.all()
+        items = cart.items.select_related("product").all()
 
         if not items.exists():
             cart.is_home_delivery = True
@@ -1151,10 +1159,7 @@ class CartView(APIView):
             if cart.sum_price > 220:
                 cart.delivery_fee = Decimal("0")
             else:
-                # Calculate total weight from cart items
-                total_weight = float(sum(item.quantity for item in items))
-
-                # No courier option above 20kg; return £0 and let frontend surface message
+                total_weight = ShippingService.parcel_weight_kg_from_line_items(items)
                 cart.delivery_fee = ShippingService.get_delivery_fee_by_weight(
                     total_weight
                 )

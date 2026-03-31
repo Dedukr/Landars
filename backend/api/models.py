@@ -1,5 +1,5 @@
 from datetime import timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from account.models import Address, CustomUser
 from django.contrib.auth.models import AbstractUser
@@ -213,6 +213,7 @@ class Product(models.Model):
 
 class ProductReview(models.Model):
     """User review for a product: rating (1-5) and optional comment."""
+
     product = models.ForeignKey(
         Product, on_delete=models.CASCADE, related_name="reviews"
     )
@@ -302,6 +303,7 @@ class Order(models.Model):
         choices=[
             ("pending", "Pending"),
             ("paid", "Paid"),
+            ("ready_to_ship", "Ready to ship"),
             ("issued", "Issued"),
             ("cancelled", "Cancelled"),
         ],
@@ -334,6 +336,16 @@ class Order(models.Model):
     )
     stripe_customer_id = models.CharField(
         max_length=255, blank=True, null=True, help_text="Stripe Customer ID"
+    )
+    weight = models.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        help_text=(
+            "Parcel weight (kg) for Sendcloud: sum(product.weight×qty), min 0.1. "
+            "Updated when the order or its lines are saved."
+        ),
     )
 
     def ensure_shipping_details(self):
@@ -406,7 +418,6 @@ class Order(models.Model):
                 total += item.product.weight * item.quantity
         return total
 
-
     def get_order_details(self):
         return {
             "order_id": self.id,
@@ -416,17 +427,31 @@ class Order(models.Model):
             "items": [item.get_item_details() for item in self.items.all()],
         }
 
+    def get_delivery_address(self):
+        """
+        Address record used for courier/post shipment: order FK, else profile address.
+        Matches the fallback used by :meth:`customer_address` / checkout display.
+        """
+        if self.address_id:
+            return self.address
+        if self.customer_id:
+            profile = getattr(self.customer, "profile", None)
+            if profile and profile.address_id:
+                return profile.address
+        return None
+
     @property
     def customer_address(self):
         # Use order's address if it exists, otherwise fall back to customer's profile address
-        if self.address:
-            address = self.address
-            return f"{address.address_line + ', ' if address.address_line else ''}{address.address_line2 + ', ' if address.address_line2 else ''}{address.city + ', ' if address.city else ''}{address.postal_code if address.postal_code else ''}"
-        profile = self.customer.profile if self.customer else None
-        if profile and profile.address:
-            address = profile.address
-            return f"{address.address_line + ', ' if address.address_line else ''}{address.address_line2 + ', ' if address.address_line2 else ''}{address.city + ', ' if address.city else ''}{address.postal_code if address.postal_code else ''}"
-        return "No Address"
+        address = self.get_delivery_address()
+        if not address:
+            return "No Address"
+        return (
+            f"{address.address_line + ', ' if address.address_line else ''}"
+            f"{address.address_line2 + ', ' if address.address_line2 else ''}"
+            f"{address.city + ', ' if address.city else ''}"
+            f"{address.postal_code if address.postal_code else ''}"
+        )
 
     def add_item_safely(self, product, quantity):
         """
@@ -437,16 +462,18 @@ class Order(models.Model):
 
         with transaction.atomic():
             # Check if item already exists
-            existing_item = OrderItem.objects.select_for_update().filter(
-                order=self, product=product
-            ).first()
-            
+            existing_item = (
+                OrderItem.objects.select_for_update()
+                .filter(order=self, product=product)
+                .first()
+            )
+
             if existing_item:
                 raise ValidationError(
                     f"Product '{product.name}' already exists in this order. "
                     f"Please update the existing item instead of adding a duplicate."
                 )
-            
+
             # Create new item
             order_item = OrderItem.objects.create(
                 order=self, product=product, quantity=quantity
@@ -486,13 +513,13 @@ class Order(models.Model):
         to ensure thread-safety in concurrent scenarios.
         """
         from django.db import transaction
-        from django.utils import timezone
         from django.db.models import Max
+        from django.utils import timezone
 
         # Check if delivery_date has changed for existing orders
         old_delivery_date = None
         needs_reassignment = False
-        
+
         if self.pk:
             try:
                 old_instance = Order.objects.get(pk=self.pk)
@@ -515,13 +542,15 @@ class Order(models.Model):
                     # Use select_for_update to lock rows and prevent race conditions
                     # This ensures thread-safety when multiple orders are created
                     # simultaneously for the same delivery_date
-                    
+
                     # Lock all orders with the same delivery_date to prevent concurrent inserts
                     # from getting the same delivery_date_order_id
                     # Exclude current order to avoid locking ourselves
-                    locked_orders = Order.objects.filter(
-                        delivery_date=self.delivery_date
-                    ).exclude(pk=self.pk if self.pk else None).select_for_update()
+                    locked_orders = (
+                        Order.objects.filter(delivery_date=self.delivery_date)
+                        .exclude(pk=self.pk if self.pk else None)
+                        .select_for_update()
+                    )
 
                     # Get the maximum delivery_date_order_id for this delivery_date
                     # This query runs within the locked transaction
@@ -549,6 +578,23 @@ class Order(models.Model):
 
         # Call parent save
         super().save(*args, **kwargs)
+        self.refresh_weight()
+
+    def refresh_weight(self) -> None:
+        """Recompute and persist :meth:`weight` from current lines."""
+        if not self.pk:
+            return
+        from shipping.service import ShippingService
+
+        items = list(self.items.select_related("product").all())
+        if not items:
+            Order.objects.filter(pk=self.pk).update(weight=None)
+            self.weight = None
+            return
+        w = max(ShippingService.parcel_weight_kg_from_line_items(items), 0.1)
+        dec = Decimal(str(w)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+        Order.objects.filter(pk=self.pk).update(weight=dec)
+        self.weight = dec
 
     def calculate_delivery_fee_and_home_status(self):
         """
@@ -561,7 +607,7 @@ class Order(models.Model):
         if self.delivery_fee_manual:
             return self.is_home_delivery, self.delivery_fee
 
-        items = self.items.all()
+        items = self.items.select_related("product").all()
         if not items.exists():
             return True, Decimal("10")
 
@@ -584,10 +630,9 @@ class Order(models.Model):
         if self.total_price > 220:
             return False, Decimal("0")  # Free delivery for high-value orders
 
-        # Calculate fee based on weight using Royal Mail pricing
         from shipping.service import ShippingService
-        
-        total_weight = sum(float(item.quantity) for item in items)
+
+        total_weight = ShippingService.parcel_weight_kg_from_line_items(items)
         delivery_fee = ShippingService.get_delivery_fee_by_weight(total_weight)
         return False, delivery_fee
 
@@ -650,10 +695,11 @@ class Order(models.Model):
         if total_price > Decimal("220"):
             return False, Decimal("0")
 
-        # Calculate fee based on weight using Royal Mail pricing
         from shipping.service import ShippingService
-        
-        total_weight = sum(float(q) for _, q in normalized)
+
+        total_weight = ShippingService.parcel_weight_kg_from_product_qty_pairs(
+            normalized
+        )
         delivery_fee = ShippingService.get_delivery_fee_by_weight(total_weight)
         return False, delivery_fee
 
@@ -704,14 +750,18 @@ class OrderItem(models.Model):
         verbose_name_plural = "Order Items"
 
     def __str__(self):
-        name = self.item_name if self.item_name else (self.product.name if self.product else "Deleted product")
+        name = (
+            self.item_name
+            if self.item_name
+            else (self.product.name if self.product else "Deleted product")
+        )
         return f"{name} - {self.quantity}"
 
     def save(self, *args, **kwargs):
         """
         Automatically populate item_name and item_price snapshots from product.
         Only populates if snapshots are empty (fallback for programmatic creation).
-        
+
         Note: When saving through admin form, the form's save() method handles
         snapshot updates. This method only acts as a fallback.
         """
@@ -721,8 +771,18 @@ class OrderItem(models.Model):
                 self.item_name = self.product.name
             if self.item_price is None:
                 self.item_price = self.product.price
-        
+
         super().save(*args, **kwargs)
+        if self.order_id:
+            Order.objects.get(pk=self.order_id).refresh_weight()
+
+    def delete(self, *args, **kwargs):
+        oid = self.order_id
+        super().delete(*args, **kwargs)
+        if oid:
+            o = Order.objects.filter(pk=oid).first()
+            if o:
+                o.refresh_weight()
 
     def get_total_price(self):
         """
@@ -731,15 +791,17 @@ class OrderItem(models.Model):
         """
         if not self.quantity:
             return ""
-        
+
         # Prefer snapshot price whenever available so order/invoice totals stay consistent
-        price = self.item_price if self.item_price is not None else (
-            self.product.price if self.product else None
+        price = (
+            self.item_price
+            if self.item_price is not None
+            else (self.product.price if self.product else None)
         )
-        
+
         if price is None:
             return ""
-        
+
         return round(price * self.quantity, 2)
 
     def get_item_details(self):
@@ -747,10 +809,12 @@ class OrderItem(models.Model):
         Return item details using stored information when product is deleted.
         """
         product_id = self.product.id if self.product else None
-        product_name = self.item_name if self.item_name else (
-            self.product.name if self.product else "Deleted product"
+        product_name = (
+            self.item_name
+            if self.item_name
+            else (self.product.name if self.product else "Deleted product")
         )
-        
+
         return {
             "product_id": product_id,
             "product_name": product_name,

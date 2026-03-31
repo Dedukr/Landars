@@ -135,7 +135,13 @@ class BankTransaction(models.Model):
         if order and order.status != "paid":
             order.status = "paid"
             order.save(update_fields=["status"])
-    
+
+        if order:
+            from shipment.order_shipping import OrderShippingService
+
+            order.refresh_from_db()
+            OrderShippingService.transition_to_ready_to_ship(order)
+
     def mark_as_rejected(self):
         """Mark transaction as rejected (don't suggest again)."""
         self.match_status = self.MatchStatus.REJECTED

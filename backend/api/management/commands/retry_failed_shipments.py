@@ -10,6 +10,8 @@ import logging
 from api.models import Order
 from django.core.management.base import BaseCommand
 from django.db.models import Q
+from shipment.models import Shipment
+from shipment.order_shipping import OrderShippingService
 from shipping.service import ShippingService
 
 logger = logging.getLogger(__name__)
@@ -49,7 +51,9 @@ class Command(BaseCommand):
         # Build queryset
         if order_id:
             # Process specific order
-            orders = Order.objects.filter(id=order_id, status="paid")
+            orders = Order.objects.filter(
+                id=order_id, status__in=["paid", "ready_to_ship"]
+            )
             if not orders.exists():
                 self.stdout.write(
                     self.style.ERROR(
@@ -98,6 +102,40 @@ class Command(BaseCommand):
         for order in orders:
             self.stdout.write(f"\nProcessing Order #{order.id}...")
             details = getattr(order, "shipping_details", None)
+
+            if not order.is_home_delivery:
+                sh = Shipment.objects.filter(order=order).first()
+                if not sh:
+                    self.stdout.write(
+                        self.style.WARNING("  Skipped: No post shipment record")
+                    )
+                    skipped_count += 1
+                    continue
+                if sh.is_label_fully_stored():
+                    self.stdout.write(
+                        self.style.WARNING("  Skipped: Post shipment already complete")
+                    )
+                    skipped_count += 1
+                    continue
+                try:
+                    if OrderShippingService.schedule_sendcloud_task(sh.pk):
+                        self.stdout.write(
+                            self.style.SUCCESS(
+                                f"  ✓ Queued post shipment task (shipment id {sh.pk})"
+                            )
+                        )
+                        success_count += 1
+                    else:
+                        self.stdout.write(
+                            self.style.WARNING(
+                                "  Skipped: shipment terminal or missing"
+                            )
+                        )
+                        skipped_count += 1
+                except Exception as e:
+                    self.stdout.write(self.style.ERROR(f"  ✗ Exception: {str(e)}"))
+                    failed_count += 1
+                continue
 
             # Skip if no shipping method
             if not details or not details.shipping_method_id:

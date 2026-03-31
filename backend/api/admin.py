@@ -1159,6 +1159,8 @@ def retry_shipment_creation(modeladmin, request, queryset):
     """
     import logging
 
+    from shipment.models import Shipment
+    from shipment.order_shipping import OrderShippingService
     from shipping.service import ShippingService
 
     logger = logging.getLogger(__name__)
@@ -1170,12 +1172,41 @@ def retry_shipment_creation(modeladmin, request, queryset):
 
     for order in queryset:
         details = getattr(order, "shipping_details", None)
-        # Skip orders that are not paid
+        if not order.is_home_delivery:
+            if order.status not in ("paid", "ready_to_ship"):
+                skipped_count += 1
+                continue
+            sh = Shipment.objects.filter(order=order).first()
+            if not sh:
+                skipped_count += 1
+                continue
+            if sh.is_label_fully_stored():
+                skipped_count += 1
+                continue
+            try:
+                if OrderShippingService.schedule_sendcloud_task(sh.pk):
+                    success_count += 1
+                    logger.info(
+                        "Retry: Queued Sendcloud task for post shipment %s (order %s)",
+                        sh.pk,
+                        order.id,
+                    )
+                else:
+                    skipped_count += 1
+            except Exception as e:
+                failed_count += 1
+                logger.error(
+                    f"Retry: Exception queueing post shipment for order {order.id}: {e}",
+                    exc_info=True,
+                )
+            continue
+
+        # Home delivery: require paid
         if order.status != "paid":
             skipped_count += 1
             continue
 
-        # Skip orders without shipping method
+        # Skip home-delivery orders without shipping method
         if not details or not details.shipping_method_id:
             skipped_count += 1
             continue
@@ -1569,7 +1600,7 @@ class OrderAdmin(admin.ModelAdmin):
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)
         order = form.instance
-        items = order.items.all()
+        items = order.items.select_related("product").all()
 
         if not order.delivery_fee_manual:
             from shipping.service import ShippingService
@@ -1589,10 +1620,11 @@ class OrderAdmin(admin.ModelAdmin):
                 if order.total_price > 220:
                     order.delivery_fee = 0
                 else:
-                    # Use Royal Mail pricing (same as cart)
-                    total_weight = sum(item.quantity for item in items)
+                    total_weight = ShippingService.parcel_weight_kg_from_line_items(
+                        items
+                    )
                     order.delivery_fee = ShippingService.get_delivery_fee_by_weight(
-                        float(total_weight)
+                        total_weight
                     )
         order.save()
 
@@ -1618,6 +1650,8 @@ class OrderAdmin(admin.ModelAdmin):
         """Display shipping status with color coding."""
         details = getattr(obj, "shipping_details", None)
         if not details or not details.shipping_status:
+            if obj.status == "ready_to_ship" and not obj.is_home_delivery:
+                return format_html('<span style="color: orange;">⏳ Pending</span>')
             if obj.status == "paid" and details and details.shipping_method_id:
                 return format_html('<span style="color: orange;">⏳ Pending</span>')
             return "-"
@@ -1698,6 +1732,10 @@ class OrderAdmin(admin.ModelAdmin):
         # Update related invoice when order status changes to "paid"
         if status_changed_to_paid:
             self._update_invoice_to_paid(obj)
+
+        from shipment.order_shipping import OrderShippingService
+
+        OrderShippingService.transition_to_ready_to_ship(obj)
 
     def _update_invoice_to_paid(self, order):
         """

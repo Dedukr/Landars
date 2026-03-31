@@ -55,12 +55,39 @@ class ShippingService:
             self.client = None
 
     @staticmethod
+    def parcel_weight_kg_from_line_items(items) -> float:
+        """
+        Billable parcel kg for post-pricing / Sendcloud alignment: sum of
+        ``product.weight * quantity`` per line. Missing product or null weight → 0.
+        """
+        total = Decimal("0")
+        for item in items:
+            product = getattr(item, "product", None)
+            if not product:
+                continue
+            w = getattr(product, "weight", None)
+            if w is None:
+                continue
+            total += w * item.quantity
+        return float(total)
+
+    @staticmethod
+    def parcel_weight_kg_from_product_qty_pairs(pairs) -> float:
+        """Same as :meth:`parcel_weight_kg_from_line_items` but for ``(Product, qty)`` tuples."""
+        total = Decimal("0")
+        for product, qty in pairs:
+            if not product or getattr(product, "weight", None) is None:
+                continue
+            total += product.weight * qty
+        return float(total)
+
+    @staticmethod
     def get_delivery_fee_by_weight(weight: float) -> Decimal:
         """
-        Get preassigned delivery fee based on parcel weight.
+        Get preassigned delivery fee based on parcel weight (kg).
 
-        Uses the ROYAL_MAIL_DELIVERY_FEE_BY_WEIGHT map to determine
-        the appropriate delivery fee for a given weight.
+        Uses the ROYAL_MAIL_DELIVERY_FEE_BY_WEIGHT map. ``weight`` should be
+        real billable kg (e.g. from :meth:`parcel_weight_kg_from_line_items`).
 
         Args:
             weight: Parcel weight in kilograms
@@ -90,27 +117,52 @@ class ShippingService:
 
     def _calculate_parcel_weight(self, items: List[Dict[str, Any]]) -> float:
         """
-        Calculate total weight of parcel from order items.
+        Total parcel kg from API item dicts.
 
-        For now, we use quantity as weight approximation (kg).
-        In production, you'd want to add a weight field to Product model.
-
-        Args:
-            items: List of order items with 'product' and 'quantity' keys
-
-        Returns:
-            Total weight in kilograms
+        * If any item has ``product_id``, uses DB ``Product.weight * quantity`` per line.
+        * Otherwise treats each item's ``quantity`` as kilograms (legacy, e.g. mgmt tests).
         """
-        total_weight = 0.0
+        if not items:
+            return 0.1
 
+        has_product_ids = any(
+            item.get("product_id") is not None for item in items
+        )
+        if not has_product_ids:
+            total_legacy = sum(float(item.get("quantity", 0)) for item in items)
+            return max(total_legacy, 0.1)
+
+        from api.models import Product
+
+        ids = set()
         for item in items:
-            quantity = float(item.get("quantity", 0))
-            # TODO: Use actual product weight when Product.weight field is added
-            # For now, assume 1kg per unit (modify based on your products)
-            product_weight = 1.0
-            total_weight += quantity * product_weight
+            pid = item.get("product_id")
+            if pid is None:
+                continue
+            try:
+                ids.add(int(pid))
+            except (TypeError, ValueError):
+                continue
+        wmap: Dict[int, Any] = {}
+        if ids:
+            for p in Product.objects.filter(id__in=ids).only("id", "weight"):
+                wmap[p.id] = p.weight
 
-        return max(total_weight, 0.1)  # Minimum 0.1kg
+        total = Decimal("0")
+        for item in items:
+            pid = item.get("product_id")
+            if pid is None:
+                continue
+            try:
+                pid_i = int(pid)
+            except (TypeError, ValueError):
+                continue
+            w = wmap.get(pid_i)
+            if w is None:
+                continue
+            total += w * Decimal(str(item.get("quantity", 0)))
+
+        return float(max(total, Decimal("0.1")))
 
     def _get_carrier_logo_url(self, carrier_code: str) -> str:
         """
@@ -474,27 +526,28 @@ class ShippingService:
 
         address = order.address
 
-        # Prepare parcel items for Sendcloud
+        lines = list(order.items.select_related("product").all())
         parcel_items = []
-        for item in order.items.all():
-            # Use stored item name if product is deleted, otherwise use product name
+        for item in lines:
             item_name = item.item_name if item.item_name else (
                 item.product.name if item.product else "Deleted product"
             )
-            # Only include items that have a name (skip completely invalid items)
             if item_name and item_name != "Deleted product":
+                unit_w = (
+                    item.product.weight
+                    if item.product and item.product.weight is not None
+                    else Decimal("0.1")
+                )
                 parcel_items.append(
                     {
                         "description": item_name,
                         "quantity": int(item.quantity),
-                        "weight": str(float(item.quantity)),  # TODO: use actual weight
+                        "weight": str(unit_w),
                         "value": str(item.get_total_price()),
                     }
                 )
 
-        # Calculate total weight
-        items_data = [{"quantity": item.quantity} for item in order.items.all()]
-        weight = self._calculate_parcel_weight(items_data)
+        weight = max(ShippingService.parcel_weight_kg_from_line_items(lines), 0.1)
 
         # Get customer name and phone from user profile
         customer_name = order.customer.name if order.customer else "Customer"
@@ -608,6 +661,18 @@ class ShippingService:
         with transaction.atomic():
             # Lock the order row to prevent concurrent shipment creation
             locked_order = type(order).objects.select_for_update().get(pk=order.pk)
+            if not locked_order.is_home_delivery:
+                logger.info(
+                    "Skipping legacy Sendcloud create_shipment_for_order for "
+                    "post-delivery order %s (handled by shipment app + Celery)",
+                    locked_order.id,
+                )
+                return {
+                    "success": False,
+                    "skipped": True,
+                    "error": None,
+                }
+
             details = locked_order.ensure_shipping_details()
 
             # Check if shipment already exists (idempotency check)

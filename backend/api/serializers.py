@@ -99,7 +99,7 @@ class ProductReviewSerializer(serializers.ModelSerializer):
         # Check both by product FK and by item_name (in case product was deleted)
         has_purchased = OrderItem.objects.filter(
             order__customer=user,
-            order__status__in=["paid", "issued"],  # Consider both paid and issued as purchased
+            order__status__in=["paid", "ready_to_ship", "issued"],
         ).filter(
             # Match by product FK or by stored item_name
             Q(product=product) | Q(item_name=product.name)

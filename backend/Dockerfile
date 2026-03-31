@@ -84,15 +84,24 @@ RUN set -euo pipefail; \
 # Set working directory
 WORKDIR /backend
 
-# Copy Python packages from builder
-COPY --from=builder /root/.local /root/.local
-ENV PATH=/root/.local/bin:$PATH
+# Wheelhouse in a path readable by the non-root runtime user (not /root/.local).
+COPY --from=builder /root/.local /opt/py
+ENV PATH=/opt/py/bin:$PATH
+# pip --user layout: /opt/py/lib/python3.12/site-packages (image Python must see it).
+ENV PYTHONPATH=/opt/py/lib/python3.12/site-packages
 
 # Copy application code
 COPY . .
 
-# Collect static files
+# Collect static files (image build only; still runs as root before USER below).
 RUN python manage.py collectstatic --noinput
+
+# Run Gunicorn/Celery as non-root — avoids Celery's "superuser privileges" warning.
+RUN addgroup -g 1000 django && \
+    adduser -D -u 1000 -G django django && \
+    chown -R django:django /backend /opt/py
+
+USER django
 
 # Expose port
 EXPOSE 8000
