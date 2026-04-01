@@ -165,14 +165,70 @@ class OrderShippingService:
             return False, "Could not queue task."
         return True, "Shipment creation task has been queued."
 
+    @staticmethod
+    def _sendcloud_cancel_parcel_before_recreate(
+        parcel_id: int, shipment_pk: int
+    ) -> str:
+        """
+        POST /parcels/{id}/cancel at Sendcloud. Returns a short admin message fragment
+        (empty if nothing to report beyond logs).
+        """
+        from .sendcloud_client import SendcloudClient
+
+        try:
+            client = SendcloudClient()
+        except ValueError as exc:
+            logger.warning(
+                "Recreate shipment pk=%s: skip Sendcloud cancel parcel %s "
+                "(integration not configured): %s",
+                shipment_pk,
+                parcel_id,
+                exc,
+            )
+            return " Sendcloud cancel skipped (integration not configured)."
+        if client.cancel_parcel(parcel_id):
+            logger.info(
+                "Cancelled Sendcloud parcel %s before recreating Shipment pk=%s",
+                parcel_id,
+                shipment_pk,
+            )
+            return f" Sendcloud parcel {parcel_id} cancelled."
+        logger.warning(
+            "Sendcloud cancel failed for parcel %s (Shipment pk=%s); "
+            "continuing local recreate — check Sendcloud for duplicate parcels.",
+            parcel_id,
+            shipment_pk,
+        )
+        return (
+            f" Warning: could not cancel Sendcloud parcel {parcel_id} "
+            "(check Sendcloud panel for duplicates)."
+        )
+
+    @classmethod
+    def _recreate_sendcloud_parcel_eligible(cls, ship: "Shipment") -> tuple[bool, str]:
+        """Return (ok, error_message) if this row may be recreated."""
+        from .models import Shipment as ShipmentModel
+
+        if ship.status == ShipmentModel.Status.CANCELLED:
+            return False, "Shipment is cancelled locally — un-cancel or create a new flow."
+        order = ship.order
+        if order.status != "ready_to_ship":
+            return (
+                False,
+                f"Order must be ready_to_ship (currently {order.status!r}).",
+            )
+        if not cls.requires_courier_shipment(order):
+            return False, "Order no longer requires courier shipment."
+        return True, ""
+
     @classmethod
     def admin_recreate_sendcloud_parcel_from_order(
         cls, shipment_pk: int
     ) -> tuple[bool, str]:
         """
-        After a parcel was cancelled in Sendcloud (or local row is stale): clear provider
-        parcel fields on ``Shipment``, re-freeze snapshot + weight from the **current** order,
-        assign a **new** ``sendcloud_order_reference``, clear label fields, queue create.
+        Cancel the existing Sendcloud parcel (if any), then clear provider fields on
+        ``Shipment``, re-freeze snapshot + weight from the **current** order, assign a
+        new ``sendcloud_order_reference``, clear label fields, queue create.
 
         Requires the order to be ``ready_to_ship`` and courier-eligible.
         """
@@ -181,6 +237,7 @@ class OrderShippingService:
 
         sid = shipment_pk
         try:
+            old_parcel_id: int | None = None
             with transaction.atomic():
                 ship = (
                     Shipment.objects.select_for_update()
@@ -190,17 +247,32 @@ class OrderShippingService:
                 )
                 if ship is None:
                     return False, "Shipment not found."
-                if ship.status == Shipment.Status.CANCELLED:
-                    return False, "Shipment is cancelled locally — un-cancel or create a new flow."
-                order = ship.order
-                if order.status != "ready_to_ship":
-                    return (
-                        False,
-                        f"Order must be ready_to_ship (currently {order.status!r}).",
-                    )
-                if not cls.requires_courier_shipment(order):
-                    return False, "Order no longer requires courier shipment."
+                ok, err = cls._recreate_sendcloud_parcel_eligible(ship)
+                if not ok:
+                    return False, err
+                if ship.sendcloud_parcel_id:
+                    old_parcel_id = int(ship.sendcloud_parcel_id)
 
+            cancel_note = ""
+            if old_parcel_id is not None:
+                cancel_note = cls._sendcloud_cancel_parcel_before_recreate(
+                    old_parcel_id, sid
+                )
+
+            with transaction.atomic():
+                ship = (
+                    Shipment.objects.select_for_update()
+                    .select_related("order")
+                    .filter(pk=sid)
+                    .first()
+                )
+                if ship is None:
+                    return False, "Shipment not found."
+                ok, err = cls._recreate_sendcloud_parcel_eligible(ship)
+                if not ok:
+                    return False, err
+
+                order = ship.order
                 ship.sendcloud_parcel_id = None
                 ship.carrier_code = ""
                 ship.shipping_tracking_number = None
@@ -235,7 +307,7 @@ class OrderShippingService:
             return (
                 True,
                 "Local parcel removed; snapshot refreshed from order; new Sendcloud "
-                "order_number set; creation task queued.",
+                "order_number set; creation task queued." + cancel_note,
             )
         except Exception as exc:
             logger.exception("admin_recreate_sendcloud_parcel_from_order failed")

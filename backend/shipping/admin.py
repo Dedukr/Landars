@@ -35,13 +35,12 @@ class ShipmentAdmin(admin.ModelAdmin):
         "order_admin_link",
         "label_link",
         "provider_tracking",
-        "provider_parcel_id",
+        "chosen_shipping_method_display",
+        "map_delivery_cost_display",
+        "sendcloud_inputs_weight",
         "status",
         "retry_count",
-        "sendcloud_logical_option",
-        "chosen_shipping_method_display",
-        "sendcloud_inputs_weight",
-        "map_delivery_cost_display",
+        "provider_parcel_id",
         "sendcloud_inputs_ref",
         "created_at",
     )
@@ -333,7 +332,7 @@ class ShipmentAdmin(admin.ModelAdmin):
         bits = [
             f"<strong>Parcel ID</strong>: {escape(str(obj.sendcloud_parcel_id))}",
             f"<strong>Tracking</strong>: {escape(obj.shipping_tracking_number or '—')}",
-            f"<strong>Carrier</strong>: {escape(obj.carrier_code or '—')}",
+            f"<strong>Shipping method</strong>: {escape(self.chosen_shipping_method_display(obj))}",
         ]
         return format_html("<br>".join(bits))
 

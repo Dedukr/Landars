@@ -439,9 +439,7 @@ POST_SHIPMENT_USE_WEIGHT_BASED_LOGICAL = os.getenv(
 ).lower() in ("1", "true", "yes")
 # If set, billable kg *strictly above* this uses uk_tracked_24; at or below uses uk_tracked_48.
 _post_t24 = (os.getenv("POST_SHIPMENT_TRACKED_24_MIN_KG") or "").strip()
-POST_SHIPMENT_TRACKED_24_MIN_KG = (
-    float(_post_t24) if _post_t24 else None
-)
+POST_SHIPMENT_TRACKED_24_MIN_KG = float(_post_t24) if _post_t24 else None
 # Prefix for Sendcloud parcel ``order_number``: {prefix}-{order_id}-{random10digits}.
 SENDCLOUD_ORDER_NUMBER_PREFIX = os.getenv("SENDCLOUD_ORDER_NUMBER_PREFIX", "FP")
 # Sendcloud recommends refreshing shipping method IDs at least hourly.
@@ -498,6 +496,7 @@ if _django_cache_redis_url:
             "LOCATION": _django_cache_redis_url,
         }
     }
+
 
 # Frontend URL for email verification links - derive from URL_BASE
 def get_frontend_url():

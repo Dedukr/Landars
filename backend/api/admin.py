@@ -1057,7 +1057,7 @@ class OrderShipmentInline(admin.StackedInline):
         bits = [
             f"<strong>Parcel ID</strong>: {escape(str(obj.sendcloud_parcel_id))}",
             f"<strong>Tracking</strong>: {escape(obj.shipping_tracking_number or '—')}",
-            f"<strong>Carrier</strong>: {escape(obj.carrier_code or '—')}",
+            f"<strong>Carrier</strong>: {escape(self.chosen_shipping_method_display or '—')}",
         ]
         return format_html("<br>".join(bits))
     
@@ -1671,37 +1671,6 @@ class OrderAdmin(admin.ModelAdmin):
         result = _phone_display_with_links(phone)
         return result if result else phone.strip()
 
-    def save_related(self, request, form, formsets, change):
-        super().save_related(request, form, formsets, change)
-        order = form.instance
-        items = order.items.select_related("product").all()
-
-        if not order.delivery_fee_manual:
-            from shipping.sendcloud_shipping import ShippingService
-
-            # Sausage category name
-            post_suitable_category = "Sausages and Marinated products"
-            for item in items:
-                category_names = item.product.categories.values_list("name", flat=True)
-                if post_suitable_category not in [
-                    name.lower() for name in category_names
-                ]:
-                    order.is_home_delivery = True
-                    order.delivery_fee = 10
-                    break
-            else:
-                order.is_home_delivery = False
-                if order.total_price > 220:
-                    order.delivery_fee = 0
-                else:
-                    total_weight = ShippingService.parcel_weight_kg_from_line_items(
-                        items
-                    )
-                    order.delivery_fee = ShippingService.get_delivery_fee_by_weight(
-                        total_weight
-                    )
-        order.save()
-
     def get_total_price(self, obj):
         return obj.total_price
 
@@ -1868,18 +1837,20 @@ class OrderAdmin(admin.ModelAdmin):
 
         # Only calculate delivery fees if not manually set
         if not order.delivery_fee_manual:
-            # Build compute source from current items after inlines are saved
-            compute_source = [
-                {"product": i.product, "quantity": i.quantity}
-                for i in order.items.all()
-            ]
+            compute_source = []
+            for i in order.items.select_related("product").prefetch_related(
+                "product__categories"
+            ):
+                row = {"product": i.product, "quantity": i.quantity}
+                tp = i.get_total_price()
+                if tp != "":
+                    row["line_total"] = tp
+                compute_source.append(row)
 
-            # Calculate delivery fee and home status
             is_home_delivery, delivery_fee = (
                 order.calculate_delivery_fee_and_home_status_from_items(compute_source)
             )
 
-            # Only save if values have changed to prevent unnecessary saves
             if (
                 order.is_home_delivery != is_home_delivery
                 or order.delivery_fee != delivery_fee

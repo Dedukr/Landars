@@ -630,8 +630,13 @@ class Order(models.Model):
         if has_non_post_items:
             return True, Decimal("10")  # Home delivery for non-post items
 
-        # All items are post-suitable
-        if self.total_price > 220:
+        # All items are post-suitable — use merchandise only (exclude delivery_fee).
+        merch = Decimal(0)
+        for item in items:
+            tp = item.get_total_price()
+            if tp != "":
+                merch += Decimal(str(tp))
+        if merch > Decimal("220"):
             return False, Decimal("0")  # Free delivery for high-value orders
 
         from shipping.sendcloud_shipping import ShippingService
@@ -694,9 +699,33 @@ class Order(models.Model):
         if has_non_post_items:
             return True, Decimal("10")
 
-        # All items are post-suitable. Compute total price and weight.
-        total_price = sum((prod.price * q) for prod, q in normalized if prod)
-        if total_price > Decimal("220"):
+        # Merchandise subtotal for free delivery (catalog × qty). Optional ``line_total``
+        # per row (from admin) uses snapshot line totals when all contributing rows set it.
+        line_merch = Decimal(0)
+        n_line = 0
+        for raw in items_data or []:
+            product = raw.get("product")
+            quantity = raw.get("quantity")
+            if not product or not quantity:
+                continue
+            lt = raw.get("line_total")
+            if lt not in (None, ""):
+                line_merch += Decimal(str(lt))
+                n_line += 1
+        n_in = sum(
+            1
+            for raw in items_data or []
+            if raw.get("product") and raw.get("quantity")
+        )
+        if n_line > 0 and n_line == n_in:
+            merch = line_merch
+        else:
+            merch = sum(
+                (prod.price * Decimal(str(q)))
+                for prod, q in normalized
+                if prod
+            )
+        if merch > Decimal("220"):
             return False, Decimal("0")
 
         from shipping.sendcloud_shipping import ShippingService

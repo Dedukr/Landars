@@ -8,7 +8,7 @@
     Retries use stored Sendcloud parcel metadata and your own storage. “Open PDF” above always uses the saved file, not live provider label URLs.
   </p>
   <p class="help">
-    <strong>Recreate parcel after Sendcloud cancel:</strong> clears stored provider parcel fields on this shipment (and attempts API cancel if a parcel id exists), re-builds address/lines/weight from the <em>current</em> order, assigns a <em>new</em> Sendcloud <code>order_number</code>, clears the label in S3, then queues a new parcel create. Use when the remote parcel was cancelled or is missing and you have updated the order.
+    <strong>Recreate Sendcloud shipment:</strong> attempts API cancel if a parcel id exists, clears stored provider fields on this row, re-builds address/lines/weight from the <em>current</em> order, assigns a <em>new</em> Sendcloud <code>order_number</code>, clears the label in S3, then queues a new parcel create. Use when the remote parcel was cancelled or is missing and you have updated the order.
   </p>
   <div class="form-row" style="padding: 0.5rem 0;">
     <form method="post" action="{{ shipment_ops_retry.retry_label_url }}" style="display: inline;">
@@ -21,7 +21,7 @@
     </form>
     <form method="post" action="{{ shipment_ops_retry.recreate_parcel_url }}" style="display: inline; margin-left: 0.5rem;">
       {% csrf_token %}
-      <input type="submit" class="button default" style="background: #ba2121; color: #fff;" value="Recreate Sendcloud parcel (new snapshot + order #)" onclick="return confirm('This clears stored parcel ids on the shipment and creates a fresh Sendcloud order_number from the current order. Continue?');" />
+      <input type="submit" class="button default" style="background: #ba2121; color: #fff;" value="Recreate Sendcloud shipment" onclick="return confirm('Cancels the existing Sendcloud parcel if possible, clears stored parcel data, rebuilds the snapshot from the current order, assigns a new Sendcloud order number, and queues a new parcel. Continue?');" />
     </form>
   </div>
 </div>

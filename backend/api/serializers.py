@@ -460,11 +460,15 @@ class OrderSerializer(serializers.ModelSerializer):
             if items_data is not None:
                 compute_source = items_data
             else:
-                # Build compute source from current DB items
-                compute_source = [
-                    {"product": i.product, "quantity": i.quantity}
-                    for i in instance.items.all()
-                ]
+                compute_source = []
+                for i in instance.items.select_related("product").prefetch_related(
+                    "product__categories"
+                ):
+                    row = {"product": i.product, "quantity": i.quantity}
+                    tp = i.get_total_price()
+                    if tp != "":
+                        row["line_total"] = tp
+                    compute_source.append(row)
 
             is_home_delivery, delivery_fee = (
                 instance.calculate_delivery_fee_and_home_status_from_items(

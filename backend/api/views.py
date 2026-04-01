@@ -712,7 +712,12 @@ class OrderListView(APIView):
             if all_products_are_sausages:
                 # ALL products are sausages, use post delivery with Royal Mail pricing
                 order.is_home_delivery = False
-                if order.total_price > 220:
+                merch = Decimal(0)
+                for item in items:
+                    tp = item.get_total_price()
+                    if tp != "":
+                        merch += Decimal(str(tp))
+                if merch > Decimal("220"):
                     order.delivery_fee = Decimal("0")
                 else:
                     total_weight = ShippingService.parcel_weight_kg_from_line_items(
