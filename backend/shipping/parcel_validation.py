@@ -55,7 +55,7 @@ def validate_sendcloud_parcel_prerequisites(
     ``request_label: true`` parcel creation.
 
     For incomplete UK addresses, attempts Ideal Postcodes Address Cleanse before
-    raising (see :mod:`shipment.ideal_postcodes`).
+    raising (see :mod:`shipping.ideal_postcodes`).
     """
     from .ideal_postcodes import try_cleanse_uk_address_snapshot
 

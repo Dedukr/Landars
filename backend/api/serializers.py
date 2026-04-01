@@ -4,7 +4,7 @@ from account.serializers import AddressSerializer
 from django.db import transaction
 from django.db.models import Q
 from rest_framework import serializers
-from shipping.models import ShippingDetails
+from shipping.models import Shipment
 
 from .models import (
     Cart,
@@ -306,25 +306,6 @@ class OrderSerializer(serializers.ModelSerializer):
         allow_null=True,
         required=False,
     )
-    shipping_carrier = serializers.CharField(
-        source="shipping_details.shipping_carrier",
-        allow_blank=True,
-        allow_null=True,
-        required=False,
-    )
-    shipping_service_name = serializers.CharField(
-        source="shipping_details.shipping_service_name",
-        allow_blank=True,
-        allow_null=True,
-        required=False,
-    )
-    shipping_cost = serializers.DecimalField(
-        source="shipping_details.shipping_cost",
-        max_digits=10,
-        decimal_places=2,
-        allow_null=True,
-        required=False,
-    )
     shipping_tracking_number = serializers.CharField(
         source="shipping_details.shipping_tracking_number",
         allow_blank=True,
@@ -339,28 +320,22 @@ class OrderSerializer(serializers.ModelSerializer):
         read_only=True,
     )
     shipping_label_url = serializers.URLField(
-        source="shipping_details.shipping_label_url",
+        source="shipping_details.provider_label_url",
         allow_null=True,
         required=False,
         read_only=True,
     )
+    # Match :class:`shipping.models.Shipment.sendcloud_parcel_id` (BigIntegerField).
     sendcloud_parcel_id = serializers.IntegerField(
         source="shipping_details.sendcloud_parcel_id",
         allow_null=True,
         required=False,
         read_only=True,
+        max_value=9223372036854775807,
+        min_value=-9223372036854775808,
     )
-    shipping_status = serializers.CharField(
-        source="shipping_details.shipping_status",
-        allow_null=True,
-        required=False,
-        read_only=True,
-    )
-    shipping_error_message = serializers.CharField(
-        source="shipping_details.shipping_error_message",
-        allow_blank=True,
-        allow_null=True,
-        required=False,
+    shipment_status = serializers.CharField(
+        source="shipping_details.status",
         read_only=True,
     )
 
@@ -385,15 +360,11 @@ class OrderSerializer(serializers.ModelSerializer):
             "items",
             # Shipping fields
             "shipping_method_id",
-            "shipping_carrier",
-            "shipping_service_name",
-            "shipping_cost",
             "shipping_tracking_number",
             "shipping_tracking_url",
             "shipping_label_url",
             "sendcloud_parcel_id",
-            "shipping_status",
-            "shipping_error_message",
+            "shipment_status",
         ]
         read_only_fields = [
             "id",
@@ -407,8 +378,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "shipping_tracking_url",
             "shipping_label_url",
             "sendcloud_parcel_id",
-            "shipping_status",
-            "shipping_error_message",
+            "shipment_status",
         ]
 
     def validate(self, data):
@@ -440,7 +410,16 @@ class OrderSerializer(serializers.ModelSerializer):
         order = Order.objects.create(**validated_data)
 
         if shipping_data:
-            ShippingDetails.objects.create(order=order, **shipping_data)
+            Shipment.objects.create(
+                order=order,
+                status=Shipment.Status.DRAFT,
+                **shipping_data,
+            )
+        else:
+            Shipment.objects.get_or_create(
+                order=order,
+                defaults={"status": Shipment.Status.DRAFT},
+            )
 
         # Persist items
         for item_data in items_data:
@@ -501,6 +480,11 @@ class OrderSerializer(serializers.ModelSerializer):
 
         instance.save()
 
+        Shipment.objects.get_or_create(
+            order=instance,
+            defaults={"status": Shipment.Status.DRAFT},
+        )
+
         if shipping_data is not None:
             details = getattr(instance, "shipping_details", None)
             if details:
@@ -508,7 +492,11 @@ class OrderSerializer(serializers.ModelSerializer):
                     setattr(details, key, value)
                 details.save()
             else:
-                ShippingDetails.objects.create(order=instance, **shipping_data)
+                Shipment.objects.create(
+                    order=instance,
+                    status=Shipment.Status.DRAFT,
+                    **shipping_data,
+                )
         return instance
 
 

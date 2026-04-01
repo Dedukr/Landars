@@ -42,7 +42,7 @@ from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
-from shipping.models import ShippingDetails
+from shipping.models import Shipment
 
 from .forms import (
     OrderItemInlineForm,
@@ -991,31 +991,29 @@ class OrderItemInline(admin.TabularInline):
     get_total_price.short_description = "Total Price"
 
 
-class ShippingDetailsInline(admin.StackedInline):
-    model = ShippingDetails
+class OrderShipmentInline(admin.StackedInline):
+    """Single :class:`~shipping.models.Shipment` row (tracking + label + Sendcloud ids)."""
+
+    model = Shipment
     fk_name = "order"
     extra = 0
     can_delete = False
+    verbose_name = "Shipment / shipping"
+    verbose_name_plural = "Shipment / shipping"
     readonly_fields = [
-        "shipping_tracking_number",
-        "shipping_tracking_url",
-        "shipping_label_url",
-        "sendcloud_parcel_id",
-        "shipping_status",
-        "shipping_error_message",
-    ]
-    fields = [
+        "status",
         "shipping_method_id",
-        "shipping_carrier",
-        "shipping_service_name",
-        "shipping_cost",
+        "sendcloud_parcel_id",
+        "carrier_code",
         "shipping_tracking_number",
         "shipping_tracking_url",
-        "shipping_label_url",
-        "sendcloud_parcel_id",
-        "shipping_status",
-        "shipping_error_message",
+        "provider_label_url",
+        "label_s3_key",
+        "last_error",
+        "retry_count",
+        "sendcloud_inputs",
     ]
+    fields = readonly_fields
 
 
 class InvoiceInline(admin.TabularInline):
@@ -1159,9 +1157,9 @@ def retry_shipment_creation(modeladmin, request, queryset):
     """
     import logging
 
-    from shipment.models import Shipment
-    from shipment.order_shipping import OrderShippingService
-    from shipping.service import ShippingService
+    from shipping.models import Shipment
+    from shipping.order_shipping import OrderShippingService
+    from shipping.sendcloud_shipping import ShippingService
 
     logger = logging.getLogger(__name__)
     shipping_service = ShippingService()
@@ -1336,7 +1334,7 @@ class OrderAdmin(admin.ModelAdmin):
             inlines.append(InvoiceInline)
             # Only show shipping details for orders that are NOT home delivery
             if not obj.is_home_delivery:
-                inlines.append(ShippingDetailsInline)
+                inlines.append(OrderShipmentInline)
         return inlines
 
     def get_fields(self, request, obj=None):
@@ -1603,7 +1601,7 @@ class OrderAdmin(admin.ModelAdmin):
         items = order.items.select_related("product").all()
 
         if not order.delivery_fee_manual:
-            from shipping.service import ShippingService
+            from shipping.sendcloud_shipping import ShippingService
 
             # Sausage category name
             post_suitable_category = "Sausages and Marinated products"
@@ -1647,9 +1645,9 @@ class OrderAdmin(admin.ModelAdmin):
     get_holiday_fee_amount.short_description = "Holiday Fee (£)"
 
     def get_shipping_status_display(self, obj):
-        """Display shipping status with color coding."""
+        """Display :class:`~shipping.models.Shipment` pipeline status with color coding."""
         details = getattr(obj, "shipping_details", None)
-        if not details or not details.shipping_status:
+        if not details or not details.status:
             if obj.status == "ready_to_ship" and not obj.is_home_delivery:
                 return format_html('<span style="color: orange;">⏳ Pending</span>')
             if obj.status == "paid" and details and details.shipping_method_id:
@@ -1657,26 +1655,35 @@ class OrderAdmin(admin.ModelAdmin):
             return "-"
 
         status_colors = {
-            "pending_shipment": "orange",
-            "label_created": "green",
-            "shipment_failed": "red",
-            "in_transit": "blue",
-            "out_for_delivery": "purple",
-            "delivered": "darkgreen",
+            Shipment.Status.DRAFT: "gray",
+            Shipment.Status.PENDING: "orange",
+            Shipment.Status.QUEUED: "orange",
+            Shipment.Status.CREATING: "orange",
+            Shipment.Status.LABEL_DOWNLOAD_PENDING: "blue",
+            Shipment.Status.LABEL_DOWNLOAD_FAILED: "red",
+            Shipment.Status.LABEL_READY: "green",
+            Shipment.Status.FAILED_RETRYABLE: "red",
+            Shipment.Status.FAILED_FINAL: "darkred",
+            Shipment.Status.CANCELLED: "gray",
         }
 
         status_icons = {
-            "pending_shipment": "⏳",
-            "label_created": "✅",
-            "shipment_failed": "❌",
-            "in_transit": "🚚",
-            "out_for_delivery": "📦",
-            "delivered": "✓",
+            Shipment.Status.DRAFT: "◯",
+            Shipment.Status.PENDING: "⏳",
+            Shipment.Status.QUEUED: "⏳",
+            Shipment.Status.CREATING: "⏳",
+            Shipment.Status.LABEL_DOWNLOAD_PENDING: "📄",
+            Shipment.Status.LABEL_DOWNLOAD_FAILED: "❌",
+            Shipment.Status.LABEL_READY: "✅",
+            Shipment.Status.FAILED_RETRYABLE: "❌",
+            Shipment.Status.FAILED_FINAL: "⛔",
+            Shipment.Status.CANCELLED: "—",
         }
 
-        color = status_colors.get(details.shipping_status, "gray")
-        icon = status_icons.get(details.shipping_status, "")
-        label = details.get_shipping_status_display()
+        st = details.status
+        color = status_colors.get(st, "gray")
+        icon = status_icons.get(st, "")
+        label = details.get_status_display()
 
         return format_html('<span style="color: {};">{} {}</span>', color, icon, label)
 
@@ -1700,10 +1707,10 @@ class OrderAdmin(admin.ModelAdmin):
     def get_shipping_label_link(self, obj):
         """Display label download link if available."""
         details = getattr(obj, "shipping_details", None)
-        if details and details.shipping_label_url:
+        if details and details.provider_label_url:
             return format_html(
                 '<a href="{}" target="_blank" class="button">📄 Download Label</a>',
-                details.shipping_label_url,
+                details.provider_label_url,
             )
         return "-"
 
@@ -1733,7 +1740,7 @@ class OrderAdmin(admin.ModelAdmin):
         if status_changed_to_paid:
             self._update_invoice_to_paid(obj)
 
-        from shipment.order_shipping import OrderShippingService
+        from shipping.order_shipping import OrderShippingService
 
         OrderShippingService.transition_to_ready_to_ship(obj)
 

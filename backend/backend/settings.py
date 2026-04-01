@@ -60,7 +60,6 @@ INSTALLED_APPS = [
     "storages",
     "billing",
     "shipping",
-    "shipment",
     "reconciliation",
 ]
 

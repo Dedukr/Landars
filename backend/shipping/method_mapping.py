@@ -10,9 +10,11 @@ offer, per speed:
 Only **non-signed** small/medium lines are matched (no Large Letter, no Signed).
 
 ``Shipment.logical_shipping_option`` is ``uk_tracked_48`` or ``uk_tracked_24`` (see
-:func:`logical_shipping_option_for_billable_kg`). ``uk_standard_small_parcel`` is
-kept only for legacy DB rows; new snapshots use Tracked 48 for all weights below
-``POST_SHIPMENT_TRACKED_24_MIN_KG``.
+:func:`logical_shipping_option_for_billable_kg`), or is aligned at ship time from the
+checkout method (see :func:`resolve_checkout_sendcloud_method_id`).
+``uk_standard_small_parcel`` is kept only for legacy DB rows; new snapshots use
+Tracked 48 for all weights below ``POST_SHIPMENT_TRACKED_24_MIN_KG`` when no checkout
+method is stored yet.
 
 At ship time, ``pick_sendcloud_method_id`` picks the **tightest** method row whose
 weight bounds contain the parcel (API fields plus ``0-5kg``-style name bands).
@@ -210,6 +212,48 @@ def _spec_matches_row(row: MethodRow, spec: LogicalShippingSpec) -> bool:
         all(frag.lower() in name for frag in group)
         for group in spec.name_match_groups
     )
+
+
+def logical_shipping_option_for_method_row(row: MethodRow) -> str | None:
+    """Map a Sendcloud ``shipping_methods`` row to our logical key, if it matches a spec."""
+    for key, spec in LOGICAL_SHIPPING_MAP.items():
+        if _spec_matches_row(row, spec):
+            return key
+    return None
+
+
+def resolve_checkout_sendcloud_method_id(
+    methods: list[MethodRow],
+    checkout_method_id: int,
+    parcel_weight_kg: float,
+) -> int | None:
+    """
+    Use the customer's quoted Sendcloud method id when it still applies.
+
+    Returns the id if it appears in ``methods``, accepts ``parcel_weight_kg``, and
+    matches a :data:`LOGICAL_SHIPPING_MAP` product. Otherwise ``None`` (caller falls
+    back to :func:`pick_sendcloud_method_id`).
+    """
+    cid = int(checkout_method_id)
+    row: MethodRow | None = None
+    for m in methods:
+        mid = m.get("id")
+        if mid is None:
+            continue
+        try:
+            if int(mid) != cid:
+                continue
+        except (TypeError, ValueError):
+            continue
+        row = m
+        break
+    if row is None:
+        return None
+    if not method_row_accepts_parcel_weight(row, float(parcel_weight_kg)):
+        return None
+    if logical_shipping_option_for_method_row(row) is None:
+        return None
+    return cid
 
 
 def logical_shipping_option_for_billable_kg(billable_weight_kg: float) -> str:

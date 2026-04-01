@@ -4,8 +4,9 @@ This is useful for testing and debugging Royal Mail price fetching.
 """
 
 from django.core.management.base import BaseCommand
+
 from shipping.sendcloud_client import SendcloudAPIError
-from shipping.service import ShippingService
+from shipping.sendcloud_shipping import ShippingService
 
 
 class Command(BaseCommand):
@@ -54,7 +55,6 @@ class Command(BaseCommand):
         try:
             service = ShippingService()
 
-            # Test address
             address = {
                 "country": country,
                 "postal_code": postal_code,
@@ -62,15 +62,12 @@ class Command(BaseCommand):
                 "address_line": "Test Address",
             }
 
-            # Test items (for weight calculation)
             items = [{"quantity": weight}]
 
             self.stdout.write("Fetching shipping options from Sendcloud...\n")
 
-            # Get shipping options
             options_list = service.get_shipping_options(address=address, items=items)
 
-            # Filter for Royal Mail options
             royal_mail_options = [
                 opt
                 for opt in options_list

@@ -108,7 +108,7 @@ def stripe_webhook(request):
         logger.info(f"Payment succeeded: {payment_intent_id}")
 
         # Find order with this payment intent ID
-        from shipping.service import ShippingService
+        from shipping.sendcloud_shipping import ShippingService
 
         from .models import Order
 
@@ -134,7 +134,7 @@ def stripe_webhook(request):
 
                     if result.get("skipped"):
                         logger.info(
-                            "Order %s: legacy shipment skipped (post-delivery uses shipment app)",
+                            "Order %s: legacy shipment skipped (post-delivery uses shipping app)",
                             order.id,
                         )
                     elif result.get("success"):
@@ -159,7 +159,7 @@ def stripe_webhook(request):
                 )
 
             # Post / courier: paid → ready_to_ship (snapshot + Celery run on that transition only)
-            from shipment.order_shipping import OrderShippingService
+            from shipping.order_shipping import OrderShippingService
 
             OrderShippingService.transition_to_ready_to_ship(order)
 

@@ -53,7 +53,7 @@ export default function StripePaymentForm({
       return;
     }
 
-    // Validate shipping form before processing payment
+    // Validate checkout (address / courier quote where required) before payment
     if (onValidationRequired && !onValidationRequired()) {
       setError("Please complete all required fields before proceeding with payment.");
       return;

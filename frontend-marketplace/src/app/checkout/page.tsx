@@ -18,11 +18,11 @@ import DiscountDisplay from "@/components/cart/DiscountDisplay";
 import DeliveryFeeDisplay from "@/components/cart/DeliveryFeeDisplay";
 import SubtotalDisplay from "@/components/cart/SubtotalDisplay";
 import TotalDisplay from "@/components/cart/TotalDisplay";
-import ShippingOptions from "@/components/ShippingOptions";
+import ShipmentQuoteOptions from "@/components/ShipmentQuoteOptions";
 import {
-  useShippingOptions,
-  type ShippingOption,
-} from "@/hooks/useShippingOptions";
+  useShipmentQuoteOptions,
+  type ShipmentQuoteOption,
+} from "@/hooks/useShipmentQuoteOptions";
 
 interface ShippingFormData {
   email: string;
@@ -159,13 +159,13 @@ export default function CheckoutPage() {
 
   // Shipping options state
   const {
-    options: shippingOptions,
-    loading: shippingOptionsLoading,
-    error: shippingOptionsError,
-    fetchShippingOptions,
-  } = useShippingOptions();
-  const [selectedShippingOption, setSelectedShippingOption] =
-    useState<ShippingOption | null>(null);
+    options: shipmentQuoteOptions,
+    loading: shipmentQuoteLoading,
+    error: shipmentQuoteError,
+    fetchShipmentQuotes,
+  } = useShipmentQuoteOptions();
+  const [selectedShipmentQuote, setSelectedShipmentQuote] =
+    useState<ShipmentQuoteOption | null>(null);
 
   // Redirect if cart is empty (but not if we're showing order review)
   useEffect(() => {
@@ -252,8 +252,8 @@ export default function CheckoutPage() {
             // For post delivery, use API price from shipping options
             // If shipping options are available, use the first one's price
             // Otherwise, keep the existing fee
-            if (shippingOptions.length > 0) {
-              const apiPrice = parseFloat(shippingOptions[0].price);
+            if (shipmentQuoteOptions.length > 0) {
+              const apiPrice = parseFloat(shipmentQuoteOptions[0].price);
               const currentDeliveryFee = cartData.delivery_fee
                 ? parseFloat(cartData.delivery_fee)
                 : 0;
@@ -292,7 +292,7 @@ export default function CheckoutPage() {
     cart.length,
     shippingForm.notes,
     fetchCartData,
-    shippingOptions,
+    shipmentQuoteOptions,
   ]);
 
   // All values come from cart model - single source of truth
@@ -332,13 +332,13 @@ export default function CheckoutPage() {
     }
 
     // For post delivery, use price from selected shipping option
-    if (selectedShippingOption) {
-      return parseFloat(selectedShippingOption.price);
+    if (selectedShipmentQuote) {
+      return parseFloat(selectedShipmentQuote.price);
     }
 
     // If no option selected yet, use first available option's price (if available)
-    if (shippingOptions.length > 0) {
-      return parseFloat(shippingOptions[0].price);
+    if (shipmentQuoteOptions.length > 0) {
+      return parseFloat(shipmentQuoteOptions[0].price);
     }
 
     // If address is filled but no shipping options yet, don't use cart fee
@@ -363,14 +363,14 @@ export default function CheckoutPage() {
       return "Standard home delivery fee";
     }
     // Post delivery - show API price
-    if (selectedShippingOption) {
+    if (selectedShipmentQuote) {
       return `Royal Mail shipping: £${parseFloat(
-        selectedShippingOption.price
+        selectedShipmentQuote.price
       ).toFixed(2)}`;
     }
-    if (shippingOptions.length > 0) {
+    if (shipmentQuoteOptions.length > 0) {
       return `Royal Mail shipping: £${parseFloat(
-        shippingOptions[0].price
+        shipmentQuoteOptions[0].price
       ).toFixed(2)}`;
     }
     return "Calculating delivery fee...";
@@ -399,7 +399,7 @@ export default function CheckoutPage() {
     hasSausages: !cartIsHomeDelivery,
     weight: cartTotalWeight,
     dependsOnCourier:
-      (!cartIsHomeDelivery && shippingOptions.length === 0) ||
+      (!cartIsHomeDelivery && shipmentQuoteOptions.length === 0) ||
       isOverweightSausageOrder, // Depends on courier if no options loaded yet or overweight
     overweight: isOverweightSausageOrder,
   };
@@ -507,7 +507,7 @@ export default function CheckoutPage() {
     return () => clearTimeout(timeoutId);
   }, [shippingForm.notes, user, cartData, updateCartNotes]);
 
-  // Fetch shipping options when address is complete
+  // Fetch courier quotes from Django shipping app when address is complete
   useEffect(() => {
     // Check if required address fields are filled
     const hasCompleteAddress =
@@ -518,7 +518,7 @@ export default function CheckoutPage() {
     if (hasCompleteAddress && cartData && cartData.items.length > 0) {
       // Debounce the fetch
       const timeoutId = setTimeout(() => {
-        fetchShippingOptions(
+        fetchShipmentQuotes(
           {
             country: "GB", // Default to UK for now
             postal_code: shippingForm.postal_code,
@@ -539,15 +539,15 @@ export default function CheckoutPage() {
     shippingForm.city,
     shippingForm.postal_code,
     cartData,
-    fetchShippingOptions,
+    fetchShipmentQuotes,
   ]);
 
-  // Handle shipping option selection
-  const handleSelectShippingOption = useCallback(
+  // Handle courier quote selection (Sendcloud method id → order later)
+  const handleSelectShipmentQuote = useCallback(
     async (optionId: number) => {
-      const option = shippingOptions.find((opt) => opt.id === optionId);
+      const option = shipmentQuoteOptions.find((opt) => opt.id === optionId);
       if (option) {
-        setSelectedShippingOption(option);
+        setSelectedShipmentQuote(option);
 
         // Update cart delivery_fee to the API price from selected shipping option
         if (!cartIsHomeDelivery && user) {
@@ -564,7 +564,7 @@ export default function CheckoutPage() {
         }
       }
     },
-    [shippingOptions, cartIsHomeDelivery, user, fetchCartData]
+    [shipmentQuoteOptions, cartIsHomeDelivery, user, fetchCartData]
   );
 
   // Create payment intent when component mounts - using cart total
@@ -637,7 +637,7 @@ export default function CheckoutPage() {
     }
 
     // Validate shipping option is selected
-    if (!selectedShippingOption) {
+    if (!selectedShipmentQuote) {
       newErrors.shipping = "Please select a shipping option";
     }
 
@@ -680,7 +680,7 @@ export default function CheckoutPage() {
   //       notes: cartData?.notes || shippingForm.notes,
   //       discount: cartData?.discount || "0",
   //       delivery_fee:
-  //         selectedShippingOption?.price || cartData?.delivery_fee || "0",
+  //         selectedShipmentQuote?.price || cartData?.delivery_fee || "0",
   //       is_home_delivery: cartData?.is_home_delivery ?? true,
   //       payment_intent_id: paymentIntent.id,
   //       payment_status: "paid",
@@ -694,11 +694,11 @@ export default function CheckoutPage() {
   //     };
 
   //     // If shipping option is selected, add shipping metadata
-  //     if (selectedShippingOption?.price) {
-  //       orderData.shipping_method_id = selectedShippingOption.id;
-  //       orderData.shipping_carrier = selectedShippingOption.carrier;
-  //       orderData.shipping_service_name = selectedShippingOption.name;
-  //       orderData.shipping_cost = selectedShippingOption.price;
+  //     if (selectedShipmentQuote?.price) {
+  //       orderData.shipping_method_id = selectedShipmentQuote.id;
+  //       orderData.shipping_carrier = selectedShipmentQuote.carrier;
+  //       orderData.shipping_service_name = selectedShipmentQuote.name;
+  //       orderData.shipping_cost = selectedShipmentQuote.price;
   //     }
 
   //     const order = await httpClient.post<{ id: number }>(
@@ -779,7 +779,7 @@ export default function CheckoutPage() {
         notes: cartData?.notes || shippingForm.notes,
         discount: cartData?.discount || "0",
         delivery_fee:
-          selectedShippingOption?.price || cartData?.delivery_fee || "0",
+          selectedShipmentQuote?.price || cartData?.delivery_fee || "0",
         is_home_delivery: cartData?.is_home_delivery ?? true,
         address: {
           address_line: shippingForm.address_line,
@@ -791,11 +791,11 @@ export default function CheckoutPage() {
       };
 
       // If shipping option is selected, add shipping metadata
-      if (selectedShippingOption?.price) {
-        orderData.shipping_method_id = selectedShippingOption.id;
-        orderData.shipping_carrier = selectedShippingOption.carrier;
-        orderData.shipping_service_name = selectedShippingOption.name;
-        orderData.shipping_cost = selectedShippingOption.price;
+      if (selectedShipmentQuote?.price) {
+        orderData.shipping_method_id = selectedShipmentQuote.id;
+        orderData.shipping_carrier = selectedShipmentQuote.carrier;
+        orderData.shipping_service_name = selectedShipmentQuote.name;
+        orderData.shipping_cost = selectedShipmentQuote.price;
       }
 
       const order = await httpClient.post<{ id: number }>(
@@ -1022,13 +1022,13 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              {/* Shipping Options */}
-              <ShippingOptions
-                options={shippingOptions}
-                selectedOptionId={selectedShippingOption?.id || null}
-                onSelectOption={handleSelectShippingOption}
-                loading={shippingOptionsLoading}
-                error={shippingOptionsError}
+              {/* Courier quotes (Django shipment app) */}
+              <ShipmentQuoteOptions
+                options={shipmentQuoteOptions}
+                selectedOptionId={selectedShipmentQuote?.id || null}
+                onSelectOption={handleSelectShipmentQuote}
+                loading={shipmentQuoteLoading}
+                error={shipmentQuoteError}
               />
 
               {/* Validation Error for Shipping */}

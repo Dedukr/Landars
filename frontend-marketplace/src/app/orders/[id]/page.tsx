@@ -47,7 +47,7 @@ interface Order {
   total_items: number;
   payment_intent_id?: string;
   payment_status?: string;
-  // Shipping fields
+  /** Courier / Sendcloud fields from Django shipping.Shipment via order.shipping_details (API shipping_* keys). */
   shipping_method_id?: number;
   shipping_carrier?: string;
   shipping_service_name?: string;
@@ -55,7 +55,8 @@ interface Order {
   shipping_tracking_number?: string;
   shipping_tracking_url?: string;
   shipping_label_url?: string;
-  sendcloud_parcel_id?: number;
+  /** Sendcloud parcel id (backend BigInteger); use string if exposed as such to avoid JS int53 limits. */
+  sendcloud_parcel_id?: number | string;
   shipping_status?: string;
   shipping_error_message?: string;
 }

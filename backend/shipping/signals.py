@@ -5,27 +5,40 @@ from django.dispatch import receiver
 
 from api.models import Order
 
-from .models import ShipmentParcel
+from .models import Shipment
 from .order_shipping import OrderShippingService
 
 logger = logging.getLogger(__name__)
 
 
-@receiver(pre_save, sender=Order, dispatch_uid="shipment.stash_order_status_before_save")
+@receiver(pre_save, sender=Order, dispatch_uid="shipping.stash_order_status_before_save")
 def stash_order_status_before_save(sender, instance, **kwargs) -> None:
-    """Capture DB status before write so we can detect real transitions in post_save."""
+    """
+    Capture persisted ``status`` before write so ``post_save`` can detect transitions
+    into ``ready_to_ship`` without extra work when ``status`` is not part of this save.
+
+    Skips a DB read when ``save(update_fields=...)`` omits ``status`` — the row’s
+    status is unchanged, so the effective prior value is ``instance.status`` (callers
+    that mutate ``status`` must include ``"status"`` in ``update_fields``). Fixture
+    loads (``raw=True``) also skip the query.
+    """
+    if kwargs.get("raw"):
+        # Loaddata: avoid SELECT; treat row as internally consistent for transition check.
+        instance._order_previous_status = instance.status
+        return
     if not instance.pk:
         instance._order_previous_status = None
         return
-    previous = (
-        Order.objects.filter(pk=instance.pk)
-        .values_list("status", flat=True)
-        .first()
+    update_fields = kwargs.get("update_fields")
+    if update_fields is not None and "status" not in update_fields:
+        instance._order_previous_status = instance.status
+        return
+    instance._order_previous_status = (
+        Order.objects.filter(pk=instance.pk).values_list("status", flat=True).first()
     )
-    instance._order_previous_status = previous
 
 
-@receiver(post_save, sender=Order, dispatch_uid="shipment.on_ready_to_ship_transition")
+@receiver(post_save, sender=Order, dispatch_uid="shipping.on_ready_to_ship_transition")
 def on_order_transition_ready_to_ship(sender, instance, **kwargs) -> None:
     """
     When the order *transitions into* ``ready_to_ship``, freeze a Shipment snapshot
@@ -59,24 +72,21 @@ def on_order_transition_ready_to_ship(sender, instance, **kwargs) -> None:
 
 @receiver(
     pre_delete,
-    sender=ShipmentParcel,
-    dispatch_uid="shipment.cancel_sendcloud_parcel_before_delete",
+    sender=Shipment,
+    dispatch_uid="shipping.cancel_sendcloud_parcel_before_shipment_delete",
 )
-def cancel_sendcloud_parcel_before_delete(sender, instance, **kwargs) -> None:
-    """
-    POST /parcels/{id}/cancel at Sendcloud before the DB row is removed
-    (including when ``Shipment`` delete cascades to ``ShipmentParcel``).
-    """
+def cancel_sendcloud_parcel_before_shipment_delete(sender, instance, **kwargs) -> None:
+    """POST /parcels/{id}/cancel at Sendcloud before the ``Shipment`` row is removed."""
     pid = getattr(instance, "sendcloud_parcel_id", None)
     if not pid:
         return
-    from shipping.sendcloud_client import SendcloudClient
+    from .sendcloud_client import SendcloudClient
 
     try:
         client = SendcloudClient()
     except ValueError as exc:
         logger.warning(
-            "ShipmentParcel pk=%s sendcloud_parcel_id=%s: skip remote cancel "
+            "Shipment pk=%s sendcloud_parcel_id=%s: skip remote cancel "
             "(Sendcloud not configured): %s",
             instance.pk,
             pid,
@@ -85,13 +95,13 @@ def cancel_sendcloud_parcel_before_delete(sender, instance, **kwargs) -> None:
         return
     if client.cancel_parcel(int(pid)):
         logger.info(
-            "Cancelled Sendcloud parcel %s before deleting ShipmentParcel pk=%s",
+            "Cancelled Sendcloud parcel %s before deleting Shipment pk=%s",
             pid,
             instance.pk,
         )
     else:
         logger.warning(
-            "Sendcloud cancel failed for parcel %s (ShipmentParcel pk=%s); "
+            "Sendcloud cancel failed for parcel %s (Shipment pk=%s); "
             "deleting local row anyway — check Sendcloud panel.",
             pid,
             instance.pk,

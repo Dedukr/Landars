@@ -184,7 +184,7 @@ class Command(BaseCommand):
         for order in qs:
             order.status = "paid"
             order.save(update_fields=["status"])
-            from shipment.order_shipping import OrderShippingService
+            from shipping.order_shipping import OrderShippingService
 
             order.refresh_from_db()
             OrderShippingService.transition_to_ready_to_ship(order)

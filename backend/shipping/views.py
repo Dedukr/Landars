@@ -1,18 +1,13 @@
 """
-Shipping API Views
+Shipment HTTP API (Sendcloud quoting, legacy parcel create, webhooks).
 
-Provides REST API endpoints for:
-- Getting shipping options
-- Creating shipments
-- Checking shipment status
-- Receiving SendCloud webhook updates
+Public URLs remain ``/api/shipping/...`` for marketplace compatibility.
 """
 
 import hashlib
 import hmac
 import json
 import logging
-from decimal import Decimal
 
 from django.conf import settings
 from django.db import transaction
@@ -24,8 +19,9 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from .models import Shipment
 from .sendcloud_client import SendcloudAPIError
-from .service import ShippingService
+from .sendcloud_shipping import ShippingService
 
 logger = logging.getLogger(__name__)
 
@@ -37,45 +33,11 @@ def get_shipping_options(request):
     Get available shipping options for a given address and cart items.
 
     POST /api/shipping/options/
-
-    Request body:
-    {
-        "address": {
-            "country": "GB",
-            "postal_code": "SW1A 1AA",
-            "city": "London",
-            "address_line": "10 Downing Street"
-        },
-        "items": [
-            {
-                "product_id": 1,
-                "quantity": 2.5
-            }
-        ]
-    }
-
-    Response:
-    {
-        "success": true,
-        "options": [
-            {
-                "id": 8,
-                "carrier": "DPD",
-                "name": "DPD Home",
-                "price": "5.99",
-                "currency": "GBP",
-                "min_delivery_days": 1,
-                "max_delivery_days": 2
-            }
-        ]
-    }
     """
     try:
-        # Extract address and items from request
         address = request.data.get("address", {})
         items = request.data.get("items", [])
 
-        # Validate required address fields
         required_fields = ["country", "postal_code"]
         missing_fields = [f for f in required_fields if not address.get(f)]
         if missing_fields:
@@ -87,11 +49,9 @@ def get_shipping_options(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Get shipping options using the service
         service = ShippingService()
         options = service.get_shipping_options(address=address, items=items)
 
-        # Log the options for debugging
         logger.info(f"Returning {len(options)} shipping options to frontend")
         if options:
             logger.debug(f"First option: {options[0]}")
@@ -121,33 +81,13 @@ def get_shipping_options(request):
 @transaction.atomic
 def create_shipment(request):
     """
-    Create a shipment for an order.
+    Create a shipment for an order (legacy Sendcloud flow for home delivery).
 
     POST /api/shipping/shipments/
-
-    Request body:
-    {
-        "order_id": 123,
-        "shipping_method_id": 8
-    }
-
-    Response:
-    {
-        "success": true,
-        "shipment": {
-            "parcel_id": "12345",
-            "tracking_number": "ABC123456789",
-            "tracking_url": "https://...",
-            "label_url": "https://...",
-            "carrier": "dpd",
-            "status": "announced"
-        }
-    }
     """
     from api.models import Order
 
     try:
-        # Extract order_id and shipping_method_id
         order_id = request.data.get("order_id")
         shipping_method_id = request.data.get("shipping_method_id")
 
@@ -160,7 +100,6 @@ def create_shipment(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Get the order
         try:
             order = Order.objects.get(id=order_id)
         except Order.DoesNotExist:
@@ -169,7 +108,6 @@ def create_shipment(request):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Verify order belongs to requesting user or user is staff
         if order.customer != request.user and not request.user.is_staff:
             return Response(
                 {
@@ -179,7 +117,6 @@ def create_shipment(request):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        # Verify order is paid
         if order.payment_status != "succeeded":
             return Response(
                 {
@@ -189,30 +126,28 @@ def create_shipment(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Ensure shipping details record and store method
         details = order.ensure_shipping_details()
         details.shipping_method_id = shipping_method_id
         details.save(update_fields=["shipping_method_id"])
 
-        # Create shipment
         service = ShippingService()
         shipment = service.create_shipment(order, shipping_method_id)
 
-        # Update shipping details with shipment information
         details.shipping_tracking_number = shipment.get("tracking_number")
         details.shipping_tracking_url = shipment.get("tracking_url")
-        details.shipping_label_url = shipment.get("label_url")
+        if shipment.get("label_url"):
+            details.provider_label_url = (shipment.get("label_url") or "")[:600]
         details.sendcloud_parcel_id = shipment.get("parcel_id")
-        details.shipping_status = "label_created"
-        details.shipping_error_message = None
+        details.status = Shipment.Status.LABEL_DOWNLOAD_PENDING
+        details.last_error = ""
         details.save(
             update_fields=[
                 "shipping_tracking_number",
                 "shipping_tracking_url",
-                "shipping_label_url",
+                "provider_label_url",
                 "sendcloud_parcel_id",
-                "shipping_status",
-                "shipping_error_message",
+                "status",
+                "last_error",
             ]
         )
 
@@ -239,26 +174,10 @@ def create_shipment(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_shipment_status(request, parcel_id):
-    """
-    Get the status of a shipment.
-
-    GET /api/shipping/shipments/<parcel_id>/
-
-    Response:
-    {
-        "success": true,
-        "shipment": {
-            "parcel_id": "12345",
-            "tracking_number": "ABC123456789",
-            "status": "in_transit",
-            "carrier": "dpd"
-        }
-    }
-    """
+    """GET /api/shipping/shipments/<parcel_id>/"""
     from api.models import Order
 
     try:
-        # Verify user has access to this shipment
         try:
             order = Order.objects.get(shipping_details__sendcloud_parcel_id=parcel_id)
             if order.customer != request.user and not request.user.is_staff:
@@ -295,30 +214,17 @@ def get_shipment_status(request, parcel_id):
 def _map_sendcloud_status_to_shipping_status(
     sendcloud_status_message, sendcloud_status_id=None
 ):
-    """
-    Map SendCloud status messages to our shipping_status field values.
-
-    Args:
-        sendcloud_status_message: The status message from SendCloud (e.g., "Ready to send", "In transit")
-        sendcloud_status_id: Optional status ID from SendCloud
-
-    Returns:
-        str: One of our shipping_status choices or None if unmapped
-    """
     if not sendcloud_status_message:
         return None
 
     status_lower = sendcloud_status_message.lower()
 
-    # Map SendCloud status messages to our status values
     status_mapping = {
-        # Label creation states
         "no label": "pending_shipment",
         "ready to send": "label_created",
         "ready to process": "pending_shipment",
         "being announced": "label_created",
         "announcing": "label_created",
-        # In transit states
         "in transit": "in_transit",
         "on the way": "in_transit",
         "in transportation": "in_transit",
@@ -326,39 +232,30 @@ def _map_sendcloud_status_to_shipping_status(
         "collected": "in_transit",
         "departed": "in_transit",
         "arrived": "in_transit",
-        # Out for delivery
         "out for delivery": "out_for_delivery",
         "on route": "out_for_delivery",
         "out for delivery today": "out_for_delivery",
-        # Delivered
         "delivered": "delivered",
         "successfully delivered": "delivered",
-        # Failed/Error states
         "failed": "shipment_failed",
         "returned": "shipment_failed",
         "address invalid": "shipment_failed",
         "undeliverable": "shipment_failed",
     }
 
-    # Check exact match first
     if status_lower in status_mapping:
         return status_mapping[status_lower]
 
-    # Check partial matches
     for key, value in status_mapping.items():
         if key in status_lower:
             return value
 
-    # Default mapping based on status ID if provided
     if sendcloud_status_id:
-        # Status ID 999 = No label
         if sendcloud_status_id == 999:
             return "pending_shipment"
-        # Status ID 1000 = Ready to send
         elif sendcloud_status_id == 1000:
             return "label_created"
 
-    # If no mapping found, log and return None
     logger.warning(
         f"Unmapped SendCloud status: {sendcloud_status_message} (ID: {sendcloud_status_id})"
     )
@@ -366,74 +263,32 @@ def _map_sendcloud_status_to_shipping_status(
 
 
 def _verify_webhook_signature(request_body, signature_header):
-    """
-    Verify the webhook signature from SendCloud.
-
-    Args:
-        request_body: Raw request body (bytes)
-        signature_header: Signature from request header (if provided)
-
-    Returns:
-        bool: True if signature is valid or verification is disabled, False otherwise
-    """
     webhook_secret = getattr(settings, "SENDCLOUD_WEBHOOK_SECRET", "")
 
-    # If no secret is configured, skip verification (for development/testing)
     if not webhook_secret:
         logger.debug(
             "SENDCLOUD_WEBHOOK_SECRET not configured, skipping signature verification"
         )
         return True
 
-    # If secret is configured but no signature provided, reject
     if not signature_header:
         logger.warning("Webhook secret configured but no signature header provided")
         return False
 
-    # Compute expected signature
-    # SendCloud typically uses HMAC-SHA256
     expected_signature = hmac.new(
         webhook_secret.encode("utf-8"), request_body, hashlib.sha256
     ).hexdigest()
 
-    # Compare signatures (use constant-time comparison to prevent timing attacks)
     return hmac.compare_digest(expected_signature, signature_header)
 
 
 @csrf_exempt
 @require_POST
 def sendcloud_webhook(request):
-    """
-    Handle SendCloud webhook notifications for parcel status changes.
-
-    This endpoint receives POST requests from SendCloud when parcel status changes.
-    It updates the corresponding order's shipping status in our database.
-
-    POST /api/shipping/webhook/
-
-    Headers:
-        X-Sendcloud-Signature (optional): HMAC-SHA256 signature for webhook verification
-
-    Expected payload structure (from SendCloud):
-    {
-        "parcel": {
-            "id": 12345,
-            "tracking_number": "ABC123",
-            "status": {
-                "id": 1000,
-                "message": "Ready to send"
-            },
-            ...
-        }
-    }
-
-    Returns:
-        HttpResponse: 200 OK if processed successfully, 400/401/500 for errors
-    """
+    """POST /api/shipping/webhook/"""
     from api.models import Order
 
     try:
-        # Verify webhook signature if configured
         signature_header = request.META.get("HTTP_X_SENDCLOUD_SIGNATURE", "")
         if not _verify_webhook_signature(request.body, signature_header):
             logger.warning(
@@ -441,14 +296,12 @@ def sendcloud_webhook(request):
             )
             return HttpResponse(status=401)
 
-        # Parse JSON payload
         try:
             payload = json.loads(request.body)
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in SendCloud webhook: {e}")
             return HttpResponse(status=400)
 
-        # Extract parcel information
         parcel = payload.get("parcel") or payload.get("data", {}).get("parcel")
         if not parcel:
             logger.error(f"Missing parcel data in webhook payload: {payload}")
@@ -459,12 +312,10 @@ def sendcloud_webhook(request):
             logger.error(f"Missing parcel ID in webhook payload: {parcel}")
             return HttpResponse(status=400)
 
-        # Extract status information
         status_info = parcel.get("status", {})
         status_message = status_info.get("message", "")
         status_id = status_info.get("id")
 
-        # Extract tracking information
         tracking_number = parcel.get("tracking_number")
         tracking_url = parcel.get("tracking_url")
 
@@ -473,7 +324,6 @@ def sendcloud_webhook(request):
             f"status={status_message} (ID: {status_id})"
         )
 
-        # Find the order by sendcloud_parcel_id
         try:
             order = Order.objects.select_related("shipping_details").get(
                 shipping_details__sendcloud_parcel_id=parcel_id
@@ -483,52 +333,49 @@ def sendcloud_webhook(request):
                 f"No order found with sendcloud_parcel_id={parcel_id}. "
                 f"This may be a parcel created outside our system."
             )
-            # Return 200 to prevent SendCloud from retrying
             return HttpResponse(status=200)
 
-        # Get or create shipping details
         details = order.ensure_shipping_details()
 
-        # Map SendCloud status to our shipping_status
         new_shipping_status = _map_sendcloud_status_to_shipping_status(
             status_message, status_id
         )
 
-        # Update shipping details
-        update_fields = []
+        update_fields: list[str] = []
 
-        if new_shipping_status and details.shipping_status != new_shipping_status:
-            old_status = details.shipping_status
-            details.shipping_status = new_shipping_status
-            update_fields.append("shipping_status")
+        if new_shipping_status == "shipment_failed":
+            if details.status != Shipment.Status.FAILED_FINAL:
+                details.status = Shipment.Status.FAILED_RETRYABLE
+                update_fields.append("status")
+            err = (status_message or "")[:2000]
+            if err and details.last_error != err:
+                details.last_error = err
+                update_fields.append("last_error")
             logger.info(
-                f"Updated order {order.id} shipping status: "
-                f"{old_status} -> {new_shipping_status}"
+                "Sendcloud webhook: parcel %s failure for order %s — %s",
+                parcel_id,
+                order.id,
+                status_message,
             )
 
-        # Update tracking number if provided and different
         if tracking_number and details.shipping_tracking_number != tracking_number:
             details.shipping_tracking_number = tracking_number
             update_fields.append("shipping_tracking_number")
             logger.info(f"Updated order {order.id} tracking number: {tracking_number}")
 
-        # Update tracking URL if provided and different
         if tracking_url and details.shipping_tracking_url != tracking_url:
             details.shipping_tracking_url = tracking_url
             update_fields.append("shipping_tracking_url")
 
-        # Clear error message if status is no longer failed
-        if (
-            new_shipping_status
-            and new_shipping_status != "shipment_failed"
-            and details.shipping_error_message
-        ):
-            details.shipping_error_message = None
-            update_fields.append("shipping_error_message")
+        carrier = parcel.get("carrier")
+        if isinstance(carrier, dict):
+            code = str(carrier.get("code") or "")[:64]
+            if code and details.carrier_code != code:
+                details.carrier_code = code
+                update_fields.append("carrier_code")
 
-        # Save if there are updates
         if update_fields:
-            details.save(update_fields=update_fields)
+            details.save(update_fields=sorted(set(update_fields)))
             logger.info(
                 f"Successfully updated shipping details for order {order.id}: "
                 f"{', '.join(update_fields)}"
@@ -546,5 +393,4 @@ def sendcloud_webhook(request):
                 "payload": str(request.body[:500]) if hasattr(request, "body") else None
             },
         )
-        # Return 500 so SendCloud will retry
         return HttpResponse(status=500)

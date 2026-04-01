@@ -1,7 +1,7 @@
 /**
  * Delivery Fee Calculator
- * Uses Royal Mail pricing for post-suitable items (same as backend cart and order logic)
- * Royal Mail pricing: 0-5kg: £4.44, 5-10kg: £5.82, 10-20kg: £9.25, >20kg: no service
+ * Post-delivery bands match backend `shipping.sendcloud_shipping.ShippingService.get_delivery_fee_by_weight()`:
+ * base cost + 20%, rounded to pence (small 0–2 kg, medium 2–5 / 5–10 / 10–20 kg).
  */
 
 export interface CartProduct {
@@ -22,41 +22,30 @@ export interface DeliveryFeeCalculation {
   overweight: boolean;
 }
 
-/**
- * Royal Mail delivery fee pricing map (matches backend ShippingService)
- * Maps weight thresholds to delivery fees in GBP
- */
-const ROYAL_MAIL_DELIVERY_FEE_BY_WEIGHT: Record<number, number> = {
-  5.0: 4.44, // 0-5kg: Medium Parcel 0-5kg
-  10.0: 5.82, // 5-10kg: Medium Parcel 5-10kg
-  20.0: 9.25, // 10-20kg: Delivery
-};
+/** Base GBP × 1.2, half-up to 2 dp — keep in sync with `POST_DELIVERY_FEE_BANDS_GBP` in backend. */
+const POST_DELIVERY_FEE_BANDS: readonly { maxKg: number; priceGbp: number }[] = [
+  { maxKg: 2, priceGbp: 3.24 }, // 2.70 × 1.2
+  { maxKg: 5, priceGbp: 6.06 }, // 5.05 × 1.2
+  { maxKg: 10, priceGbp: 7.91 }, // 6.59 × 1.2
+  { maxKg: 20, priceGbp: 12.8 }, // 10.67 × 1.2
+];
 
 /**
- * Get Royal Mail delivery fee based on weight
- * Matches backend ShippingService.get_delivery_fee_by_weight()
+ * Post-delivery fee by weight (matches backend ShippingService.get_delivery_fee_by_weight)
  */
 function getRoyalMailDeliveryFeeByWeight(weight: number): number {
-  // Ensure minimum weight
   weight = Math.max(weight, 0.1);
 
-  // If weight exceeds supported range, return 0 to signal no available option
   if (weight > 20) {
     return 0;
   }
 
-  // Find the appropriate price tier
-  const thresholds = Object.keys(ROYAL_MAIL_DELIVERY_FEE_BY_WEIGHT)
-    .map(Number)
-    .sort((a, b) => a - b);
-
-  for (const threshold of thresholds) {
-    if (weight <= threshold) {
-      return ROYAL_MAIL_DELIVERY_FEE_BY_WEIGHT[threshold];
+  for (const { maxKg, priceGbp } of POST_DELIVERY_FEE_BANDS) {
+    if (weight <= maxKg) {
+      return priceGbp;
     }
   }
 
-  // Fallback should never be hit because >20kg is handled above
   return 0;
 }
 
@@ -122,17 +111,14 @@ export function calculateDeliveryFee(
           "We can ship sausage orders up to 20kg. Please split your order or contact us for assistance.";
       } else {
         deliveryFee = getRoyalMailDeliveryFeeByWeight(totalWeight);
-        // Format reasoning based on weight ranges
-        if (totalWeight <= 5) {
-          reasoning = `Sausages 0-5kg: £${deliveryFee.toFixed(2)} delivery fee`;
+        if (totalWeight <= 2) {
+          reasoning = `Sausages up to 2kg: £${deliveryFee.toFixed(2)} delivery fee`;
+        } else if (totalWeight <= 5) {
+          reasoning = `Sausages 2–5kg: £${deliveryFee.toFixed(2)} delivery fee`;
         } else if (totalWeight <= 10) {
-          reasoning = `Sausages 5-10kg: £${deliveryFee.toFixed(
-            2
-          )} delivery fee`;
+          reasoning = `Sausages 5–10kg: £${deliveryFee.toFixed(2)} delivery fee`;
         } else {
-          reasoning = `Sausages 10-20kg: £${deliveryFee.toFixed(
-            2
-          )} delivery fee`;
+          reasoning = `Sausages 10–20kg: £${deliveryFee.toFixed(2)} delivery fee`;
         }
       }
     }

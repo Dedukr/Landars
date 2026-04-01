@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 from celery import shared_task
@@ -16,15 +17,15 @@ from .parcel_extraction import (
 logger = logging.getLogger(__name__)
 
 
-def _parcel_sync_dict_from_sp(sp: Any) -> dict[str, Any]:
-    """Minimal parcel-shaped dict for ``ShippingDetails`` sync (no raw API payload)."""
+def _parcel_sync_dict_from_shipment(ship: Any) -> dict[str, Any]:
+    """Minimal parcel-shaped dict for customer-facing ``shipping_*`` sync (no raw API payload)."""
     carrier: dict[str, str] = {}
-    if sp.carrier_code:
-        carrier["code"] = sp.carrier_code
+    if ship.carrier_code:
+        carrier["code"] = ship.carrier_code
     return {
-        "id": sp.sendcloud_parcel_id,
-        "tracking_number": sp.tracking_number or "",
-        "tracking_url": (getattr(sp, "tracking_url", None) or "").strip(),
+        "id": ship.sendcloud_parcel_id,
+        "tracking_number": (ship.shipping_tracking_number or "") or "",
+        "tracking_url": (getattr(ship, "shipping_tracking_url", None) or "").strip(),
         "carrier": carrier,
     }
 
@@ -34,7 +35,7 @@ def _is_sendcloud_announce_forbidden_error(exc: BaseException) -> bool:
     HTTP 412 from Sendcloud when API credentials or account may not announce
     shipments to the carrier (onboarding, carrier contracts, or key scope).
     """
-    from shipping.sendcloud_client import SendcloudAPIError
+    from .sendcloud_client import SendcloudAPIError
 
     if not isinstance(exc, SendcloudAPIError):
         return False
@@ -55,7 +56,7 @@ def _friendly_sendcloud_announce_forbidden_message() -> str:
 
 def _is_likely_parcel_address_error(exc: BaseException) -> bool:
     """Heuristic: Sendcloud validation errors about recipient / address fields."""
-    from shipping.sendcloud_client import SendcloudAPIError
+    from .sendcloud_client import SendcloudAPIError
 
     if not isinstance(exc, SendcloudAPIError):
         return False
@@ -79,7 +80,7 @@ def _is_likely_parcel_address_error(exc: BaseException) -> bool:
 
 def _is_invalid_shipping_method_error(exc: BaseException) -> bool:
     """Detect Sendcloud parcel errors where the resolved method id is no longer valid."""
-    from shipping.sendcloud_client import SendcloudAPIError
+    from .sendcloud_client import SendcloudAPIError
 
     if not isinstance(exc, SendcloudAPIError):
         return False
@@ -100,7 +101,7 @@ def _is_invalid_shipping_method_error(exc: BaseException) -> bool:
 
 def _is_likely_duplicate_parcel_error(exc: BaseException) -> bool:
     """Heuristic: Sendcloud may reject a second create for the same order_number."""
-    from shipping.sendcloud_client import SendcloudAPIError
+    from .sendcloud_client import SendcloudAPIError
 
     if not isinstance(exc, SendcloudAPIError):
         return False
@@ -122,10 +123,10 @@ def _recover_and_build_download_work(
     order_reference: str,
 ) -> dict[str, Any] | None:
     """
-    If ``ShipmentParcel`` is missing, list Sendcloud by ``order_number`` and persist
-    a row. Returns a ``download_only`` work dict when a parcel row exists, else None.
+    If ``Shipment.sendcloud_parcel_id`` is missing, list Sendcloud by ``order_number``
+    and persist provider fields. Returns a ``download_only`` work dict when set, else None.
     """
-    from .models import ShipmentParcel
+    from .models import Shipment
     from .services import try_recover_remote_parcel_for_shipment
 
     if not try_recover_remote_parcel_for_shipment(
@@ -134,35 +135,44 @@ def _recover_and_build_download_work(
         order_reference=order_reference,
     ):
         return None
-    sp = (
-        ShipmentParcel.objects.filter(shipment_id=shipment_id)
-        .select_related("shipment")
+    ship = (
+        Shipment.objects.filter(pk=shipment_id)
+        .only(
+            "order_id",
+            "sendcloud_parcel_id",
+            "provider_label_url",
+            "shipping_tracking_number",
+            "shipping_tracking_url",
+            "carrier_code",
+        )
         .first()
     )
-    if sp is None:
+    if ship is None or not ship.sendcloud_parcel_id:
         return None
     return {
         "mode": "download_only",
         "ship_id": shipment_id,
-        "order_id": sp.shipment.order_id,
-        "sendcloud_parcel_id": sp.sendcloud_parcel_id,
-        "provider_label_url": sp.provider_label_url or "",
-        "parcel_sync": _parcel_sync_dict_from_sp(sp),
+        "order_id": ship.order_id,
+        "sendcloud_parcel_id": int(ship.sendcloud_parcel_id),
+        "provider_label_url": ship.provider_label_url or "",
+        "parcel_sync": _parcel_sync_dict_from_shipment(ship),
     }
 
 
 def _parcel_items_from_snapshot(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for line in lines:
-        qty = line.get("quantity") or "1"
+        qty_raw = line.get("quantity") or "1"
         try:
-            q_int = max(1, int(float(qty)))
-        except (TypeError, ValueError):
-            q_int = 1
+            q_dec = Decimal(str(qty_raw))
+        except (InvalidOperation, TypeError, ValueError):
+            q_dec = Decimal("1")
+        q_dec = max(q_dec, Decimal("0.01"))
+        q_dec = q_dec.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         out.append(
             {
                 "description": line.get("name") or "Goods",
-                "quantity": q_int,
+                "quantity": str(q_dec),
                 "weight": str(line.get("unit_weight_kg") or "0.1"),
                 "value": str(line.get("line_total") or "0"),
             }
@@ -180,7 +190,7 @@ def _download_label_pdf_bytes(
     Download label PDF bytes. Tries create-response URL first, then GET /labels/{id}.
     Returns ``(bytes | None, error_message, labels_api_json)``.
     """
-    from shipping.sendcloud_client import SendcloudAPIError
+    from .sendcloud_client import SendcloudAPIError
 
     errors: list[str] = []
     labels_payload: dict[str, Any] = {}
@@ -219,40 +229,38 @@ def _download_label_pdf_bytes(
     return None, err[:2000], labels_payload
 
 
-def _sync_legacy_shipping_details(
-    order: Any, parcel: dict[str, Any], label_url: str | None
+def _sync_customer_shipping_fields(
+    ship: Any, parcel: dict[str, Any], label_url: str | None
 ) -> None:
-    """Keep ``shipping.ShippingDetails`` in sync so Sendcloud webhooks still resolve the order."""
+    """Persist tracking + optional label URL + carrier code after label pipeline."""
     try:
-        details = order.ensure_shipping_details()
-    except Exception:
-        return
-    cobj = parcel.get("carrier")
-    carrier = ""
-    service = ""
-    if isinstance(cobj, dict):
-        carrier = str(cobj.get("code") or "")
-        service = str(cobj.get("name") or "")
-    details.sendcloud_parcel_id = parcel.get("id")
-    details.shipping_tracking_number = parcel.get("tracking_number") or ""
-    details.shipping_tracking_url = parcel.get("tracking_url") or ""
-    details.shipping_label_url = label_url or details.shipping_label_url or ""
-    details.shipping_carrier = carrier or details.shipping_carrier or ""
-    details.shipping_service_name = service or details.shipping_service_name or ""
-    details.shipping_status = "label_created"
-    details.shipping_error_message = None
-    details.save(
-        update_fields=[
+        cobj = parcel.get("carrier")
+        if isinstance(cobj, dict):
+            ship.carrier_code = str(cobj.get("code") or "")[:64]
+        pid = parcel.get("id")
+        if pid is not None:
+            ship.sendcloud_parcel_id = int(pid)
+        ship.shipping_tracking_number = parcel.get("tracking_number") or ""
+        tu_raw = parcel.get("tracking_url")
+        ship.shipping_tracking_url = (
+            tu_raw.strip()[:600] if isinstance(tu_raw, str) else ""
+        )
+        if label_url:
+            ship.provider_label_url = label_url[:600]
+        upd = [
             "sendcloud_parcel_id",
+            "carrier_code",
             "shipping_tracking_number",
             "shipping_tracking_url",
-            "shipping_label_url",
-            "shipping_carrier",
-            "shipping_service_name",
-            "shipping_status",
-            "shipping_error_message",
         ]
-    )
+        if label_url:
+            upd.append("provider_label_url")
+        ship.save(update_fields=upd)
+    except Exception:
+        logger.exception(
+            "Customer shipping field sync failed for shipment %s",
+            getattr(ship, "pk", None),
+        )
 
 
 def _enrich_urls_after_labels_fetch(
@@ -260,7 +268,7 @@ def _enrich_urls_after_labels_fetch(
     provider_label_url: str,
     labels_payload: dict[str, Any],
 ) -> tuple[str, dict[str, str]]:
-    """Merge GET /labels response into the label URL and ShipmentParcel field updates."""
+    """Merge GET /labels response into the label URL and ``Shipment.provider_label_url`` updates."""
     pl = provider_label_url or ""
     if not pl and labels_payload:
         inner = labels_payload.get("label") or {}
@@ -274,13 +282,12 @@ def _enrich_urls_after_labels_fetch(
 
 def _apply_shipment_label_storage(
     ship_save: Any,
-    sp: Any,
     *,
     pdf_bytes: bytes | None,
     dl_err: str,
     parcel_dict_for_sync: dict[str, Any],
     label_url_for_sync: str,
-    sp_url_updates: dict[str, str] | None = None,
+    parcel_url_updates: dict[str, str] | None = None,
 ) -> None:
     """Update Shipment label_* fields after a download attempt; sync legacy shipping details."""
     from billing.models import upload_bytes_to_s3
@@ -288,15 +295,15 @@ def _apply_shipment_label_storage(
     from .models import Shipment
 
     now = timezone.now()
-    if sp_url_updates:
-        for k, v in sp_url_updates.items():
-            setattr(sp, k, v)
-        sp.save(update_fields=list(sp_url_updates.keys()))
+    if parcel_url_updates:
+        for k, v in parcel_url_updates.items():
+            setattr(ship_save, k, v)
+        ship_save.save(update_fields=list(parcel_url_updates.keys()))
 
     if pdf_bytes:
         s3_key = (
             f"shipment_labels/{now:%Y/%m}/"
-            f"order_{ship_save.order_id}_sc_{sp.sendcloud_parcel_id}.pdf"
+            f"order_{ship_save.order_id}_sc_{ship_save.sendcloud_parcel_id}.pdf"
         )
         upload_bytes_to_s3(
             pdf_bytes,
@@ -304,27 +311,21 @@ def _apply_shipment_label_storage(
             content_type="application/pdf",
         )
         ship_save.label_s3_key = s3_key
-        ship_save.label_downloaded_at = now
-        ship_save.label_download_status = Shipment.LabelDownloadStatus.SUCCESS
         ship_save.status = Shipment.Status.LABEL_READY
         ship_save.last_error = ""
         ship_save.save(
             update_fields=[
                 "label_s3_key",
-                "label_downloaded_at",
-                "label_download_status",
                 "status",
                 "last_error",
                 "updated_at",
             ]
         )
     else:
-        ship_save.label_download_status = Shipment.LabelDownloadStatus.FAILED
-        ship_save.status = Shipment.Status.PROVIDER_CREATED
+        ship_save.status = Shipment.Status.LABEL_DOWNLOAD_FAILED
         ship_save.last_error = (dl_err or "Label download failed")[:2000]
         ship_save.save(
             update_fields=[
-                "label_download_status",
                 "status",
                 "last_error",
                 "updated_at",
@@ -333,17 +334,17 @@ def _apply_shipment_label_storage(
         logger.warning(
             "Shipment %s Sendcloud parcel %s: label file not stored: %s",
             ship_save.pk,
-            sp.sendcloud_parcel_id,
+            ship_save.sendcloud_parcel_id,
             ship_save.last_error,
         )
 
-    _sync_legacy_shipping_details(
-        ship_save.order, parcel_dict_for_sync, label_url_for_sync or None
+    _sync_customer_shipping_fields(
+        ship_save, parcel_dict_for_sync, label_url_for_sync or None
     )
 
 
 def _run_download_only_work(client: Any, w: dict[str, Any]) -> None:
-    from .models import Shipment, ShipmentParcel
+    from .models import Shipment
 
     pid = int(w["sendcloud_parcel_id"])
     pl_url = w["provider_label_url"]
@@ -363,21 +364,22 @@ def _run_download_only_work(client: Any, w: dict[str, Any]) -> None:
 
     with transaction.atomic():
         ship_save = Shipment.objects.select_for_update().get(pk=w["ship_id"])
-        sp = ShipmentParcel.objects.get(shipment=ship_save)
         parcel_dict = {**parcel_sync}
-        parcel_dict.setdefault("id", sp.sendcloud_parcel_id)
-        parcel_dict.setdefault("tracking_number", sp.tracking_number or "")
+        parcel_dict.setdefault("id", ship_save.sendcloud_parcel_id)
         parcel_dict.setdefault(
-            "tracking_url", (getattr(sp, "tracking_url", None) or "").strip()
+            "tracking_number", (ship_save.shipping_tracking_number or "") or ""
+        )
+        parcel_dict.setdefault(
+            "tracking_url",
+            (getattr(ship_save, "shipping_tracking_url", None) or "").strip(),
         )
         _apply_shipment_label_storage(
             ship_save,
-            sp,
             pdf_bytes=pdf_bytes,
             dl_err=dl_err,
             parcel_dict_for_sync=parcel_dict,
             label_url_for_sync=label_url_for_sync,
-            sp_url_updates=sp_updates or None,
+            parcel_url_updates=sp_updates or None,
         )
 
 
@@ -393,7 +395,7 @@ def _post_parcel_or_recover_download(
 
     Returns the create response dict, or ``None`` when the download-only path completed.
     """
-    from shipping.sendcloud_client import SendcloudAPIError
+    from .sendcloud_client import SendcloudAPIError
 
     try:
         return post_fn()
@@ -421,15 +423,17 @@ def _post_parcel_or_recover_download(
 def create_sendcloud_shipment(self, shipment_id: int) -> None:
     from django.conf import settings as django_settings
     from django.core.cache import cache
-    from shipping.sendcloud_client import SendcloudAPIError, SendcloudClient
+    from .sendcloud_client import SendcloudAPIError, SendcloudClient
 
-    from .models import Shipment, ShipmentParcel
+    from .models import Shipment
     from .order_shipping import OrderShippingService
     from .parcel_validation import validate_sendcloud_parcel_prerequisites
     from .services import (
         build_sendcloud_order_reference,
         invalidate_shipping_methods_cache,
-        resolve_live_method_id,
+        patch_shipment_sendcloud_inputs,
+        resolve_parcel_shipping_method_id,
+        sendcloud_task_work_from_shipment,
     )
 
     lock_key = f"sendcloud:shipment_task:v1:{shipment_id}"
@@ -466,21 +470,14 @@ def create_sendcloud_shipment(self, shipment_id: int) -> None:
 
             if ship.status == Shipment.Status.LABEL_READY:
                 return
-            if (
-                ship.label_download_status == Shipment.LabelDownloadStatus.SUCCESS
-                and (ship.label_s3_key or "").strip()
-            ):
+            if (ship.label_s3_key or "").strip():
                 if ship.status != Shipment.Status.LABEL_READY:
                     Shipment.objects.filter(pk=ship.id).update(
                         status=Shipment.Status.LABEL_READY,
                     )
                 return
-            if ship.status == Shipment.Status.LABEL_CREATED and (
-                ship.has_stored_label_file()
-            ):
-                return
 
-            existing_parcel = ShipmentParcel.objects.filter(shipment_id=ship.id).first()
+            has_provider_parcel = bool(ship.sendcloud_parcel_id)
 
             if ship.status in (
                 Shipment.Status.CANCELLED,
@@ -521,8 +518,8 @@ def create_sendcloud_shipment(self, shipment_id: int) -> None:
                 Shipment.Status.FAILED_RETRYABLE,
                 Shipment.Status.PENDING,
                 Shipment.Status.CREATING,
-                Shipment.Status.PROVIDER_CREATED,
-                Shipment.Status.LABEL_CREATED,
+                Shipment.Status.LABEL_DOWNLOAD_PENDING,
+                Shipment.Status.LABEL_DOWNLOAD_FAILED,
             ):
                 logger.info(
                     "Skipping Sendcloud task for shipment %s: status %s",
@@ -531,35 +528,44 @@ def create_sendcloud_shipment(self, shipment_id: int) -> None:
                 )
                 return
 
-            snap = ship.address_snapshot
-            # Frozen at Shipment creation from Order.weight — do not recompute from live order.
-            billable_kg = float(ship.total_weight_kg)
+            if not ship.has_courier_snapshot():
+                logger.error(
+                    "Sendcloud task for shipment %s: incomplete courier snapshot (status=%s)",
+                    shipment_id,
+                    ship.status,
+                )
+                Shipment.objects.filter(pk=ship.id).update(
+                    status=Shipment.Status.FAILED_FINAL,
+                    last_error=(
+                        "Incomplete courier snapshot; ensure_shipment must run first."
+                    )[:2000],
+                )
+                return
+
+            p = sendcloud_task_work_from_shipment(ship)
+            snap = p["snap"]
+            billable_kg = p["billable_kg"]
 
             Shipment.objects.filter(pk=ship.id).update(
                 status=Shipment.Status.CREATING,
             )
 
-            if existing_parcel is not None:
-                p_updates: dict[str, Any] = {}
-                if ship.provider_created_at is None:
-                    p_updates["provider_created_at"] = existing_parcel.created_at
-                if p_updates:
-                    Shipment.objects.filter(pk=ship.id).update(**p_updates)
+            if has_provider_parcel:
                 work = {
                     "mode": "download_only",
                     "ship_id": ship.id,
                     "order_id": ship.order_id,
-                    "sendcloud_parcel_id": existing_parcel.sendcloud_parcel_id,
-                    "provider_label_url": existing_parcel.provider_label_url or "",
-                    "parcel_sync": _parcel_sync_dict_from_sp(existing_parcel),
+                    "sendcloud_parcel_id": int(ship.sendcloud_parcel_id),
+                    "provider_label_url": ship.provider_label_url or "",
+                    "parcel_sync": _parcel_sync_dict_from_shipment(ship),
                 }
                 return
 
-            ref = (ship.sendcloud_order_reference or "").strip()
+            ref = p["sendcloud_order_reference"]
             if not ref:
                 ref = build_sendcloud_order_reference(order)
-                Shipment.objects.filter(pk=ship.id).update(
-                    sendcloud_order_reference=ref,
+                patch_shipment_sendcloud_inputs(
+                    ship.id, {"sendcloud_order_reference": ref}
                 )
 
             work = {
@@ -567,13 +573,14 @@ def create_sendcloud_shipment(self, shipment_id: int) -> None:
                 "ship_id": ship.id,
                 "order_id": ship.order_id,
                 "snap": snap,
-                "lines": list(ship.item_lines_snapshot or []),
+                "lines": p["lines"],
                 "billable_kg": billable_kg,
-                "logical_option": ship.logical_shipping_option,
-                "sender_address_id": ship.sender_address_id,
-                "total_order_value": str(ship.total_order_value),
-                "total_order_value_currency": ship.total_order_value_currency,
-                "total_item_quantity": ship.total_item_quantity,
+                "logical_option": p["logical_option"],
+                "shipping_method_id": ship.shipping_method_id,
+                "sender_address_id": p["sender_address_id"],
+                "total_order_value": p["total_order_value"],
+                "total_order_value_currency": p["total_order_value_currency"],
+                "total_item_quantity": p["total_item_quantity"],
                 "sendcloud_order_reference": ref,
             }
 
@@ -596,19 +603,27 @@ def create_sendcloud_shipment(self, shipment_id: int) -> None:
             return
 
         # --- Step C (part 2): live methods from Sendcloud (sender context + brief cache) ---
-        # Chosen id becomes parcel payload shipment.id (Sendcloud shipping method id).
+        # Prefer frozen checkout method id (quoted price) when still valid for weight/route.
         to_country = w["snap"].get("country") or "GB"
         to_postal = w["snap"].get("postal_code") or ""
 
-        method_id = resolve_live_method_id(
+        method_id, logical_stored = resolve_parcel_shipping_method_id(
             client,
+            shipping_method_id=w.get("shipping_method_id"),
             logical_option=w["logical_option"],
             sender_address_id=w["sender_address_id"],
             to_country=to_country,
             to_postal_code=to_postal,
             weight_kg=w["billable_kg"],
             cache_ttl=methods_cache_ttl,
+            use_checkout_method=True,
         )
+        if logical_stored != w["logical_option"]:
+            patch_shipment_sendcloud_inputs(
+                w["ship_id"],
+                {"logical_shipping_option": logical_stored},
+            )
+            w["logical_option"] = logical_stored
 
         parcel_items = _parcel_items_from_snapshot(w["lines"])
 
@@ -663,8 +678,9 @@ def create_sendcloud_shipment(self, shipment_id: int) -> None:
                     to_postal_code=to_postal,
                     weight_kg=w["billable_kg"],
                 )
-                method_id = resolve_live_method_id(
+                method_id, logical_stored = resolve_parcel_shipping_method_id(
                     client,
+                    shipping_method_id=w.get("shipping_method_id"),
                     logical_option=w["logical_option"],
                     sender_address_id=w["sender_address_id"],
                     to_country=to_country,
@@ -672,7 +688,14 @@ def create_sendcloud_shipment(self, shipment_id: int) -> None:
                     weight_kg=w["billable_kg"],
                     cache_ttl=methods_cache_ttl,
                     force_refresh=True,
+                    use_checkout_method=False,
                 )
+                if logical_stored != w["logical_option"]:
+                    patch_shipment_sendcloud_inputs(
+                        w["ship_id"],
+                        {"logical_shipping_option": logical_stored},
+                    )
+                    w["logical_option"] = logical_stored
                 parcel = _post_parcel_or_recover_download(
                     client=client,
                     work=w,
@@ -687,8 +710,8 @@ def create_sendcloud_shipment(self, shipment_id: int) -> None:
                 )
                 snap = w["snap"]
                 if try_cleanse_uk_address_snapshot(snap):
-                    Shipment.objects.filter(pk=w["ship_id"]).update(
-                        address_snapshot=snap,
+                    patch_shipment_sendcloud_inputs(
+                        w["ship_id"], {"address_snapshot": snap}
                     )
                     to_postal = snap.get("postal_code") or ""
                     invalidate_shipping_methods_cache(
@@ -697,8 +720,9 @@ def create_sendcloud_shipment(self, shipment_id: int) -> None:
                         to_postal_code=to_postal,
                         weight_kg=w["billable_kg"],
                     )
-                    method_id = resolve_live_method_id(
+                    method_id, logical_stored = resolve_parcel_shipping_method_id(
                         client,
+                        shipping_method_id=w.get("shipping_method_id"),
                         logical_option=w["logical_option"],
                         sender_address_id=w["sender_address_id"],
                         to_country=to_country,
@@ -706,7 +730,14 @@ def create_sendcloud_shipment(self, shipment_id: int) -> None:
                         weight_kg=w["billable_kg"],
                         cache_ttl=methods_cache_ttl,
                         force_refresh=True,
+                        use_checkout_method=True,
                     )
+                    if logical_stored != w["logical_option"]:
+                        patch_shipment_sendcloud_inputs(
+                            w["ship_id"],
+                            {"logical_shipping_option": logical_stored},
+                        )
+                        w["logical_option"] = logical_stored
                     parcel = _post_parcel_or_recover_download(
                         client=client,
                         work=w,
@@ -735,27 +766,22 @@ def create_sendcloud_shipment(self, shipment_id: int) -> None:
         if isinstance(cobj, dict):
             carrier_code = str(cobj.get("code") or "")
 
-        now = timezone.now()
         with transaction.atomic():
             ship_save = Shipment.objects.select_for_update().get(pk=w["ship_id"])
-            ShipmentParcel.objects.update_or_create(
-                shipment=ship_save,
-                defaults={
-                    "sendcloud_parcel_id": pid,
-                    "tracking_number": tracking,
-                    "carrier_code": carrier_code,
-                    "tracking_url": tracking_url_val,
-                    "provider_label_url": (provider_label_url or "")[:600],
-                },
-            )
-            ship_save.provider_created_at = now
-            ship_save.label_download_status = Shipment.LabelDownloadStatus.PENDING
-            ship_save.status = Shipment.Status.PROVIDER_CREATED
+            ship_save.sendcloud_parcel_id = pid
+            ship_save.carrier_code = carrier_code
+            ship_save.shipping_tracking_number = tracking
+            ship_save.shipping_tracking_url = tracking_url_val
+            ship_save.provider_label_url = (provider_label_url or "")[:600]
+            ship_save.status = Shipment.Status.LABEL_DOWNLOAD_PENDING
             ship_save.last_error = ""
             ship_save.save(
                 update_fields=[
-                    "provider_created_at",
-                    "label_download_status",
+                    "sendcloud_parcel_id",
+                    "carrier_code",
+                    "shipping_tracking_number",
+                    "shipping_tracking_url",
+                    "provider_label_url",
                     "status",
                     "last_error",
                     "updated_at",
@@ -781,15 +807,13 @@ def create_sendcloud_shipment(self, shipment_id: int) -> None:
 
         with transaction.atomic():
             ship_save = Shipment.objects.select_for_update().get(pk=w["ship_id"])
-            sp = ShipmentParcel.objects.get(shipment=ship_save)
             _apply_shipment_label_storage(
                 ship_save,
-                sp,
                 pdf_bytes=pdf_bytes,
                 dl_err=dl_err,
                 parcel_dict_for_sync=parcel_sync_min,
                 label_url_for_sync=label_url_for_sync,
-                sp_url_updates=sp_updates or None,
+                parcel_url_updates=sp_updates or None,
             )
 
     except ValueError as exc:

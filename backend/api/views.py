@@ -19,7 +19,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from rest_framework.views import APIView
-from shipping.models import ShippingDetails
+from shipping.models import Shipment
 
 from .search_text import whole_word_regex_pattern
 from .models import (
@@ -569,21 +569,10 @@ class OrderListView(APIView):
             }
 
             shipping_details_data = {}
-            # Add shipping option information if provided
             if request.data.get("shipping_method_id"):
                 shipping_details_data["shipping_method_id"] = request.data.get(
                     "shipping_method_id"
                 )
-            if request.data.get("shipping_carrier"):
-                shipping_details_data["shipping_carrier"] = request.data.get(
-                    "shipping_carrier"
-                )
-            if request.data.get("shipping_service_name"):
-                shipping_details_data["shipping_service_name"] = request.data.get(
-                    "shipping_service_name"
-                )
-            if shipping_cost_decimal is not None:
-                shipping_details_data["shipping_cost"] = shipping_cost_decimal
 
             # Handle payment information if provided
             payment_intent_id = request.data.get("payment_intent_id")
@@ -617,7 +606,11 @@ class OrderListView(APIView):
 
             order = Order.objects.create(**order_data)
             if shipping_details_data:
-                ShippingDetails.objects.create(order=order, **shipping_details_data)
+                Shipment.objects.create(
+                    order=order,
+                    status=Shipment.Status.DRAFT,
+                    **shipping_details_data,
+                )
 
             # Create order items from cart items
             for cart_item in cart_items:
@@ -640,7 +633,7 @@ class OrderListView(APIView):
                 and order.is_home_delivery
             ):
                 # Import here to avoid circular imports
-                from shipping.service import ShippingService
+                from shipping.sendcloud_shipping import ShippingService
 
                 try:
                     shipping_service = ShippingService()
@@ -665,7 +658,7 @@ class OrderListView(APIView):
                         exc_info=True,
                     )
 
-            from shipment.order_shipping import OrderShippingService
+            from shipping.order_shipping import OrderShippingService
 
             OrderShippingService.transition_to_ready_to_ship(order)
 
@@ -699,7 +692,7 @@ class OrderListView(APIView):
         """
         from decimal import Decimal
 
-        from shipping.service import ShippingService
+        from shipping.sendcloud_shipping import ShippingService
 
         items = order.items.select_related("product").all()
 
@@ -1134,7 +1127,7 @@ class CartView(APIView):
         """
         from decimal import Decimal
 
-        from shipping.service import ShippingService
+        from shipping.sendcloud_shipping import ShippingService
 
         items = cart.items.select_related("product").all()
 

@@ -9,7 +9,7 @@ from django.db import IntegrityError, transaction
 if TYPE_CHECKING:
     from api.models import Order
 
-    from shipment.models import Shipment
+    from shipping.models import Shipment
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ class OrderShippingService:
         Re-opens ``failed_final`` / ``failed_retryable`` when a parcel row exists so storage
         can be retried without POST /parcels again.
         """
-        from .models import Shipment, ShipmentParcel
+        from .models import Shipment
         from .tasks import create_sendcloud_shipment
 
         sid = shipment_pk
@@ -110,7 +110,7 @@ class OrderShippingService:
             return False, "Shipment not found."
         if ship.status == Shipment.Status.CANCELLED:
             return False, "Shipment is cancelled."
-        if not ShipmentParcel.objects.filter(shipment_id=sid).exists():
+        if not ship.sendcloud_parcel_id:
             return (
                 False,
                 "No Sendcloud parcel on file. Use “Retry shipment creation” first.",
@@ -136,10 +136,12 @@ class OrderShippingService:
     @classmethod
     def admin_queue_shipment_creation_retry(cls, shipment_pk: int) -> tuple[bool, str]:
         """Ops: queue Celery to create the Sendcloud parcel (only if no parcel row yet)."""
-        from .models import Shipment, ShipmentParcel
+        from .models import Shipment
 
         sid = shipment_pk
-        if ShipmentParcel.objects.filter(shipment_id=sid).exists():
+        if Shipment.objects.filter(pk=sid, sendcloud_parcel_id__isnull=False).exclude(
+            sendcloud_parcel_id=0
+        ).exists():
             return (
                 False,
                 "A Sendcloud parcel already exists. Use “Retry label download” for the PDF.",
@@ -168,13 +170,13 @@ class OrderShippingService:
         cls, shipment_pk: int
     ) -> tuple[bool, str]:
         """
-        After a parcel was cancelled in Sendcloud (or local row is stale): delete the
-        local ``ShipmentParcel``, re-freeze snapshot + weight from the **current** order,
+        After a parcel was cancelled in Sendcloud (or local row is stale): clear provider
+        parcel fields on ``Shipment``, re-freeze snapshot + weight from the **current** order,
         assign a **new** ``sendcloud_order_reference``, clear label fields, queue create.
 
         Requires the order to be ``ready_to_ship`` and courier-eligible.
         """
-        from .models import Shipment, ShipmentParcel
+        from .models import Shipment
         from .services import build_shipment_snapshot, unique_sendcloud_order_reference_for_recreate
 
         sid = shipment_pk
@@ -199,24 +201,27 @@ class OrderShippingService:
                 if not cls.requires_courier_shipment(order):
                     return False, "Order no longer requires courier shipment."
 
-                ShipmentParcel.objects.filter(shipment_id=ship.id).delete()
+                ship.sendcloud_parcel_id = None
+                ship.carrier_code = ""
+                ship.shipping_tracking_number = None
+                ship.shipping_tracking_url = None
+                ship.provider_label_url = ""
 
                 try:
                     snapshot = build_shipment_snapshot(order)
                 except ValueError as exc:
                     return False, f"Cannot rebuild snapshot: {exc}"
 
-                snapshot["sendcloud_order_reference"] = (
+                inputs = dict(snapshot.get("sendcloud_inputs") or {})
+                inputs["sendcloud_order_reference"] = (
                     unique_sendcloud_order_reference_for_recreate(order, ship.pk)
                 )
+                snapshot["sendcloud_inputs"] = inputs
 
                 for key, val in snapshot.items():
                     setattr(ship, key, val)
 
-                ship.provider_created_at = None
-                ship.label_downloaded_at = None
                 ship.label_s3_key = ""
-                ship.label_download_status = Shipment.LabelDownloadStatus.NOT_STARTED
                 ship.last_error = ""
                 ship.retry_count = 0
                 ship.status = Shipment.Status.QUEUED
@@ -282,6 +287,16 @@ class OrderShippingService:
                 )
                 if existing is not None:
                     shipment = existing
+                    if not existing.has_courier_snapshot():
+                        for key, val in snapshot.items():
+                            setattr(existing, key, val)
+                        existing.status = Shipment.Status.QUEUED
+                        existing.save()
+                        sid = existing.pk
+                        transaction.on_commit(
+                            lambda s=sid: create_sendcloud_shipment.delay(s)
+                        )
+                        return EnsureShipmentResult(existing, False, True)
                     if cls._shipment_needs_sendcloud_task(existing):
                         sid = existing.pk
                         transaction.on_commit(
@@ -314,12 +329,27 @@ class OrderShippingService:
                 )
                 created = True
         except IntegrityError:
+            # Another transaction won the unique race on ``order``; our inner atomic
+            # rolled back. Still respect any outer atomic: never enqueue Celery until
+            # this request's transaction commits (same as the success paths above).
             shipment = Shipment.objects.filter(order_id=order.pk).first()
             if shipment is None:
                 raise
+            if not shipment.has_courier_snapshot():
+                try:
+                    snap = build_shipment_snapshot(order)
+                    for key, val in snap.items():
+                        setattr(shipment, key, val)
+                    shipment.status = Shipment.Status.QUEUED
+                    shipment.save()
+                except ValueError:
+                    return EnsureShipmentResult(shipment, False, False)
             needs_task = cls._shipment_needs_sendcloud_task(shipment)
             if needs_task:
-                create_sendcloud_shipment.delay(shipment.pk)
+                sid = shipment.pk
+                transaction.on_commit(
+                    lambda s=sid: create_sendcloud_shipment.delay(s)
+                )
             return EnsureShipmentResult(shipment, False, needs_task)
 
         if created and shipment is not None:

@@ -350,16 +350,20 @@ class Order(models.Model):
 
     def ensure_shipping_details(self):
         """
-        Return existing shipping details or create a blank record.
-        Keeps legacy callers from failing when shipping data is needed.
+        Return existing :class:`shipping.models.Shipment` (``related_name=shipping_details``)
+        or create a checkout-only row (``status=draft``).
         """
-        from shipping.models import ShippingDetails
+        from django.core.exceptions import ObjectDoesNotExist
 
-        details = getattr(self, "shipping_details", None)
-        if details:
-            return details
-        details, _ = ShippingDetails.objects.get_or_create(order=self)
-        return details
+        from shipping.models import Shipment
+
+        try:
+            return self.shipping_details
+        except ObjectDoesNotExist:
+            return Shipment.objects.create(
+                order=self,
+                status=Shipment.Status.DRAFT,
+            )
 
     class Meta:
         verbose_name_plural = "Orders"
@@ -584,7 +588,7 @@ class Order(models.Model):
         """Recompute and persist :meth:`weight` from current lines."""
         if not self.pk:
             return
-        from shipping.service import ShippingService
+        from shipping.sendcloud_shipping import ShippingService
 
         items = list(self.items.select_related("product").all())
         if not items:
@@ -630,7 +634,7 @@ class Order(models.Model):
         if self.total_price > 220:
             return False, Decimal("0")  # Free delivery for high-value orders
 
-        from shipping.service import ShippingService
+        from shipping.sendcloud_shipping import ShippingService
 
         total_weight = ShippingService.parcel_weight_kg_from_line_items(items)
         delivery_fee = ShippingService.get_delivery_fee_by_weight(total_weight)
@@ -695,7 +699,7 @@ class Order(models.Model):
         if total_price > Decimal("220"):
             return False, Decimal("0")
 
-        from shipping.service import ShippingService
+        from shipping.sendcloud_shipping import ShippingService
 
         total_weight = ShippingService.parcel_weight_kg_from_product_qty_pairs(
             normalized

@@ -5,7 +5,8 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from django.conf import settings
-from shipping.sendcloud_client import SendcloudAPIError, SendcloudClient
+from django.db import transaction
+from .sendcloud_client import SendcloudAPIError, SendcloudClient
 
 from .method_mapping import pick_sendcloud_method_id
 
@@ -119,6 +120,64 @@ def resolve_live_method_id(
     return pick_sendcloud_method_id(methods, logical_option, weight_kg)
 
 
+def resolve_parcel_shipping_method_id(
+    client: SendcloudClient,
+    *,
+    shipping_method_id: int | None,
+    logical_option: str,
+    sender_address_id: int,
+    to_country: str,
+    to_postal_code: str,
+    weight_kg: float,
+    cache_ttl: int | None = None,
+    force_refresh: bool = False,
+    use_checkout_method: bool = True,
+) -> tuple[int, str]:
+    """
+    Sendcloud ``shipment.id`` for ``POST /parcels``: checkout id when still valid,
+    else :func:`pick_sendcloud_method_id` for ``logical_option``.
+
+    Returns ``(method_id, logical_option_for_storage)`` — when the checkout path
+    wins, the second value is inferred from the method row so ``Shipment`` matches
+    the service actually used.
+    """
+    from .method_mapping import (
+        logical_shipping_option_for_method_row,
+        resolve_checkout_sendcloud_method_id,
+    )
+
+    methods = get_shipping_methods_for_shipment(
+        client,
+        sender_address_id=sender_address_id,
+        to_country=to_country,
+        to_postal_code=to_postal_code,
+        weight_kg=weight_kg,
+        cache_ttl=cache_ttl,
+        force_refresh=force_refresh,
+    )
+    w = float(weight_kg)
+    if use_checkout_method and shipping_method_id:
+        cid = resolve_checkout_sendcloud_method_id(
+            methods,
+            int(shipping_method_id),
+            w,
+        )
+        if cid is not None:
+            row: dict[str, Any] | None = next(
+                (
+                    m
+                    for m in methods
+                    if m.get("id") is not None
+                    and int(m["id"]) == int(cid)
+                ),
+                None,
+            )
+            inferred = logical_shipping_option_for_method_row(row) if row else None
+            return int(cid), str(inferred or logical_option)
+    mid = pick_sendcloud_method_id(methods, logical_option, w)
+    return mid, logical_option
+
+
 def build_sendcloud_order_reference(order: Any) -> str:
     """
     Stable external reference for Sendcloud ``order_number`` (not the DB pk alone unless needed).
@@ -160,8 +219,58 @@ def unique_sendcloud_order_reference_for_recreate(order: Any, shipment_id: int) 
     return f"{base[:keep]}{suffix}"[:128]
 
 
+def patch_shipment_sendcloud_inputs(shipment_pk: int, updates: dict[str, Any]) -> None:
+    """Merge ``updates`` into ``Shipment.sendcloud_inputs`` (JSON)."""
+    from .models import Shipment
+
+    with transaction.atomic():
+        sh = Shipment.objects.select_for_update().filter(pk=shipment_pk).first()
+        if sh is None:
+            return
+        inp = dict(sh.sendcloud_inputs or {})
+        inp.update(updates)
+        Shipment.objects.filter(pk=shipment_pk).update(sendcloud_inputs=inp)
+
+
+def sendcloud_task_work_from_shipment(ship: Any) -> dict[str, Any]:
+    """Build Celery work dict fragments from ``ship.sendcloud_inputs`` (+ hardcoded GBP)."""
+    inp = ship.sendcloud_inputs or {}
+    raw_w = inp.get("total_weight_kg")
+    try:
+        billable = float(raw_w) if raw_w is not None else 0.0
+    except (TypeError, ValueError):
+        billable = 0.0
+    sid = inp.get("sender_address_id")
+    return {
+        "snap": inp.get("address_snapshot") or {},
+        "lines": list(inp.get("item_lines_snapshot") or []),
+        "billable_kg": billable,
+        "logical_option": inp.get("logical_shipping_option") or "",
+        "sender_address_id": int(sid) if sid is not None else 0,
+        "total_order_value": str(inp.get("total_order_value") or "0"),
+        "total_order_value_currency": "GBP",
+        "total_item_quantity": Decimal(str(inp.get("total_item_quantity") or "0.01")),
+        "sendcloud_order_reference": (inp.get("sendcloud_order_reference") or "").strip(),
+    }
+
+
+def _snapshot_total_item_quantity(total_quantity_units: Decimal) -> Decimal:
+    """Sum of order line quantities for ``Shipment.total_item_quantity`` (2 dp, min 0.01)."""
+    q = total_quantity_units.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if q < Decimal("0.01"):
+        return Decimal("0.01")
+    return q
+
+
 def build_shipment_snapshot(order: Any) -> dict[str, Any]:
-    """Build dict of fields for ``Shipment`` creation from a paid order."""
+    """
+    Build dict of fields for ``Shipment`` creation from a paid order.
+
+    ``shipping_method_id`` is copied from the checkout row (the id the
+    customer was quoted). Celery prefers it at parcel creation when Sendcloud still
+    returns that row for the frozen weight and route; otherwise
+    ``logical_shipping_option`` + weight bands select the method.
+    """
     from django.conf import settings as dj_settings
 
     address = order.get_delivery_address()
@@ -278,8 +387,6 @@ def build_shipment_snapshot(order: Any) -> dict[str, Any]:
                 Decimal("0.001"), rounding=ROUND_HALF_UP
             )
 
-    packaging_weight = Decimal("0")
-
     total_order_value = Decimal(str(order.sum_price)).quantize(
         Decimal("0.01"), rounding=ROUND_HALF_UP
     )
@@ -295,24 +402,32 @@ def build_shipment_snapshot(order: Any) -> dict[str, Any]:
     else:
         logical = getattr(dj_settings, "POST_SHIPMENT_LOGICAL_OPTION", "uk_tracked_48")
 
+    details = getattr(order, "shipping_details", None)
+    checkout_mid: int | None = None
+    if details is not None and details.shipping_method_id:
+        checkout_mid = int(details.shipping_method_id)
+
     return {
-        "logical_shipping_option": logical,
-        "address_snapshot": address_snapshot,
-        "item_lines_snapshot": lines,
-        "total_weight_kg": total_weight,
-        "packaging_weight_kg": packaging_weight,
-        "total_order_value": total_order_value,
-        "total_order_value_currency": "GBP",
-        "total_item_quantity": max(1, int(total_quantity_units)),
-        "sender_address_id": sender_address_id,
-        "sendcloud_order_reference": sendcloud_order_reference,
+        "shipping_method_id": checkout_mid,
+        "sendcloud_inputs": {
+            "address_snapshot": address_snapshot,
+            "item_lines_snapshot": lines,
+            "logical_shipping_option": logical,
+            "total_weight_kg": str(total_weight),
+            "total_order_value": str(total_order_value),
+            "total_item_quantity": str(
+                _snapshot_total_item_quantity(total_quantity_units)
+            ),
+            "sender_address_id": sender_address_id,
+            "sendcloud_order_reference": sendcloud_order_reference,
+        },
     }
 
 
 def parcel_row_defaults_from_sendcloud_parcel_dict(
     parcel: dict[str, Any],
 ) -> dict[str, Any]:
-    """Normalize Sendcloud parcel JSON into ``ShipmentParcel`` field kwargs (no ``shipment``)."""
+    """Normalize Sendcloud parcel JSON into :class:`~shipping.models.Shipment` provider field kwargs."""
     from .parcel_extraction import resolve_provider_label_and_document_url
 
     pid = parcel.get("id")
@@ -331,9 +446,9 @@ def parcel_row_defaults_from_sendcloud_parcel_dict(
         carrier_code = str(cobj.get("code") or "")
     return {
         "sendcloud_parcel_id": pid,
-        "tracking_number": tracking,
+        "shipping_tracking_number": tracking,
         "carrier_code": carrier_code,
-        "tracking_url": tracking_url,
+        "shipping_tracking_url": tracking_url or None,
         "provider_label_url": (provider_label_url or "")[:600],
     }
 
@@ -368,20 +483,21 @@ def try_recover_remote_parcel_for_shipment(
     order_reference: str,
 ) -> bool:
     """
-    If there is no ``ShipmentParcel`` row, list remote parcels by ``order_number``
+    If ``Shipment.sendcloud_parcel_id`` is unset, list remote parcels by ``order_number``
     and persist a match — covers worker crash after Sendcloud created the parcel.
 
-    Returns True if a parcel row exists after this call (created here or by a peer).
+    Returns True if a parcel id is stored after this call (set here or by a peer).
     """
-    from django.db import IntegrityError, transaction
-    from django.utils import timezone
+    from django.db import transaction
 
-    from .models import Shipment, ShipmentParcel
+    from .models import Shipment
 
     order_reference = (order_reference or "").strip()
     if not order_reference:
         return False
-    if ShipmentParcel.objects.filter(shipment_id=shipment_id).exists():
+    if Shipment.objects.filter(pk=shipment_id, sendcloud_parcel_id__isnull=False).exclude(
+        sendcloud_parcel_id=0
+    ).exists():
         return True
     try:
         parcels = client.list_parcels({"order_number": order_reference})
@@ -429,21 +545,15 @@ def try_recover_remote_parcel_for_shipment(
         ship = Shipment.objects.select_for_update().filter(pk=shipment_id).first()
         if ship is None:
             return False
-        if ShipmentParcel.objects.filter(shipment_id=shipment_id).exists():
+        if ship.sendcloud_parcel_id:
             return True
-        try:
-            ShipmentParcel.objects.create(shipment=ship, **defaults)
-        except IntegrityError:
-            logger.info(
-                "ShipmentParcel create race during Sendcloud recovery (shipment %s)",
-                shipment_id,
-            )
-            return ShipmentParcel.objects.filter(shipment_id=shipment_id).exists()
-        now = timezone.now()
         Shipment.objects.filter(pk=shipment_id).update(
-            provider_created_at=now,
-            label_download_status=Shipment.LabelDownloadStatus.PENDING,
-            status=Shipment.Status.PROVIDER_CREATED,
+            sendcloud_parcel_id=defaults["sendcloud_parcel_id"],
+            shipping_tracking_number=defaults["shipping_tracking_number"],
+            carrier_code=defaults["carrier_code"],
+            shipping_tracking_url=defaults["shipping_tracking_url"],
+            provider_label_url=defaults["provider_label_url"],
+            status=Shipment.Status.LABEL_DOWNLOAD_PENDING,
             last_error="",
         )
     logger.info(

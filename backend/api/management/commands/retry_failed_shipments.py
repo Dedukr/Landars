@@ -10,9 +10,9 @@ import logging
 from api.models import Order
 from django.core.management.base import BaseCommand
 from django.db.models import Q
-from shipment.models import Shipment
-from shipment.order_shipping import OrderShippingService
-from shipping.service import ShippingService
+from shipping.models import Shipment
+from shipping.order_shipping import OrderShippingService
+from shipping.sendcloud_shipping import ShippingService
 
 logger = logging.getLogger(__name__)
 
@@ -67,22 +67,34 @@ class Command(BaseCommand):
                 status="paid", shipping_details__shipping_method_id__isnull=False
             )
 
+            failed_statuses = (
+                Shipment.Status.FAILED_RETRYABLE,
+                Shipment.Status.FAILED_FINAL,
+            )
             if status_filter == "shipment_failed":
-                orders = orders.filter(
-                    shipping_details__shipping_status="shipment_failed"
-                )
+                orders = orders.filter(shipping_details__status__in=failed_statuses)
             elif status_filter == "pending_shipment":
                 orders = orders.filter(
-                    Q(shipping_details__shipping_status="pending_shipment")
-                    | Q(shipping_details__shipping_status__isnull=True)
-                ).exclude(shipping_details__sendcloud_parcel_id__isnull=False)
+                    Q(shipping_details__sendcloud_parcel_id__isnull=True)
+                    | Q(shipping_details__sendcloud_parcel_id=0)
+                ).exclude(shipping_details__status__in=failed_statuses)
             elif status_filter == "all":
-                # Process all paid orders without shipments or with failed shipments
+                # Paid + method id, still no remote parcel (same idea as legacy filter).
+                in_progress = (
+                    Shipment.Status.DRAFT,
+                    Shipment.Status.PENDING,
+                    Shipment.Status.QUEUED,
+                    Shipment.Status.CREATING,
+                    Shipment.Status.LABEL_DOWNLOAD_PENDING,
+                    Shipment.Status.LABEL_DOWNLOAD_FAILED,
+                )
                 orders = orders.filter(
-                    Q(shipping_details__shipping_status="shipment_failed")
-                    | Q(shipping_details__shipping_status="pending_shipment")
-                    | Q(shipping_details__shipping_status__isnull=True)
-                ).exclude(shipping_details__sendcloud_parcel_id__isnull=False)
+                    Q(shipping_details__status__in=failed_statuses)
+                    | Q(shipping_details__status__in=in_progress)
+                ).filter(
+                    Q(shipping_details__sendcloud_parcel_id__isnull=True)
+                    | Q(shipping_details__sendcloud_parcel_id=0)
+                )
 
             if limit:
                 orders = orders[:limit]
