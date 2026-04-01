@@ -419,6 +419,27 @@ def _post_parcel_or_recover_download(
         return None
 
 
+def _patch_resolved_shipping_method(
+    ship_id: int,
+    work: dict[str, Any],
+    logical_stored: str,
+    method_full_name: str,
+) -> None:
+    """Persist logical key and Sendcloud method ``name`` from live method resolution."""
+    from .services import patch_shipment_sendcloud_inputs
+
+    updates: dict[str, Any] = {}
+    if logical_stored != work["logical_option"]:
+        updates["logical_shipping_option"] = logical_stored
+    name = (method_full_name or "").strip()
+    if name:
+        updates["shipping_method_full_name"] = name[:500]
+    if updates:
+        patch_shipment_sendcloud_inputs(ship_id, updates)
+    if logical_stored != work["logical_option"]:
+        work["logical_option"] = logical_stored
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def create_sendcloud_shipment(self, shipment_id: int) -> None:
     from django.conf import settings as django_settings
@@ -607,7 +628,7 @@ def create_sendcloud_shipment(self, shipment_id: int) -> None:
         to_country = w["snap"].get("country") or "GB"
         to_postal = w["snap"].get("postal_code") or ""
 
-        method_id, logical_stored = resolve_parcel_shipping_method_id(
+        method_id, logical_stored, method_full_name = resolve_parcel_shipping_method_id(
             client,
             shipping_method_id=w.get("shipping_method_id"),
             logical_option=w["logical_option"],
@@ -618,12 +639,9 @@ def create_sendcloud_shipment(self, shipment_id: int) -> None:
             cache_ttl=methods_cache_ttl,
             use_checkout_method=True,
         )
-        if logical_stored != w["logical_option"]:
-            patch_shipment_sendcloud_inputs(
-                w["ship_id"],
-                {"logical_shipping_option": logical_stored},
-            )
-            w["logical_option"] = logical_stored
+        _patch_resolved_shipping_method(
+            w["ship_id"], w, logical_stored, method_full_name
+        )
 
         parcel_items = _parcel_items_from_snapshot(w["lines"])
 
@@ -678,24 +696,23 @@ def create_sendcloud_shipment(self, shipment_id: int) -> None:
                     to_postal_code=to_postal,
                     weight_kg=w["billable_kg"],
                 )
-                method_id, logical_stored = resolve_parcel_shipping_method_id(
-                    client,
-                    shipping_method_id=w.get("shipping_method_id"),
-                    logical_option=w["logical_option"],
-                    sender_address_id=w["sender_address_id"],
-                    to_country=to_country,
-                    to_postal_code=to_postal,
-                    weight_kg=w["billable_kg"],
-                    cache_ttl=methods_cache_ttl,
-                    force_refresh=True,
-                    use_checkout_method=False,
-                )
-                if logical_stored != w["logical_option"]:
-                    patch_shipment_sendcloud_inputs(
-                        w["ship_id"],
-                        {"logical_shipping_option": logical_stored},
+                method_id, logical_stored, method_full_name = (
+                    resolve_parcel_shipping_method_id(
+                        client,
+                        shipping_method_id=w.get("shipping_method_id"),
+                        logical_option=w["logical_option"],
+                        sender_address_id=w["sender_address_id"],
+                        to_country=to_country,
+                        to_postal_code=to_postal,
+                        weight_kg=w["billable_kg"],
+                        cache_ttl=methods_cache_ttl,
+                        force_refresh=True,
+                        use_checkout_method=False,
                     )
-                    w["logical_option"] = logical_stored
+                )
+                _patch_resolved_shipping_method(
+                    w["ship_id"], w, logical_stored, method_full_name
+                )
                 parcel = _post_parcel_or_recover_download(
                     client=client,
                     work=w,
@@ -720,24 +737,23 @@ def create_sendcloud_shipment(self, shipment_id: int) -> None:
                         to_postal_code=to_postal,
                         weight_kg=w["billable_kg"],
                     )
-                    method_id, logical_stored = resolve_parcel_shipping_method_id(
-                        client,
-                        shipping_method_id=w.get("shipping_method_id"),
-                        logical_option=w["logical_option"],
-                        sender_address_id=w["sender_address_id"],
-                        to_country=to_country,
-                        to_postal_code=to_postal,
-                        weight_kg=w["billable_kg"],
-                        cache_ttl=methods_cache_ttl,
-                        force_refresh=True,
-                        use_checkout_method=True,
-                    )
-                    if logical_stored != w["logical_option"]:
-                        patch_shipment_sendcloud_inputs(
-                            w["ship_id"],
-                            {"logical_shipping_option": logical_stored},
+                    method_id, logical_stored, method_full_name = (
+                        resolve_parcel_shipping_method_id(
+                            client,
+                            shipping_method_id=w.get("shipping_method_id"),
+                            logical_option=w["logical_option"],
+                            sender_address_id=w["sender_address_id"],
+                            to_country=to_country,
+                            to_postal_code=to_postal,
+                            weight_kg=w["billable_kg"],
+                            cache_ttl=methods_cache_ttl,
+                            force_refresh=True,
+                            use_checkout_method=True,
                         )
-                        w["logical_option"] = logical_stored
+                    )
+                    _patch_resolved_shipping_method(
+                        w["ship_id"], w, logical_stored, method_full_name
+                    )
                     parcel = _post_parcel_or_recover_download(
                         client=client,
                         work=w,

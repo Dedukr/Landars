@@ -47,7 +47,8 @@ class Shipment(models.Model):
         default=dict,
         help_text=(
             "Frozen parcel-creation payload: address_snapshot, item_lines_snapshot, "
-            "logical_shipping_option, total_weight_kg, total_order_value, "
+            "logical_shipping_option, shipping_method_full_name (Sendcloud method name), "
+            "total_weight_kg, total_order_value, "
             "total_item_quantity, sender_address_id, sendcloud_order_reference (strings/decimals as JSON)."
         ),
     )
@@ -130,10 +131,7 @@ class Shipment(models.Model):
             return ""
         code = (self.carrier_code or "").lower().replace(" ", "_").replace("-", "_")
         if "royal" in code:
-            return (
-                "https://www.royalmail.com/track-your-item#/tracking-results/"
-                + tn
-            )
+            return "https://www.royalmail.com/track-your-item#/tracking-results/" + tn
         return ""
 
     def has_stored_label_file(self) -> bool:
@@ -145,10 +143,11 @@ class Shipment(models.Model):
     def get_presigned_label_url(self, expires_in: int = 300) -> str:
         key = (self.label_s3_key or "").strip()
         if not key:
-            raise ValidationError("Shipment has no label PDF in S3 (label_s3_key empty).")
-        from django.conf import settings
-
+            raise ValidationError(
+                "Shipment has no label PDF in S3 (label_s3_key empty)."
+            )
         from billing.models import get_s3_client
+        from django.conf import settings
 
         s3 = get_s3_client()
         return s3.generate_presigned_url(

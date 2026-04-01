@@ -37,11 +37,12 @@ from django.forms import ModelForm
 from django.http import HttpResponse, HttpResponseRedirect
 from django.template.loader import render_to_string
 from django.urls import path, reverse
-from django.utils.html import format_html
+from django.utils.html import escape, format_html
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
+from shipping.admin import _tracking_url_link_html
 from shipping.models import Shipment
 
 from .forms import (
@@ -1001,19 +1002,94 @@ class OrderShipmentInline(admin.StackedInline):
     verbose_name = "Shipment / shipping"
     verbose_name_plural = "Shipment / shipping"
     readonly_fields = [
+        "shipment_admin_link",
         "status",
         "shipping_method_id",
-        "sendcloud_parcel_id",
-        "carrier_code",
-        "shipping_tracking_number",
-        "shipping_tracking_url",
-        "provider_label_url",
-        "label_s3_key",
-        "last_error",
         "retry_count",
+        "last_error",
+        "provider_summary",
+        "stored_tracking_url_ro",
+        "sendcloud_tracking_url_display",
+        "provider_label_link",
+        "label_link",
         "sendcloud_inputs",
+        "created_at",
+        "updated_at",
     ]
-    fields = readonly_fields
+    fieldsets = (
+        (
+            None,
+            {
+                "fields": (
+                    "shipment_admin_link",
+                    "provider_summary",
+                    "status",
+                    "sendcloud_tracking_url_display",
+                    "label_link",
+                    "last_error",
+                    "retry_count",
+                ),
+            },
+        ),
+    )
+
+    @admin.display(description="Shipment record")
+    def shipment_admin_link(self, obj: Shipment) -> str:
+        if not obj or not obj.pk:
+            return format_html(
+                '<span class="help">Save the order to create the shipment row.</span>'
+            )
+        url = reverse("admin:shipping_shipment_change", args=[obj.pk])
+        return format_html(
+            '<a href="{}">Open shipment #{} (full admin)</a>',
+            url,
+            obj.pk,
+        )
+
+    @admin.display(description="Provider parcel (stored)")
+    def provider_summary(self, obj: Shipment) -> str:
+        if not obj or not obj.pk:
+            return "—"
+        if not obj.sendcloud_parcel_id:
+            return format_html(
+                '<span class="help">No parcel id yet — shipment not announced at Sendcloud.</span>'
+            )
+        bits = [
+            f"<strong>Parcel ID</strong>: {escape(str(obj.sendcloud_parcel_id))}",
+            f"<strong>Tracking</strong>: {escape(obj.shipping_tracking_number or '—')}",
+            f"<strong>Carrier</strong>: {escape(obj.carrier_code or '—')}",
+        ]
+        return format_html("<br>".join(bits))
+    
+    
+    @admin.display(description="Tracking URL (resolved)")
+    def sendcloud_tracking_url_display(self, obj: Shipment) -> str:
+        if not obj or not obj.pk:
+            return "—"
+        if not obj.sendcloud_parcel_id:
+            return "—"
+        return _tracking_url_link_html(obj.get_tracking_url())
+
+    @admin.display(description="Label PDF (S3)")
+    def label_link(self, obj: Shipment) -> str:
+        if not obj or not obj.pk:
+            return "—"
+        if not (obj.label_s3_key or "").strip():
+            return format_html(
+                '<span class="help">No file in S3 yet — use “Retry label download” on the '
+                "Shipment after the parcel exists.</span>"
+            )
+        try:
+            url = obj.get_presigned_label_url()
+        except (ValidationError, Exception):
+            return format_html(
+                '<span class="help">Label key set but URL could not be generated '
+                "(check AWS credentials / bucket).</span>"
+            )
+        return format_html(
+            '<a href="{}" target="_blank" rel="noopener noreferrer">Download shipping label</a>',
+            url,
+        )
 
 
 class InvoiceInline(admin.TabularInline):

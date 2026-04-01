@@ -276,12 +276,12 @@ def logical_shipping_option_for_billable_kg(billable_weight_kg: float) -> str:
     return "uk_tracked_48"
 
 
-def pick_sendcloud_method_id(
+def pick_sendcloud_method_row(
     methods: list[MethodRow],
     logical_key: str,
     parcel_weight_kg: float,
-) -> int:
-    """Resolve to a Sendcloud ``shipping_methods`` id for ``logical_key`` and parcel kg."""
+) -> MethodRow:
+    """Sendcloud ``shipping_methods`` row for ``logical_key`` and parcel kg (tightest tier)."""
     try:
         spec = LOGICAL_SHIPPING_MAP[logical_key]
     except KeyError:
@@ -312,4 +312,13 @@ def pick_sendcloud_method_id(
         )
 
     candidates.sort(key=_pick_rank_key)
-    return int(candidates[0]["id"])
+    return candidates[0]
+
+
+def pick_sendcloud_method_id(
+    methods: list[MethodRow],
+    logical_key: str,
+    parcel_weight_kg: float,
+) -> int:
+    """Resolve to a Sendcloud ``shipping_methods`` id for ``logical_key`` and parcel kg."""
+    return int(pick_sendcloud_method_row(methods, logical_key, parcel_weight_kg)["id"])

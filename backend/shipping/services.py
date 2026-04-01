@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
@@ -8,7 +9,7 @@ from django.conf import settings
 from django.db import transaction
 from .sendcloud_client import SendcloudAPIError, SendcloudClient
 
-from .method_mapping import pick_sendcloud_method_id
+from .method_mapping import pick_sendcloud_method_id, pick_sendcloud_method_row
 
 logger = logging.getLogger(__name__)
 
@@ -132,14 +133,13 @@ def resolve_parcel_shipping_method_id(
     cache_ttl: int | None = None,
     force_refresh: bool = False,
     use_checkout_method: bool = True,
-) -> tuple[int, str]:
+) -> tuple[int, str, str]:
     """
     Sendcloud ``shipment.id`` for ``POST /parcels``: checkout id when still valid,
-    else :func:`pick_sendcloud_method_id` for ``logical_option``.
+    else :func:`pick_sendcloud_method_row` for ``logical_option``.
 
-    Returns ``(method_id, logical_option_for_storage)`` — when the checkout path
-    wins, the second value is inferred from the method row so ``Shipment`` matches
-    the service actually used.
+    Returns ``(method_id, logical_option_for_storage, shipping_method_full_name)``
+    — Sendcloud ``name`` on the chosen row (empty if the API omits it).
     """
     from .method_mapping import (
         logical_shipping_option_for_method_row,
@@ -173,50 +173,42 @@ def resolve_parcel_shipping_method_id(
                 None,
             )
             inferred = logical_shipping_option_for_method_row(row) if row else None
-            return int(cid), str(inferred or logical_option)
-    mid = pick_sendcloud_method_id(methods, logical_option, w)
-    return mid, logical_option
+            display = str((row or {}).get("name") or "").strip()
+            return int(cid), str(inferred or logical_option), display
+    picked = pick_sendcloud_method_row(methods, logical_option, w)
+    display = str(picked.get("name") or "").strip()
+    return int(picked["id"]), logical_option, display
 
 
 def build_sendcloud_order_reference(order: Any) -> str:
     """
-    Stable external reference for Sendcloud ``order_number`` (not the DB pk alone unless needed).
+    External reference for Sendcloud ``order_number``: ``{prefix}-{order_id}-{n}``.
 
-    Format: ``{prefix}-{order_id}`` or, when dispatch metadata exists,
-    ``{prefix}-{order_id}-{delivery_date}-{delivery_slot_id}``.
+    ``n`` is a 10-digit cryptographically random integer so the value stays unique
+    at Sendcloud without embedding dates or slot ids.
     """
     from django.conf import settings as dj_settings
 
     prefix = getattr(dj_settings, "SENDCLOUD_ORDER_NUMBER_PREFIX", "FP") or "FP"
     prefix = str(prefix).strip() or "FP"
     oid = order.pk
-    delivery_date = getattr(order, "delivery_date", None)
-    slot = getattr(order, "delivery_date_order_id", None)
-    if delivery_date and slot is not None:
-        d_str = (
-            delivery_date.isoformat()
-            if hasattr(delivery_date, "isoformat")
-            else str(delivery_date)
-        )
-        ref = f"{prefix}-{oid}-{d_str}-{slot}"
-    else:
-        ref = f"{prefix}-{oid}"
+    oid_part = str(oid) if oid is not None else "new"
+    # 1_000_000_000 .. 9_999_999_999 — fixed width, avoids leading-zero ambiguity
+    rnd = secrets.randbelow(9_000_000_000) + 1_000_000_000
+    ref = f"{prefix}-{oid_part}-{rnd}"
     return ref[:128]
 
 
-def unique_sendcloud_order_reference_for_recreate(order: Any, shipment_id: int) -> str:
+def unique_sendcloud_order_reference_for_recreate(
+    order: Any,
+    _shipment_id: int,
+) -> str:
     """
     New ``order_number`` for Sendcloud after a cancelled / bad parcel so
     ``POST /parcels`` is not treated as a duplicate of the old reference.
+    Same shape as :func:`build_sendcloud_order_reference` (new random suffix).
     """
-    from django.utils import timezone
-
-    base = build_sendcloud_order_reference(order)
-    suffix = f"-re{shipment_id}-{int(timezone.now().timestamp())}"
-    if len(base) + len(suffix) <= 128:
-        return f"{base}{suffix}"
-    keep = max(0, 128 - len(suffix))
-    return f"{base[:keep]}{suffix}"[:128]
+    return build_sendcloud_order_reference(order)
 
 
 def patch_shipment_sendcloud_inputs(shipment_pk: int, updates: dict[str, Any]) -> None:

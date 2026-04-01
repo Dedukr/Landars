@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Same bands as ``POST_DELIVERY_FEE_BANDS`` in ``deliveryFeeCalculator.ts`` (GBP incl. markup).
 _POST_DELIVERY_FEE_BANDS: tuple[tuple[Decimal, Decimal], ...] = (
-    (Decimal("2"), Decimal("3.24")),
+    (Decimal("2"), Decimal("3.44")),
     (Decimal("5"), Decimal("6.06")),
     (Decimal("10"), Decimal("7.91")),
     (Decimal("20"), Decimal("12.80")),

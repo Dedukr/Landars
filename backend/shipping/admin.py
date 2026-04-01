@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
 from django.http import HttpResponseNotAllowed
@@ -7,6 +9,7 @@ from django.utils.html import escape, format_html
 
 from .models import Shipment
 from .order_shipping import OrderShippingService
+from .sendcloud_shipping import ShippingService
 
 
 def _tracking_url_link_html(raw: str | None) -> str:
@@ -36,8 +39,9 @@ class ShipmentAdmin(admin.ModelAdmin):
         "status",
         "retry_count",
         "sendcloud_logical_option",
-        "shipping_method_id",
+        "chosen_shipping_method_display",
         "sendcloud_inputs_weight",
+        "map_delivery_cost_display",
         "sendcloud_inputs_ref",
         "created_at",
     )
@@ -47,7 +51,8 @@ class ShipmentAdmin(admin.ModelAdmin):
     readonly_fields = (
         "order",
         "status",
-        "shipping_method_id",
+        "map_delivery_cost_display",
+        "chosen_shipping_method_display",
         "sendcloud_inputs",
         "provider_summary",
         "sendcloud_tracking_url_display",
@@ -63,7 +68,6 @@ class ShipmentAdmin(admin.ModelAdmin):
         "provider_label_url",
         "shipping_tracking_url",
         "label_s3_key",
-        "db_storage_table",
     )
     ordering = ("-created_at",)
 
@@ -74,8 +78,8 @@ class ShipmentAdmin(admin.ModelAdmin):
                 "fields": (
                     "order",
                     "status",
-                    "shipping_method_id",
-                    "retry_count",
+                    "map_delivery_cost_display",
+                    "chosen_shipping_method_display",
                     "last_error",
                 ),
             },
@@ -85,20 +89,10 @@ class ShipmentAdmin(admin.ModelAdmin):
             {
                 "description": "Provider data after Sendcloud parcel creation (single row).",
                 "fields": (
-                    "sendcloud_parcel_id",
-                    "shipping_tracking_number",
-                    "carrier_code",
-                    "stored_tracking_url_ro",
-                    "provider_label_url",
                     "provider_summary",
                     "sendcloud_tracking_url_display",
+                    "label_link",
                 ),
-            },
-        ),
-        (
-            "Label",
-            {
-                "fields": ("label_link",),
             },
         ),
         (
@@ -114,19 +108,7 @@ class ShipmentAdmin(admin.ModelAdmin):
                 "fields": ("created_at", "updated_at"),
             },
         ),
-        (
-            "Storage / ops",
-            {
-                "classes": ("collapse",),
-                "description": 'Physical PostgreSQL name (Django app is "shipping"). See backend/shipping/README.md.',
-                "fields": ("db_storage_table",),
-            },
-        ),
     )
-
-    @admin.display(description="PostgreSQL table")
-    def db_storage_table(self, obj: Shipment | None) -> str:
-        return Shipment._meta.db_table
 
     def get_queryset(self, request):  # type: ignore[override]
         return super().get_queryset(request).select_related("order")
@@ -158,11 +140,7 @@ class ShipmentAdmin(admin.ModelAdmin):
         Inject Operations URLs on every change-form render (same behavior for edit
         and “view” style pages) so the custom change_form template always receives them.
         """
-        if (
-            not add
-            and obj is not None
-            and self.has_change_permission(request, obj=obj)
-        ):
+        if not add and obj is not None and self.has_change_permission(request, obj=obj):
             app_label = self.model._meta.app_label
             model_name = self.model._meta.model_name
             oid = obj.pk
@@ -275,6 +253,46 @@ class ShipmentAdmin(admin.ModelAdmin):
     def sendcloud_inputs_weight(self, obj: Shipment) -> str:
         v = (obj.sendcloud_inputs or {}).get("total_weight_kg")
         return str(v) if v not in (None, "") else "—"
+
+    @admin.display(
+        description="Delivery fee (weight bands map)",
+    )
+    def map_delivery_cost_display(self, obj: Shipment) -> str:
+        """
+        Royal Mail post band price from frozen parcel weight
+        (same table as checkout ``POST_DELIVERY_FEE_BANDS`` / Sendcloud helper).
+        """
+        if getattr(obj.order, "is_home_delivery", True):
+            return "—"
+        raw = (obj.sendcloud_inputs or {}).get("total_weight_kg")
+        if raw in (None, ""):
+            return "—"
+        fee = ShippingService.get_delivery_fee_by_weight(raw)
+        q = fee.quantize(Decimal("0.01"))
+        return f"£{q}"
+
+    @admin.display(description="Chosen shipping method")
+    def chosen_shipping_method_display(self, obj: Shipment) -> str:
+        """Home vs post; post shows Sendcloud method name (stored at parcel create) + id."""
+        order = obj.order
+        if getattr(order, "is_home_delivery", True):
+            return "Home delivery"
+        inp = obj.sendcloud_inputs or {}
+        full_name = str(inp.get("shipping_method_full_name") or "").strip()
+        logical = inp.get("logical_shipping_option") or ""
+        mid = obj.shipping_method_id
+        if full_name:
+            bits = [full_name]
+            if mid is not None:
+                bits.append(f"Sendcloud ID {mid}")
+            return " · ".join(bits)
+        if mid is not None and logical:
+            return f"Sendcloud method ID {mid} · {logical}"
+        if mid is not None:
+            return f"Sendcloud method ID {mid}"
+        if logical:
+            return logical
+        return "—"
 
     @admin.display(description="Sendcloud order #")
     def sendcloud_inputs_ref(self, obj: Shipment) -> str:
