@@ -70,39 +70,86 @@ def on_order_transition_ready_to_ship(sender, instance, **kwargs) -> None:
         )
 
 
+def _delete_shipment_label_from_s3(instance: Shipment) -> None:
+    """Remove stored label PDF from S3 (best-effort; DB delete still proceeds on failure)."""
+    key = (getattr(instance, "label_s3_key", None) or "").strip()
+    if not key:
+        return
+    from django.conf import settings
+
+    from botocore.exceptions import ClientError
+
+    from billing.models import get_s3_client
+
+    bucket = getattr(settings, "AWS_STORAGE_BUCKET_NAME", None) or ""
+    if not bucket:
+        logger.warning(
+            "Shipment pk=%s: skip S3 label delete (AWS_STORAGE_BUCKET_NAME unset), key=%s",
+            instance.pk,
+            key,
+        )
+        return
+    try:
+        s3 = get_s3_client()
+        s3.delete_object(Bucket=bucket, Key=key)
+        logger.info(
+            "Deleted label S3 object %s for Shipment pk=%s",
+            key,
+            instance.pk,
+        )
+    except ClientError as exc:
+        logger.warning(
+            "S3 delete_object failed for label key=%s (Shipment pk=%s): %s",
+            key,
+            instance.pk,
+            exc,
+        )
+    except Exception as exc:
+        logger.warning(
+            "S3 label delete error key=%s (Shipment pk=%s): %s",
+            key,
+            instance.pk,
+            exc,
+        )
+
+
 @receiver(
     pre_delete,
     sender=Shipment,
     dispatch_uid="shipping.cancel_sendcloud_parcel_before_shipment_delete",
 )
 def cancel_sendcloud_parcel_before_shipment_delete(sender, instance, **kwargs) -> None:
-    """POST /parcels/{id}/cancel at Sendcloud before the ``Shipment`` row is removed."""
+    """
+    Before ``Shipment`` row removal: cancel Sendcloud parcel (if any) and delete
+    the label PDF from S3 when ``label_s3_key`` is set.
+    """
     pid = getattr(instance, "sendcloud_parcel_id", None)
-    if not pid:
-        return
-    from .sendcloud_client import SendcloudClient
+    if pid:
+        from .sendcloud_client import SendcloudClient
 
-    try:
-        client = SendcloudClient()
-    except ValueError as exc:
-        logger.warning(
-            "Shipment pk=%s sendcloud_parcel_id=%s: skip remote cancel "
-            "(Sendcloud not configured): %s",
-            instance.pk,
-            pid,
-            exc,
-        )
-        return
-    if client.cancel_parcel(int(pid)):
-        logger.info(
-            "Cancelled Sendcloud parcel %s before deleting Shipment pk=%s",
-            pid,
-            instance.pk,
-        )
-    else:
-        logger.warning(
-            "Sendcloud cancel failed for parcel %s (Shipment pk=%s); "
-            "deleting local row anyway — check Sendcloud panel.",
-            pid,
-            instance.pk,
-        )
+        try:
+            client = SendcloudClient()
+        except ValueError as exc:
+            logger.warning(
+                "Shipment pk=%s sendcloud_parcel_id=%s: skip remote cancel "
+                "(Sendcloud not configured): %s",
+                instance.pk,
+                pid,
+                exc,
+            )
+        else:
+            if client.cancel_parcel(int(pid)):
+                logger.info(
+                    "Cancelled Sendcloud parcel %s before deleting Shipment pk=%s",
+                    pid,
+                    instance.pk,
+                )
+            else:
+                logger.warning(
+                    "Sendcloud cancel failed for parcel %s (Shipment pk=%s); "
+                    "deleting local row anyway — check Sendcloud panel.",
+                    pid,
+                    instance.pk,
+                )
+
+    _delete_shipment_label_from_s3(instance)

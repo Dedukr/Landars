@@ -1,8 +1,9 @@
+import logging
 from decimal import Decimal
 
 from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
-from django.http import HttpResponseNotAllowed
+from django.http import Http404, HttpResponse, HttpResponseNotAllowed
 from django.shortcuts import redirect
 from django.urls import path, reverse
 from django.utils.html import escape, format_html
@@ -10,6 +11,8 @@ from django.utils.html import escape, format_html
 from .models import Shipment
 from .order_shipping import OrderShippingService
 from .sendcloud_shipping import ShippingService
+
+logger = logging.getLogger(__name__)
 
 
 def _tracking_url_link_html(raw: str | None) -> str:
@@ -29,11 +32,13 @@ def _tracking_url_link_html(raw: str | None) -> str:
 @admin.register(Shipment)
 class ShipmentAdmin(admin.ModelAdmin):
     change_form_template = "admin/shipping/shipment/change_form.html"
+    change_list_template = "admin/shipping/shipment/change_list.html"
 
     list_display = (
         "id",
         "order_admin_link",
         "label_link",
+        "label_print_list_link",
         "provider_tracking",
         "chosen_shipping_method_display",
         "map_delivery_cost_display",
@@ -129,6 +134,11 @@ class ShipmentAdmin(admin.ModelAdmin):
                 "<path:object_id>/recreate-sendcloud-parcel/",
                 self.admin_site.admin_view(self.recreate_sendcloud_parcel_view),
                 name="%s_%s_recreate_sendcloud_parcel" % info,
+            ),
+            path(
+                "<path:object_id>/label-pdf/",
+                self.admin_site.admin_view(self.label_pdf_inline_view),
+                name="%s_%s_label_pdf" % info,
             ),
         ] + super().get_urls()
 
@@ -242,6 +252,52 @@ class ShipmentAdmin(admin.ModelAdmin):
             % (self.model._meta.app_label, self.model._meta.model_name),
             object_id,
         )
+
+    def _shipment_label_pdf_response(self, request, object_id) -> HttpResponse:
+        from django.conf import settings
+        from django.core.exceptions import PermissionDenied
+
+        from botocore.exceptions import ClientError
+
+        from billing.models import get_s3_client
+
+        if request.method != "GET":
+            return HttpResponseNotAllowed(["GET"])
+        obj = self.get_object(request, object_id)
+        if obj is None:
+            raise Http404("Shipment not found.")
+        if not self.has_view_permission(request, obj):
+            raise PermissionDenied
+        key = (obj.label_s3_key or "").strip()
+        if not key:
+            raise Http404("No label file stored for this shipment.")
+        try:
+            s3 = get_s3_client()
+            body = s3.get_object(
+                Bucket=settings.AWS_STORAGE_BUCKET_NAME,
+                Key=key,
+            )["Body"].read()
+        except ClientError as exc:
+            logger.warning(
+                "Admin label PDF S3 read failed shipment=%s key=%s: %s",
+                obj.pk,
+                key,
+                exc,
+            )
+            return HttpResponse(
+                "Could not load label from storage.",
+                status=502,
+                content_type="text/plain",
+            )
+        resp = HttpResponse(body, content_type="application/pdf")
+        resp["Content-Disposition"] = (
+            f'inline; filename="shipping-label-order-{obj.order_id}.pdf"'
+        )
+        resp["Cache-Control"] = "private, max-age=60"
+        return resp
+
+    def label_pdf_inline_view(self, request, object_id):
+        return self._shipment_label_pdf_response(request, object_id)
 
     @admin.display(description="Logical option")
     def sendcloud_logical_option(self, obj: Shipment) -> str:
@@ -365,4 +421,16 @@ class ShipmentAdmin(admin.ModelAdmin):
         return format_html(
             '<a href="{}" target="_blank" rel="noopener noreferrer">Download shipping label</a>',
             url,
+        )
+
+    @admin.display(description="Print label")
+    def label_print_list_link(self, obj: Shipment) -> str:
+        if not obj.pk or not (obj.label_s3_key or "").strip():
+            return format_html('<span class="help">—</span>')
+        app_label = self.model._meta.app_label
+        model_name = self.model._meta.model_name
+        pdf_url = reverse(f"admin:{app_label}_{model_name}_label_pdf", args=[obj.pk])
+        return format_html(
+            '<a href="#" class="button js-shipment-label-print" data-pdf-url="{}">Print</a>',
+            pdf_url,
         )
