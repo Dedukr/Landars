@@ -8,9 +8,11 @@ class Migration(migrations.Migration):
 
     initial = True
 
-    # Shipment FKs api.Order only — need Order through 0042; 0043 is Order.weight (unrelated).
+    # FK to api.Order only (Order exists from api.0001_initial). Do not depend on a *later*
+    # api migration: this DB had shipping.0001 applied before api.0042+ were recorded, which
+    # triggers InconsistentMigrationHistory if we depend on those leaf migrations.
     dependencies = [
-        ("api", "0042_ready_to_ship_and_packaging"),
+        ("api", "0001_initial"),
     ]
 
     operations = [
