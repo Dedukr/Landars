@@ -3,169 +3,169 @@
 {# 1) Same user click: window.open("") then fetch PDF → blob → navigate that window (often allowed). #}
 {# 2) If no window: modal with visible iframe + “Print label” (fresh click → print() works in WebKit). #}
 {% block extrahead %}
-  {{ block.super }}
-  <script>
-(function () {
-  function absolutePdfUrl(pdfUrl) {
-    if (pdfUrl.indexOf("http") === 0) return pdfUrl;
-    var base = window.location.origin;
-    return base + (pdfUrl.charAt(0) === "/" ? pdfUrl : "/" + pdfUrl);
-  }
-
-  function showInlinePrintFallback(blobUrl) {
-    var viewerUrl = blobUrl + "#page=1&zoom=100";
-    var backdrop = document.createElement("div");
-    backdrop.setAttribute("role", "dialog");
-    backdrop.setAttribute("aria-modal", "true");
-    backdrop.style.cssText =
-      "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;";
-    var box = document.createElement("div");
-    box.style.cssText =
-      "background:#fff;padding:20px;border-radius:6px;max-width:min(900px,95vw);box-shadow:0 4px 24px rgba(0,0,0,.2);";
-    var p = document.createElement("p");
-    p.style.cssText = "margin:0 0 12px;";
-    p.textContent =
-      "The print window could not be opened. Use Print label below — your browser may require a second click for printing.";
-    var iframe = document.createElement("iframe");
-    iframe.setAttribute("title", "Shipping label");
-    iframe.style.cssText =
-      "display:block;width:min(820px,90vw);height:min(560px,60vh);border:1px solid #ccc;";
-    iframe.src = viewerUrl;
-
-    function dismiss() {
-      try {
-        URL.revokeObjectURL(blobUrl);
-      } catch (e) {
-        /* ignore */
-      }
-      if (backdrop.parentNode) backdrop.remove();
-      document.removeEventListener("keydown", onKey);
+{{ block.super }}
+<script>
+  (function () {
+    function absolutePdfUrl(pdfUrl) {
+      if (pdfUrl.indexOf("http") === 0) return pdfUrl;
+      var base = window.location.origin;
+      return base + (pdfUrl.charAt(0) === "/" ? pdfUrl : "/" + pdfUrl);
     }
 
-    function onKey(ev) {
-      if (ev.key === "Escape") dismiss();
-    }
-    document.addEventListener("keydown", onKey);
+    function showInlinePrintFallback(blobUrl) {
+      var viewerUrl = blobUrl + "#page=1&zoom=100";
+      var backdrop = document.createElement("div");
+      backdrop.setAttribute("role", "dialog");
+      backdrop.setAttribute("aria-modal", "true");
+      backdrop.style.cssText =
+        "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;";
+      var box = document.createElement("div");
+      box.style.cssText =
+        "background:#fff;padding:20px;border-radius:6px;max-width:min(900px,95vw);box-shadow:0 4px 24px rgba(0,0,0,.2);";
+      var p = document.createElement("p");
+      p.style.cssText = "margin:0 0 12px;";
+      p.textContent =
+        "The print window could not be opened. Use Print label below — your browser may require a second click for printing.";
+      var iframe = document.createElement("iframe");
+      iframe.setAttribute("title", "Shipping label");
+      iframe.style.cssText =
+        "display:block;width:min(820px,90vw);height:min(560px,60vh);border:1px solid #ccc;";
+      iframe.src = viewerUrl;
 
-    var row = document.createElement("div");
-    row.style.cssText =
-      "margin-top:16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;";
-    var printBtn = document.createElement("button");
-    printBtn.type = "button";
-    printBtn.className = "button default";
-    printBtn.textContent = "Print label";
-    printBtn.onclick = function () {
-      try {
-        iframe.contentWindow.focus();
-        iframe.contentWindow.print();
-      } catch (e) {
-        console.error(e);
+      function dismiss() {
+        try {
+          URL.revokeObjectURL(blobUrl);
+        } catch (e) {
+          /* ignore */
+        }
+        if (backdrop.parentNode) backdrop.remove();
+        document.removeEventListener("keydown", onKey);
       }
-    };
-    var closeBtn = document.createElement("button");
-    closeBtn.type = "button";
-    closeBtn.className = "button";
-    closeBtn.textContent = "Close";
-    closeBtn.onclick = dismiss;
-    backdrop.onclick = function (ev) {
-      if (ev.target === backdrop) dismiss();
-    };
 
-    row.appendChild(printBtn);
-    row.appendChild(closeBtn);
-    box.appendChild(p);
-    box.appendChild(iframe);
-    box.appendChild(row);
-    backdrop.appendChild(box);
-    document.body.appendChild(backdrop);
-    printBtn.focus();
-  }
+      function onKey(ev) {
+        if (ev.key === "Escape") dismiss();
+      }
+      document.addEventListener("keydown", onKey);
 
-  function printShipmentLabel(pdfUrl) {
-    var url = absolutePdfUrl(pdfUrl);
-    var printWin = window.open("", "shipment_label_print", "popup=yes,width=840,height=1100,scrollbars=yes");
+      var row = document.createElement("div");
+      row.style.cssText =
+        "margin-top:16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;";
+      var printBtn = document.createElement("button");
+      printBtn.type = "button";
+      printBtn.className = "button default";
+      printBtn.textContent = "Print label";
+      printBtn.onclick = function () {
+        try {
+          iframe.contentWindow.focus();
+          iframe.contentWindow.print();
+        } catch (e) {
+          console.error(e);
+        }
+      };
+      var closeBtn = document.createElement("button");
+      closeBtn.type = "button";
+      closeBtn.className = "button";
+      closeBtn.textContent = "Close";
+      closeBtn.onclick = dismiss;
+      backdrop.onclick = function (ev) {
+        if (ev.target === backdrop) dismiss();
+      };
 
-    fetch(url, {
-      credentials: "same-origin",
-      headers: { Accept: "application/pdf" },
-    })
-      .then(function (res) {
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        return res.blob();
+      row.appendChild(printBtn);
+      row.appendChild(closeBtn);
+      box.appendChild(p);
+      box.appendChild(iframe);
+      box.appendChild(row);
+      backdrop.appendChild(box);
+      document.body.appendChild(backdrop);
+      printBtn.focus();
+    }
+
+    function printShipmentLabel(pdfUrl) {
+      var url = absolutePdfUrl(pdfUrl);
+      var printWin = window.open("", "shipment_label_print", "popup=yes,width=840,height=1100,scrollbars=yes");
+
+      fetch(url, {
+        credentials: "same-origin",
+        headers: { Accept: "application/pdf" },
       })
-      .then(function (blob) {
-        var blobUrl = URL.createObjectURL(blob);
-        var useWin = printWin && !printWin.closed;
-        if (useWin) {
+        .then(function (res) {
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          return res.blob();
+        })
+        .then(function (blob) {
+          var blobUrl = URL.createObjectURL(blob);
+          var useWin = printWin && !printWin.closed;
+          if (useWin) {
+            try {
+              printWin.location.replace(blobUrl + "#page=1&zoom=100");
+            } catch (e) {
+              useWin = false;
+            }
+          }
+          if (useWin) {
+            function revokeAndClose() {
+              try {
+                URL.revokeObjectURL(blobUrl);
+              } catch (e) {
+                /* ignore */
+              }
+              try {
+                printWin.close();
+              } catch (e2) {
+                /* ignore */
+              }
+            }
+            function doPrint() {
+              try {
+                printWin.focus();
+                printWin.print();
+              } catch (e) {
+                console.error(e);
+              }
+            }
+            printWin.addEventListener("load", function () {
+              window.setTimeout(doPrint, 200);
+            });
+            window.setTimeout(doPrint, 400);
+            window.setTimeout(doPrint, 900);
+            window.setTimeout(doPrint, 1600);
+            printWin.addEventListener("afterprint", function () {
+              window.setTimeout(revokeAndClose, 300);
+            });
+            return;
+          }
           try {
-            printWin.location.replace(blobUrl + "#page=1&zoom=100");
+            if (printWin && !printWin.closed) printWin.close();
           } catch (e) {
-            useWin = false;
+            /* ignore */
           }
-        }
-        if (useWin) {
-          function revokeAndClose() {
-            try {
-              URL.revokeObjectURL(blobUrl);
-            } catch (e) {
-              /* ignore */
-            }
-            try {
-              printWin.close();
-            } catch (e2) {
-              /* ignore */
-            }
+          showInlinePrintFallback(blobUrl);
+        })
+        .catch(function (err) {
+          console.error(err);
+          try {
+            if (printWin && !printWin.closed) printWin.close();
+          } catch (e) {
+            /* ignore */
           }
-          function doPrint() {
-            try {
-              printWin.focus();
-              printWin.print();
-            } catch (e) {
-              console.error(e);
-            }
-          }
-          printWin.addEventListener("load", function () {
-            window.setTimeout(doPrint, 200);
-          });
-          window.setTimeout(doPrint, 400);
-          window.setTimeout(doPrint, 900);
-          window.setTimeout(doPrint, 1600);
-          printWin.addEventListener("afterprint", function () {
-            window.setTimeout(revokeAndClose, 300);
-          });
-          return;
-        }
-        try {
-          if (printWin && !printWin.closed) printWin.close();
-        } catch (e) {
-          /* ignore */
-        }
-        showInlinePrintFallback(blobUrl);
-      })
-      .catch(function (err) {
-        console.error(err);
-        try {
-          if (printWin && !printWin.closed) printWin.close();
-        } catch (e) {
-          /* ignore */
-        }
-        window.alert(
-          "Could not load the label PDF. Try Download or sign in again if your session expired."
-        );
-      });
-  }
+          window.alert(
+            "Could not load the label PDF. Try Download or sign in again if your session expired."
+          );
+        });
+    }
 
-  document.addEventListener("click", function (e) {
-    var el = e.target;
-    if (!el || !el.closest) return;
-    var a = el.closest("a.js-shipment-label-print");
-    if (!a) return;
-    e.preventDefault();
-    e.stopPropagation();
-    var pdfUrl = a.getAttribute("data-pdf-url");
-    if (!pdfUrl) return;
-    printShipmentLabel(pdfUrl);
-  });
-})();
-  </script>
+    document.addEventListener("click", function (e) {
+      var el = e.target;
+      if (!el || !el.closest) return;
+      var a = el.closest("a.js-shipment-label-print");
+      if (!a) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var pdfUrl = a.getAttribute("data-pdf-url");
+      if (!pdfUrl) return;
+      printShipmentLabel(pdfUrl);
+    });
+  })();
+</script>
 {% endblock %}

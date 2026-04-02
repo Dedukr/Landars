@@ -37,16 +37,12 @@ class ShipmentAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "order_admin_link",
-        "label_link",
         "label_print_list_link",
         "provider_tracking",
         "chosen_shipping_method_display",
         "map_delivery_cost_display",
         "sendcloud_inputs_weight",
         "status",
-        "retry_count",
-        "provider_parcel_id",
-        "sendcloud_inputs_ref",
         "created_at",
     )
     list_filter = ("status",)
@@ -95,7 +91,7 @@ class ShipmentAdmin(admin.ModelAdmin):
                 "fields": (
                     "provider_summary",
                     "sendcloud_tracking_url_display",
-                    "label_link",
+                    "label_print_list_link",
                 ),
             },
         ),
@@ -254,12 +250,10 @@ class ShipmentAdmin(admin.ModelAdmin):
         )
 
     def _shipment_label_pdf_response(self, request, object_id) -> HttpResponse:
+        from billing.models import get_s3_client
+        from botocore.exceptions import ClientError
         from django.conf import settings
         from django.core.exceptions import PermissionDenied
-
-        from botocore.exceptions import ClientError
-
-        from billing.models import get_s3_client
 
         if request.method != "GET":
             return HttpResponseNotAllowed(["GET"])
@@ -310,7 +304,7 @@ class ShipmentAdmin(admin.ModelAdmin):
         return str(v) if v not in (None, "") else "—"
 
     @admin.display(
-        description="Delivery fee (weight bands map)",
+        description="Delivery fee",
     )
     def map_delivery_cost_display(self, obj: Shipment) -> str:
         """
@@ -359,7 +353,7 @@ class ShipmentAdmin(admin.ModelAdmin):
         oid = obj.order_id
         url = reverse("admin:api_order_change", args=[oid])
         return format_html(
-            '<a href="{}" title="Order ID {}">Order {} by {}</a>',
+            '<a href="{}" title="Order ID {}">#{} — {}</a>',
             url,
             oid,
             obj.order.id,
@@ -372,7 +366,7 @@ class ShipmentAdmin(admin.ModelAdmin):
             return "—"
         return str(obj.sendcloud_parcel_id)
 
-    @admin.display(description="Tracking #")
+    @admin.display(description="Tracking")
     def provider_tracking(self, obj: Shipment) -> str:
         tn = (obj.shipping_tracking_number or "").strip()
         if not tn:
