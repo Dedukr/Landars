@@ -8,8 +8,9 @@ class Migration(migrations.Migration):
 
     initial = True
 
+    # Shipment FKs api.Order only — need Order through 0042; 0043 is Order.weight (unrelated).
     dependencies = [
-        ('api', '0043_order_sendcloud_billable_weight'),
+        ("api", "0042_ready_to_ship_and_packaging"),
     ]
 
     operations = [
