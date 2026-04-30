@@ -2,6 +2,15 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import {
+  ChevronDown,
+  RotateCcw,
+  Eye,
+  Download,
+  MessageCircle,
+  X,
+} from "lucide-react";
+import StatusBadge from "@/components/StatusBadge";
 
 interface OrderItem {
   id: number;
@@ -37,37 +46,6 @@ interface OrderCardProps {
   onReorder: () => void;
 }
 
-const statusConfig = {
-  pending: {
-    label: "Pending",
-    color: "text-yellow-600",
-    bgColor: "bg-yellow-50",
-    borderColor: "border-yellow-200",
-    icon: "⏳",
-  },
-  paid: {
-    label: "Paid",
-    color: "text-green-600",
-    bgColor: "bg-green-50",
-    borderColor: "border-green-200",
-    icon: "✅",
-  },
-  issued: {
-    label: "Issued",
-    color: "text-blue-600",
-    bgColor: "bg-blue-50",
-    borderColor: "border-blue-200",
-    icon: "📦",
-  },
-  cancelled: {
-    label: "Cancelled",
-    color: "text-red-600",
-    bgColor: "bg-red-50",
-    borderColor: "border-red-200",
-    icon: "❌",
-  },
-};
-
 function getWhatsAppUrl(phone: string | undefined, text?: string): string | null {
   const digits = (phone ?? "").replace(/\D/g, "");
   if (!digits.length) return null;
@@ -75,131 +53,125 @@ function getWhatsAppUrl(phone: string | undefined, text?: string): string | null
   return text ? `${base}&text=${encodeURIComponent(text)}` : base;
 }
 
-export default function OrderCard({
-  order,
-  onReorder,
-}: OrderCardProps) {
+function formatDate(dateString: string | null | undefined) {
+  if (!dateString) return "—";
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "—";
+    return date.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+function formatCurrency(amount: string) {
+  return `£${parseFloat(amount).toFixed(2)}`;
+}
+
+export default function OrderCard({ order, onReorder }: OrderCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const statusInfo = statusConfig[order.status];
-  const canCancel = order.status === "pending" || order.status === "paid" || order.status === "issued";
-  const canReorder = order.status === "paid" || order.status === "issued" || order.status === "cancelled";
+  const canCancel =
+    order.status === "pending" ||
+    order.status === "paid" ||
+    order.status === "issued";
+  const canReorder =
+    order.status === "paid" ||
+    order.status === "issued" ||
+    order.status === "cancelled";
 
-  const cancelOrderWhatsAppUrl = getWhatsAppUrl(
+  const cancelWhatsAppUrl = getWhatsAppUrl(
     process.env.NEXT_PUBLIC_SUPPORT_PHONE,
     `Cancelling the order #${order.id}`
   );
 
-  const formatDate = (dateString: string | null | undefined) => {
-    if (!dateString) return "—";
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return "—";
-      return date.toLocaleDateString("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      });
-    } catch {
-      return "—";
-    }
-  };
-
-  const formatCurrency = (amount: string) => {
-    return `£${parseFloat(amount).toFixed(2)}`;
-  };
-
   return (
     <div
-      className="rounded-lg shadow-sm overflow-hidden"
+      className="rounded-xl overflow-hidden transition-shadow hover:shadow-md"
       style={{
         background: "var(--card-bg)",
         border: "1px solid var(--sidebar-border)",
+        boxShadow: "var(--card-shadow)",
       }}
     >
-      {/* Order Header */}
-      <div className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center space-x-4">
-            <div className="text-2xl">{statusInfo.icon}</div>
-            <div>
-              <h3
-                className="text-lg font-semibold"
+      {/* ── Header ──────────────────────────────────── */}
+      <div className="p-5 sm:p-6">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span
+                className="text-base font-semibold"
                 style={{ color: "var(--foreground)" }}
               >
                 Order #{order.id}
-              </h3>
-              <p
-                className="text-sm"
-                style={{ color: "var(--foreground)", opacity: 0.7 }}
-              >
-                Placed on {formatDate(order.created_at)}
-              </p>
+              </span>
+              <StatusBadge status={order.status} size="sm" />
             </div>
-          </div>
-          <div className="flex items-center space-x-4">
-            <div
-              className={`px-3 py-1 rounded-full text-sm font-medium ${statusInfo.bgColor} ${statusInfo.color} ${statusInfo.borderColor} border`}
+            <p
+              className="text-xs mt-1"
+              style={{ color: "var(--muted-foreground)" }}
             >
-              {statusInfo.label}
-            </div>
-            <button
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              style={{ color: "var(--foreground)" }}
-            >
-              <svg
-                className={`w-5 h-5 transform transition-transform ${
-                  isExpanded ? "rotate-180" : ""
-                }`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 9l-7 7-7-7"
-                />
-              </svg>
-            </button>
+              Placed on {formatDate(order.created_at)}
+            </p>
           </div>
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="p-1.5 rounded-lg transition-all duration-200 hover:opacity-80 flex-shrink-0"
+            style={{
+              color: "var(--muted-foreground)",
+              background: "var(--sidebar-bg)",
+            }}
+            aria-label={isExpanded ? "Collapse order" : "Expand order"}
+            aria-expanded={isExpanded}
+          >
+            <ChevronDown
+              className={`w-4 h-4 transition-transform duration-200 ${
+                isExpanded ? "rotate-180" : ""
+              }`}
+            />
+          </button>
         </div>
 
-        {/* Order Summary */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        {/* Summary row */}
+        <div
+          className="grid grid-cols-3 gap-4 mb-4 py-3 px-4 rounded-lg"
+          style={{ background: "var(--sidebar-bg)" }}
+        >
           <div>
             <p
-              className="text-sm font-medium"
-              style={{ color: "var(--foreground)", opacity: 0.7 }}
+              className="text-xs mb-0.5"
+              style={{ color: "var(--muted-foreground)" }}
             >
-              Delivery Date
+              Delivery
             </p>
-            <p className="text-sm" style={{ color: "var(--foreground)" }}>
-              {order.delivery_date ? formatDate(order.delivery_date) : "Not specified"}
+            <p className="text-xs font-medium" style={{ color: "var(--foreground)" }}>
+              {order.delivery_date ? formatDate(order.delivery_date) : "TBC"}
             </p>
           </div>
           <div>
             <p
-              className="text-sm font-medium"
-              style={{ color: "var(--foreground)", opacity: 0.7 }}
+              className="text-xs mb-0.5"
+              style={{ color: "var(--muted-foreground)" }}
             >
               Items
             </p>
-            <p className="text-sm" style={{ color: "var(--foreground)" }}>
+            <p className="text-xs font-medium" style={{ color: "var(--foreground)" }}>
               {order.total_items} {order.total_items === 1 ? "item" : "items"}
             </p>
           </div>
-          <div>
+          <div className="text-right">
             <p
-              className="text-sm font-medium"
-              style={{ color: "var(--foreground)", opacity: 0.7 }}
+              className="text-xs mb-0.5"
+              style={{ color: "var(--muted-foreground)" }}
             >
               Total
             </p>
             <p
-              className="text-lg font-semibold"
+              className="text-sm font-bold"
               style={{ color: "var(--foreground)" }}
             >
               {formatCurrency(order.total_price)}
@@ -207,135 +179,115 @@ export default function OrderCard({
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex flex-wrap gap-3">
+        {/* Action buttons */}
+        <div className="flex flex-wrap gap-2">
           {canReorder && (
             <button
               onClick={onReorder}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 hover:opacity-90"
+              style={{ background: "var(--primary)", color: "white" }}
             >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"
-                />
-              </svg>
+              <RotateCcw className="w-3.5 h-3.5" />
               Reorder
             </button>
           )}
 
-          {canCancel && cancelOrderWhatsAppUrl && (
-            <a
-              href={cancelOrderWhatsAppUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2 border border-red-300 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 transition-colors"
-            >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-              Cancel Order
-            </a>
-          )}
+          <Link
+            href={`/orders/${order.id}`}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200 hover:opacity-80"
+            style={{
+              borderColor: "var(--sidebar-border)",
+              color: "var(--foreground)",
+              background: "transparent",
+            }}
+          >
+            <Eye className="w-3.5 h-3.5" />
+            View Details
+          </Link>
 
           {order.invoice_link && (
             <a
               href={order.invoice_link}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200 hover:opacity-80"
+              style={{
+                borderColor: "var(--success-border)",
+                color: "var(--success-text)",
+                background: "var(--success-bg)",
+              }}
             >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                />
-              </svg>
-              View Invoice
+              <Download className="w-3.5 h-3.5" />
+              Invoice
             </a>
           )}
 
-          <Link
-            href={`/orders/${order.id}`}
-            className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
-          >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+          {canCancel && cancelWhatsAppUrl && (
+            <a
+              href={cancelWhatsAppUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200 hover:opacity-80"
+              style={{
+                borderColor: "rgba(220,38,38,0.3)",
+                color: "var(--destructive)",
+                background: "rgba(220,38,38,0.06)",
+              }}
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-              />
-            </svg>
-            View Details
-          </Link>
+              <X className="w-3.5 h-3.5" />
+              Cancel
+            </a>
+          )}
+
+          {canCancel && !cancelWhatsAppUrl && (
+            <Link
+              href="/contact"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200 hover:opacity-80"
+              style={{
+                borderColor: "rgba(220,38,38,0.3)",
+                color: "var(--destructive)",
+                background: "rgba(220,38,38,0.06)",
+              }}
+            >
+              <MessageCircle className="w-3.5 h-3.5" />
+              Request Cancel
+            </Link>
+          )}
         </div>
       </div>
 
-      {/* Expanded Content */}
+      {/* ── Expanded detail ─────────────────────────── */}
       {isExpanded && (
         <div
-          className="px-6 py-4"
+          className="px-5 sm:px-6 pb-6"
           style={{ borderTop: "1px solid var(--sidebar-border)" }}
         >
-          {/* Order Items */}
-          <div className="mb-6">
+          {/* Items list */}
+          <div className="mt-5 mb-5">
             <h4
-              className="text-sm font-medium mb-3"
-              style={{ color: "var(--foreground)" }}
+              className="text-xs font-semibold uppercase tracking-wide mb-3"
+              style={{ color: "var(--muted-foreground)" }}
             >
-              Order Items
+              Items Ordered
             </h4>
             <div className="space-y-3">
               {order.items.map((item) => (
-                <div key={item.id} className="flex items-center space-x-4">
+                <div key={item.id} className="flex items-center gap-3">
                   <div className="flex-shrink-0">
                     {item.product_image_url ? (
                       <Image
                         src={item.product_image_url}
                         alt={item.product_name}
-                        width={48}
-                        height={48}
-                        className="w-12 h-12 object-cover rounded-lg"
+                        width={44}
+                        height={44}
+                        className="w-11 h-11 object-cover rounded-lg"
                       />
                     ) : (
-                      <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
-                        <span className="text-lg">🍎</span>
+                      <div
+                        className="w-11 h-11 rounded-lg flex items-center justify-center text-lg"
+                        style={{ background: "var(--sidebar-bg)" }}
+                      >
+                        🛒
                       </div>
                     )}
                   </div>
@@ -347,15 +299,14 @@ export default function OrderCard({
                       {item.product_name}
                     </p>
                     <p
-                      className="text-sm"
-                      style={{ color: "var(--foreground)", opacity: 0.7 }}
+                      className="text-xs"
+                      style={{ color: "var(--muted-foreground)" }}
                     >
-                      Qty: {item.quantity} ×{" "}
-                      {formatCurrency(item.product_price)}
+                      {item.quantity} × {formatCurrency(item.product_price)}
                     </p>
                   </div>
                   <div
-                    className="text-sm font-medium"
+                    className="text-sm font-semibold flex-shrink-0"
                     style={{ color: "var(--foreground)" }}
                   >
                     {formatCurrency(item.total_price)}
@@ -365,35 +316,33 @@ export default function OrderCard({
             </div>
           </div>
 
-          {/* Order Details */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Order detail grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div>
               <h4
-                className="text-sm font-medium mb-3"
-                style={{ color: "var(--foreground)" }}
+                className="text-xs font-semibold uppercase tracking-wide mb-2"
+                style={{ color: "var(--muted-foreground)" }}
               >
-                Delivery Information
+                Delivery
               </h4>
-              <div className="space-y-2">
-                <p
-                  className="text-sm"
-                  style={{ color: "var(--foreground)", opacity: 0.7 }}
-                >
-                  <span className="font-medium">Type:</span> Home Delivery
+              <div className="space-y-1 text-sm" style={{ color: "var(--foreground)" }}>
+                <p>
+                  <span style={{ color: "var(--muted-foreground)" }}>
+                    Type:{" "}
+                  </span>
+                  {order.is_home_delivery ? "Home Delivery" : "Post / Collection"}
                 </p>
-                <p
-                  className="text-sm"
-                  style={{ color: "var(--foreground)", opacity: 0.7 }}
-                >
-                  <span className="font-medium">Date:</span>{" "}
+                <p>
+                  <span style={{ color: "var(--muted-foreground)" }}>
+                    Date:{" "}
+                  </span>
                   {order.delivery_date ? formatDate(order.delivery_date) : "Not specified"}
                 </p>
                 {order.customer_address && (
-                  <p
-                    className="text-sm"
-                    style={{ color: "var(--foreground)", opacity: 0.7 }}
-                  >
-                    <span className="font-medium">Address:</span>{" "}
+                  <p>
+                    <span style={{ color: "var(--muted-foreground)" }}>
+                      Address:{" "}
+                    </span>
                     {order.customer_address}
                   </p>
                 )}
@@ -402,16 +351,14 @@ export default function OrderCard({
 
             <div>
               <h4
-                className="text-sm font-medium mb-3"
-                style={{ color: "var(--foreground)" }}
+                className="text-xs font-semibold uppercase tracking-wide mb-2"
+                style={{ color: "var(--muted-foreground)" }}
               >
-                Order Summary
+                Price Breakdown
               </h4>
-              <div className="space-y-2">
+              <div className="space-y-1">
                 <div className="flex justify-between text-sm">
-                  <span style={{ color: "var(--foreground)", opacity: 0.7 }}>
-                    Subtotal:
-                  </span>
+                  <span style={{ color: "var(--muted-foreground)" }}>Subtotal</span>
                   <span style={{ color: "var(--foreground)" }}>
                     {formatCurrency(
                       (
@@ -424,25 +371,25 @@ export default function OrderCard({
                 </div>
                 {parseFloat(order.delivery_fee) > 0 && (
                   <div className="flex justify-between text-sm">
-                    <span style={{ color: "var(--foreground)", opacity: 0.7 }}>
-                      Delivery:
-                    </span>
+                    <span style={{ color: "var(--muted-foreground)" }}>Delivery</span>
                     <span style={{ color: "var(--foreground)" }}>
                       {formatCurrency(order.delivery_fee)}
                     </span>
                   </div>
                 )}
                 {parseFloat(order.discount) > 0 && (
-                  <div className="flex justify-between text-sm text-green-600">
-                    <span>Discount:</span>
-                    <span>-{formatCurrency(order.discount)}</span>
+                  <div className="flex justify-between text-sm">
+                    <span style={{ color: "var(--success)" }}>Discount</span>
+                    <span style={{ color: "var(--success)" }}>
+                      -{formatCurrency(order.discount)}
+                    </span>
                   </div>
                 )}
                 <div
-                  className="flex justify-between text-sm font-semibold pt-2"
+                  className="flex justify-between text-sm font-semibold pt-2 mt-1"
                   style={{ borderTop: "1px solid var(--sidebar-border)" }}
                 >
-                  <span style={{ color: "var(--foreground)" }}>Total:</span>
+                  <span style={{ color: "var(--foreground)" }}>Total</span>
                   <span style={{ color: "var(--foreground)" }}>
                     {formatCurrency(order.total_price)}
                   </span>
@@ -452,19 +399,18 @@ export default function OrderCard({
           </div>
 
           {order.notes && (
-            <div className="mt-6">
+            <div className="mt-4">
               <h4
-                className="text-sm font-medium mb-3"
-                style={{ color: "var(--foreground)" }}
+                className="text-xs font-semibold uppercase tracking-wide mb-2"
+                style={{ color: "var(--muted-foreground)" }}
               >
-                Order Notes
+                Notes
               </h4>
               <p
-                className="text-sm p-3 rounded-lg"
+                className="text-sm px-3 py-2.5 rounded-lg"
                 style={{
                   background: "var(--sidebar-bg)",
                   color: "var(--foreground)",
-                  opacity: 0.8,
                 }}
               >
                 {order.notes}

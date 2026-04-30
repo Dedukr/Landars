@@ -1,11 +1,14 @@
 "use client";
 import React, { useState, useCallback, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { getAuthUrl } from "@/utils/authHelpers";
 import { useCart } from "@/contexts/CartContext";
 import { SortOption } from "@/components/SortList";
+import { toast } from "sonner";
+import NotAuthenticatedState from "@/components/NotAuthenticatedState";
+import PageHeader from "@/components/PageHeader";
 import WishlistStats from "@/components/WishlistStats";
 import WishlistSearchAndFilter from "@/components/WishlistSearchAndFilter";
 import WishlistBulkActions from "@/components/WishlistBulkActions";
@@ -21,7 +24,6 @@ interface Category {
 }
 
 export default function WishlistPage() {
-  const router = useRouter();
   const pathname = usePathname();
   const { user } = useAuth();
   const { products, loading, stats, clearWishlist, wishlist } =
@@ -29,8 +31,7 @@ export default function WishlistPage() {
   const { filteredProducts, removingIds, removeItem } =
     useWishlistItems(products);
   const { addToCart } = useCart();
-  const [showToast, setShowToast] = useState(false);
-  const [toastMessage, setToastMessage] = useState("");
+  // sonner is used for toast notifications
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<
@@ -106,26 +107,22 @@ export default function WishlistPage() {
     selectedItems.forEach((productId) => {
       addToCart(productId, 1);
     });
+    const count = selectedItems.size;
     setSelectedItems(new Set());
-    setToastMessage(`Added ${selectedItems.size} items to cart`);
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
+    toast.success(`Added ${count} item${count !== 1 ? "s" : ""} to cart`);
   }, [selectedItems, addToCart]);
 
   const handleBulkRemove = useCallback(() => {
     selectedItems.forEach((productId) => {
       removeItem(productId);
     });
+    const count = selectedItems.size;
     setSelectedItems(new Set());
-    setToastMessage(`Removed ${selectedItems.size} items from wishlist`);
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
+    toast.success(`Removed ${count} item${count !== 1 ? "s" : ""} from wishlist`);
   }, [selectedItems, removeItem]);
 
   const handleItemAddToCart = useCallback((productName: string) => {
-    setToastMessage(`${productName} added to cart`);
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 2000);
+    toast.success(`${productName} added to cart`);
   }, []);
 
 
@@ -196,53 +193,12 @@ export default function WishlistPage() {
 
   if (!user) {
     return (
-      <div className="min-h-screen" style={{ background: "var(--background)" }}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="text-center py-16">
-            <div className="mb-6 text-8xl">🔐</div>
-            <h2
-              className="text-2xl font-bold mb-4"
-              style={{ color: "var(--foreground)" }}
-            >
-              Please sign in to view your wishlist
-            </h2>
-            <p
-              className="mb-8 max-w-md mx-auto"
-              style={{ color: "var(--foreground)", opacity: 0.7 }}
-            >
-              You need to be signed in to access your wishlist and save your
-              favorite products.
-            </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <button
-                type="button"
-                onClick={() => router.push(getAuthUrl({ next: pathname }))}
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-colors cursor-pointer border-0"
-                style={{
-                  background: "var(--primary)",
-                  color: "white",
-                }}
-              >
-                Sign In
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  window.location.href = "/";
-                }}
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-colors cursor-pointer border"
-                style={{
-                  borderColor: "var(--sidebar-border)",
-                  color: "var(--foreground)",
-                  background: "var(--card-bg)",
-                }}
-              >
-                Back to shop
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <NotAuthenticatedState
+        title="Sign in to view your wishlist"
+        description="Save your favourite products and access them any time."
+        signInHref={getAuthUrl({ next: pathname })}
+        showShopLink
+      />
     );
   }
 
@@ -275,67 +231,51 @@ export default function WishlistPage() {
   }
 
   return (
-    <div className="min-h-screen" style={{ background: "var(--background)" }}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1
-            className="text-3xl font-bold"
-            style={{ color: "var(--foreground)" }}
-          >
-            My Wishlist
-          </h1>
-          <p
-            className="mt-2"
-            style={{ color: "var(--foreground)", opacity: 0.7 }}
-          >
-            Save your favorite products for later
-          </p>
-        </div>
+    <div className="min-h-screen py-8" style={{ background: "var(--background)" }}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <PageHeader
+          title="My Wishlist"
+          subtitle="Save your favourite products for later"
+        />
 
         {wishlist.length === 0 ? (
           <div className="text-center py-16">
-            <div className="mb-6 text-8xl">💝</div>
+            <div
+              className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
+              style={{ background: "var(--sidebar-bg)" }}
+            >
+              <svg
+                className="w-8 h-8"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                style={{ color: "var(--muted-foreground)" }}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                />
+              </svg>
+            </div>
             <h2
-              className="text-2xl font-bold mb-4"
+              className="text-lg font-semibold mb-2"
               style={{ color: "var(--foreground)" }}
             >
               Your wishlist is empty
             </h2>
             <p
-              className="mb-8 max-w-md mx-auto"
-              style={{ color: "var(--foreground)", opacity: 0.7 }}
+              className="text-sm mb-6 max-w-xs mx-auto"
+              style={{ color: "var(--muted-foreground)" }}
             >
-              Start adding products you love to your wishlist! Discover amazing
-              items and save them for later.
+              Start saving products you love to your wishlist.
             </p>
             <Link
               href="/"
-              className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white transition-colors"
-              style={{
-                background: "var(--primary)",
-                color: "#fff",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "var(--primary-hover)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "var(--primary)";
-              }}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+              style={{ background: "var(--primary)", color: "white" }}
             >
-              <svg
-                className="w-5 h-5 mr-2"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"
-                />
-              </svg>
               Start Shopping
             </Link>
           </div>
@@ -380,24 +320,8 @@ export default function WishlistPage() {
                   <div className="flex items-center gap-4">
                     <button
                       onClick={clearWishlist}
-                      className="text-sm transition-colors touch-manipulation"
-                      style={{
-                        color: "#dc2626",
-                        touchAction: "manipulation",
-                        WebkitTapHighlightColor: "transparent",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.opacity = "0.8";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.opacity = "1";
-                      }}
-                      onTouchStart={(e) => {
-                        e.currentTarget.style.opacity = "0.8";
-                      }}
-                      onTouchEnd={(e) => {
-                        e.currentTarget.style.opacity = "1";
-                      }}
+                      className="text-sm font-medium transition-opacity hover:opacity-70"
+                      style={{ color: "var(--destructive)" }}
                     >
                       Clear All
                     </button>
@@ -425,56 +349,22 @@ export default function WishlistPage() {
               className="mt-6"
             />
 
-            {/* Continue Shopping */}
             <div className="mt-8 text-center">
               <Link
                 href="/"
-                className="inline-flex items-center px-6 py-3 text-base font-medium rounded-md transition-colors"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium border transition-all hover:opacity-80"
                 style={{
-                  border: "1px solid var(--sidebar-border)",
+                  borderColor: "var(--sidebar-border)",
                   color: "var(--foreground)",
                   background: "var(--card-bg)",
                 }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "var(--sidebar-bg)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "var(--card-bg)";
-                }}
               >
-                <svg
-                  className="w-5 h-5 mr-2"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"
-                  />
-                </svg>
                 Continue Shopping
               </Link>
             </div>
           </>
         )}
 
-        {/* Toast Notification */}
-        {showToast && (
-          <div
-            className="fixed bottom-6 right-6 px-6 py-4 rounded-lg shadow-2xl flex items-center gap-3 z-50 animate-slide-up"
-            style={{
-              background: "var(--accent)",
-              color: "#fff",
-              boxShadow: "var(--card-shadow)",
-            }}
-          >
-            <span className="text-2xl">✓</span>
-            <span className="font-medium">{toastMessage}</span>
-          </div>
-        )}
       </div>
     </div>
   );

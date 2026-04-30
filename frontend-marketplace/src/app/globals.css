@@ -109,8 +109,25 @@
 }
 
 @theme inline {
+  /* Core semantic colors - maps CSS vars to Tailwind utilities */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-card: var(--card-bg);
+  --color-sidebar: var(--sidebar-bg);
+  --color-border: var(--sidebar-border);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-info-bg: var(--info-bg);
+  --color-info-border: var(--info-border);
+  --color-info-text: var(--info-text);
+  --color-success-bg: var(--success-bg);
+  --color-success-border: var(--success-border);
+  --color-success-text: var(--success-text);
+  /* Typography */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -148,6 +165,10 @@
   }
   .content-offset-md {
     margin-left: calc(var(--sidebar-width) + 10px) !important;
+  }
+  /* Use this for full-width containers (like footer) that need sidebar-aware left padding */
+  .sidebar-offset-md {
+    padding-left: calc(var(--sidebar-width) + 2rem) !important;
   }
 }
 

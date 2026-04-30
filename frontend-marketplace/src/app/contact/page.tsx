@@ -1,131 +1,173 @@
 import React from "react";
+import type { Metadata } from "next";
+import { Mail, Phone, Clock, MapPin } from "lucide-react";
+import ContactForm from "@/components/ContactForm";
+
+export const metadata: Metadata = {
+  title: "Contact Us",
+  description:
+    "Get in touch with the Landar's Food team. We're here to help with orders, products, and delivery queries.",
+};
+
+const supportPhone = process.env.NEXT_PUBLIC_SUPPORT_PHONE;
+const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_REPLY_TO;
+
+const contactDetails = [
+  {
+    icon: Mail,
+    title: "Email Us",
+    value: supportEmail || "info@landarsfood.com",
+    href: `mailto:${supportEmail || "info@landarsfood.com"}`,
+    description: "We aim to reply within one business day",
+  },
+  ...(supportPhone
+    ? [
+        {
+          icon: Phone,
+          title: "Call Us",
+          value: supportPhone,
+          href: `tel:${supportPhone}`,
+          description: "Available during business hours",
+        },
+      ]
+    : []),
+  {
+    icon: MapPin,
+    title: "Location",
+    value: "United Kingdom",
+    href: null,
+    description: "Serving customers across the UK",
+  },
+  {
+    icon: Clock,
+    title: "Business Hours",
+    value: "Mon–Fri: 9am–6pm\nSat: 10am–4pm",
+    href: null,
+    description: "Sunday: Closed",
+  },
+];
 
 export default function ContactPage() {
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl mx-auto">
-          <h1 className="text-4xl font-bold text-foreground mb-8">
-            Contact Us
+    <div style={{ background: "var(--background)" }}>
+      {/* ── Hero ─────────────────────────────────────── */}
+      <section
+        className="border-b"
+        style={{
+          background:
+            "linear-gradient(135deg, var(--sidebar-bg) 0%, var(--background) 70%)",
+          borderColor: "var(--sidebar-border)",
+        }}
+      >
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
+          <h1
+            className="text-4xl sm:text-5xl font-extrabold leading-tight tracking-tight mb-3"
+            style={{ color: "var(--foreground)" }}
+          >
+            Contact{" "}
+            <span style={{ color: "var(--accent)" }}>Us</span>
           </h1>
+          <p
+            className="text-base sm:text-lg max-w-xl leading-relaxed"
+            style={{ color: "var(--muted-foreground)" }}
+          >
+            We&apos;re here to help. Whether you have a question about an
+            order, a product, or just want to say hello — we&apos;d love to
+            hear from you.
+          </p>
+        </div>
+      </section>
 
-          <div className="grid md:grid-cols-2 gap-8">
-            <div>
-              <h2 className="text-2xl font-semibold text-foreground mb-4">
-                Get in Touch
-              </h2>
-              <p className="text-muted-foreground mb-6">
-                We&apos;d love to hear from you! Whether you have questions
-                about our products, need help with an order, or want to share
-                feedback, we&apos;re here to help.
-              </p>
-
-              <div className="space-y-4">
-                <div>
-                  <h3 className="text-lg font-medium text-foreground mb-2">
-                    Email
-                  </h3>
-                  <p className="text-muted-foreground">info@landarsfood.com</p>
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="grid lg:grid-cols-5 gap-8 lg:gap-12">
+          {/* ── Contact info ──────────────────────────── */}
+          <div className="lg:col-span-2 space-y-4">
+            <h2
+              className="text-xl font-semibold mb-5"
+              style={{ color: "var(--foreground)" }}
+            >
+              Get in Touch
+            </h2>
+            {contactDetails.map(({ icon: Icon, title, value, href, description }) => (
+              <div
+                key={title}
+                className="flex gap-4 p-4 rounded-xl border"
+                style={{
+                  background: "var(--card-bg)",
+                  borderColor: "var(--sidebar-border)",
+                  boxShadow: "var(--card-shadow)",
+                }}
+              >
+                <div
+                  className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center mt-0.5"
+                  style={{ background: "var(--sidebar-bg)" }}
+                >
+                  <Icon
+                    className="w-5 h-5"
+                    style={{ color: "var(--accent)" }}
+                  />
                 </div>
-
                 <div>
-                  <h3 className="text-lg font-medium text-foreground mb-2">
-                    Phone
-                  </h3>
-                  <p className="text-muted-foreground">+1 (555) 123-4567</p>
-                </div>
-
-                <div>
-                  <h3 className="text-lg font-medium text-foreground mb-2">
-                    Business Hours
-                  </h3>
-                  <p className="text-muted-foreground">
-                    Monday - Friday: 9:00 AM - 6:00 PM
-                    <br />
-                    Saturday: 10:00 AM - 4:00 PM
-                    <br />
-                    Sunday: Closed
+                  <p
+                    className="text-xs font-semibold uppercase tracking-wide mb-0.5"
+                    style={{ color: "var(--muted-foreground)" }}
+                  >
+                    {title}
                   </p>
+                  {href ? (
+                    <a
+                      href={href}
+                      className="text-sm font-medium transition-opacity hover:opacity-70 whitespace-pre-line"
+                      style={{ color: "var(--foreground)" }}
+                    >
+                      {value}
+                    </a>
+                  ) : (
+                    <p
+                      className="text-sm font-medium whitespace-pre-line"
+                      style={{ color: "var(--foreground)" }}
+                    >
+                      {value}
+                    </p>
+                  )}
+                  {description && (
+                    <p
+                      className="text-xs mt-0.5"
+                      style={{ color: "var(--muted-foreground)" }}
+                    >
+                      {description}
+                    </p>
+                  )}
                 </div>
               </div>
+            ))}
+
+            {/* Order help note */}
+            <div
+              className="p-4 rounded-xl border"
+              style={{
+                background: "var(--info-bg)",
+                borderColor: "var(--info-border)",
+              }}
+            >
+              <p className="text-sm" style={{ color: "var(--info-text)" }}>
+                <strong>For order queries</strong>, please include your order
+                number in your message so we can help you quickly.
+              </p>
             </div>
+          </div>
 
-            <div>
-              <h2 className="text-2xl font-semibold text-foreground mb-4">
-                Send us a Message
-              </h2>
-              <form className="space-y-4">
-                <div>
-                  <label
-                    htmlFor="name"
-                    className="block text-sm font-medium text-foreground mb-2"
-                  >
-                    Name
-                  </label>
-                  <input
-                    type="text"
-                    id="name"
-                    name="name"
-                    className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="email"
-                    className="block text-sm font-medium text-foreground mb-2"
-                  >
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    id="email"
-                    name="email"
-                    className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="subject"
-                    className="block text-sm font-medium text-foreground mb-2"
-                  >
-                    Subject
-                  </label>
-                  <input
-                    type="text"
-                    id="subject"
-                    name="subject"
-                    className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="message"
-                    className="block text-sm font-medium text-foreground mb-2"
-                  >
-                    Message
-                  </label>
-                  <textarea
-                    id="message"
-                    name="message"
-                    rows={4}
-                    className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                    required
-                  ></textarea>
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full bg-primary text-primary-foreground py-2 px-4 rounded-md hover:bg-primary/90 transition-colors"
-                >
-                  Send Message
-                </button>
-              </form>
+          {/* ── Contact form (client component) ────────── */}
+          <div className="lg:col-span-3">
+            <div
+              className="rounded-2xl border p-6 md:p-8"
+              style={{
+                background: "var(--card-bg)",
+                borderColor: "var(--sidebar-border)",
+                boxShadow: "var(--card-shadow)",
+              }}
+            >
+              <ContactForm />
             </div>
           </div>
         </div>

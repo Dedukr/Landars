@@ -967,15 +967,9 @@ export default function OrderDetailPage() {
                     }}
                     className="w-full px-6 py-3 text-base font-semibold rounded-lg transition-all duration-200 flex items-center justify-center gap-2 min-h-[48px]"
                     style={{
-                      background: "rgba(34, 197, 94, 0.15)", // Light transparent green
-                      color: "rgb(22, 163, 74)", // Darker green text
-                      border: "1px solid rgba(34, 197, 94, 0.3)",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = "rgba(34, 197, 94, 0.25)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "rgba(34, 197, 94, 0.15)";
+                      background: "var(--success-bg)",
+                      color: "var(--success-text)",
+                      border: "1px solid var(--success-border)",
                     }}
                   >
                     <svg

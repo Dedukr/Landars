@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Header from "@/components/Header";
+import Footer from "@/components/Footer";
 import AuthWrapper from "@/components/AuthWrapper";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { CartProvider } from "@/contexts/CartContext";
@@ -8,17 +9,25 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { WishlistProvider } from "@/contexts/WishlistContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import CartMergeNotification from "@/components/CartMergeNotification";
+import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
-  title: "Landar's Food",
-  description: "Shop delicious Eastern European foods from Landar's Food.",
+  title: {
+    default: "Landar's Food — Authentic Eastern European Foods",
+    template: "%s | Landar's Food",
+  },
+  description:
+    "Shop authentic Eastern European foods delivered across the UK. Freshly sourced sausages, dairy, pastries and more from Landar's Food.",
   icons: {
     icon: "/landars_food_logo.svg",
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#f5e6cc", // Light theme color
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#faf4e8" },
+    { media: "(prefers-color-scheme: dark)", color: "#121212" },
+  ],
 };
 
 export default function RootLayout({
@@ -27,8 +36,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className="antialiased">
+    <html lang="en" suppressHydrationWarning>
+      <body className="antialiased flex flex-col min-h-screen">
         <ErrorBoundary>
           <ThemeProvider>
             <AuthProvider>
@@ -37,7 +46,9 @@ export default function RootLayout({
                   <WishlistProvider>
                     <Header />
                     <CartMergeNotification />
-                    {children}
+                    <main className="flex-1">{children}</main>
+                    <Footer />
+                    <Toaster richColors position="top-right" />
                   </WishlistProvider>
                 </CartProvider>
               </AuthWrapper>

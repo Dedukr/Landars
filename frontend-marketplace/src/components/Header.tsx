@@ -7,6 +7,17 @@ import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { getAuthUrl } from "@/utils/authHelpers";
 import { CompactThemeToggle } from "@/components/ThemeToggle";
+import {
+  ShoppingCart,
+  Heart,
+  Menu,
+  X,
+  ChevronDown,
+  User,
+  Package,
+  LogOut,
+  LayoutDashboard,
+} from "lucide-react";
 
 const navLinks = [
   { name: "Shop", href: "/" },
@@ -18,17 +29,15 @@ export default function Header() {
   const { cart } = useCart();
   const { user, logout } = useAuth();
 
-  // Build user menu based on user type
-  // For staff users: My Profile → My Orders → Admin Panel → Log Out
-  // For regular users: My Profile → My Orders → Wishlist → Log Out
   const userMenu = [
-    { name: "My Profile", href: "/profile" },
-    { name: "My Orders", href: "/orders" },
+    { name: "My Profile", href: "/profile", icon: User },
+    { name: "My Orders", href: "/orders", icon: Package },
     ...(user?.is_staff
-      ? [{ name: "Admin Panel", href: "/admin" }]
-      : [{ name: "Wishlist", href: "/wishlist" }]),
-    { name: "Log Out", action: "logout" },
+      ? [{ name: "Admin Panel", href: "/admin", icon: LayoutDashboard }]
+      : [{ name: "Wishlist", href: "/wishlist", icon: Heart }]),
+    { name: "Log Out", action: "logout", icon: LogOut },
   ];
+
   const router = useRouter();
   const pathname = usePathname();
   const signInUrl = getAuthUrl({ mode: "signin", next: pathname });
@@ -39,6 +48,8 @@ export default function Header() {
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
 
+  const cartItemCount = cart.reduce((sum, item) => sum + (item.quantity || 1), 0);
+
   async function handleMenuClick(item: {
     name: string;
     href?: string;
@@ -46,35 +57,30 @@ export default function Header() {
   }) {
     if (item.action === "logout") {
       await logout();
-      router.push("/"); // Redirect to home page after logout
+      router.push("/");
     }
     setMenuOpen(false);
     setMobileMenuOpen(false);
   }
 
-  // Dedicated function to close mobile menu
   function closeMobileMenu() {
     setMobileMenuOpen(false);
   }
 
-  // Close mobile menu when clicking outside or on navigation
   useEffect(() => {
     function handleClickOutside(event: MouseEvent | TouchEvent) {
       const target = event.target as Node;
-      // Don't close if clicking the mobile menu toggle button
       if (
         mobileMenuButtonRef.current &&
         mobileMenuButtonRef.current.contains(target)
       ) {
         return;
       }
-      // Only handle clicks if the mobile menu is actually open
       if (mobileMenuOpen) {
         if (mobileMenuRef.current && !mobileMenuRef.current.contains(target)) {
           setMobileMenuOpen(false);
         }
       }
-      // Only handle desktop menu if it's open
       if (menuOpen) {
         if (menuRef.current && !menuRef.current.contains(target)) {
           setMenuOpen(false);
@@ -82,15 +88,12 @@ export default function Header() {
       }
     }
 
-    // Close mobile menu on route change
     function handleRouteChange() {
       setMobileMenuOpen(false);
     }
 
-    // Use both mousedown and touchstart for better mobile support
     document.addEventListener("mousedown", handleClickOutside);
     document.addEventListener("touchstart", handleClickOutside);
-    // Listen for navigation events
     window.addEventListener("popstate", handleRouteChange);
 
     return () => {
@@ -100,50 +103,57 @@ export default function Header() {
     };
   }, [mobileMenuOpen, menuOpen]);
 
+  const isActive = (href: string) => pathname === href;
+
   return (
     <header
-      className="sticky top-0 z-50 w-full backdrop-blur transition-all duration-300"
+      className="sticky top-0 z-50 w-full backdrop-blur-md transition-all duration-300"
       style={{
         background: "var(--sidebar-bg)",
         borderBottom: "1px solid var(--sidebar-border)",
       }}
     >
-      <div className="max-w-[90rem] mx-auto">
-        {/* Main header content */}
-        <div className="flex items-center justify-between px-4 py-2 md:px-8 md:py-3 gap-4">
-          {/* Logo - responsive sizing */}
+      <div className="max-w-7xl mx-auto">
+        {/* Main header row */}
+        <div className="flex items-center justify-between px-4 py-3 md:px-6 lg:px-8 gap-4">
+          {/* Logo */}
           <Link
             href="/"
-            className="flex items-center gap-2 md:gap-3 flex-shrink-0 min-w-0 hover:opacity-80 transition-opacity"
-            style={{ minWidth: "140px" }}
+            className="flex items-center gap-2.5 flex-shrink-0 hover:opacity-85 transition-opacity"
           >
             <Image
               src="/landars_food_logo.svg"
-              alt="Landar's Food Logo"
-              width={28}
-              height={28}
-              className="object-contain md:w-9 md:h-9 flex-shrink-0"
+              alt="Landar's Food"
+              width={32}
+              height={32}
+              className="object-contain w-7 h-7 md:w-8 md:h-8"
             />
             <span
-              className="font-extrabold text-sm sm:text-lg md:text-2xl tracking-tight select-none whitespace-nowrap"
+              className="font-extrabold text-base sm:text-lg md:text-xl tracking-tight select-none whitespace-nowrap"
               style={{ color: "var(--primary)" }}
             >
               Landar&apos;s Food
             </span>
           </Link>
 
-          {/* Desktop Navigation - hidden on mobile */}
-          <nav className="hidden lg:flex items-center gap-8">
+          {/* Desktop Navigation */}
+          <nav className="hidden lg:flex items-center gap-1">
             {navLinks.map((link) => (
               <Link
                 key={link.name}
                 href={link.href}
-                className="navbar-link transition-colors hover:opacity-80"
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                  isActive(link.href)
+                    ? "font-semibold"
+                    : "hover:opacity-80"
+                }`}
                 style={{
-                  color: "var(--primary)",
-                  fontSize: "1.1rem",
-                  fontFamily:
-                    "var(--font-inter), 'Segoe UI', 'Roboto', sans-serif",
+                  color: isActive(link.href)
+                    ? "var(--accent)"
+                    : "var(--foreground)",
+                  background: isActive(link.href)
+                    ? "var(--info-bg)"
+                    : "transparent",
                 }}
               >
                 {link.name}
@@ -151,189 +161,161 @@ export default function Header() {
             ))}
           </nav>
 
-          {/* Right side - Theme Toggle, Cart and User/Auth */}
-          <div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
+          {/* Right side actions */}
+          <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
             {/* Theme Toggle */}
-            <CompactThemeToggle className="hidden sm:block" />
+            <CompactThemeToggle className="hidden sm:flex" />
 
-            {/* Wishlist Icon */}
+            {/* Wishlist */}
             <Link
               href="/wishlist"
-              className="relative group p-2"
+              className="relative p-2 rounded-lg transition-all duration-200 hover:opacity-80"
               aria-label="Wishlist"
-              style={{ color: "var(--primary)" }}
+              style={{ color: "var(--foreground)" }}
             >
-              <svg
-                width="20"
-                height="20"
-                className="md:w-6 md:h-6"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                viewBox="0 0 24 24"
-              >
-                <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-              </svg>
+              <Heart className="w-5 h-5 md:w-5 md:h-5" />
             </Link>
 
-            {/* Cart Icon */}
+            {/* Cart */}
             <Link
               href="/cart"
-              className="relative group p-2"
-              aria-label="Cart"
-              style={{ color: "var(--primary)" }}
+              className="relative p-2 rounded-lg transition-all duration-200 hover:opacity-80"
+              aria-label={`Cart (${cartItemCount} items)`}
+              style={{ color: "var(--foreground)" }}
             >
-              <svg
-                width="20"
-                height="20"
-                className="md:w-6 md:h-6"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                viewBox="0 0 24 24"
-              >
-                <circle cx="9" cy="21" r="1" />
-                <circle cx="20" cy="21" r="1" />
-                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h7.72a2 2 0 0 0 2-1.61L23 6H6" />
-              </svg>
-              <span
-                className="absolute -top-1 -right-1 text-white text-xs rounded-full px-1.5 py-0.5 font-bold"
-                style={{ background: "var(--accent)" }}
-              >
-                {cart.length}
-              </span>
+              <ShoppingCart className="w-5 h-5 md:w-5 md:h-5" />
+              {cartItemCount > 0 && (
+                <span
+                  className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 leading-none"
+                  style={{ background: "var(--accent)" }}
+                >
+                  {cartItemCount > 99 ? "99+" : cartItemCount}
+                </span>
+              )}
             </Link>
 
-            {/* Mobile Menu Button */}
+            {/* Mobile menu button */}
             <button
               ref={mobileMenuButtonRef}
-              className="lg:hidden p-2 hover:bg-gray-100 rounded transition-colors"
+              className="lg:hidden p-2 rounded-lg transition-all duration-200 hover:opacity-80"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              aria-label="Toggle mobile menu"
+              aria-label="Toggle menu"
+              aria-expanded={mobileMenuOpen}
+              style={{ color: "var(--foreground)" }}
             >
-              <svg
-                width="24"
-                height="24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                viewBox="0 0 24 24"
-              >
-                {mobileMenuOpen ? (
-                  <path d="M6 18L18 6M6 6l12 12" />
-                ) : (
-                  <path d="M3 12h18M3 6h18M3 18h18" />
-                )}
-              </svg>
+              {mobileMenuOpen ? (
+                <X className="w-5 h-5" />
+              ) : (
+                <Menu className="w-5 h-5" />
+              )}
             </button>
 
-            {/* Desktop User Menu */}
+            {/* Desktop user menu */}
             {user ? (
               <div className="hidden lg:block relative" ref={menuRef}>
                 <button
-                  className="flex items-center gap-2 p-2 rounded-full hover:bg-gray-100 focus:outline-none"
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200 hover:opacity-80 focus:outline-none"
                   onClick={() => setMenuOpen((v) => !v)}
                   aria-label="User menu"
+                  aria-expanded={menuOpen}
                 >
                   <span
-                    className="inline-flex items-center justify-center w-8 h-8 rounded-full text-lg font-bold"
-                    style={{ background: "var(--primary)", color: "#fff" }}
+                    className="inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold text-white flex-shrink-0"
+                    style={{ background: "var(--primary)" }}
                   >
                     {user.name.charAt(0).toUpperCase()}
                   </span>
-                  <svg
-                    width="20"
-                    height="20"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    viewBox="0 0 24 24"
+                  <span
+                    className="text-sm font-medium max-w-[100px] truncate hidden xl:block"
+                    style={{ color: "var(--foreground)" }}
                   >
-                    <path d="M6 9l6 6 6-6" />
-                  </svg>
+                    {user.name.split(" ")[0]}
+                  </span>
+                  <ChevronDown
+                    className={`w-4 h-4 transition-transform duration-200 ${menuOpen ? "rotate-180" : ""}`}
+                    style={{ color: "var(--muted-foreground)" }}
+                  />
                 </button>
-                {/* Desktop Dropdown */}
+
+                {/* Dropdown */}
                 {menuOpen && (
                   <div
-                    className="absolute right-0 mt-2 w-48 rounded-lg overflow-hidden shadow-lg animate-fade-in z-[60]"
+                    className="absolute right-0 mt-2 w-52 rounded-xl overflow-hidden shadow-xl animate-fade-in z-[60]"
                     style={{
                       background: "var(--card-bg)",
                       border: "1px solid var(--sidebar-border)",
+                      boxShadow: "var(--card-shadow)",
                     }}
                   >
-                    <div className="px-4 py-2 border-b border-gray-200">
+                    {/* User info */}
+                    <div
+                      className="px-4 py-3"
+                      style={{ borderBottom: "1px solid var(--sidebar-border)" }}
+                    >
                       <p
-                        className="text-sm font-medium"
+                        className="text-sm font-semibold truncate"
                         style={{ color: "var(--foreground)" }}
                       >
                         {user.name}
                       </p>
-                      <p className="text-xs text-gray-500">{user.email}</p>
+                      <p
+                        className="text-xs truncate mt-0.5"
+                        style={{ color: "var(--muted-foreground)" }}
+                      >
+                        {user.email}
+                      </p>
                     </div>
-                    <div>
-                      {userMenu.map((item) =>
-                        item.href ? (
+
+                    {/* Menu items */}
+                    <div className="py-1">
+                      {userMenu.map((item) => {
+                        const Icon = item.icon;
+                        const isLogout = item.name === "Log Out";
+                        return item.href ? (
                           <Link
                             key={item.name}
                             href={item.href}
-                            className="block px-4 py-2 transition-colors hover:opacity-80"
+                            className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:opacity-80"
                             style={{ color: "var(--foreground)" }}
                             onClick={() => setMenuOpen(false)}
                           >
+                            <Icon className="w-4 h-4 flex-shrink-0" style={{ color: "var(--accent)" }} />
                             {item.name}
                           </Link>
                         ) : (
                           <button
                             key={item.name}
-                            className="block w-full text-left px-4 py-2 transition-colors hover:opacity-80 rounded-b-lg"
+                            className="flex items-center gap-3 w-full px-4 py-2.5 text-sm transition-colors hover:opacity-80 mt-1"
                             style={{
-                              color:
-                                item.name === "Log Out"
-                                  ? "white"
-                                  : "var(--foreground)",
-                              backgroundColor:
-                                item.name === "Log Out"
-                                  ? "var(--accent)"
-                                  : "transparent",
+                              color: isLogout ? "var(--destructive)" : "var(--foreground)",
+                              borderTop: isLogout ? `1px solid var(--sidebar-border)` : undefined,
                             }}
                             onClick={() => handleMenuClick(item)}
                           >
+                            <Icon className="w-4 h-4 flex-shrink-0" />
                             {item.name}
                           </button>
-                        )
-                      )}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
               </div>
             ) : (
-              /* Desktop Guest User - Show Login/Signup Links */
               <div className="hidden lg:flex items-center gap-2">
                 <Link
                   href={signInUrl}
-                  className="transition-colors"
+                  className="px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 hover:opacity-80"
                   style={{ color: "var(--foreground)" }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = "var(--primary)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.color = "var(--foreground)";
-                  }}
                 >
                   Sign In
                 </Link>
                 <Link
                   href={signUpUrl}
-                  className="px-4 py-2 rounded transition-colors"
+                  className="px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-200 hover:opacity-90 shadow-sm"
                   style={{
                     background: "var(--primary)",
                     color: "white",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = "var(--primary-hover)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "var(--primary)";
                   }}
                 >
                   Sign Up
@@ -343,19 +325,22 @@ export default function Header() {
           </div>
         </div>
 
-        {/* Mobile Menu */}
+        {/* Mobile menu */}
         {mobileMenuOpen && (
           <div
             ref={mobileMenuRef}
-            className="lg:hidden border-t border-gray-200 bg-white"
+            className="lg:hidden animate-fade-in"
             style={{
               background: "var(--card-bg)",
               borderTop: "1px solid var(--sidebar-border)",
             }}
           >
-            <div className="px-4 py-4 space-y-4">
-              {/* Mobile Theme Toggle */}
-              <div className="flex items-center justify-between pb-2 border-b border-gray-200">
+            <div className="px-4 py-4 space-y-1">
+              {/* Theme toggle row */}
+              <div
+                className="flex items-center justify-between px-3 py-2.5 rounded-lg mb-3"
+                style={{ background: "var(--sidebar-bg)" }}
+              >
                 <span
                   className="text-sm font-medium"
                   style={{ color: "var(--foreground)" }}
@@ -365,109 +350,96 @@ export default function Header() {
                 <CompactThemeToggle />
               </div>
 
-              {/* Mobile Navigation Links */}
-              <nav className="space-y-2">
-                {navLinks.map((link) => (
-                  <Link
-                    key={link.name}
-                    href={link.href}
-                    className="block px-3 py-2 text-base font-medium rounded-md transition-colors hover:opacity-80"
-                    style={{ color: "var(--foreground)" }}
-                    onClick={closeMobileMenu}
-                  >
-                    {link.name}
-                  </Link>
-                ))}
+              {/* Nav links */}
+              {navLinks.map((link) => (
                 <Link
-                  href="/wishlist"
-                  className="block px-3 py-2 text-base font-medium rounded-md transition-colors hover:opacity-80"
-                  style={{ color: "var(--foreground)" }}
+                  key={link.name}
+                  href={link.href}
+                  className="flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200"
+                  style={{
+                    color: isActive(link.href) ? "var(--accent)" : "var(--foreground)",
+                    background: isActive(link.href) ? "var(--info-bg)" : "transparent",
+                  }}
                   onClick={closeMobileMenu}
                 >
-                  Wishlist
+                  {link.name}
                 </Link>
-              </nav>
+              ))}
+              <Link
+                href="/wishlist"
+                className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 hover:opacity-80"
+                style={{ color: "var(--foreground)" }}
+                onClick={closeMobileMenu}
+              >
+                <Heart className="w-4 h-4" style={{ color: "var(--accent)" }} />
+                Wishlist
+              </Link>
 
-              {/* Mobile User Section */}
+              {/* User section */}
               {user ? (
-                <div className="pt-4 border-t border-gray-200">
+                <div
+                  className="mt-3 pt-3"
+                  style={{ borderTop: "1px solid var(--sidebar-border)" }}
+                >
                   <div className="px-3 py-2 mb-2">
-                    <p
-                      className="text-sm font-medium"
-                      style={{ color: "var(--foreground)" }}
-                    >
+                    <p className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>
                       {user.name}
                     </p>
-                    <p className="text-xs text-gray-500">{user.email}</p>
+                    <p className="text-xs mt-0.5" style={{ color: "var(--muted-foreground)" }}>
+                      {user.email}
+                    </p>
                   </div>
-                  <div className="space-y-1">
-                    {userMenu.map((item) =>
-                      item.href ? (
-                        <Link
-                          key={item.name}
-                          href={item.href}
-                          className="block px-3 py-2 text-base font-medium rounded-md transition-colors hover:opacity-80"
-                          style={{ color: "var(--foreground)" }}
-                          onClick={closeMobileMenu}
-                        >
-                          {item.name}
-                        </Link>
-                      ) : (
-                        <button
-                          key={item.name}
-                          className="block w-full text-left px-3 py-2 text-base font-medium rounded-md transition-colors hover:opacity-80"
-                          style={{
-                            color:
-                              item.name === "Log Out"
-                                ? "white"
-                                : "var(--foreground)",
-                            backgroundColor:
-                              item.name === "Log Out"
-                                ? "var(--accent)"
-                                : "transparent",
-                          }}
-                          onClick={() => handleMenuClick(item)}
-                        >
-                          {item.name}
-                        </button>
-                      )
-                    )}
-                  </div>
+                  {userMenu.map((item) => {
+                    const Icon = item.icon;
+                    const isLogout = item.name === "Log Out";
+                    return item.href ? (
+                      <Link
+                        key={item.name}
+                        href={item.href}
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 hover:opacity-80"
+                        style={{ color: "var(--foreground)" }}
+                        onClick={closeMobileMenu}
+                      >
+                        <Icon className="w-4 h-4" style={{ color: "var(--accent)" }} />
+                        {item.name}
+                      </Link>
+                    ) : (
+                      <button
+                        key={item.name}
+                        className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 hover:opacity-80"
+                        style={{ color: isLogout ? "var(--destructive)" : "var(--foreground)" }}
+                        onClick={() => handleMenuClick(item)}
+                      >
+                        <Icon className="w-4 h-4" />
+                        {item.name}
+                      </button>
+                    );
+                  })}
                 </div>
               ) : (
-                /* Mobile Guest User */
-                <div className="pt-4 border-t border-gray-200 space-y-2">
+                <div
+                  className="mt-3 pt-3 space-y-2"
+                  style={{ borderTop: "1px solid var(--sidebar-border)" }}
+                >
                   <Link
                     href={signInUrl}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block w-full text-center py-2 px-4 rounded transition-colors"
+                    onClick={closeMobileMenu}
+                    className="flex items-center justify-center w-full py-2.5 px-4 rounded-lg text-sm font-medium transition-all duration-200 hover:opacity-80 border"
                     style={{
-                      border: "1px solid var(--sidebar-border)",
+                      borderColor: "var(--sidebar-border)",
                       color: "var(--foreground)",
-                      background: "var(--card-bg)",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = "var(--sidebar-bg)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "var(--card-bg)";
+                      background: "var(--sidebar-bg)",
                     }}
                   >
                     Sign In
                   </Link>
                   <Link
                     href={signUpUrl}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block w-full text-center py-2 px-4 rounded transition-colors"
+                    onClick={closeMobileMenu}
+                    className="flex items-center justify-center w-full py-2.5 px-4 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90"
                     style={{
                       background: "var(--primary)",
                       color: "white",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = "var(--primary-hover)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "var(--primary)";
                     }}
                   >
                     Sign Up

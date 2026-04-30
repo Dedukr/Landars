@@ -486,35 +486,55 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
       {/* Empty state */}
       {!loading && totalCount === 0 && (
         <div
-          className="rounded border p-8 text-center"
+          className="rounded-xl border p-10 text-center"
           style={{
             borderColor: "var(--sidebar-border)",
             background: "var(--card-bg)",
           }}
         >
-          <p className="mb-2 text-base" style={{ color: "var(--foreground)" }}>
-            No products match your filters.
-          </p>
-          <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>
-            Try adjusting categories or clearing the search.
-          </p>
-          <div className="mt-4">
-            <button
-              className="px-4 py-2 rounded text-sm font-medium"
-              style={{
-                background: "var(--primary)",
-                color: "white",
-              }}
-              onClick={() => {
-                if (typeof window !== "undefined") {
-                  const evt = new CustomEvent("clear-filters");
-                  window.dispatchEvent(evt);
-                }
-              }}
+          <div
+            className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4"
+            style={{ background: "var(--sidebar-bg)" }}
+          >
+            <svg
+              className="w-7 h-7"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              style={{ color: "var(--muted-foreground)" }}
             >
-              Clear filters
-            </button>
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
           </div>
+          <p
+            className="text-base font-semibold mb-1"
+            style={{ color: "var(--foreground)" }}
+          >
+            No products found
+          </p>
+          <p className="text-sm mb-5" style={{ color: "var(--muted-foreground)" }}>
+            Try adjusting your filters or search term.
+          </p>
+          <button
+            className="px-5 py-2.5 rounded-lg text-sm font-semibold transition-opacity hover:opacity-90"
+            style={{
+              background: "var(--primary)",
+              color: "white",
+            }}
+            onClick={() => {
+              if (typeof window !== "undefined") {
+                const evt = new CustomEvent("clear-filters");
+                window.dispatchEvent(evt);
+              }
+            }}
+          >
+            Clear all filters
+          </button>
         </div>
       )}
 
@@ -523,12 +543,34 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
           ? skeletons.map((_, i) => (
               <div
                 key={i}
-                className="bg-gray-100 rounded-lg shadow p-4 animate-pulse h-80 flex flex-col gap-2"
+                className="rounded-xl border p-4 animate-pulse h-80 flex flex-col gap-3"
+                style={{
+                  background: "var(--card-bg)",
+                  borderColor: "var(--sidebar-border)",
+                }}
               >
-                <div className="bg-gray-200 h-32 w-full rounded mb-2" />
-                <div className="h-4 bg-gray-200 rounded w-2/3" />
-                <div className="h-3 bg-gray-200 rounded w-1/2" />
-                <div className="h-4 bg-gray-200 rounded w-1/3 mt-auto" />
+                <div
+                  className="h-32 w-full rounded-lg mb-1"
+                  style={{ background: "var(--sidebar-bg)" }}
+                />
+                <div
+                  className="h-4 rounded-md w-3/4"
+                  style={{ background: "var(--sidebar-bg)" }}
+                />
+                <div
+                  className="h-3 rounded-md w-1/2"
+                  style={{ background: "var(--sidebar-bg)" }}
+                />
+                <div className="mt-auto flex items-center justify-between">
+                  <div
+                    className="h-5 rounded-md w-16"
+                    style={{ background: "var(--sidebar-bg)" }}
+                  />
+                  <div
+                    className="h-8 rounded-lg w-24"
+                    style={{ background: "var(--sidebar-bg)" }}
+                  />
+                </div>
               </div>
             ))
           : visibleProducts.map((product) => (
@@ -561,8 +603,14 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
               className="flex items-center gap-2 text-sm"
               style={{ color: "var(--muted-foreground)" }}
             >
-              <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-blue-600"></div>
-              Loading more products...
+              <div
+                className="animate-spin rounded-full h-4 w-4 border-2"
+                style={{
+                  borderColor: "var(--sidebar-border)",
+                  borderTopColor: "var(--accent)",
+                }}
+              />
+              Loading more products…
             </div>
           ) : (
             <div

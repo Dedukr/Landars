@@ -126,8 +126,12 @@ export default function FiltersSidebar({
   // Sidebar content
   const sidebar = (
     <aside
-      className="w-auto bg-white border-r border-gray-100 p-4 pt-6 fixed top-20 left-0 h-[calc(100vh-5rem)] overflow-y-auto hidden md:block rounded-tr-lg rounded-br-lg shadow-sm z-10"
-      style={{ width: "var(--sidebar-width)" }}
+      className="w-auto p-4 pt-6 fixed top-20 left-0 h-[calc(100vh-5rem)] overflow-y-auto hidden md:block rounded-tr-xl rounded-br-xl shadow-sm z-10"
+      style={{
+        width: "var(--sidebar-width)",
+        background: "var(--sidebar-bg)",
+        borderRight: "1px solid var(--sidebar-border)",
+      }}
     >
       <h2 className="text-xl font-bold mb-4 text-center">Filters</h2>
       {/* Category */}
