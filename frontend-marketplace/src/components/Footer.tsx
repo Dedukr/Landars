@@ -4,7 +4,7 @@ import Image from "next/image";
 import { MapPin, Phone, Mail, Clock, Heart } from "lucide-react";
 
 const quickLinks = [
-  { name: "Shop", href: "/" },
+  { name: "Shop", href: "/shop" },
   { name: "About Us", href: "/about" },
   { name: "Contact", href: "/contact" },
   { name: "My Orders", href: "/orders" },
@@ -31,7 +31,7 @@ export default function Footer() {
         color: "var(--foreground)",
       }}
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 sidebar-offset-md">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Main footer content */}
         <div className="py-12 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
           {/* Brand column */}

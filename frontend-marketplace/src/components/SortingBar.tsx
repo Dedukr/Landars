@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import SortList, { SortOption } from "./SortList";
+import { scopeProductsQueryString } from "@/utils/catalogScope";
 
 const sortOptions: SortOption[] = [
   { value: "name_asc", label: "Name: A-Z", icon: "↑" },
@@ -40,8 +41,11 @@ const SortingBar: React.FC<SortingBarProps> = ({
     const value = e.target.value;
     setSearch(value);
     if (value.length > 1) {
+      const qs = scopeProductsQueryString(
+        new URLSearchParams({ search: value }).toString()
+      );
       const res = await fetch(
-        `/api/products/?search=${encodeURIComponent(value)}`
+        `/api/products/?${qs}`
       );
       if (res.ok) {
         const data = (await res.json()) as ProductSearchResponse | Product[];

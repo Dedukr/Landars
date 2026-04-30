@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/Button";
 import { AddToCartButton } from "@/components/ui/AddToCartButton";
 import { useInView } from "react-intersection-observer";
 import ProductImageCarousel from "./ProductImageCarousel";
+import { scopeProductsQueryString } from "@/utils/catalogScope";
 
 interface Product {
   id: number;
@@ -97,7 +98,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
       }
 
       try {
-        const params = buildQueryParams(offset);
+        const params = scopeProductsQueryString(buildQueryParams(offset));
         const cacheKey = `${params}`;
 
         // Check cache first
@@ -158,7 +159,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
 
         // Prefetch next page if we have more data and it's the first load
         if (data.next && !append) {
-          const nextParams = buildQueryParams(offset + 50);
+          const nextParams = scopeProductsQueryString(buildQueryParams(offset + 50));
           const nextCacheKey = `${nextParams}`;
           if (!cacheRef.current.has(nextCacheKey)) {
             // Prefetch in background

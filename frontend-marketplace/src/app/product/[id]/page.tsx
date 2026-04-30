@@ -14,6 +14,7 @@ import ProductImageCollage from "@/components/ProductImageCollage";
 import ProductRecommendations from "@/components/ProductRecommendations";
 import ProductReviewBlock from "@/components/ProductReviewBlock";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import { scopeProductsQueryString } from "@/utils/catalogScope";
 
 interface Product {
   id: number;
@@ -69,7 +70,9 @@ export default function ProductPage() {
   useEffect(() => {
     async function fetchProducts() {
       try {
-        const response = await fetch("/api/products/");
+        const response = await fetch(
+          `/api/products/?${scopeProductsQueryString("limit=500&offset=0")}`
+        );
         if (response.ok) {
           const data = await response.json();
           const fetchedProducts = Array.isArray(data)

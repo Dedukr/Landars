@@ -20,7 +20,8 @@ import {
 } from "lucide-react";
 
 const navLinks = [
-  { name: "Shop", href: "/" },
+  { name: "Home", href: "/" },
+  { name: "Shop", href: "/shop" },
   { name: "About Us", href: "/about" },
   { name: "Contact Us", href: "/contact" },
 ];
@@ -103,7 +104,11 @@ export default function Header() {
     };
   }, [mobileMenuOpen, menuOpen]);
 
-  const isActive = (href: string) => pathname === href;
+  // /shop should be active for /shop and /shop/* but not for / (homepage)
+  const isActive = (href: string) => {
+    if (href === "/shop") return pathname === "/shop" || pathname.startsWith("/shop/");
+    return pathname === href;
+  };
 
   return (
     <header

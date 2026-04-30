@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCart } from "@/contexts/CartContext";
 import { useWishlist } from "@/contexts/WishlistContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { scopeProductsQueryString } from "@/utils/catalogScope";
 
 interface Product {
   id: number;
@@ -119,7 +120,8 @@ const ProductRecommendations: React.FC<ProductRecommendationsProps> = ({
           batchParams.append("exclude", excludeIdsToUse.join(","));
         }
 
-        const response = await fetch(`/api/products/?${batchParams.toString()}`);
+        const scopedParams = scopeProductsQueryString(batchParams.toString());
+        const response = await fetch(`/api/products/?${scopedParams}`);
         
         if (response.ok) {
           const data = await response.json();
