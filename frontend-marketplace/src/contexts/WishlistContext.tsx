@@ -7,6 +7,7 @@ import {
   useEffect,
   useCallback,
   useMemo,
+  useRef,
   type ReactNode,
 } from "react";
 import { useAuth } from "./AuthContext";
@@ -42,6 +43,8 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
   const [wishlist, setWishlist] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const { user, token, loading: authLoading } = useAuth();
+  /** Prior `user` to detect logout (signed-in → signed-out); avoids clearing guest wishlist on normal browsing. */
+  const prevUserRef = useRef<typeof user | undefined>(undefined);
 
   // Load wishlist from backend when user is authenticated
   const loadWishlistFromBackend = useCallback(async () => {
@@ -121,13 +124,15 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [user, token, mergeWishlists]);
 
-  // Clear wishlist when user logs out
+  // Clear wishlist when user transitions from authenticated → anonymous (logout),
+  // not on every render while browsing as a guest (that broke guest wishlist + strained the app).
   useEffect(() => {
-    if (!user) {
-      // User logged out, clear wishlist state and localStorage
+    const prev = prevUserRef.current;
+    if (prev !== undefined && prev !== null && user === null) {
       setWishlist([]);
       localStorage.removeItem("guest_wishlist");
     }
+    prevUserRef.current = user;
   }, [user]);
 
   // Listen for logout events

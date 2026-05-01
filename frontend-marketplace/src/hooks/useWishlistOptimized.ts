@@ -28,6 +28,9 @@ export const useWishlistOptimized = () => {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<WishlistStatsData | null>(null);
   const prevWishlistIdsRef = useRef<string>("");
+  /** Mirrors `products` for use inside async/sync effect without listing `products` in deps (avoids effect thrash). */
+  const productsRef = useRef<Product[]>(products);
+  productsRef.current = products;
 
   // Memoized stats calculation
   const calculateStats = useCallback((products: Product[]) => {
@@ -55,8 +58,10 @@ export const useWishlistOptimized = () => {
     return [...wishlist].sort((a, b) => a - b).join(",");
   }, [wishlist]);
 
-  // Fetch products only when product IDs change (not on every wishlist update)
+  // Fetch products only when wishlist IDs change — do not depend on `products`
   useEffect(() => {
+    let cancelled = false;
+
     async function fetchProducts() {
       if (wishlist.length === 0) {
         setProducts([]);
@@ -68,12 +73,15 @@ export const useWishlistOptimized = () => {
       // Only fetch if the set of IDs has changed
       if (prevWishlistIdsRef.current === wishlistIdsKey) {
         // IDs haven't changed, just ensure products are filtered correctly
-        const filteredProducts = products.filter((p: Product) =>
+        const current = productsRef.current;
+        const filteredProducts = current.filter((p: Product) =>
           wishlist.includes(p.id)
         );
-        if (filteredProducts.length !== products.length) {
-          setProducts(filteredProducts);
-          calculateStats(filteredProducts);
+        if (filteredProducts.length !== current.length) {
+          if (!cancelled) {
+            setProducts(filteredProducts);
+            calculateStats(filteredProducts);
+          }
         }
         return;
       }
@@ -88,12 +96,15 @@ export const useWishlistOptimized = () => {
 
       // If only removing, just filter existing products (no loading state)
       if (addedIds.length === 0 && removedIds.length > 0) {
-        const filteredProducts = products.filter((p: Product) =>
+        const current = productsRef.current;
+        const filteredProducts = current.filter((p: Product) =>
           wishlist.includes(p.id)
         );
-        setProducts(filteredProducts);
-        calculateStats(filteredProducts);
-        prevWishlistIdsRef.current = wishlistIdsKey;
+        if (!cancelled) {
+          setProducts(filteredProducts);
+          calculateStats(filteredProducts);
+          prevWishlistIdsRef.current = wishlistIdsKey;
+        }
         return;
       }
 
@@ -101,7 +112,7 @@ export const useWishlistOptimized = () => {
       if (addedIds.length > 0) {
         try {
           // Only set loading on initial fetch
-          if (products.length === 0) {
+          if (productsRef.current.length === 0) {
             setLoading(true);
           }
 
@@ -124,19 +135,24 @@ export const useWishlistOptimized = () => {
           ) as Product[];
 
           // Combine with existing products and filter to current wishlist
+          const snapshot = productsRef.current;
           const updatedProducts = [
-            ...products.filter((p) => wishlist.includes(p.id)),
+            ...snapshot.filter((p) => wishlist.includes(p.id)),
             ...newProducts,
           ];
 
-          setProducts(updatedProducts);
-          calculateStats(updatedProducts);
+          if (!cancelled) {
+            setProducts(updatedProducts);
+            calculateStats(updatedProducts);
+          }
         } catch (error) {
           console.error("Error fetching products:", error);
         } finally {
-          setLoading(false);
+          if (!cancelled) {
+            setLoading(false);
+          }
         }
-      } else if (products.length === 0 && wishlist.length > 0) {
+      } else if (productsRef.current.length === 0 && wishlist.length > 0) {
         // Initial load - fetch all products
         try {
           setLoading(true);
@@ -157,19 +173,28 @@ export const useWishlistOptimized = () => {
             Boolean
           ) as Product[];
 
-          setProducts(fetchedProducts);
-          calculateStats(fetchedProducts);
+          if (!cancelled) {
+            setProducts(fetchedProducts);
+            calculateStats(fetchedProducts);
+          }
         } catch (error) {
           console.error("Error fetching products:", error);
         } finally {
-          setLoading(false);
+          if (!cancelled) {
+            setLoading(false);
+          }
         }
       }
 
-      prevWishlistIdsRef.current = wishlistIdsKey;
+      if (!cancelled) {
+        prevWishlistIdsRef.current = wishlistIdsKey;
+      }
     }
     fetchProducts();
-  }, [wishlistIdsKey, wishlist, products, calculateStats]);
+    return () => {
+      cancelled = true;
+    };
+  }, [wishlistIdsKey, wishlist, calculateStats]);
 
   // Memoized filtered and sorted products
   const filteredAndSortedProducts = useMemo(() => {
