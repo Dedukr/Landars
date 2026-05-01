@@ -91,7 +91,7 @@ export default function HomeProductCard({ product, className = "" }: HomeProduct
       {/* Content */}
       <div className="flex flex-col flex-1 p-4">
         <h3
-          className="font-semibold text-sm leading-tight mb-1 line-clamp-1"
+          className="font-semibold text-sm leading-snug mb-1 whitespace-normal break-words"
           style={{ color: "var(--foreground)" }}
           title={product.name}
         >

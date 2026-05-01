@@ -313,7 +313,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
     return (
       <div
         key={product.id}
-        className="rounded-lg shadow p-4 flex flex-col hover:shadow-lg transition-shadow border animate-fade-in-up relative h-80 focus-within:ring-2 focus-within:ring-offset-2"
+        className="rounded-lg shadow p-4 flex flex-col hover:shadow-lg transition-shadow border animate-fade-in-up relative min-h-80 h-auto focus-within:ring-2 focus-within:ring-offset-2"
         style={{
           background: "var(--card-bg)",
           color: "var(--foreground)",
@@ -394,7 +394,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
           {/* Content section - grows to fill available space */}
           <div className="flex flex-col flex-grow">
             <div
-              className="font-semibold text-lg truncate mb-1"
+              className="font-semibold text-lg leading-snug whitespace-normal break-words mb-1"
               title={product.name}
             >
               {product.name}
