@@ -1,6 +1,6 @@
 import React from "react";
 import type { Metadata } from "next";
-import { Mail, Phone, Clock, MapPin } from "lucide-react";
+import { Mail, MessageCircle, MapPin } from "lucide-react";
 import ContactForm from "@/components/ContactForm";
 
 export const metadata: Metadata = {
@@ -10,7 +10,9 @@ export const metadata: Metadata = {
 };
 
 const supportPhone = process.env.NEXT_PUBLIC_SUPPORT_PHONE;
-const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_REPLY_TO;
+const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL;
+// `wa.me` requires the international number with digits only (no `+`, spaces, or dashes).
+const whatsappDigits = supportPhone?.replace(/\D/g, "") ?? "";
 
 const contactDetails = [
   {
@@ -20,14 +22,14 @@ const contactDetails = [
     href: `mailto:${supportEmail || "info@landarsfood.com"}`,
     description: "We aim to reply within one business day",
   },
-  ...(supportPhone
+  ...(whatsappDigits
     ? [
         {
-          icon: Phone,
-          title: "Call Us",
-          value: supportPhone,
-          href: `tel:${supportPhone}`,
-          description: "Available during business hours",
+          icon: MessageCircle,
+          title: "WhatsApp Us",
+          value: "WhatsApp",
+          href: `https://wa.me/${whatsappDigits}`,
+          description: "Message us on WhatsApp for a quick reply",
         },
       ]
     : []),
@@ -37,13 +39,6 @@ const contactDetails = [
     value: "United Kingdom",
     href: null,
     description: "Serving customers across the UK",
-  },
-  {
-    icon: Clock,
-    title: "Business Hours",
-    value: "Mon–Fri: 9am–6pm\nSat: 10am–4pm",
-    href: null,
-    description: "Sunday: Closed",
   },
 ];
 
@@ -117,6 +112,9 @@ export default function ContactPage() {
                   {href ? (
                     <a
                       href={href}
+                      {...(/^https?:\/\//.test(href)
+                        ? { target: "_blank", rel: "noopener noreferrer" }
+                        : {})}
                       className="text-sm font-medium transition-opacity hover:opacity-70 whitespace-pre-line"
                       style={{ color: "var(--foreground)" }}
                     >

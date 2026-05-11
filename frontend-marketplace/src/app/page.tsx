@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import HomeHero from "@/components/home/HomeHero";
 import HowItWorksSection from "@/components/home/HowItWorksSection";
-import CategoryGrid from "@/components/home/CategoryGrid";
+// import CategoryGrid from "@/components/home/CategoryGrid";
 import ProductPreviewSection from "@/components/home/ProductPreviewSection";
 import FeaturedProductsSection from "@/components/home/FeaturedProductsSection";
 import TrustBenefitsSection from "@/components/home/TrustBenefitsSection";
@@ -23,7 +23,7 @@ export default function HomePage() {
       <HowItWorksSection />
 
       {/* ── Browse by category ───────────────────────────── */}
-      <CategoryGrid />
+      {/* <CategoryGrid /> */}
 
       {/* ── Popular picks ────────────────────────────────── */}
       {/*

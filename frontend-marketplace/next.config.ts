@@ -3,12 +3,13 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   /* config options here */
   trailingSlash: true,
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
   output: "standalone", // Enable standalone output for Docker
 
   // Expose env to client (NEXT_PUBLIC_* are inlined at build time)
   env: {
     NEXT_PUBLIC_SUPPORT_PHONE: process.env.NEXT_PUBLIC_SUPPORT_PHONE ?? "",
-    NEXT_PUBLIC_SUPPORT_REPLY_TO: process.env.NEXT_PUBLIC_SUPPORT_REPLY_TO ?? "",
+    NEXT_PUBLIC_SUPPORT_EMAIL: process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "",
   },
 
   // Image configuration - allow external image domains
@@ -18,6 +19,26 @@ const nextConfig: NextConfig = {
     // This makes Next serve the source URLs directly.
     unoptimized: true,
     remotePatterns: [
+      {
+        protocol: "http",
+        hostname: "localhost",
+        pathname: "/**",
+      },
+      {
+        protocol: "http",
+        hostname: "127.0.0.1",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
+        hostname: "localhost",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
+        hostname: "127.0.0.1",
+        pathname: "/**",
+      },
       {
         protocol: "https",
         hostname: "cdn.landarsfood.com",

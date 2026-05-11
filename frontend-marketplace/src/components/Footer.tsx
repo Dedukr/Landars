@@ -1,7 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { MapPin, Phone, Mail, Clock, Heart } from "lucide-react";
+import { MapPin, MessageCircle, Mail, Heart } from "lucide-react";
 
 const quickLinks = [
   { name: "Shop", href: "/shop" },
@@ -20,7 +20,10 @@ const supportLinks = [
 
 export default function Footer() {
   const supportPhone = process.env.NEXT_PUBLIC_SUPPORT_PHONE;
-  const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_REPLY_TO;
+  const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL;
+  // `wa.me` requires the international number with digits only (no `+`, spaces, or dashes).
+  const whatsappDigits = supportPhone?.replace(/\D/g, "") ?? "";
+  const whatsappHref = whatsappDigits ? `https://wa.me/${whatsappDigits}` : null;
 
   return (
     <footer
@@ -136,18 +139,21 @@ export default function Footer() {
                   United Kingdom
                 </span>
               </li>
-              {supportPhone && (
+              {whatsappHref && (
                 <li className="flex items-center gap-2.5">
-                  <Phone
+                  <MessageCircle
                     className="w-4 h-4 flex-shrink-0"
                     style={{ color: "var(--accent)" }}
                   />
                   <a
-                    href={`tel:${supportPhone}`}
+                    href={whatsappHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Chat with us on WhatsApp"
                     className="text-sm transition-colors hover:opacity-80"
                     style={{ color: "var(--muted-foreground)" }}
                   >
-                    {supportPhone}
+                    WhatsApp
                   </a>
                 </li>
               )}
@@ -181,17 +187,6 @@ export default function Footer() {
                   </a>
                 </li>
               )}
-              <li className="flex items-start gap-2.5">
-                <Clock
-                  className="w-4 h-4 mt-0.5 flex-shrink-0"
-                  style={{ color: "var(--accent)" }}
-                />
-                <span className="text-sm" style={{ color: "var(--muted-foreground)" }}>
-                  Mon–Fri: 9am–6pm
-                  <br />
-                  Sat: 10am–4pm
-                </span>
-              </li>
             </ul>
           </div>
         </div>

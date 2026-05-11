@@ -49,6 +49,7 @@
   --sort-selected-fg: #ffffff; /* default selected option text (light) */
   /* Sidebar width used for responsive content offset */
   --sidebar-width: 18rem;
+  --ring: #d9a441;
   /* Font fallbacks (self-hosted / system) */
   --font-geist-sans: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --font-geist-mono: "SFMono-Regular", "Menlo", "Consolas", monospace;
@@ -79,6 +80,7 @@
   --success-bg: #f0fdf4; /* light green background for success */
   --success-border: #bbf7d0; /* light green border for success */
   --success-text: #166534; /* dark green text for success */
+  --ring: #d9a441; /* focus ring (accent) – shop UI */
 }
 
 /* Dark theme (explicit) - Improved muted colors */
@@ -106,6 +108,7 @@
   --success-bg: #14532d; /* dark green background for success */
   --success-border: #22c55e; /* green border for success */
   --success-text: #dcfce7; /* light green text for success */
+  --ring: #a68b5b;
 }
 
 @theme inline {

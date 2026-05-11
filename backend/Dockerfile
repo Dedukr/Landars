@@ -38,6 +38,9 @@ RUN set -euo pipefail; \
     echo "✓ Build dependencies installed and verified"
 
 # Install Python dependencies
+# `--user` installs entry-point scripts under /root/.local/bin (copied to /opt/py/bin in the runner).
+# Putting that dir on PATH up front silences pip's "not on PATH" warnings during the build.
+ENV PATH=/root/.local/bin:$PATH
 COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 

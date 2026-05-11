@@ -2,27 +2,30 @@ import React, {
   useEffect,
   useState,
   useCallback,
-  useMemo,
   useRef,
 } from "react";
 import { useCart } from "@/contexts/CartContext";
 import { useWishlist } from "@/contexts/WishlistContext";
 import { useAuth } from "@/contexts/AuthContext";
-import Link from "next/link";
 import SignInPopup from "./SignInPopup";
 import { Button } from "@/components/ui/Button";
-import { AddToCartButton } from "@/components/ui/AddToCartButton";
 import { useInView } from "react-intersection-observer";
-import ProductImageCarousel from "./ProductImageCarousel";
 import { scopeProductsQueryString } from "@/utils/catalogScope";
+import type { ShopListingFilters } from "@/types/shop-filters";
+import { SHOP_PRICE_MAX_UNLIMITED } from "@/types/shop-filters";
+import { ShopProductCard } from "@/components/shop/ShopProductCard";
+import { ShopProductCardSkeleton } from "@/components/shop/ShopProductCardSkeleton";
+import { ShopEmptyState, ShopErrorState } from "@/components/shop/ShopListingStates";
 
+/** Product rows from `/api/products/` list serializer (+ optional extras). Future: `created_at`, `sales_count`. */
 interface Product {
   id: number;
   name: string;
   description?: string | null;
   price: string;
+  categories?: string[];
   image_url?: string | null;
-  images?: string[];
+  images?: (string | { image_url: string })[];
   primary_image?: string | null;
   stock_quantity?: number;
 }
@@ -34,24 +37,53 @@ interface PaginatedResponse {
   previous: string | null;
   limit: number;
   offset: number;
-  timestamp?: number; // Optional timestamp for caching
+  timestamp?: number;
 }
 
-interface Filters {
-  categories: number[];
-  price: [number, number];
-  inStock: boolean;
-}
+export type ShopListingMeta = {
+  loading: boolean;
+  error: boolean;
+  totalCount: number;
+  loadedCount: number;
+  displayedCount: number;
+  hasMoreRemote: boolean;
+};
 
 interface ProductGridProps {
-  filters: Filters;
+  filters: ShopListingFilters;
   sort: string;
   search?: string;
+  onListingMeta?: (meta: ShopListingMeta) => void;
 }
 
-const skeletons = Array.from({ length: 8 });
+const SKELETON_COUNT = 8;
 
-const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
+function buildQuery(params: ShopListingFilters, sort: string, search: string | undefined, offset: number): string {
+  const usp = new URLSearchParams();
+  if (params.categories.length) {
+    usp.append("categories", params.categories.join(","));
+  }
+  if (search) usp.append("search", search);
+  if (params.inStock) usp.append("in_stock", "1");
+  if (sort) usp.append("sort", sort);
+  const [pMin, pMax] = params.price;
+  if (pMin > 0) {
+    usp.append("price_min", String(pMin));
+  }
+  if (pMax < SHOP_PRICE_MAX_UNLIMITED) {
+    usp.append("price_max", String(pMax));
+  }
+  usp.append("limit", "50");
+  usp.append("offset", String(offset));
+  return scopeProductsQueryString(usp.toString());
+}
+
+const ProductGrid: React.FC<ProductGridProps> = ({
+  filters,
+  sort,
+  search,
+  onListingMeta,
+}) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -60,34 +92,18 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
   const [currentOffset, setCurrentOffset] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  // Cache for API responses
   const cacheRef = useRef<Map<string, PaginatedResponse>>(new Map());
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Virtualization state - limit visible products for better performance
   const [visibleProductsCount, setVisibleProductsCount] = useState(50);
 
   const { user } = useAuth();
   const [showSignInPopup, setShowSignInPopup] = useState(false);
 
-  // Function to build query parameters with memoization
-  const buildQueryParams = useMemo(
-    () =>
-      (offset: number = 0) => {
-        const params = new URLSearchParams();
-        if (filters.categories.length)
-          params.append("categories", filters.categories.join(","));
-        if (search) params.append("search", search);
-        if (filters.inStock) params.append("in_stock", "1");
-        if (sort) params.append("sort", sort);
-        params.append("limit", "50");
-        params.append("offset", offset.toString());
-        return params.toString();
-      },
+  const buildCachedKey = useCallback(
+    (offset: number) => buildQuery(filters, sort, search, offset),
     [filters, sort, search]
   );
 
-  // Function to fetch products with caching
   const fetchProducts = useCallback(
     async (offset: number = 0, append: boolean = false) => {
       if (append) {
@@ -98,10 +114,9 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
       }
 
       try {
-        const params = scopeProductsQueryString(buildQueryParams(offset));
-        const cacheKey = `${params}`;
+        const query = buildCachedKey(offset);
+        const cacheKey = query;
 
-        // Check cache first
         if (cacheRef.current.has(cacheKey)) {
           const cachedData = cacheRef.current.get(cacheKey)!;
 
@@ -120,64 +135,53 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
           return;
         }
 
-        // Use AbortController for request cancellation and timeout
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-        const res = await fetch(`/api/products/?${params}`, {
+        const res = await fetch(`/api/products/?${query}`, {
           headers: {
             Accept: "application/json",
             "Accept-Encoding": "gzip, deflate, br",
           },
           signal: controller.signal,
-          keepalive: true, // Enable keepalive for better performance
+          keepalive: true,
         });
 
         clearTimeout(timeoutId);
 
         if (!res.ok) {
-          throw new Error(
-            `Failed to fetch products: ${res.status} ${res.statusText}`
-          );
+          throw new Error(`Request failed (${res.status})`);
         }
 
         const data: PaginatedResponse = await res.json();
 
-        // Cache the response with timestamp
         cacheRef.current.set(cacheKey, {
           ...data,
           timestamp: Date.now(),
         });
 
-        // Limit cache size to prevent memory issues
         if (cacheRef.current.size > 50) {
           const firstKey = cacheRef.current.keys().next().value;
-          if (firstKey) {
-            cacheRef.current.delete(firstKey);
-          }
+          if (firstKey) cacheRef.current.delete(firstKey);
         }
 
-        // Prefetch next page if we have more data and it's the first load
         if (data.next && !append) {
-          const nextParams = scopeProductsQueryString(buildQueryParams(offset + 50));
-          const nextCacheKey = `${nextParams}`;
+          const nextParams = buildCachedKey(offset + 50);
+          const nextCacheKey = nextParams;
           if (!cacheRef.current.has(nextCacheKey)) {
-            // Prefetch in background
             setTimeout(() => {
               fetch(`/api/products/?${nextParams}`, {
-                headers: {
-                  Accept: "application/json",
-                },
+                headers: { Accept: "application/json" },
                 keepalive: true,
               })
                 .then((res) => res.json())
-                .then((data) => {
+                .then((pData) => {
                   cacheRef.current.set(nextCacheKey, {
-                    ...data,
+                    ...pData,
                     timestamp: Date.now(),
                   });
                 })
-                .catch(() => {}); // Ignore prefetch errors
+                .catch(() => {});
             }, 200);
           }
         }
@@ -191,14 +195,12 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
         setTotalCount(data.count);
         setHasNextPage(!!data.next);
         setCurrentOffset(offset);
-      } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") {
-          console.warn("Request was aborted");
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") {
+          console.warn("Products request aborted");
         } else {
-          console.error("Error fetching products:", error);
-          setError(
-            error instanceof Error ? error.message : "Failed to fetch products"
-          );
+          console.error("Error fetching products:", err);
+          setError("Unable to load products.");
         }
         if (!append) {
           setProducts([]);
@@ -209,40 +211,47 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
         setLoadingMore(false);
       }
     },
-    [buildQueryParams]
+    [buildCachedKey]
   );
 
-  // Load more products function with debouncing
+  const retry = useCallback(() => {
+    cacheRef.current.clear();
+    fetchProducts(0, false);
+  }, [fetchProducts]);
+
   const loadMoreProducts = useCallback(() => {
     if (!loadingMore && hasNextPage) {
-      // Clear existing timeout
       if (debounceTimeoutRef.current) {
         clearTimeout(debounceTimeoutRef.current);
       }
 
-      // Debounce the request to prevent excessive API calls
       debounceTimeoutRef.current = setTimeout(() => {
         const nextOffset = currentOffset + 50;
         fetchProducts(nextOffset, true);
-      }, 50); // 50ms debounce for faster response
+      }, 50);
     }
   }, [loadingMore, hasNextPage, currentOffset, fetchProducts]);
 
-  // Intersection observer for infinite scroll with optimized settings
   const { ref: loadMoreRef, inView } = useInView({
-    threshold: 0.1, // Trigger when 10% of the element is visible
-    rootMargin: "400px", // Start loading 400px before the element comes into view for faster loading
-    triggerOnce: false, // Allow multiple triggers
+    threshold: 0.1,
+    rootMargin: "400px",
+    triggerOnce: false,
   });
 
-  // Trigger load more when intersection observer detects the trigger element
   useEffect(() => {
     if (inView && hasNextPage && !loadingMore) {
       loadMoreProducts();
     }
   }, [inView, hasNextPage, loadingMore, loadMoreProducts]);
 
-  // Cleanup timeout on unmount
+  /** After remote pages append, reveal new rows so infinite scroll works without extra “Show more” clicks. */
+  useEffect(() => {
+    if (loadingMore) return;
+    setVisibleProductsCount((prev) =>
+      products.length > prev ? products.length : prev
+    );
+  }, [products.length, loadingMore]);
+
   useEffect(() => {
     return () => {
       if (debounceTimeoutRef.current) {
@@ -251,46 +260,62 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
     };
   }, []);
 
-  // Reset and fetch initial products when filters change
   useEffect(() => {
     setProducts([]);
     setCurrentOffset(0);
     setHasNextPage(true);
-    setVisibleProductsCount(50); // Reset visible products count
-    // Clear cache when filters change
+    setVisibleProductsCount(50);
     cacheRef.current.clear();
     fetchProducts(0, false);
   }, [filters, sort, search, fetchProducts]);
 
-  // Memoized product component for better performance
-  const ProductCard = React.memo(({ product }: { product: Product }) => {
+  const visibleProducts = products.slice(0, visibleProductsCount);
+  const hasMoreProducts = products.length > visibleProductsCount;
+
+  const showingFrom = products.length ? 1 : 0;
+  const showingTo = Math.min(visibleProductsCount, products.length);
+
+  useEffect(() => {
+    onListingMeta?.({
+      loading,
+      error: Boolean(error && !loading),
+      totalCount,
+      loadedCount: products.length,
+      displayedCount: visibleProducts.length,
+      hasMoreRemote: hasNextPage,
+    });
+  }, [
+    onListingMeta,
+    loading,
+    error,
+    totalCount,
+    products.length,
+    visibleProducts.length,
+    hasNextPage,
+  ]);
+
+  const ProductTile = React.memo(function ProductTile({
+    product,
+    loggedInUser,
+  }: {
+    product: Product;
+    loggedInUser: ReturnType<typeof useAuth>["user"];
+  }) {
     const { cart, addToCart, removeFromCart } = useCart();
     const { isInWishlist, addToWishlist, removeFromWishlist } = useWishlist();
 
-    // Memoize cart item lookup
-    const cartItem = React.useMemo(
-      () => cart.find((item) => item.productId === product.id),
-      [cart, product.id]
-    );
+    const cartItem = cart.find((item) => item.productId === product.id);
 
-    // Memoize wishlist status
-    const inWishlist = React.useMemo(
-      () => isInWishlist(product.id),
-      [isInWishlist, product.id]
-    );
+    const inWishlist = isInWishlist(product.id);
 
-    const handleWishlistClick = React.useCallback(() => {
-      if (!user) {
+    const handleWishlistToggle = React.useCallback(() => {
+      if (!loggedInUser) {
         setShowSignInPopup(true);
         return;
       }
-
-      if (inWishlist) {
-        removeFromWishlist(product.id);
-      } else {
-        addToWishlist(product.id);
-      }
-    }, [inWishlist, removeFromWishlist, addToWishlist, product.id]);
+      if (inWishlist) removeFromWishlist(product.id);
+      else addToWishlist(product.id);
+    }, [loggedInUser, inWishlist, removeFromWishlist, addToWishlist, product.id]);
 
     const handleAddToCart = React.useCallback(
       (e?: React.MouseEvent) => {
@@ -311,276 +336,88 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
     );
 
     return (
-      <div
-        key={product.id}
-        className="rounded-lg shadow p-4 flex flex-col hover:shadow-lg transition-shadow border animate-fade-in-up relative min-h-80 h-auto focus-within:ring-2 focus-within:ring-offset-2"
-        style={{
-          background: "var(--card-bg)",
-          color: "var(--foreground)",
-          borderColor: "var(--sidebar-border)",
-        }}
-      >
-        {/* Wishlist Heart Icon - positioned in top-right corner */}
-        <div className="absolute top-3 right-3 z-10">
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              handleWishlistClick();
-            }}
-            className="w-8 h-8 flex items-center justify-center rounded-full shadow-lg hover:scale-110 transition-all duration-200"
-            style={{
-              background: "white",
-              border: "1px solid rgba(0, 0, 0, 0.1)",
-            }}
-            aria-label={inWishlist ? "Remove from wishlist" : "Add to wishlist"}
-          >
-            <span className="text-xl leading-none block">
-              {inWishlist ? "❤️" : "🖤"}
-            </span>
-          </button>
-        </div>
-        {/* Product Link */}
-        <Link
-          href={`/product/${product.id}`}
-          prefetch={false}
-          className="flex flex-col flex-grow cursor-pointer outline-none focus:outline-none"
-        >
-          {/* Image section - carousel for multiple images */}
-          <div className="h-32 w-full mb-2 flex-shrink-0 relative" style={{ minHeight: "128px" }}>
-            {/* Stock badge */}
-            {typeof product.stock_quantity === "number" && (
-              <span
-                className="absolute top-2 left-2 px-2 py-0.5 rounded text-xs font-medium z-20"
-                style={{
-                  background:
-                    product.stock_quantity > 0
-                      ? "rgba(22, 163, 74, 0.1)"
-                      : "rgba(220, 38, 38, 0.1)",
-                  color:
-                    product.stock_quantity > 0
-                      ? "var(--success)"
-                      : "var(--destructive)",
-                }}
-              >
-                {product.stock_quantity > 0 ? "In stock" : "Out of stock"}
-              </span>
-            )}
-            <ProductImageCarousel
-              images={(() => {
-                // Handle both formats: array of strings or array of objects
-                if (product.images && product.images.length > 0) {
-                  return product.images.map((img: string | { image_url: string }) => {
-                    if (typeof img === "string") return img;
-                    if (img && typeof img === "object" && "image_url" in img) return img.image_url;
-                    return null;
-                  }).filter((url): url is string => url !== null);
-                }
-                if (product.image_url || product.primary_image) {
-                  const url = product.image_url || product.primary_image;
-                  return url ? [url] : [];
-                }
-                return [];
-              })()}
-              alt={product.name}
-              className="h-full w-full"
-              autoPlay={true}
-              autoPlayInterval={4000}
-              showDots={true}
-              showArrows={true}
-            />
-          </div>
-
-          {/* Content section - grows to fill available space */}
-          <div className="flex flex-col flex-grow">
-            <div
-              className="font-semibold text-lg leading-snug whitespace-normal break-words mb-1"
-              title={product.name}
-            >
-              {product.name}
-            </div>
-            <div
-              className="text-sm truncate flex-grow"
-              style={{ color: "var(--foreground)" }}
-              title={product.description || ""}
-            >
-              {(product.description || "").length > 48
-                ? (product.description || "").slice(0, 48) + "..."
-                : product.description || ""}
-            </div>
-          </div>
-        </Link>
-
-        {/* Price and Add to Cart - always at bottom */}
-        <div className="mt-auto pt-3">
-          <div className="flex items-center justify-between">
-            {/* Price tag */}
-            <div
-              className="font-bold text-lg"
-              style={{ color: "var(--primary)" }}
-            >
-              £{product.price ? parseFloat(String(product.price)).toFixed(2) : "0.00"}
-            </div>
-
-            {/* Add to Cart Button */}
-            {cartItem ? (
-              <AddToCartButton
-                compact
-                inCart
-                quantity={cartItem.quantity || 0}
-                onAdd={handleAddToCart}
-                onRemove={handleRemoveFromCart}
-              />
-            ) : (
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={
-                  typeof product.stock_quantity === "number" &&
-                  product.stock_quantity <= 0
-                }
-                onClick={handleAddToCart}
-                className="text-sm"
-              >
-                {typeof product.stock_quantity === "number" &&
-                product.stock_quantity <= 0
-                  ? "Out of stock"
-                  : "Add to Cart"}
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
+      <ShopProductCard
+        product={product}
+        user={loggedInUser}
+        cartItemQuantity={cartItem?.quantity ?? 0}
+        inWishlist={inWishlist}
+        onWishlistToggle={handleWishlistToggle}
+        onAddToCart={handleAddToCart}
+        onRemoveFromCart={handleRemoveFromCart}
+      />
     );
   });
+  ProductTile.displayName = "ProductTile";
 
-  ProductCard.displayName = "ProductCard";
+  const showBlockingError = Boolean(error && !loading);
+  const showEmpty = !loading && !showBlockingError && totalCount === 0;
 
-  // Calculate visible products for virtualization
-  const visibleProducts = products.slice(0, visibleProductsCount);
-  const hasMoreProducts = products.length > visibleProductsCount;
-
-  const showingFrom = products.length ? 1 : 0;
-  const showingTo = Math.min(visibleProductsCount, products.length);
+  function handleClearFiltersViaEvent() {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("clear-filters"));
+    }
+  }
 
   return (
-    <>
-      {/* Results summary */}
-      <div
-        className="flex items-center justify-between mb-4 text-sm"
-        style={{ color: "var(--muted-foreground)" }}
-      >
-        {loading ? (
-          <span>Loading products…</span>
-        ) : error ? (
-          <span style={{ color: "var(--destructive)" }}>Error: {error}</span>
-        ) : totalCount === 0 ? (
-          <span>No products found</span>
-        ) : (
-          <span>
-            Showing {showingFrom}-{showingTo} of {totalCount}
-            {hasNextPage && " (scroll for more)"}
-          </span>
-        )}
+    <section aria-label="Product catalogue">
+      {/* Result summary */}
+      <div className="mb-6 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between text-sm tabular-nums">
+        <p style={{ color: "var(--muted-foreground)" }}>
+          {loading ? (
+            <span className="inline-flex items-center gap-2">
+              <span
+                className="inline-block size-4 rounded-full animate-spin border-2 shrink-0"
+                style={{
+                  borderColor: "var(--sidebar-border)",
+                  borderTopColor: "var(--accent)",
+                }}
+                aria-hidden
+              />
+              Loading products…
+            </span>
+          ) : showBlockingError ? (
+            <span style={{ color: "var(--destructive)" }}>Something went wrong.</span>
+          ) : totalCount === 0 ? (
+            <span>No matching products</span>
+          ) : (
+            <span>
+              Showing{" "}
+              <span style={{ fontWeight: 700, color: "var(--foreground)" }}>
+                {showingFrom}–{showingTo}
+              </span>
+              {" of "}
+              <span style={{ fontWeight: 700, color: "var(--foreground)" }}>{totalCount}</span>
+              {hasNextPage ? " • Keep scrolling for more" : ""}
+            </span>
+          )}
+        </p>
       </div>
 
-      {/* Empty state */}
-      {!loading && totalCount === 0 && (
-        <div
-          className="rounded-xl border p-10 text-center"
-          style={{
-            borderColor: "var(--sidebar-border)",
-            background: "var(--card-bg)",
-          }}
-        >
-          <div
-            className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4"
-            style={{ background: "var(--sidebar-bg)" }}
-          >
-            <svg
-              className="w-7 h-7"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              style={{ color: "var(--muted-foreground)" }}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-          </div>
-          <p
-            className="text-base font-semibold mb-1"
-            style={{ color: "var(--foreground)" }}
-          >
-            No products found
-          </p>
-          <p className="text-sm mb-5" style={{ color: "var(--muted-foreground)" }}>
-            Try adjusting your filters or search term.
-          </p>
-          <button
-            className="px-5 py-2.5 rounded-lg text-sm font-semibold transition-opacity hover:opacity-90"
-            style={{
-              background: "var(--primary)",
-              color: "white",
-            }}
-            onClick={() => {
-              if (typeof window !== "undefined") {
-                const evt = new CustomEvent("clear-filters");
-                window.dispatchEvent(evt);
-              }
-            }}
-          >
-            Clear all filters
-          </button>
+      {showBlockingError && (
+        <div className="mb-10">
+          <ShopErrorState onRetry={retry} />
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
-        {loading
-          ? skeletons.map((_, i) => (
-              <div
-                key={i}
-                className="rounded-xl border p-4 animate-pulse h-80 flex flex-col gap-3"
-                style={{
-                  background: "var(--card-bg)",
-                  borderColor: "var(--sidebar-border)",
-                }}
-              >
-                <div
-                  className="h-32 w-full rounded-lg mb-1"
-                  style={{ background: "var(--sidebar-bg)" }}
-                />
-                <div
-                  className="h-4 rounded-md w-3/4"
-                  style={{ background: "var(--sidebar-bg)" }}
-                />
-                <div
-                  className="h-3 rounded-md w-1/2"
-                  style={{ background: "var(--sidebar-bg)" }}
-                />
-                <div className="mt-auto flex items-center justify-between">
-                  <div
-                    className="h-5 rounded-md w-16"
-                    style={{ background: "var(--sidebar-bg)" }}
-                  />
-                  <div
-                    className="h-8 rounded-lg w-24"
-                    style={{ background: "var(--sidebar-bg)" }}
-                  />
-                </div>
-              </div>
-            ))
-          : visibleProducts.map((product) => (
-              <ProductCard key={product.id} product={product} />
-            ))}
-      </div>
+      {showEmpty && (
+        <div className="mb-10">
+          <ShopEmptyState onResetFilters={handleClearFiltersViaEvent} />
+        </div>
+      )}
 
-      {/* Show More button for virtualization */}
-      {hasMoreProducts && !loadingMore && (
+      {!showBlockingError && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {loading
+            ? Array.from({ length: SKELETON_COUNT }).map((_, i) => (
+                <ShopProductCardSkeleton key={i} />
+              ))
+            : visibleProducts.map((product) => (
+                <ProductTile key={product.id} product={product} loggedInUser={user} />
+              ))}
+        </div>
+      )}
+
+      {hasMoreProducts && !loadingMore && !showBlockingError && !loading && (
         <div className="flex justify-center py-8">
           <Button
             variant="outline"
@@ -591,13 +428,12 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
             }}
             className="px-8 py-3"
           >
-            Show More
+            Show more from this search
           </Button>
         </div>
       )}
 
-      {/* Infinite scroll trigger and loading more indicator */}
-      {hasNextPage && !hasMoreProducts && (
+      {hasNextPage && !hasMoreProducts && !showBlockingError && !loading && (
         <div ref={loadMoreRef} className="flex justify-center py-8">
           {loadingMore ? (
             <div
@@ -618,17 +454,16 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
               className="text-sm"
               style={{ color: "var(--muted-foreground)" }}
             >
-              Scroll down to load more products
+              Scroll to load more
             </div>
           )}
         </div>
       )}
 
-      {/* End of results indicator */}
-      {!hasNextPage && products.length > 0 && (
+      {!hasNextPage && products.length > 0 && !showBlockingError && (
         <div className="flex justify-center py-8">
           <div className="text-sm" style={{ color: "var(--muted-foreground)" }}>
-            You&apos;ve reached the end of the results
+            You&apos;ve reached the end of the catalogue
           </div>
         </div>
       )}
@@ -637,7 +472,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({ filters, sort, search }) => {
         isOpen={showSignInPopup}
         onClose={() => setShowSignInPopup(false)}
       />
-    </>
+    </section>
   );
 };
 
