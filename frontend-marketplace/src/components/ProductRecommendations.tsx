@@ -1,11 +1,16 @@
 "use client";
+
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { ChevronRight, Package, ShoppingBag } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { useWishlist } from "@/contexts/WishlistContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { scopeProductsQueryString } from "@/utils/catalogScope";
+import { Button } from "@/components/ui/Button";
+import { collectProductImageUrls } from "@/components/product/collectProductImageUrls";
+import type { ProductDetail } from "@/components/product/types";
 
 interface Product {
   id: number;
@@ -13,23 +18,24 @@ interface Product {
   description?: string;
   price: string;
   image_url?: string | null;
+  images?: Array<string | { image_url: string }>;
+  primary_image?: string | null;
   categories?: string[];
   stock_quantity?: number;
   in_stock?: boolean;
 }
 
 interface ProductRecommendationsProps {
-  // Core data
   excludeProducts: Product[];
+  /** Max items shown; capped at 4 for this block. */
   limit?: number;
-
-  // Display configuration
   title?: string;
+  /** Short line under the title; defaults to a neutral catalogue line. */
+  subtitle?: string;
   showWishlist?: boolean;
   showQuickAdd?: boolean;
-
-  // Styling
   className?: string;
+  /** @deprecated Layout is responsive; value ignored. */
   gridCols?: {
     default?: number;
     sm?: number;
@@ -38,15 +44,26 @@ interface ProductRecommendationsProps {
   };
 }
 
+function priceLabel(price: string): string | null {
+  const n = price ? parseFloat(String(price)) : NaN;
+  return Number.isFinite(n) ? `£${n.toFixed(2)}` : null;
+}
+
+function isOutOfStock(p: Product): boolean {
+  if (p.in_stock === false) return true;
+  return typeof p.stock_quantity === "number" && p.stock_quantity <= 0;
+}
+
 const ProductRecommendations: React.FC<ProductRecommendationsProps> = ({
   excludeProducts = [],
   limit = 4,
   title = "You might also like",
+  subtitle = "Hand-picked suggestions from our catalogue.",
   showWishlist = false,
   showQuickAdd = true,
   className = "",
-  gridCols = { default: 2, md: 4 },
 }) => {
+  const itemCount = useMemo(() => Math.min(Math.max(limit, 1), 4), [limit]);
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const { addToCart } = useCart();
@@ -56,13 +73,11 @@ const ProductRecommendations: React.FC<ProductRecommendationsProps> = ({
   const hasFetchedRef = useRef<boolean>(false);
   const initialExcludeIdsRef = useRef<string>("");
 
-  // Create stable exclude IDs string for initial fetch only
   const excludeIdsString = useMemo(() => {
     const ids = excludeProducts.map((p) => p.id).sort((a, b) => a - b);
     return ids.join(",");
   }, [excludeProducts]);
 
-  // Store initial exclude IDs on first render
   useEffect(() => {
     if (!hasFetchedRef.current && excludeIdsString) {
       initialExcludeIdsRef.current = excludeIdsString;
@@ -71,33 +86,23 @@ const ProductRecommendations: React.FC<ProductRecommendationsProps> = ({
 
   const fetchRecommendations = useCallback(async () => {
     try {
-      // Only fetch once on initial mount, not when excludeProducts changes
       if (hasFetchedRef.current && products.length > 0) {
-        return; // Don't refetch after initial load
+        return;
       }
 
       setIsLoading(true);
 
-      // Use initial exclude IDs (from first render) to prevent refetching when items are removed
       const excludeIdsToUse = initialExcludeIdsRef.current
         ? initialExcludeIdsRef.current.split(",").map(Number)
         : excludeProducts.map((p) => p.id);
-      
-      // Fetch ALL products (or a very large number) without category filtering
-      // This ensures we get products from the entire scope
+
       const params = new URLSearchParams();
-      // Fetch a large number to ensure good randomization from all products
-      // Use a high limit to get as many products as possible
-      params.append("limit", "500"); // Fetch up to 500 products
-      
-      // Exclude the provided products (using initial exclude list)
+      params.append("limit", "500");
       if (excludeIdsToUse.length > 0) {
         params.append("exclude", excludeIdsToUse.join(","));
       }
 
       const currentParams = params.toString();
-
-      // Only fetch if parameters have changed
       if (lastFetchParams.current === currentParams && products.length > 0) {
         setIsLoading(false);
         return;
@@ -105,13 +110,11 @@ const ProductRecommendations: React.FC<ProductRecommendationsProps> = ({
 
       lastFetchParams.current = currentParams;
 
-      // Fetch all products (or paginate if needed)
       let allProducts: Product[] = [];
       let offset = 0;
       const pageSize = 500;
       let hasMore = true;
 
-      // Fetch products in batches until we have enough or no more products
       while (hasMore && allProducts.length < 1000) {
         const batchParams = new URLSearchParams();
         batchParams.append("limit", pageSize.toString());
@@ -122,18 +125,16 @@ const ProductRecommendations: React.FC<ProductRecommendationsProps> = ({
 
         const scopedParams = scopeProductsQueryString(batchParams.toString());
         const response = await fetch(`/api/products/?${scopedParams}`);
-        
+
         if (response.ok) {
           const data = await response.json();
           const batchProducts = Array.isArray(data) ? data : data.results || [];
-          
+
           if (batchProducts.length === 0) {
             hasMore = false;
           } else {
             allProducts = [...allProducts, ...batchProducts];
             offset += pageSize;
-            
-            // If we got fewer products than requested, we've reached the end
             if (batchProducts.length < pageSize) {
               hasMore = false;
             }
@@ -143,32 +144,21 @@ const ProductRecommendations: React.FC<ProductRecommendationsProps> = ({
         }
       }
 
-      // Filter out any products that are in the excluded list (double-check)
       const filteredProducts = allProducts.filter(
         (product: Product) => !excludeIdsToUse.includes(product.id)
       );
 
-      // Enhanced shuffle: Fisher-Yates algorithm with multiple passes for better randomization
       const shuffledProducts = [...filteredProducts];
-      
-      // Perform multiple shuffle passes for better randomization
       for (let pass = 0; pass < 5; pass++) {
         for (let i = shuffledProducts.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
-          [shuffledProducts[i], shuffledProducts[j]] = [
-            shuffledProducts[j],
-            shuffledProducts[i],
-          ];
+          [shuffledProducts[i], shuffledProducts[j]] = [shuffledProducts[j], shuffledProducts[i]];
         }
       }
 
-      // Randomly select products from the shuffled array
-      // Instead of taking a consecutive slice, randomly pick individual products
       const selectedProducts: Product[] = [];
       const availableIndices = shuffledProducts.map((_, index) => index);
-      
-      // Randomly select up to 'limit' products
-      const selectionCount = Math.min(limit, shuffledProducts.length);
+      const selectionCount = Math.min(itemCount, shuffledProducts.length);
       for (let i = 0; i < selectionCount; i++) {
         const randomIndex = Math.floor(Math.random() * availableIndices.length);
         const productIndex = availableIndices.splice(randomIndex, 1)[0];
@@ -176,14 +166,14 @@ const ProductRecommendations: React.FC<ProductRecommendationsProps> = ({
       }
 
       setProducts(selectedProducts);
-      hasFetchedRef.current = true; // Mark as fetched
+      hasFetchedRef.current = true;
     } catch (error) {
       console.error("Error fetching recommendations:", error);
       setProducts([]);
     } finally {
       setIsLoading(false);
     }
-  }, [limit, excludeProducts, products.length]);
+  }, [itemCount, excludeProducts, products.length]);
 
   useEffect(() => {
     fetchRecommendations();
@@ -199,7 +189,6 @@ const ProductRecommendations: React.FC<ProductRecommendationsProps> = ({
   const handleWishlistClick = useCallback(
     (productId: number) => {
       if (!user) return;
-
       if (isInWishlist(productId)) {
         removeFromWishlist(productId);
       } else {
@@ -211,24 +200,31 @@ const ProductRecommendations: React.FC<ProductRecommendationsProps> = ({
 
   if (isLoading) {
     return (
-      <div className={className}>
-        <h3 className="text-lg font-semibold mb-4">{title}</h3>
-        <div
-          className={`grid gap-4 ${
-            gridCols.default ? `grid-cols-${gridCols.default}` : "grid-cols-2"
-          } ${gridCols.sm ? `sm:grid-cols-${gridCols.sm}` : "sm:grid-cols-2"} ${
-            gridCols.md ? `md:grid-cols-${gridCols.md}` : "md:grid-cols-4"
-          } ${gridCols.lg ? `lg:grid-cols-${gridCols.lg}` : ""}`}
-        >
-          {Array.from({ length: limit }).map((_, index) => (
-            <div key={index} className="animate-pulse">
-              <div className="bg-gray-200 aspect-square rounded-lg mb-2"></div>
-              <div className="h-4 bg-gray-200 rounded mb-2"></div>
-              <div className="h-3 bg-gray-200 rounded w-2/3"></div>
+      <section
+        className={["rounded-2xl border p-5 sm:p-8", className].filter(Boolean).join(" ")}
+        style={{
+          background: "var(--card-bg)",
+          borderColor: "var(--sidebar-border)",
+          boxShadow: "var(--card-shadow)",
+        }}
+        aria-busy="true"
+        aria-label={title}
+      >
+        <div className="mb-6 h-7 w-48 rounded-lg animate-pulse" style={{ background: "var(--sidebar-border)" }} />
+        <div className="mb-2 h-4 w-full max-w-md rounded animate-pulse" style={{ background: "var(--sidebar-border)" }} />
+        <div className="flex gap-4 overflow-x-auto pb-2 pt-6 md:grid md:grid-cols-2 lg:grid-cols-4 md:overflow-visible">
+          {Array.from({ length: itemCount }).map((_, index) => (
+            <div key={index} className="w-[42vw] max-w-[200px] shrink-0 md:max-w-none md:w-auto">
+              <div
+                className="aspect-[4/3] rounded-2xl animate-pulse mb-3"
+                style={{ background: "var(--sidebar-bg)" }}
+              />
+              <div className="h-4 rounded animate-pulse mb-2" style={{ background: "var(--sidebar-border)" }} />
+              <div className="h-4 w-2/3 rounded animate-pulse" style={{ background: "var(--sidebar-border)" }} />
             </div>
           ))}
         </div>
-      </div>
+      </section>
     );
   }
 
@@ -237,116 +233,120 @@ const ProductRecommendations: React.FC<ProductRecommendationsProps> = ({
   }
 
   return (
-    <div className={className}>
-      <h3
-        className="text-lg font-semibold mb-4"
-        style={{ color: "var(--foreground)" }}
-      >
-        {title}
-      </h3>
-      <div
-        className={`grid gap-4 ${
-          gridCols.default ? `grid-cols-${gridCols.default}` : "grid-cols-2"
-        } ${gridCols.sm ? `sm:grid-cols-${gridCols.sm}` : "sm:grid-cols-2"} ${
-          gridCols.md ? `md:grid-cols-${gridCols.md}` : "md:grid-cols-4"
-        } ${gridCols.lg ? `lg:grid-cols-${gridCols.lg}` : ""}`}
-      >
-        {products.map((product) => (
-          <div
-            key={product.id}
-            className="group relative flex flex-col h-full rounded-lg border hover:shadow-lg transition-shadow"
-            style={{
-              background: "var(--card-bg)",
-              color: "var(--foreground)",
-              borderColor: "var(--sidebar-border)",
-            }}
+    <section
+      className={["rounded-2xl border p-5 sm:p-8", className].filter(Boolean).join(" ")}
+      style={{
+        background: "var(--card-bg)",
+        borderColor: "var(--sidebar-border)",
+        boxShadow: "var(--card-shadow)",
+      }}
+      aria-labelledby="product-recommendations-heading"
+    >
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-6 mb-6">
+        <div className="min-w-0">
+          <h2
+            id="product-recommendations-heading"
+            className="text-xl sm:text-2xl font-bold tracking-tight"
+            style={{ color: "var(--foreground)" }}
           >
-            <Link
-              href={`/product/${product.id}`}
-              className="flex flex-col h-full p-3"
+            {title}
+          </h2>
+          {subtitle ? (
+            <p className="text-sm sm:text-base mt-1.5 max-w-xl leading-relaxed" style={{ color: "var(--muted-foreground)" }}>
+              {subtitle}
+            </p>
+          ) : null}
+        </div>
+        <Link
+          href="/shop/"
+          className="inline-flex items-center gap-1 shrink-0 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-md py-2"
+          style={{ color: "var(--accent)" }}
+        >
+          View full shop
+          <ChevronRight className="h-4 w-4" aria-hidden />
+        </Link>
+      </div>
+
+      <div className="flex gap-4 overflow-x-auto pb-1 -mx-1 px-1 snap-x snap-mandatory md:mx-0 md:px-0 md:grid md:grid-cols-2 lg:grid-cols-4 md:gap-5 md:overflow-visible md:snap-none">
+        {products.map((product) => {
+          const urls = collectProductImageUrls(product as ProductDetail);
+          const mainImage = urls[0] ?? null;
+          const price = priceLabel(product.price);
+          const out = isOutOfStock(product);
+
+          return (
+            <article
+              key={product.id}
+              className="group flex w-[42vw] max-w-[220px] shrink-0 snap-start flex-col overflow-hidden rounded-2xl border shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 md:max-w-none md:w-auto focus-within:ring-2 focus-within:ring-[var(--ring)] focus-within:ring-offset-2 focus-within:ring-offset-[var(--card-bg)]"
+              style={{
+                background: "var(--card-bg)",
+                borderColor: "var(--sidebar-border)",
+              }}
             >
-              <div
-                className="aspect-square relative overflow-hidden rounded-lg flex-shrink-0"
-                style={{ background: "var(--sidebar-bg)" }}
-              >
-                {product.image_url ? (
-                  <Image
-                    src={product.image_url}
-                    alt={product.name}
-                    fill
-                    className="object-cover group-hover:scale-105 transition-transform duration-200"
-                  />
-                ) : (
-                  <div
-                    className="w-full h-full flex items-center justify-center"
-                    style={{ background: "var(--sidebar-bg)" }}
+              <Link href={`/product/${product.id}/`} className="block shrink-0 outline-none">
+                <div
+                  className="relative aspect-[4/3] w-full bg-[var(--sidebar-bg)]"
+                  style={{ borderBottom: "1px solid var(--sidebar-border)" }}
+                >
+                  {mainImage ? (
+                    <Image
+                      src={mainImage}
+                      alt={product.name}
+                      fill
+                      className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                      sizes="(max-width: 768px) 42vw, (max-width: 1024px) 30vw, 16vw"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 p-3">
+                      <Package className="h-9 w-9 opacity-30" style={{ color: "var(--muted-foreground)" }} aria-hidden />
+                      <span className="text-[10px] font-medium text-center" style={{ color: "var(--muted-foreground)" }}>
+                        Photo soon
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div className="p-3.5 pt-3">
+                  <h3
+                    className="text-sm font-semibold leading-snug line-clamp-2 min-h-[2.5rem]"
+                    style={{ color: "var(--foreground)" }}
                   >
-                    <span
-                      className="text-4xl"
-                      style={{ color: "var(--muted-foreground)" }}
-                    >
-                      🍎
-                    </span>
-                  </div>
+                    {product.name}
+                  </h3>
+                  <p className="text-lg font-bold tabular-nums mt-2" style={{ color: "var(--primary)" }}>
+                    {price ?? "See details"}
+                  </p>
+                </div>
+              </Link>
+
+              <div className="mt-auto flex flex-col gap-2 p-3 pt-0">
+                {showQuickAdd && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    fullWidth
+                    disabled={out}
+                    onClick={() => handleAddToCart(product.id)}
+                    icon={<ShoppingBag className="h-4 w-4 shrink-0" aria-hidden />}
+                  >
+                    {out ? "Unavailable" : "Add to basket"}
+                  </Button>
+                )}
+                {showWishlist && user && (
+                  <button
+                    type="button"
+                    onClick={() => handleWishlistClick(product.id)}
+                    className="text-xs font-medium underline-offset-2 hover:underline py-2"
+                    style={{ color: "var(--muted-foreground)" }}
+                  >
+                    {isInWishlist(product.id) ? "Remove from wishlist" : "Save to wishlist"}
+                  </button>
                 )}
               </div>
-
-              <div className="mt-2 flex-grow flex flex-col">
-                <h4
-                  className="text-sm font-medium line-clamp-2 flex-grow"
-                  style={{ color: "var(--foreground)" }}
-                >
-                  {product.name}
-                </h4>
-                <p
-                  className="text-lg font-bold mt-1"
-                  style={{ color: "var(--primary)" }}
-                >
-                  £{product.price ? parseFloat(String(product.price)).toFixed(2) : "0.00"}
-                </p>
-              </div>
-            </Link>
-
-            {/* Action buttons */}
-            <div className="mt-2 flex gap-2 flex-shrink-0">
-              {showQuickAdd && (
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleAddToCart(product.id);
-                  }}
-                  className="flex-1 bg-green-600 text-white text-xs py-2 px-3 rounded hover:bg-green-700 transition-colors"
-                >
-                  Add to Cart
-                </button>
-              )}
-
-              {showWishlist && user && (
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleWishlistClick(product.id);
-                  }}
-                  className={`p-2 rounded transition-colors ${
-                    isInWishlist(product.id)
-                      ? "text-red-500 hover:text-red-600"
-                      : "text-gray-400 hover:text-red-500"
-                  }`}
-                >
-                  <svg
-                    className="w-4 h-4"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                  </svg>
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
+            </article>
+          );
+        })}
       </div>
-    </div>
+    </section>
   );
 };
 

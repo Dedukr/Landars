@@ -6,6 +6,8 @@ interface Product {
   name: string;
   price: string;
   image_url?: string | null;
+  images?: (string | { image_url: string })[];
+  primary_image?: string | null;
   description?: string;
   categories?: string[];
 }

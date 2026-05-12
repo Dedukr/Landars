@@ -39,12 +39,33 @@ const WishlistContext = createContext<WishlistContextType | undefined>(
   undefined
 );
 
+function parseStoredGuestWishlist(raw: string | null): number[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (id): id is number =>
+        typeof id === "number" && Number.isFinite(id) && id > 0
+    );
+  } catch {
+    return [];
+  }
+}
+
+/** Union of guest product ids (e.g. localStorage + in-memory snapshot before login). */
+function combineWishlistIds(a: number[], b: number[]): number[] {
+  return [...new Set([...a, ...b])];
+}
+
 export const WishlistProvider = ({ children }: { children: ReactNode }) => {
   const [wishlist, setWishlist] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const { user, token, loading: authLoading } = useAuth();
   /** Prior `user` to detect logout (signed-in → signed-out); avoids clearing guest wishlist on normal browsing. */
   const prevUserRef = useRef<typeof user | undefined>(undefined);
+  /** Guest wishlist while signed out; used on sign-in if `guest_wishlist` in localStorage lagged behind React state. */
+  const guestWishlistSnapshotRef = useRef<number[]>([]);
 
   // Load wishlist from backend when user is authenticated
   const loadWishlistFromBackend = useCallback(async () => {
@@ -68,61 +89,93 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
   }, [user, token, authLoading]);
 
   // Load wishlist from localStorage for guest users
-  const loadGuestWishlist = () => {
+  const loadGuestWishlist = useCallback(() => {
     const stored = localStorage.getItem("guest_wishlist");
-    if (stored) {
-      setWishlist(JSON.parse(stored));
-    }
-  };
+    const parsed = parseStoredGuestWishlist(stored);
+    const merged = combineWishlistIds(parsed, guestWishlistSnapshotRef.current);
+    setWishlist(merged);
+  }, []);
 
   // Save guest wishlist to localStorage
   const saveGuestWishlist = (wishlistItems: number[]) => {
     localStorage.setItem("guest_wishlist", JSON.stringify(wishlistItems));
   };
 
-  // Merge guest wishlist with user's backend wishlist
-  const mergeWishlists = useCallback(
-    async (guestWishlist: number[]) => {
-      if (!user || !token || guestWishlist.length === 0) return;
+  /** POST guest-only ids to the account wishlist, then reload from backend. */
+  const mergeGuestIntoBackend = useCallback(
+    async (guestProductIds: number[]) => {
+      if (!user || !token || authLoading || guestProductIds.length === 0) return;
 
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      setLoading(true);
       try {
-        // Add each guest wishlist item to backend
-        for (const productId of guestWishlist) {
-          await httpClient.post("/api/wishlist/", {
-            productId: productId,
-          });
+        const data = await httpClient.get<WishlistResponse>("/api/wishlist/");
+        const backendIds = new Set(
+          data.items.map((item: { product: number }) => item.product)
+        );
+
+        for (const productId of guestProductIds) {
+          if (!backendIds.has(productId)) {
+            try {
+              await httpClient.post("/api/wishlist/", { productId });
+              backendIds.add(productId);
+            } catch {
+              // Duplicate or invalid product — continue with remaining ids
+            }
+          }
         }
 
-        // Clear guest wishlist after merging
         localStorage.removeItem("guest_wishlist");
+        guestWishlistSnapshotRef.current = [];
+
+        const refreshed = await httpClient.get<WishlistResponse>("/api/wishlist/");
+        setWishlist(
+          refreshed.items.map((item: { product: number }) => item.product)
+        );
       } catch (error) {
-        console.error("Failed to merge wishlists:", error);
+        console.error("Failed to merge guest wishlist into account:", error);
+      } finally {
+        setLoading(false);
       }
     },
-    [user, token]
+    [user, token, authLoading]
   );
 
-  // Load wishlist on mount and when auth state changes
+  // Snapshot guest wishlist while signed out (for post-login merge if localStorage lags).
+  useEffect(() => {
+    if (!user && Array.isArray(wishlist)) {
+      guestWishlistSnapshotRef.current = wishlist;
+    }
+  }, [wishlist, user]);
+
+  // Authenticated: merge guest wishlist (storage + snapshot) into account, then load; guest: load combined local state
   useEffect(() => {
     if (user && token) {
-      // User is authenticated - load from backend
-      loadWishlistFromBackend();
+      if (authLoading) return;
+      const fromLs = parseStoredGuestWishlist(
+        localStorage.getItem("guest_wishlist")
+      );
+      const combined = combineWishlistIds(
+        fromLs,
+        guestWishlistSnapshotRef.current
+      );
+      if (combined.length > 0) {
+        void mergeGuestIntoBackend(combined);
+      } else {
+        void loadWishlistFromBackend();
+      }
     } else {
-      // User is not authenticated - load from localStorage
       loadGuestWishlist();
     }
-  }, [user, token, loadWishlistFromBackend]);
-
-  // Handle login - merge guest wishlist with user's backend wishlist
-  useEffect(() => {
-    if (user && token) {
-      const guestWishlist = localStorage.getItem("guest_wishlist");
-      if (guestWishlist) {
-        const guestItems = JSON.parse(guestWishlist);
-        mergeWishlists(guestItems);
-      }
-    }
-  }, [user, token, mergeWishlists]);
+  }, [
+    user,
+    token,
+    authLoading,
+    mergeGuestIntoBackend,
+    loadGuestWishlist,
+    loadWishlistFromBackend,
+  ]);
 
   // Clear wishlist when user transitions from authenticated → anonymous (logout),
   // not on every render while browsing as a guest (that broke guest wishlist + strained the app).
@@ -131,6 +184,7 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
     if (prev !== undefined && prev !== null && user === null) {
       setWishlist([]);
       localStorage.removeItem("guest_wishlist");
+      guestWishlistSnapshotRef.current = [];
     }
     prevUserRef.current = user;
   }, [user]);
@@ -140,6 +194,7 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
     const handleLogout = () => {
       setWishlist([]);
       localStorage.removeItem("guest_wishlist");
+      guestWishlistSnapshotRef.current = [];
     };
 
     window.addEventListener("user:logout", handleLogout);
@@ -153,7 +208,7 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
         // Only handle storage changes for guest users
         const stored = localStorage.getItem("guest_wishlist");
         if (stored) {
-          setWishlist(JSON.parse(stored));
+          setWishlist(parseStoredGuestWishlist(stored));
         } else {
           setWishlist([]);
         }
@@ -274,6 +329,7 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
       // Guest user - clear local state
       setWishlist([]);
       localStorage.removeItem("guest_wishlist");
+      guestWishlistSnapshotRef.current = [];
     }
   }, [user, token, wishlist, loadWishlistFromBackend]);
 

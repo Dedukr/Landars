@@ -7,6 +7,7 @@ import {
   useEffect,
   useCallback,
   useMemo,
+  useRef,
   type ReactNode,
 } from "react";
 import { useAuth } from "./AuthContext";
@@ -53,6 +54,44 @@ interface CartContextType {
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
+/** Merge guest cart from localStorage and in-memory snapshot (max qty per line). */
+function combineLocalCartSources(a: CartItem[], b: CartItem[]): CartItem[] {
+  if (!a.length) return b.slice();
+  if (!b.length) return a.slice();
+  const map = new Map<number, number>();
+  for (const item of [...a, ...b]) {
+    if (
+      !item ||
+      typeof item.productId !== "number" ||
+      typeof item.quantity !== "number"
+    ) {
+      continue;
+    }
+    const q = Math.max(0, item.quantity);
+    map.set(item.productId, Math.max(map.get(item.productId) ?? 0, q));
+  }
+  return Array.from(map, ([productId, quantity]) => ({ productId, quantity }));
+}
+
+function parseStoredCart(raw: string | null): CartItem[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (row): row is CartItem =>
+        row !== null &&
+        typeof row === "object" &&
+        "productId" in row &&
+        "quantity" in row &&
+        typeof (row as CartItem).productId === "number" &&
+        typeof (row as CartItem).quantity === "number"
+    );
+  } catch {
+    return [];
+  }
+}
+
 export const CartProvider = ({ children }: { children: ReactNode }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -61,6 +100,9 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     CartMergeResult["mergeSummary"] | null
   >(null);
   const { user, loading: authLoading } = useAuth();
+  /** Last guest cart while signed out; used on sign-in so merge still sees items if localStorage lagged behind React state. */
+  const guestCartSnapshotRef = useRef<CartItem[]>([]);
+  const prevAuthenticatedRef = useRef(false);
 
   // Initialize cart merger with smart strategy
   const cartMerger = React.useMemo(
@@ -74,9 +116,6 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
    */
   const mergeCartsIntelligently = React.useCallback(
     async (localItems: CartItem[], backendItems: CartItem[]) => {
-      if (authLoading)
-        return { mergedCart: [], conflicts: [], mergeSummary: null };
-
       try {
         // Starting intelligent cart merge
 
@@ -100,7 +139,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         throw error;
       }
     },
-    [authLoading, cartMerger]
+    [cartMerger]
   );
 
   /**
@@ -139,7 +178,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
    */
   const fetchCartFromBackend = React.useCallback(
     async (skipLocalMerge = false) => {
-      if (authLoading) return; // Don't fetch while auth is loading```
+      if (authLoading) return; // Don't fetch while auth is loading
 
       setIsLoading(true);
       try {
@@ -156,30 +195,32 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
 
         // If there are local items and we should merge them
         if (!skipLocalMerge) {
-          const localCart = localStorage.getItem("cart");
-          if (localCart) {
-            const localItems = JSON.parse(localCart);
-            if (localItems.length > 0) {
-              // Found local cart items, merging intelligently
+          const fromStorage = parseStoredCart(localStorage.getItem("cart"));
+          const localItems = combineLocalCartSources(
+            fromStorage,
+            guestCartSnapshotRef.current
+          );
+          if (localItems.length > 0) {
+            // Found local cart items, merging intelligently
 
-              // Use intelligent merging instead of simple sync
-              const mergeResult = await mergeCartsIntelligently(
-                localItems,
-                backendItems
-              );
+            // Use intelligent merging instead of simple sync
+            const mergeResult = await mergeCartsIntelligently(
+              localItems,
+              backendItems
+            );
 
-              // Update cart with merged result
-              setCart(mergeResult.mergedCart);
+            // Update cart with merged result
+            setCart(mergeResult.mergedCart);
 
-              // Sync merged cart to backend
-              await syncMergedCartToBackend(mergeResult.mergedCart);
+            // Sync merged cart to backend
+            await syncMergedCartToBackend(mergeResult.mergedCart);
 
-              // Clear local storage after successful merge
-              localStorage.removeItem("cart");
+            // Clear local storage after successful merge
+            localStorage.removeItem("cart");
+            guestCartSnapshotRef.current = [];
 
-              // Cart merge and sync completed
-              return;
-            }
+            // Cart merge and sync completed
+            return;
           }
         }
 
@@ -188,11 +229,12 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         // Backend cart loaded successfully
       } catch (error) {
         console.error("❌ Failed to fetch cart:", error);
-        // On error, try to preserve local cart
-        const localCart = localStorage.getItem("cart");
-        if (localCart) {
-          // Using local cart as fallback
-          setCart(JSON.parse(localCart));
+        const fallback = combineLocalCartSources(
+          parseStoredCart(localStorage.getItem("cart")),
+          guestCartSnapshotRef.current
+        );
+        if (fallback.length > 0) {
+          setCart(fallback);
         }
       } finally {
         setIsLoading(false);
@@ -200,6 +242,13 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     },
     [authLoading, mergeCartsIntelligently, syncMergedCartToBackend]
   );
+
+  // Keep a snapshot of the guest cart for post–sign-in merge (avoids race with persist effect).
+  useEffect(() => {
+    if (!user && Array.isArray(cart)) {
+      guestCartSnapshotRef.current = cart;
+    }
+  }, [cart, user]);
 
   // Load cart from backend if user is authenticated, otherwise from localStorage
   useEffect(() => {
@@ -210,7 +259,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
       // Not authenticated, load from localStorage
       const stored = localStorage.getItem("cart");
       if (stored) {
-        setCart(JSON.parse(stored));
+        setCart(parseStoredCart(stored));
       } else {
         // Clear cart if no stored data and user is not authenticated
         setCart([]);
@@ -218,12 +267,14 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [user, fetchCartFromBackend, authLoading]);
 
-  // Clear localStorage cart when user logs out
+  // Clear guest cart storage only when transitioning from signed-in to signed-out (not on initial guest load).
   useEffect(() => {
-    if (!user) {
-      // User logged out, clear localStorage cart and reset local state
+    const wasAuthenticated = prevAuthenticatedRef.current;
+    prevAuthenticatedRef.current = Boolean(user);
+    if (wasAuthenticated && !user) {
       localStorage.removeItem("cart");
       setCart([]);
+      guestCartSnapshotRef.current = [];
     }
   }, [user]);
 
@@ -232,6 +283,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     const handleLogout = () => {
       setCart([]);
       localStorage.removeItem("cart");
+      guestCartSnapshotRef.current = [];
     };
 
     window.addEventListener("user:logout", handleLogout);

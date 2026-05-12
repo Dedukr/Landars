@@ -391,7 +391,7 @@ PASSWORD_RESET_TIMEOUT = 900  # 15 minutes in seconds (enhanced security)
 PASSWORD_RESET_COOLDOWN = 60  # 1 minute cooldown between requests
 
 # Rate limiting for password reset
-PASSWORD_RESET_RATE_LIMIT = "5/hour"  # 5 requests per hour per IP
+PASSWORD_RESET_RATE_LIMIT = "15/hour"  # 15 requests per hour per IP
 PASSWORD_RESET_EMAIL_RATE_LIMIT = "3/hour"
 
 # Email Verification Settings

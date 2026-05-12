@@ -1,6 +1,9 @@
 "use client";
-import React, { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+
+import React, { useState, useEffect, useMemo } from "react";
+import { useParams } from "next/navigation";
+import Link from "next/link";
+import { Heart, ShoppingBag } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { useWishlist } from "@/contexts/WishlistContext";
 import { useCartItems } from "@/hooks/useCartItems";
@@ -8,65 +11,63 @@ import { useWishlistItems } from "@/hooks/useWishlistItems";
 import { useAuth } from "@/contexts/AuthContext";
 import SignInPopup from "@/components/SignInPopup";
 import Breadcrumb from "@/components/Breadcrumb";
-import ProductGallery from "@/components/ProductGallery";
-import ProductImageCollage from "@/components/ProductImageCollage";
-// import ProductDetails from "@/components/ProductDetails";
 import ProductRecommendations from "@/components/ProductRecommendations";
 import ProductReviewBlock from "@/components/ProductReviewBlock";
-import LoadingSpinner from "@/components/LoadingSpinner";
 import { scopeProductsQueryString } from "@/utils/catalogScope";
+import { Button } from "@/components/ui/Button";
+import type { ProductDetail } from "@/components/product/types";
+import { collectProductImageUrls } from "@/components/product/collectProductImageUrls";
+import ProductDetailSkeleton from "@/components/product/ProductDetailSkeleton";
+import ProductNotFoundState from "@/components/product/ProductNotFoundState";
+import ProductImageGallery from "@/components/product/ProductImageGallery";
+import ProductTrustStrip from "@/components/product/ProductTrustStrip";
+import ProductDetailsAccordion from "@/components/product/ProductDetailsAccordion";
+import MobileProductActionBar from "@/components/product/MobileProductActionBar";
 
-interface Product {
-  id: number;
-  name: string;
-  description: string;
-  price: string;
-  image_url?: string | null;
-  images?: Array<{ image_url: string; sort_order: number }> | string[];
-  primary_image?: string | null;
-  stock_quantity?: number;
-  category?: {
-    id: number;
-    name: string;
-  };
-  specifications?: {
-    [key: string]: string;
-  };
-  nutrition_info?: {
-    calories?: number;
-    protein?: number;
-    carbs?: number;
-    fat?: number;
-  };
-  allergens?: string[];
-  ingredients?: string[];
-  storage_instructions?: string;
-  shelf_life?: string;
+type LoadState = { kind: "idle" } | { kind: "not_found" } | { kind: "failed" };
+
+function normalizeDescription(raw: unknown): string | null {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  return s.length ? s : null;
+}
+
+function priceDisplay(price: string | undefined): string | null {
+  if (price == null || price === "") return null;
+  const n = parseFloat(String(price));
+  return Number.isFinite(n) ? `£${n.toFixed(2)}` : null;
+}
+
+function stockUnavailable(product: ProductDetail): boolean {
+  if (product.in_stock === false) return true;
+  if (typeof product.stock_quantity === "number" && product.stock_quantity <= 0) return true;
+  return false;
+}
+
+function lowStock(product: ProductDetail): boolean {
+  if (typeof product.stock_quantity !== "number") return false;
+  return product.stock_quantity > 0 && product.stock_quantity < 5;
 }
 
 export default function ProductPage() {
   const params = useParams();
-  const router = useRouter();
   const { cart, addToCart, removeFromCart } = useCart();
   const { addToWishlist, removeFromWishlist, isInWishlist } = useWishlist();
   const { user } = useAuth();
 
-  const [product, setProduct] = useState<Product | null>(null);
-  const [products, setProducts] = useState<Product[]>([]);
-
+  const [product, setProduct] = useState<ProductDetail | null>(null);
+  const [products, setProducts] = useState<ProductDetail[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadState, setLoadState] = useState<LoadState>({ kind: "idle" });
   const [showSignInPopup, setShowSignInPopup] = useState(false);
-  const [selectedImage, setSelectedImage] = useState(0);
   const [quantity, setQuantity] = useState(1);
 
-  // Get cart and wishlist items with full product details
   const { filteredProducts: cartItems } = useCartItems(products);
   const { filteredProducts: wishlistItems } = useWishlistItems(products);
 
-  const productId = params.id;
+  const rawId = params?.id;
+  const productId = Array.isArray(rawId) ? rawId[0] : rawId;
 
-  // Fetch all products for cart and wishlist hooks
   useEffect(() => {
     async function fetchProducts() {
       try {
@@ -75,119 +76,177 @@ export default function ProductPage() {
         );
         if (response.ok) {
           const data = await response.json();
-          const fetchedProducts = Array.isArray(data)
-            ? data
-            : data.results || [];
-          setProducts(fetchedProducts);
+          const fetched = Array.isArray(data) ? data : data.results || [];
+          setProducts(fetched);
         }
-      } catch (error) {
-        console.error("Error fetching products:", error);
+      } catch {
+        /* ignore — recommendations still work without full catalog */
       }
     }
     fetchProducts();
   }, []);
 
-  useEffect(() => {
-    async function fetchProduct() {
-      if (!productId) return;
-
-      setLoading(true);
-      setError(null);
-
-      try {
-        const response = await fetch(`/api/products/${productId}/`);
-        if (!response.ok) {
-          throw new Error(`Product not found: ${response.status}`);
-        }
-
-        const data = await response.json();
-        setProduct(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load product");
-      } finally {
-        setLoading(false);
-      }
+  const fetchProduct = React.useCallback(async () => {
+    if (!productId || String(productId).trim() === "") {
+      setProduct(null);
+      setLoadState({ kind: "not_found" });
+      setLoading(false);
+      return;
     }
-
-    fetchProduct();
+    setLoading(true);
+    setLoadState({ kind: "idle" });
+    try {
+      const response = await fetch(`/api/products/${productId}/`);
+      if (response.status === 404) {
+        setProduct(null);
+        setLoadState({ kind: "not_found" });
+        return;
+      }
+      if (!response.ok) {
+        setProduct(null);
+        setLoadState({ kind: "failed" });
+        return;
+      }
+      const data = (await response.json()) as ProductDetail;
+      setProduct(data);
+      setQuantity(1);
+    } catch {
+      setProduct(null);
+      setLoadState({ kind: "failed" });
+    } finally {
+      setLoading(false);
+    }
   }, [productId]);
+
+  useEffect(() => {
+    fetchProduct();
+  }, [fetchProduct]);
+
+  useEffect(() => {
+    if (!product?.name) return;
+    document.title = `${product.name} | Landar's Food`;
+    let meta = document.querySelector('meta[name="description"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.setAttribute("name", "description");
+      document.head.appendChild(meta);
+    }
+    const desc = normalizeDescription(product.description);
+    meta.setAttribute(
+      "content",
+      desc ? `${product.name} — ${desc.slice(0, 155)}` : `${product.name} — Landar's Food`
+    );
+  }, [product]);
+
+  const imageUrls = useMemo(
+    () => (product ? collectProductImageUrls(product) : []),
+    [product]
+  );
+  const description = useMemo(
+    () => (product ? normalizeDescription(product.description) : null),
+    [product]
+  );
+  const priceStr = useMemo(() => (product ? priceDisplay(product.price) : null), [product]);
+  const unavailable = useMemo(
+    () => (product ? stockUnavailable(product) : true),
+    [product]
+  );
+  const low = useMemo(() => (product ? lowStock(product) : false), [product]);
+  const cartQuantity = useMemo(
+    () => (product ? cart.find((item) => item.productId === product.id)?.quantity || 0 : 0),
+    [cart, product]
+  );
+  const categoryBadge = useMemo(() => {
+    if (!product) return null;
+    return (
+      product.category?.name?.trim() ||
+      (product.categories && product.categories[0]?.trim()) ||
+      null
+    );
+  }, [product]);
+
+  const breadcrumbItems = useMemo(() => {
+    if (!product) return [{ label: "Home", href: "/" }, { label: "Shop", href: "/shop/" }];
+    return [
+      { label: "Home", href: "/" },
+      { label: "Shop", href: "/shop/" },
+      ...(product.category?.id != null && product.category.name
+        ? [
+            {
+              label: product.category.name,
+              href: `/shop/?category=${product.category.id}`,
+            } as const,
+          ]
+        : []),
+      { label: product.name, href: "#" },
+    ];
+  }, [product]);
 
   const handleWishlistClick = () => {
     if (!user) {
       setShowSignInPopup(true);
       return;
     }
-
     if (!product) return;
-
-    if (isInWishlist(product.id)) {
-      removeFromWishlist(product.id);
-    } else {
-      addToWishlist(product.id);
-    }
+    if (isInWishlist(product.id)) removeFromWishlist(product.id);
+    else addToWishlist(product.id);
   };
 
   const handleAddToCart = () => {
     if (!product) return;
+    if (stockUnavailable(product)) return;
     addToCart(product.id, quantity);
   };
 
   const handleQuantityChange = (newQuantity: number) => {
-    if (newQuantity >= 1 && newQuantity <= 99) {
-      setQuantity(newQuantity);
-    }
+    if (newQuantity >= 1 && newQuantity <= 99) setQuantity(newQuantity);
   };
 
   if (loading) {
-    return <LoadingSpinner />;
+    return <ProductDetailSkeleton />;
   }
 
-  if (error || !product) {
+  if (loadState.kind === "failed") {
     return (
       <div
-        className="min-h-screen flex items-center justify-center"
+        className="min-h-[70vh] flex flex-col items-center justify-center px-4 py-16"
         style={{ background: "var(--background)" }}
       >
-        <div className="text-center">
-          <h1
-            className="text-2xl font-bold mb-4"
-            style={{ color: "var(--destructive)" }}
-          >
-            Product Not Found
+        <div
+          className="max-w-md w-full rounded-2xl border p-8 text-center shadow-sm"
+          style={{
+            background: "var(--card-bg)",
+            borderColor: "var(--sidebar-border)",
+          }}
+        >
+          <h1 className="text-xl font-semibold mb-2" style={{ color: "var(--foreground)" }}>
+            Something went wrong
           </h1>
-          <p className="mb-4" style={{ color: "var(--muted-foreground)" }}>
-            {error || "The product you're looking for doesn't exist."}
+          <p className="text-sm mb-6" style={{ color: "var(--muted-foreground)" }}>
+            We could not load this product. Please check your connection and try again.
           </p>
-          <button
-            onClick={() => router.back()}
-            className="px-6 py-2 rounded-lg transition-colors"
-            style={{
-              background: "var(--primary)",
-              color: "white",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "var(--primary-hover)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "var(--primary)";
-            }}
-          >
-            Go Back
-          </button>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <Button variant="primary" size="md" onClick={() => void fetchProduct()}>
+              Try again
+            </Button>
+            <Button variant="outline" size="md" asChild>
+              <Link href="/shop/">Back to shop</Link>
+            </Button>
+          </div>
         </div>
       </div>
     );
   }
 
-  const cartQuantity =
-    cart.find((item) => item.productId === product.id)?.quantity || 0;
+  if (loadState.kind === "not_found" || !product) {
+    return <ProductNotFoundState />;
+  }
 
   return (
     <div
-      className="min-h-screen bg-white dark:bg-gray-950"
+      className="min-h-screen pb-32 lg:pb-10"
       style={{ background: "var(--background)" }}
     >
-      {/* Breadcrumb Navigation */}
       <div
         className="border-b"
         style={{
@@ -195,287 +254,235 @@ export default function ProductPage() {
           borderColor: "var(--sidebar-border)",
         }}
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <Breadcrumb
-            items={[
-              { label: "Home", href: "/" },
-              { label: product.category?.name || "Products", href: "/" },
-              { label: product.name, href: "#" },
-            ]}
-          />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
+          <Link
+            href="/shop/"
+            className="inline-flex items-center gap-1.5 text-sm font-medium mb-3 lg:mb-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-md"
+            style={{ color: "var(--accent)" }}
+          >
+            ← Back to shop
+          </Link>
+          <Breadcrumb items={breadcrumbItems} />
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
-          {/* Product Images - Collage Layout */}
-          <div className="space-y-4">
-            {(() => {
-              // Extract image URLs from the images array
-              // Handle both formats: array of strings or array of objects with image_url
-              let imageUrls: string[] = [];
-              
-              if (product.images && product.images.length > 0) {
-                imageUrls = product.images.map((img: string | { image_url: string }) => {
-                  if (typeof img === "string") {
-                    return img;
-                  } else if (img && typeof img === "object" && "image_url" in img) {
-                    return img.image_url;
-                  }
-                  return null;
-                }).filter((url: string | null): url is string => url !== null);
-              } else if (product.image_url || product.primary_image) {
-                const url = product.image_url || product.primary_image;
-                imageUrls = url ? [url] : [];
-              }
-
-              // Use collage for 2+ images, gallery for single image or when user wants gallery view
-              if (imageUrls.length >= 2) {
-                return (
-                  <ProductImageCollage
-                    images={imageUrls}
-                    alt={product.name}
-                    className="w-full"
-                    onImageClick={(index) => setSelectedImage(index)}
-                  />
-                );
-              }
-
-              // Fallback to gallery for single image or empty
-              return (
-                <ProductGallery
-                  images={imageUrls}
-                  selectedImage={selectedImage}
-                  onImageSelect={setSelectedImage}
-                />
-              );
-            })()}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-10">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-12 lg:items-start">
+          <div className="animate-fade-in">
+            <ProductImageGallery key={product.id} imageUrls={imageUrls} productName={product.name} />
           </div>
 
-          {/* Product Information */}
-          <div className="space-y-6">
-            {/* Product Header */}
-            <div>
-              <h1
-                className="text-3xl font-bold mb-2"
-                style={{ color: "var(--foreground)" }}
+          <div className="flex flex-col gap-4 lg:gap-5 min-w-0">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex flex-wrap gap-2 items-center min-w-0">
+                {categoryBadge && (
+                  <span
+                    className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold uppercase tracking-wide"
+                    style={{
+                      background: "var(--sidebar-bg)",
+                      color: "var(--foreground)",
+                      border: "1px solid var(--sidebar-border)",
+                    }}
+                  >
+                    {categoryBadge}
+                  </span>
+                )}
+                {unavailable && (
+                  <span
+                    className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold"
+                    style={{ background: "var(--destructive)", color: "white" }}
+                  >
+                    Unavailable
+                  </span>
+                )}
+                {!unavailable && low && (
+                  <span
+                    className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold"
+                    style={{
+                      background: "var(--info-bg)",
+                      color: "var(--info-text)",
+                      border: "1px solid var(--info-border)",
+                    }}
+                  >
+                    Low stock
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleWishlistClick}
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border transition-transform hover:scale-105 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                style={{
+                  borderColor: "var(--sidebar-border)",
+                  background: "var(--card-bg)",
+                  color: isInWishlist(product.id) ? "var(--destructive)" : "var(--muted-foreground)",
+                  boxShadow: "var(--card-shadow)",
+                }}
+                aria-label={
+                  user
+                    ? isInWishlist(product.id)
+                      ? "Remove from wishlist"
+                      : "Save to wishlist"
+                    : "Sign in to save to wishlist"
+                }
+                aria-pressed={isInWishlist(product.id)}
               >
-                {product.name}
-              </h1>
+                <Heart className={`h-5 w-5 ${isInWishlist(product.id) ? "fill-current" : ""}`} strokeWidth={2} />
+              </button>
             </div>
 
-            {/* Price */}
-            <div
-              className="text-3xl font-bold"
-              style={{ color: "var(--success)" }}
+            <h1
+              className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-balance leading-tight"
+              style={{ color: "var(--foreground)" }}
             >
-              £{product.price ? parseFloat(String(product.price)).toFixed(2) : "0.00"}
-            </div>
+              {product.name}
+            </h1>
 
-            {/* Description */}
-            <div>
-              <h3
-                className="text-lg font-semibold mb-2"
-                style={{ color: "var(--foreground)" }}
-              >
-                Description
-              </h3>
-              <p
-                className="leading-relaxed"
-                style={{ color: "var(--muted-foreground)" }}
-              >
-                {product.description}
+            {priceStr ? (
+              <p className="text-3xl sm:text-4xl font-bold tabular-nums" style={{ color: "var(--accent)" }}>
+                {priceStr}
               </p>
-            </div>
+            ) : (
+              <p className="text-lg font-medium" style={{ color: "var(--muted-foreground)" }}>
+                See details for pricing
+              </p>
+            )}
 
-            {/* Quantity and Add to Cart */}
-            <div className="space-y-4">
-              <div className="flex items-center space-x-4">
-                <label
-                  className="text-sm font-medium"
+            {description && (
+              <div
+                className="rounded-2xl border p-4 sm:p-5"
+                style={{
+                  background: "var(--card-bg)",
+                  borderColor: "var(--sidebar-border)",
+                  boxShadow: "var(--card-shadow)",
+                }}
+              >
+                <h2 className="text-sm font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted-foreground)" }}>
+                  About this item
+                </h2>
+                <p
+                  className="text-sm sm:text-base leading-relaxed line-clamp-6 lg:line-clamp-none whitespace-pre-wrap"
                   style={{ color: "var(--foreground)" }}
                 >
-                  Quantity:
-                </label>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleQuantityChange(quantity - 1)}
-                    disabled={quantity <= 1}
-                    className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{
-                      border: "1px solid var(--sidebar-border)",
-                      background: "var(--card-bg)",
-                      color: "var(--foreground)",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!e.currentTarget.disabled) {
-                        e.currentTarget.style.background = "var(--sidebar-bg)";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!e.currentTarget.disabled) {
-                        e.currentTarget.style.background = "var(--card-bg)";
-                      }
-                    }}
-                  >
-                    -
-                  </button>
-                  <span
-                    className="min-w-[2rem] text-center font-medium text-sm"
-                    style={{ color: "var(--foreground)" }}
-                  >
-                    {quantity}
-                  </span>
-                  <button
-                    onClick={() => handleQuantityChange(quantity + 1)}
-                    disabled={quantity >= 99}
-                    className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{
-                      border: "1px solid var(--sidebar-border)",
-                      background: "var(--card-bg)",
-                      color: "var(--foreground)",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!e.currentTarget.disabled) {
-                        e.currentTarget.style.background = "var(--sidebar-bg)";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!e.currentTarget.disabled) {
-                        e.currentTarget.style.background = "var(--card-bg)";
-                      }
-                    }}
-                  >
-                    +
-                  </button>
-                </div>
+                  {description}
+                </p>
               </div>
+            )}
 
-              <div className="flex space-x-4">
-                <button
-                  onClick={handleAddToCart}
-                  className="flex-1 px-6 py-3 rounded-lg font-semibold transition-colors"
-                  style={{
-                    background: "var(--success)",
-                    color: "white",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = "rgba(22, 163, 74, 0.8)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "var(--success)";
-                  }}
-                >
-                  Add to Cart
-                </button>
-                <button
-                  onClick={handleWishlistClick}
-                  className="px-4 py-3 rounded-lg transition-colors"
-                  style={{
-                    border: "1px solid var(--sidebar-border)",
-                    background: "var(--card-bg)",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = "var(--sidebar-bg)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "var(--card-bg)";
-                  }}
-                  title={
-                    isInWishlist(product.id)
-                      ? "Remove from wishlist"
-                      : "Add to wishlist"
-                  }
-                >
-                  <span className="text-xl">
-                    {isInWishlist(product.id) ? "❤️" : "🤍"}
-                  </span>
-                </button>
-              </div>
-
-              {cartQuantity > 0 && (
-                <div
-                  className="rounded-lg p-4"
-                  style={{
-                    background: "var(--info-bg)",
-                    border: "1px solid var(--info-border)",
-                  }}
-                >
-                  <div className="flex items-center justify-between">
-                    <span style={{ color: "var(--info-text)" }}>
-                      {cartQuantity} in your cart
+            <div className="hidden lg:block space-y-4 pt-1">
+              <div
+                className="rounded-2xl border p-5 sm:p-6"
+                style={{
+                  background: "var(--card-bg)",
+                  borderColor: "var(--sidebar-border)",
+                  boxShadow: "var(--card-shadow)",
+                }}
+              >
+                <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--muted-foreground)" }}>
+                  Quantity
+                </p>
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleQuantityChange(quantity - 1)}
+                      disabled={quantity <= 1 || unavailable}
+                      className="flex h-11 w-11 items-center justify-center rounded-full border text-lg font-semibold disabled:opacity-40"
+                      style={{
+                        borderColor: "var(--sidebar-border)",
+                        background: "var(--sidebar-bg)",
+                        color: "var(--foreground)",
+                      }}
+                      aria-label="Decrease quantity"
+                    >
+                      −
+                    </button>
+                    <span
+                      className="min-w-[2.5rem] text-center text-base font-semibold tabular-nums"
+                      style={{ color: "var(--foreground)" }}
+                    >
+                      {quantity}
                     </span>
                     <button
+                      type="button"
+                      onClick={() => handleQuantityChange(quantity + 1)}
+                      disabled={quantity >= 99 || unavailable}
+                      className="flex h-11 w-11 items-center justify-center rounded-full border text-lg font-semibold disabled:opacity-40"
+                      style={{
+                        borderColor: "var(--sidebar-border)",
+                        background: "var(--sidebar-bg)",
+                        color: "var(--foreground)",
+                      }}
+                      aria-label="Increase quantity"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    className="min-w-[12rem] flex-1 sm:flex-none"
+                    disabled={unavailable}
+                    onClick={handleAddToCart}
+                    icon={<ShoppingBag className="h-5 w-5" aria-hidden />}
+                  >
+                    {unavailable ? "Unavailable" : cartQuantity > 0 ? "Add more to basket" : "Add to basket"}
+                  </Button>
+                </div>
+                {cartQuantity > 0 && (
+                  <div
+                    className="mt-4 flex items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm"
+                    style={{
+                      background: "var(--info-bg)",
+                      borderColor: "var(--info-border)",
+                      color: "var(--info-text)",
+                    }}
+                  >
+                    <span>
+                      {cartQuantity} in your basket
+                    </span>
+                    <button
+                      type="button"
                       onClick={() => removeFromCart(product.id)}
-                      className="text-sm underline"
-                      style={{ color: "var(--info-text)" }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.opacity = "0.8";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.opacity = "1";
-                      }}
+                      className="font-medium underline underline-offset-2"
                     >
                       Remove
                     </button>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
-            {/* Key Features */}
-            <div
-              className="rounded-lg p-4"
-              style={{
-                background: "var(--sidebar-bg)",
-                border: "1px solid var(--sidebar-border)",
-              }}
-            >
-              <h3
-                className="font-semibold mb-2"
-                style={{ color: "var(--foreground)" }}
-              >
-                Key Features
-              </h3>
-              <ul
-                className="space-y-1 text-sm"
-                style={{ color: "var(--muted-foreground)" }}
-              >
-                <li>• Fresh, locally sourced ingredients</li>
-                <li>• Sustainable packaging</li>
-              </ul>
-            </div>
+            <ProductTrustStrip />
           </div>
         </div>
 
-        {/* Product Details Tabs */}
-        {/* <div className="mt-12">
-          <ProductDetails product={product} />
-        </div> */}
-
-        {/* Related Products */}
-        <div className="mt-12">
-          <ProductRecommendations
-            excludeProducts={[product, ...cartItems, ...wishlistItems]}
-            limit={4}
-            title="You might also like"
-            showWishlist={false}
-            showQuickAdd={true}
-            gridCols={{ default: 2, md: 4 }}
-            className="mt-6"
-          />
+        <div className="mt-8 lg:mt-10 max-w-3xl">
+          <ProductDetailsAccordion product={product} />
         </div>
 
-        {/* Reviews */}
-        <div className="mt-12">
+        <ProductRecommendations
+          excludeProducts={[product, ...cartItems, ...wishlistItems] as ProductDetail[]}
+          limit={4}
+          className="mt-10 lg:mt-14"
+        />
+
+        <div className="mt-10 lg:mt-12">
           <ProductReviewBlock productId={product.id} />
         </div>
       </div>
 
-      <SignInPopup
-        isOpen={showSignInPopup}
-        onClose={() => setShowSignInPopup(false)}
+      <MobileProductActionBar
+        priceDisplay={priceStr}
+        quantity={quantity}
+        cartQuantity={cartQuantity}
+        isAvailable={!unavailable}
+        onQuantityChange={handleQuantityChange}
+        onAddToCart={handleAddToCart}
+        onRemoveFromBasket={() => removeFromCart(product.id)}
       />
+
+      <SignInPopup isOpen={showSignInPopup} onClose={() => setShowSignInPopup(false)} />
     </div>
   );
 }

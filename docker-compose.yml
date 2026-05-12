@@ -165,6 +165,8 @@ services:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+      # Server-only: generateMetadata for /product/[id] fetches JSON here (see frontend-marketplace/src/lib/serverProductMetadataFetch.ts).
+      - METADATA_API_BASE_URL=${METADATA_API_BASE_URL:-http://backend:8000}
       # Stable Server Action encryption key (fixes "Failed to find Server Action" across rebuilds).
       # Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
       - NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=${NEXT_SERVER_ACTIONS_ENCRYPTION_KEY:-}
