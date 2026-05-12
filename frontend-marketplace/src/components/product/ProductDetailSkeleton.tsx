@@ -1,28 +1,19 @@
 export default function ProductDetailSkeleton() {
   return (
     <div className="min-h-screen" style={{ background: "var(--background)" }}>
-      {/* Breadcrumb skeleton */}
       <div
-        className="border-b py-3"
+        className="border-b py-3 sm:py-4"
         style={{
-          background: "var(--sidebar-bg)",
+          background: "var(--card-bg)",
           borderColor: "var(--sidebar-border)",
         }}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-2">
-            {[70, 50, 140].map((w, i) => (
-              <span key={i} className="flex items-center gap-2">
-                <span
-                  className="h-3.5 rounded animate-pulse inline-block"
-                  style={{ width: w, background: "var(--sidebar-border)" }}
-                />
-                {i < 2 && (
-                  <span style={{ color: "var(--sidebar-border)" }}>/</span>
-                )}
-              </span>
-            ))}
-          </div>
+          <div
+            className="h-4 w-28 rounded animate-pulse"
+            style={{ background: "var(--sidebar-border)" }}
+            aria-hidden
+          />
         </div>
       </div>
 

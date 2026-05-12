@@ -10,7 +10,6 @@ import { useCartItems } from "@/hooks/useCartItems";
 import { useWishlistItems } from "@/hooks/useWishlistItems";
 import { useAuth } from "@/contexts/AuthContext";
 import SignInPopup from "@/components/SignInPopup";
-import Breadcrumb from "@/components/Breadcrumb";
 import ProductRecommendations from "@/components/ProductRecommendations";
 import ProductReviewBlock from "@/components/ProductReviewBlock";
 import { scopeProductsQueryString } from "@/utils/catalogScope";
@@ -165,23 +164,6 @@ export default function ProductPage() {
     );
   }, [product]);
 
-  const breadcrumbItems = useMemo(() => {
-    if (!product) return [{ label: "Home", href: "/" }, { label: "Shop", href: "/shop/" }];
-    return [
-      { label: "Home", href: "/" },
-      { label: "Shop", href: "/shop/" },
-      ...(product.category?.id != null && product.category.name
-        ? [
-            {
-              label: product.category.name,
-              href: `/shop/?category=${product.category.id}`,
-            } as const,
-          ]
-        : []),
-      { label: product.name, href: "#" },
-    ];
-  }, [product]);
-
   const handleWishlistClick = () => {
     if (!user) {
       setShowSignInPopup(true);
@@ -262,7 +244,6 @@ export default function ProductPage() {
           >
             ← Back to shop
           </Link>
-          <Breadcrumb items={breadcrumbItems} />
         </div>
       </div>
 

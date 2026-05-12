@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import Breadcrumb from "@/components/Breadcrumb";
 import ProductGrid, { type ShopListingMeta } from "@/components/ProductGrid";
 import { ShopPageHeader } from "@/components/shop/ShopPageHeader";
 import { ShopCategoryChips } from "@/components/shop/ShopCategoryChips";
@@ -179,8 +178,6 @@ export default function ShopContent() {
           categoryCount={categoryCount}
           statsLoading={statsLoading}
         />
-
-        <Breadcrumb items={[{ label: "Home", href: "/" }, { label: "Shop" }]} />
 
         <div
           className="mt-4 rounded-2xl border px-4 py-5 sm:px-6 sm:py-6 shadow-sm mb-8"

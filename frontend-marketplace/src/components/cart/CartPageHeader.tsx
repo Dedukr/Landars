@@ -9,36 +9,6 @@ interface CartPageHeaderProps {
 export default function CartPageHeader({ totalItems }: CartPageHeaderProps) {
   return (
     <header className="mb-6 sm:mb-8">
-      {/* Breadcrumb */}
-      <nav
-        className="flex items-center gap-1.5 text-xs mb-4"
-        aria-label="Breadcrumb"
-      >
-        <Link
-          href="/"
-          className="transition-colors hover:opacity-80"
-          style={{ color: "var(--muted-foreground)" }}
-        >
-          Home
-        </Link>
-        <span style={{ color: "var(--muted-foreground)" }} aria-hidden="true">
-          /
-        </span>
-        <Link
-          href="/shop"
-          className="transition-colors hover:opacity-80"
-          style={{ color: "var(--muted-foreground)" }}
-        >
-          Shop
-        </Link>
-        <span style={{ color: "var(--muted-foreground)" }} aria-hidden="true">
-          /
-        </span>
-        <span className="font-medium" style={{ color: "var(--foreground)" }} aria-current="page">
-          Basket
-        </span>
-      </nav>
-
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1

@@ -2,45 +2,22 @@
 import { useState, useCallback, useMemo } from "react";
 import { useWishlist } from "@/contexts/WishlistContext";
 
-interface Product {
-  id: number;
-  name: string;
-  description?: string;
-  price: string;
-  categories?: string[];
-  image_url?: string | null;
-  original_price?: string;
-  discount_percentage?: number;
-  in_stock?: boolean;
-  stock_quantity?: number;
-}
-
-export const useWishlistItems = (products: Product[]) => {
+export const useWishlistItems = <T extends { id: number }>(products: T[]) => {
   const { removeFromWishlist, wishlist } = useWishlist();
   const [removingIds, setRemovingIds] = useState<Set<number>>(new Set());
 
-  // Optimized remove function that only updates the specific item
-  const removeItem = useCallback(
-    (productId: number) => {
-      // Add to removing set for animation
-      setRemovingIds((prev) => new Set(prev).add(productId));
+  const removeItem = useCallback((productId: number) => {
+    setRemovingIds((prev) => new Set(prev).add(productId));
+    removeFromWishlist(productId);
+    window.setTimeout(() => {
+      setRemovingIds((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(productId);
+        return newSet;
+      });
+    }, 300);
+  }, [removeFromWishlist]);
 
-      // Remove from wishlist context
-      removeFromWishlist(productId);
-
-      // Clean up removing state after animation
-      setTimeout(() => {
-        setRemovingIds((prev) => {
-          const newSet = new Set(prev);
-          newSet.delete(productId);
-          return newSet;
-        });
-      }, 300);
-    },
-    [removeFromWishlist]
-  );
-
-  // Memoized filtered products - filter out items that are being removed OR not in wishlist
   const filteredProducts = useMemo(() => {
     return products.filter(
       (product) => !removingIds.has(product.id) && wishlist.includes(product.id)
