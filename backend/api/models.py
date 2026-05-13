@@ -642,7 +642,13 @@ class Order(models.Model):
         from shipping.sendcloud_shipping import ShippingService
 
         total_weight = ShippingService.parcel_weight_kg_from_line_items(items)
-        delivery_fee = ShippingService.get_delivery_fee_by_weight(total_weight)
+        addr = self.get_delivery_address()
+        postal = (addr.postal_code or "").strip() if addr else ""
+        delivery_fee = ShippingService.get_delivery_fee_by_weight(
+            total_weight,
+            to_country="GB",
+            to_postal_code=postal or None,
+        )
         return False, delivery_fee
 
     def calculate_delivery_fee_and_home_status_from_items(self, items_data):
@@ -733,7 +739,11 @@ class Order(models.Model):
         total_weight = ShippingService.parcel_weight_kg_from_product_qty_pairs(
             normalized
         )
-        delivery_fee = ShippingService.get_delivery_fee_by_weight(total_weight)
+        delivery_fee = ShippingService.get_delivery_fee_by_weight(
+            total_weight,
+            to_country=None,
+            to_postal_code=None,
+        )
         return False, delivery_fee
 
     def update_delivery_fee_and_home_status(self):

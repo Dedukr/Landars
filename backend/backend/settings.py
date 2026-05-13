@@ -446,6 +446,16 @@ POST_SHIPMENT_USE_WEIGHT_BASED_LOGICAL = os.getenv(
 # remains authoritative when still valid).
 _post_t24 = (os.getenv("POST_SHIPMENT_TRACKED_24_MIN_KG") or "").strip()
 POST_SHIPMENT_TRACKED_24_MIN_KG = float(_post_t24) if _post_t24 else None
+# Post-delivery cart/order fee estimate when no delivery address: Sendcloud price × markup.
+POST_DELIVERY_SENDCLOUD_MARKUP_PERCENT = float(
+    os.getenv("POST_DELIVERY_SENDCLOUD_MARKUP_PERCENT", "20")
+)
+POST_DELIVERY_ESTIMATE_COUNTRY = (
+    os.getenv("POST_DELIVERY_ESTIMATE_COUNTRY", "GB").strip() or "GB"
+)
+POST_DELIVERY_ESTIMATE_POSTAL_CODE = (
+    os.getenv("POST_DELIVERY_ESTIMATE_POSTAL_CODE", "SW1A 1AA").strip() or "SW1A 1AA"
+)
 # Prefix for Sendcloud parcel ``order_number``: {prefix}-{order_id}-{random10digits}.
 SENDCLOUD_ORDER_NUMBER_PREFIX = os.getenv("SENDCLOUD_ORDER_NUMBER_PREFIX", "FP")
 # Sendcloud recommends refreshing shipping method IDs at least hourly.

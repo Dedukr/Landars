@@ -723,8 +723,12 @@ class OrderListView(APIView):
                     total_weight = ShippingService.parcel_weight_kg_from_line_items(
                         items
                     )
+                    addr = order.get_delivery_address()
+                    postal = (addr.postal_code or "").strip() if addr else ""
                     order.delivery_fee = ShippingService.get_delivery_fee_by_weight(
-                        total_weight
+                        total_weight,
+                        to_country="GB",
+                        to_postal_code=postal or None,
                     )
             else:
                 # Mixed products or no sausages, use home delivery

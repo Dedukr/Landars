@@ -308,15 +308,22 @@ class ShipmentAdmin(admin.ModelAdmin):
     )
     def map_delivery_cost_display(self, obj: Shipment) -> str:
         """
-        Royal Mail post band price from frozen parcel weight
-        (same table as checkout ``POST_DELIVERY_FEE_BANDS`` / Sendcloud helper).
+        Post delivery fee estimate: Sendcloud shipping-price (lowest quoted tier)
+        + :setting:`POST_DELIVERY_SENDCLOUD_MARKUP_PERCENT`, for frozen parcel weight.
         """
         if getattr(obj.order, "is_home_delivery", True):
             return "—"
         raw = (obj.sendcloud_inputs or {}).get("total_weight_kg")
         if raw in (None, ""):
             return "—"
-        fee = ShippingService.get_delivery_fee_by_weight(raw)
+        order = obj.order
+        addr = order.get_delivery_address()
+        postal = (addr.postal_code or "").strip() if addr else ""
+        fee = ShippingService.get_delivery_fee_by_weight(
+            raw,
+            to_country="GB",
+            to_postal_code=postal or None,
+        )
         q = fee.quantize(Decimal("0.01"))
         return f"£{q}"
 

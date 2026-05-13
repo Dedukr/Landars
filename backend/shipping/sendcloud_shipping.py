@@ -1,6 +1,9 @@
 """
 High-level Sendcloud integration: quotes, synchronous home-delivery parcels,
-delivery-fee bands, and parcel status.
+and parcel status.
+
+Post-delivery fees use Sendcloud ``/shipping-price`` for the same method rows as
+checkout quotes, then apply :setting:`POST_DELIVERY_SENDCLOUD_MARKUP_PERCENT`.
 
 Kept aligned with :class:`~shipping.sendcloud_client.SendcloudClient` and checkout UI
 (:class:`ShipmentQuoteOption` in the marketplace).
@@ -20,14 +23,6 @@ from .sendcloud_client import SendcloudAPIError, SendcloudClient
 from .services import build_sendcloud_order_reference, build_shipment_snapshot
 
 logger = logging.getLogger(__name__)
-
-# Same bands as ``POST_DELIVERY_FEE_BANDS`` in ``deliveryFeeCalculator.ts`` (GBP incl. markup).
-_POST_DELIVERY_FEE_BANDS: tuple[tuple[Decimal, Decimal], ...] = (
-    (Decimal("2"), Decimal("3.44")),
-    (Decimal("5"), Decimal("6.06")),
-    (Decimal("10"), Decimal("7.91")),
-    (Decimal("20"), Decimal("12.80")),
-)
 
 
 def _parcel_items_from_lines(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -112,6 +107,137 @@ def _allowed_service_name(name: str) -> bool:
     )
 
 
+def _decimal_currency_from_shipping_price_dict(
+    data: dict[str, Any] | None,
+) -> tuple[Decimal | None, str]:
+    """Parse Sendcloud shipping-price payload; currency defaults to GBP."""
+    if not data or not isinstance(data, dict):
+        return None, "GBP"
+    cur = (data.get("currency") or "GBP").upper()
+    for key in ("price", "shipping_price", "value", "amount"):
+        raw = data.get(key)
+        if raw is None:
+            continue
+        try:
+            d = Decimal(str(raw)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            return d, cur
+        except (InvalidOperation, TypeError, ValueError):
+            continue
+    return None, cur
+
+
+def _eligible_sendcloud_quote_methods(
+    client: SendcloudClient,
+    *,
+    sender_address_id: int,
+    to_country: str,
+    to_postal_code: str,
+    weight: float,
+) -> list[dict[str, Any]]:
+    methods = client.get_shipping_methods(
+        to_country=to_country,
+        to_postal_code=to_postal_code or None,
+        weight=weight,
+        sender_address_id=sender_address_id,
+    )
+    eligible: list[dict[str, Any]] = []
+    for m in methods:
+        if not isinstance(m, dict) or m.get("id") is None:
+            continue
+        if not _allowed_carrier(m):
+            continue
+        name = str(m.get("name") or "")
+        if not _allowed_service_name(name):
+            continue
+        if not method_row_accepts_parcel_weight(m, weight):
+            continue
+        eligible.append(m)
+    return eligible
+
+
+def _select_methods_to_quote_rows(
+    eligible: list[dict[str, Any]], weight: float
+) -> list[dict[str, Any]]:
+    """
+    Same rows as checkout ``get_shipping_options`` when weight-based collapse is on.
+    """
+    from .method_mapping import (
+        logical_shipping_option_for_billable_kg,
+        pick_sendcloud_method_row,
+    )
+
+    if not eligible:
+        return []
+
+    collapse = bool(
+        getattr(settings, "POST_SHIPMENT_USE_WEIGHT_BASED_LOGICAL", True)
+    )
+    if not collapse:
+        return list(eligible)
+
+    t24_raw = getattr(settings, "POST_SHIPMENT_TRACKED_24_MIN_KG", None)
+    w = float(weight)
+    methods_to_quote: list[dict[str, Any]]
+    if t24_raw is not None:
+        t_min = float(t24_raw)
+        if w > t_min + 1e-9:
+            logical = "uk_tracked_24"
+            try:
+                methods_to_quote = [pick_sendcloud_method_row(eligible, logical, w)]
+            except ValueError as exc:
+                logger.warning(
+                    "Weight-based Sendcloud quote pick failed (%s); "
+                    "returning all eligible methods for this address.",
+                    exc,
+                )
+                methods_to_quote = list(eligible)
+        else:
+            picked_rows: list[dict[str, Any]] = []
+            for logical_key in ("uk_tracked_48", "uk_tracked_24"):
+                try:
+                    picked_rows.append(
+                        pick_sendcloud_method_row(eligible, logical_key, w)
+                    )
+                except ValueError:
+                    continue
+            seen_ids: set[int] = set()
+            methods_to_quote = []
+            for row in picked_rows:
+                mid = row.get("id")
+                if mid is None:
+                    continue
+                try:
+                    iid = int(mid)
+                except (TypeError, ValueError):
+                    continue
+                if iid in seen_ids:
+                    continue
+                seen_ids.add(iid)
+                methods_to_quote.append(row)
+            if not methods_to_quote:
+                logger.warning(
+                    "No Tracked 48/24 quote rows for weight %s kg at threshold %s; "
+                    "returning all eligible methods.",
+                    w,
+                    t_min,
+                )
+                methods_to_quote = list(eligible)
+    else:
+        logical = logical_shipping_option_for_billable_kg(weight)
+        try:
+            methods_to_quote = [
+                pick_sendcloud_method_row(eligible, logical, weight)
+            ]
+        except ValueError as exc:
+            logger.warning(
+                "Weight-based Sendcloud quote pick failed (%s); "
+                "returning all eligible methods for this address.",
+                exc,
+            )
+            methods_to_quote = list(eligible)
+    return methods_to_quote
+
+
 def _format_option_price(
     client: SendcloudClient,
     method: dict[str, Any],
@@ -132,17 +258,12 @@ def _format_option_price(
         )
     except SendcloudAPIError:
         return "0.00", "GBP"
-    if not data or not isinstance(data, dict):
-        return "0.00", "GBP"
-    cur = (data.get("currency") or "GBP").upper()
-    for key in ("price", "shipping_price", "value", "amount"):
-        raw = data.get(key)
-        if raw is not None:
-            try:
-                return f"{Decimal(str(raw)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)}", cur
-            except (InvalidOperation, TypeError, ValueError):
-                continue
-    return "0.00", cur
+    amt, cur = _decimal_currency_from_shipping_price_dict(
+        data if isinstance(data, dict) else None
+    )
+    if amt is None:
+        return "0.00", cur
+    return f"{amt}", cur
 
 
 def _method_to_quote_option(
@@ -181,6 +302,17 @@ def _method_to_quote_option(
         to_postal_code=to_postal_code,
         weight=weight,
     )
+    try:
+        base_dec = Decimal(str(price))
+    except (InvalidOperation, TypeError, ValueError):
+        base_dec = Decimal("0")
+    pct = float(
+        getattr(settings, "POST_DELIVERY_SENDCLOUD_MARKUP_PERCENT", 20.0)
+    )
+    marked = base_dec * (
+        Decimal("1") + Decimal(str(pct)) / Decimal("100")
+    )
+    price = f"{marked.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)}"
 
     spi = method.get("service_point_input")
     service_point_input = (
@@ -208,8 +340,20 @@ class ShippingService:
     def __init__(self) -> None:
         self.client = SendcloudClient()
 
-    @staticmethod
-    def get_delivery_fee_by_weight(weight_kg: float | Decimal) -> Decimal:
+    def get_post_delivery_fee_from_sendcloud(
+        self,
+        weight_kg: float | Decimal,
+        *,
+        to_country: str | None = None,
+        to_postal_code: str | None = None,
+    ) -> Decimal:
+        """
+        Lowest Sendcloud ``/shipping-price`` among checkout-equivalent method rows,
+        multiplied by ``1 + POST_DELIVERY_SENDCLOUD_MARKUP_PERCENT / 100``.
+
+        Uses :setting:`POST_DELIVERY_ESTIMATE_*` when destination is omitted (cart estimate).
+        Returns ``0`` when over 20 kg, Sendcloud is unavailable, or no price is returned.
+        """
         try:
             w = float(weight_kg)
         except (TypeError, ValueError):
@@ -217,10 +361,103 @@ class ShippingService:
         w = max(w, 0.1)
         if w > 20:
             return Decimal("0")
-        for max_kg, price in _POST_DELIVERY_FEE_BANDS:
-            if w <= float(max_kg):
-                return price
-        return Decimal("0")
+
+        sender_raw = getattr(settings, "SENDCLOUD_SENDER_ADDRESS_ID", None)
+        if sender_raw in (None, ""):
+            logger.warning(
+                "get_post_delivery_fee_from_sendcloud: SENDCLOUD_SENDER_ADDRESS_ID unset; "
+                "returning 0"
+            )
+            return Decimal("0")
+
+        country = (to_country or getattr(
+            settings, "POST_DELIVERY_ESTIMATE_COUNTRY", "GB"
+        )).strip().upper() or "GB"
+        postal = (
+            (to_postal_code or getattr(
+                settings, "POST_DELIVERY_ESTIMATE_POSTAL_CODE", "SW1A 1AA"
+            )).strip()
+        )
+
+        pct = float(
+            getattr(settings, "POST_DELIVERY_SENDCLOUD_MARKUP_PERCENT", 20.0)
+        )
+        mult = Decimal("1") + (
+            Decimal(str(pct)) / Decimal("100")
+        )
+
+        try:
+            eligible = _eligible_sendcloud_quote_methods(
+                self.client,
+                sender_address_id=int(sender_raw),
+                to_country=country,
+                to_postal_code=postal,
+                weight=w,
+            )
+            rows = _select_methods_to_quote_rows(eligible, w)
+            if not rows:
+                return Decimal("0")
+
+            base_prices: list[Decimal] = []
+            for row in rows:
+                mid = row.get("id")
+                if mid is None:
+                    continue
+                try:
+                    data = self.client.get_shipping_price(
+                        int(mid),
+                        country,
+                        postal or "",
+                        w,
+                    )
+                except SendcloudAPIError as e:
+                    logger.debug(
+                        "get_post_delivery_fee_from_sendcloud: price skip method %s: %s",
+                        mid,
+                        e,
+                    )
+                    continue
+                if isinstance(data, list) and data and isinstance(data[0], dict):
+                    data = data[0]
+                amt, cur = _decimal_currency_from_shipping_price_dict(
+                    data if isinstance(data, dict) else None
+                )
+                if amt is None:
+                    continue
+                if cur != "GBP":
+                    logger.warning(
+                        "Ignoring non-GBP shipping price %s %s for method %s",
+                        amt,
+                        cur,
+                        mid,
+                    )
+                    continue
+                base_prices.append(amt)
+
+            if not base_prices:
+                return Decimal("0")
+            out = min(base_prices) * mult
+            return out.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        except SendcloudAPIError as e:
+            logger.warning(
+                "get_post_delivery_fee_from_sendcloud failed: %s",
+                e,
+            )
+            return Decimal("0")
+
+    @staticmethod
+    def get_delivery_fee_by_weight(
+        weight_kg: float | Decimal,
+        *,
+        to_country: str | None = None,
+        to_postal_code: str | None = None,
+    ) -> Decimal:
+        """Post-delivery fee: Sendcloud base + configured markup (see :meth:`get_post_delivery_fee_from_sendcloud`)."""
+        return ShippingService().get_post_delivery_fee_from_sendcloud(
+            weight_kg,
+            to_country=to_country,
+            to_postal_code=to_postal_code,
+        )
 
     @staticmethod
     def parcel_weight_kg_from_line_items(items: Any) -> float:
@@ -274,24 +511,13 @@ class ShippingService:
         postal = str(address.get("postal_code") or "").strip()
         weight = _parcel_weight_kg_from_api_items(list(items or []))
 
-        methods = self.client.get_shipping_methods(
-            to_country=country,
-            to_postal_code=postal or None,
-            weight=weight,
+        eligible = _eligible_sendcloud_quote_methods(
+            self.client,
             sender_address_id=sender_address_id,
+            to_country=country,
+            to_postal_code=postal,
+            weight=weight,
         )
-        eligible: list[dict[str, Any]] = []
-        for m in methods:
-            if not isinstance(m, dict) or m.get("id") is None:
-                continue
-            if not _allowed_carrier(m):
-                continue
-            name = str(m.get("name") or "")
-            if not _allowed_service_name(name):
-                continue
-            if not method_row_accepts_parcel_weight(m, weight):
-                continue
-            eligible.append(m)
 
         collapse = weight_based_single_method
         if collapse is None:
@@ -299,76 +525,11 @@ class ShippingService:
                 getattr(settings, "POST_SHIPMENT_USE_WEIGHT_BASED_LOGICAL", True)
             )
 
-        methods_to_quote = eligible
-        if collapse and eligible:
-            from .method_mapping import (
-                logical_shipping_option_for_billable_kg,
-                pick_sendcloud_method_row,
-            )
-
-            t24_raw = getattr(settings, "POST_SHIPMENT_TRACKED_24_MIN_KG", None)
-            if t24_raw is not None:
-                t_min = float(t24_raw)
-                w = float(weight)
-                if w > t_min + 1e-9:
-                    logical = "uk_tracked_24"
-                    try:
-                        methods_to_quote = [
-                            pick_sendcloud_method_row(eligible, logical, w)
-                        ]
-                    except ValueError as exc:
-                        logger.warning(
-                            "Weight-based Sendcloud quote pick failed (%s); "
-                            "returning all eligible methods for this address.",
-                            exc,
-                        )
-                        methods_to_quote = eligible
-                else:
-                    picked_rows: list[dict[str, Any]] = []
-                    for logical_key in ("uk_tracked_48", "uk_tracked_24"):
-                        try:
-                            picked_rows.append(
-                                pick_sendcloud_method_row(
-                                    eligible, logical_key, w
-                                )
-                            )
-                        except ValueError:
-                            continue
-                    seen_ids: set[int] = set()
-                    methods_to_quote = []
-                    for row in picked_rows:
-                        mid = row.get("id")
-                        if mid is None:
-                            continue
-                        try:
-                            iid = int(mid)
-                        except (TypeError, ValueError):
-                            continue
-                        if iid in seen_ids:
-                            continue
-                        seen_ids.add(iid)
-                        methods_to_quote.append(row)
-                    if not methods_to_quote:
-                        logger.warning(
-                            "No Tracked 48/24 quote rows for weight %s kg at threshold %s; "
-                            "returning all eligible methods.",
-                            w,
-                            t_min,
-                        )
-                        methods_to_quote = eligible
-            else:
-                logical = logical_shipping_option_for_billable_kg(weight)
-                try:
-                    methods_to_quote = [
-                        pick_sendcloud_method_row(eligible, logical, weight)
-                    ]
-                except ValueError as exc:
-                    logger.warning(
-                        "Weight-based Sendcloud quote pick failed (%s); "
-                        "returning all eligible methods for this address.",
-                        exc,
-                    )
-                    methods_to_quote = eligible
+        methods_to_quote = (
+            _select_methods_to_quote_rows(eligible, weight)
+            if collapse and eligible
+            else eligible
+        )
 
         out: list[dict[str, Any]] = []
         for m in methods_to_quote:
