@@ -14,10 +14,10 @@ from django.utils import timezone
 
 
 def _post_suitable_category_pk() -> int:
-    """Royal Mail / post-suitable scope: same category as ``SAUSAGE_CATEGORY_ID``."""
+    """Royal Mail post-suitable scope: ``POST_SUITABLE_CATEGORY_ID`` in settings."""
     from django.conf import settings
 
-    return int(getattr(settings, "SAUSAGE_CATEGORY_ID", 16))
+    return int(getattr(settings, "POST_SUITABLE_CATEGORY_ID", 16))
 
 
 # ProductCategory model

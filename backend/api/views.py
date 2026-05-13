@@ -8,7 +8,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import F, Q
+from django.db.models import F
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.template.loader import render_to_string
@@ -57,9 +57,7 @@ from .serializers import (
 logger = logging.getLogger(__name__)
 from .validators import validate_image_file_extension
 
-# Temporary feature flag to show only a single category branch in prod.
-SAUSAGE_ONLY_MODE = getattr(settings, "SAUSAGE_ONLY_MODE", False)
-SAUSAGE_CATEGORY_ID = int(getattr(settings, "SAUSAGE_CATEGORY_ID", 16))
+POST_SUITABLE_CATEGORY_ID = int(getattr(settings, "POST_SUITABLE_CATEGORY_ID", 16))
 
 
 # Custom throttle for categories - more permissive since it's read-only
@@ -95,7 +93,7 @@ class ProductList(APIView):
     def get(self, request):
         """Retrieve products with filtering, sorting, and pagination."""
         # Cache key version suffix bumps stale entries when search logic changes
-        cache_key = f"products_v4_{hash(str(request.query_params))}_{'saus_only' if SAUSAGE_ONLY_MODE else 'all'}"
+        cache_key = f"products_v5_{hash(str(request.query_params))}"
 
         # Try to get cached response
         cached_response = cache.get(cache_key)
@@ -107,12 +105,6 @@ class ProductList(APIView):
             Product.objects.prefetch_related("categories__parent", "images")
             .all()
         )
-
-        # Temporary restriction: only show products in scoped category when flag is on
-        if SAUSAGE_ONLY_MODE:
-            products = products.filter(
-                categories__id=SAUSAGE_CATEGORY_ID
-            ).distinct()
 
         # Filtering
         categories = request.query_params.get("categories")
@@ -232,14 +224,6 @@ class ProductDetail(APIView):
         """Retrieve a single product by ID with all images."""
         product = self.get_object(product_id)
         if product:
-            # Temporary restriction: hide products outside sausage category when flag is on
-            if (
-                SAUSAGE_ONLY_MODE
-                and not product.categories.filter(id=SAUSAGE_CATEGORY_ID).exists()
-            ):
-                return Response(
-                    {"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND
-                )
             serializer = ProductSerializer(product)
             return Response(serializer.data)
         return Response(
@@ -338,24 +322,12 @@ class CategoryList(APIView):
 
     def get(self, request):
         """Retrieve all categories."""
-        # Use cache to reduce database load; include flag in key
-        cache_key = f"categories_list_v2_{'saus_only' if SAUSAGE_ONLY_MODE else 'all'}"
+        cache_key = "categories_list_v3"
         cached_response = cache.get(cache_key)
         if cached_response:
             return Response(cached_response)
 
         categories = ProductCategory.objects.all()
-
-        # Temporary restriction: only expose scoped category and its descendants when flag is on
-        if SAUSAGE_ONLY_MODE:
-            if ProductCategory.objects.filter(id=SAUSAGE_CATEGORY_ID).exists():
-                categories = categories.filter(
-                    Q(id=SAUSAGE_CATEGORY_ID)
-                    | Q(parent_id=SAUSAGE_CATEGORY_ID)
-                    | Q(parent__parent_id=SAUSAGE_CATEGORY_ID)
-                )
-            else:
-                categories = categories.none()
 
         serializer = CategorySerializer(categories, many=True)
         response_data = serializer.data
@@ -697,7 +669,7 @@ class OrderListView(APIView):
             # Post-suitable when every line item includes the scoped category
             all_products_are_sausages = True
             for item in items:
-                if not item.product.categories.filter(id=SAUSAGE_CATEGORY_ID).exists():
+                if not item.product.categories.filter(id=POST_SUITABLE_CATEGORY_ID).exists():
                     all_products_are_sausages = False
                     break
 
@@ -1143,7 +1115,7 @@ class CartView(APIView):
         # Post-suitable when every line item includes the scoped category
         all_products_are_sausages = True
         for item in items:
-            if not item.product.categories.filter(id=SAUSAGE_CATEGORY_ID).exists():
+            if not item.product.categories.filter(id=POST_SUITABLE_CATEGORY_ID).exists():
                 all_products_are_sausages = False
                 break
 

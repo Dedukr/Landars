@@ -307,9 +307,8 @@ STATICFILES_STORAGE = "django.contrib.staticfiles.storage.ManifestStaticFilesSto
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
-SAUSAGE_ONLY_MODE = True
-# Scoped catalogue + post-suitable delivery: anchor category by PK (not name).
-SAUSAGE_CATEGORY_ID = int(os.getenv("SAUSAGE_CATEGORY_ID", "16"))
+# Cart/order delivery: products in this category can qualify for post (Royal Mail) pricing.
+POST_SUITABLE_CATEGORY_ID = int(os.getenv("POST_SUITABLE_CATEGORY_ID", "16"))
 
 # AWS Configuration
 
