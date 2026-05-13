@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { getAuthUrl } from "@/utils/authHelpers";
@@ -312,6 +312,20 @@ export default function CheckoutPage() {
     ) || 0;
   const isOverweightSausageOrder = !cartIsHomeDelivery && cartTotalWeight > 20;
 
+  /** Post delivery: explicit selection, or the single weight-assigned quote from the API. */
+  const resolvedPostShipmentQuote = useMemo((): ShipmentQuoteOption | null => {
+    if (cartIsHomeDelivery) {
+      return null;
+    }
+    if (selectedShipmentQuote) {
+      return selectedShipmentQuote;
+    }
+    if (shipmentQuoteOptions.length === 1) {
+      return shipmentQuoteOptions[0];
+    }
+    return null;
+  }, [cartIsHomeDelivery, selectedShipmentQuote, shipmentQuoteOptions]);
+
   // Check if address is filled (required for delivery fee calculation)
   const isAddressFilled =
     shippingForm.postal_code.trim() && shippingForm.address_line.trim();
@@ -331,14 +345,9 @@ export default function CheckoutPage() {
       return 0;
     }
 
-    // For post delivery, use price from selected shipping option
-    if (selectedShipmentQuote) {
-      return parseFloat(selectedShipmentQuote.price);
-    }
-
-    // If no option selected yet, use first available option's price (if available)
-    if (shipmentQuoteOptions.length > 0) {
-      return parseFloat(shipmentQuoteOptions[0].price);
+    // For post delivery, use weight-assigned or customer-selected courier quote
+    if (resolvedPostShipmentQuote) {
+      return parseFloat(resolvedPostShipmentQuote.price);
     }
 
     // If address is filled but no shipping options yet, don't use cart fee
@@ -363,14 +372,9 @@ export default function CheckoutPage() {
       return "Standard home delivery fee";
     }
     // Post delivery - show API price
-    if (selectedShipmentQuote) {
+    if (resolvedPostShipmentQuote) {
       return `Royal Mail shipping: £${parseFloat(
-        selectedShipmentQuote.price
-      ).toFixed(2)}`;
-    }
-    if (shipmentQuoteOptions.length > 0) {
-      return `Royal Mail shipping: £${parseFloat(
-        shipmentQuoteOptions[0].price
+        resolvedPostShipmentQuote.price
       ).toFixed(2)}`;
     }
     return "Calculating delivery fee...";
@@ -567,6 +571,27 @@ export default function CheckoutPage() {
     [shipmentQuoteOptions, cartIsHomeDelivery, user, fetchCartData]
   );
 
+  // Sync cart delivery_fee when the backend returns exactly one courier option
+  useEffect(() => {
+    if (cartIsHomeDelivery || !user) {
+      return;
+    }
+    if (shipmentQuoteOptions.length !== 1) {
+      return;
+    }
+    const only = shipmentQuoteOptions[0];
+    if (selectedShipmentQuote?.id === only.id) {
+      return;
+    }
+    void handleSelectShipmentQuote(only.id);
+  }, [
+    cartIsHomeDelivery,
+    user,
+    shipmentQuoteOptions,
+    selectedShipmentQuote?.id,
+    handleSelectShipmentQuote,
+  ]);
+
   // Create payment intent when component mounts - using cart total
   // const createPaymentIntent = useCallback(async () => {
   //   // Use displayTotal for payment intent (includes shipping price if selected)
@@ -636,9 +661,23 @@ export default function CheckoutPage() {
       newErrors.postal_code = "Please enter a valid UK postal code";
     }
 
-    // Validate shipping option is selected
-    if (!selectedShipmentQuote) {
-      newErrors.shipping = "Please select a shipping option";
+    // Post delivery: quotes must load; then either one auto-assigned tier or explicit pick
+    const addressCompleteForQuotes =
+      shippingForm.address_line.trim() &&
+      shippingForm.city.trim() &&
+      shippingForm.postal_code.trim();
+
+    if (!cartIsHomeDelivery && !isOverweightSausageOrder && addressCompleteForQuotes) {
+      if (shipmentQuoteLoading) {
+        newErrors.shipping = "Please wait for delivery quotes to load.";
+      } else if (shipmentQuoteError) {
+        newErrors.shipping = shipmentQuoteError;
+      } else if (shipmentQuoteOptions.length === 0) {
+        newErrors.shipping =
+          "No courier delivery is available for this address. Check the postcode or contact us.";
+      } else if (shipmentQuoteOptions.length > 1 && !selectedShipmentQuote) {
+        newErrors.shipping = "Please select a shipping option";
+      }
     }
 
     setErrors(newErrors);
@@ -778,8 +817,9 @@ export default function CheckoutPage() {
       } = {
         notes: cartData?.notes || shippingForm.notes,
         discount: cartData?.discount || "0",
-        delivery_fee:
-          selectedShipmentQuote?.price || cartData?.delivery_fee || "0",
+        delivery_fee: cartIsHomeDelivery
+          ? cartData?.delivery_fee || "0"
+          : resolvedPostShipmentQuote?.price || cartData?.delivery_fee || "0",
         is_home_delivery: cartData?.is_home_delivery ?? true,
         address: {
           address_line: shippingForm.address_line,
@@ -790,12 +830,12 @@ export default function CheckoutPage() {
         },
       };
 
-      // If shipping option is selected, add shipping metadata
-      if (selectedShipmentQuote?.price) {
-        orderData.shipping_method_id = selectedShipmentQuote.id;
-        orderData.shipping_carrier = selectedShipmentQuote.carrier;
-        orderData.shipping_service_name = selectedShipmentQuote.name;
-        orderData.shipping_cost = selectedShipmentQuote.price;
+      // Courier metadata (post / home-delivery parcel): use resolved quote when only one tier
+      if (!cartIsHomeDelivery && resolvedPostShipmentQuote?.price) {
+        orderData.shipping_method_id = resolvedPostShipmentQuote.id;
+        orderData.shipping_carrier = resolvedPostShipmentQuote.carrier;
+        orderData.shipping_service_name = resolvedPostShipmentQuote.name;
+        orderData.shipping_cost = resolvedPostShipmentQuote.price;
       }
 
       const order = await httpClient.post<{ id: number }>(
@@ -1025,10 +1065,11 @@ export default function CheckoutPage() {
               {/* Courier quotes (Django shipment app) */}
               <ShipmentQuoteOptions
                 options={shipmentQuoteOptions}
-                selectedOptionId={selectedShipmentQuote?.id || null}
+                selectedOptionId={resolvedPostShipmentQuote?.id ?? null}
                 onSelectOption={handleSelectShipmentQuote}
                 loading={shipmentQuoteLoading}
                 error={shipmentQuoteError}
+                assignmentMode={shipmentQuoteOptions.length === 1}
               />
 
               {/* Validation Error for Shipping */}

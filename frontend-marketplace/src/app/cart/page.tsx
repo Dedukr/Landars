@@ -10,7 +10,7 @@ import { useDeliveryFee } from "@/hooks/useDeliveryFee";
 import { useCartCalculations } from "@/hooks/useCartCalculations";
 import { httpClient } from "@/utils/httpClient";
 
-import CartPageHeader from "@/components/cart/CartPageHeader";
+import CartHero from "@/components/cart/CartHero";
 import CartItemList from "@/components/cart/CartItemList";
 import CartSummary from "@/components/cart/CartSummary";
 import EmptyCartState from "@/components/cart/EmptyCartState";
@@ -92,7 +92,7 @@ export default function CartPage() {
     return () => clearTimeout(timeoutId);
   }, [cartKey, user, fetchCartData, cartIsLoading]);
 
-  const { subtotal, totalItems, cartProducts } = useCartCalculations(
+  const { subtotal, cartProducts } = useCartCalculations(
     filteredProducts,
     cart
   );
@@ -132,8 +132,24 @@ export default function CartPage() {
     return products.find((p) => p && p.id === productId);
   }
 
-  const isLoading = productsLoading && cart.length === 0;
-  const isEmpty = !isLoading && cart.length === 0;
+  const visibleQuantitySum = useMemo(
+    () =>
+      filteredProducts.reduce((sum, p) => {
+        const row = cart.find((c) => c.productId === p.id);
+        return sum + (row?.quantity ?? 0);
+      }, 0),
+    [filteredProducts, cart]
+  );
+
+  const visibleLineCount = filteredProducts.length;
+
+  const cartQuantityTotal = useMemo(
+    () => cart.reduce((sum, c) => sum + c.quantity, 0),
+    [cart]
+  );
+
+  const isInitialLoading = productsLoading && cart.length === 0;
+  const isEmpty = !productsLoading && cart.length === 0;
 
   return (
     <div className="min-h-screen" style={{ background: "var(--background)" }}>
@@ -145,16 +161,25 @@ export default function CartPage() {
         />
 
         {/* Page header */}
-        <CartPageHeader totalItems={totalItems} />
+        <CartHero
+          itemCount={visibleQuantitySum}
+          lineCount={visibleLineCount}
+          pendingQuantityTotal={
+            cartQuantityTotal > visibleQuantitySum ? cartQuantityTotal : undefined
+          }
+          isLoading={productsLoading}
+          isInitialLoading={isInitialLoading}
+          isEmpty={isEmpty}
+        />
 
         {/* Loading state */}
-        {isLoading && <CartLoadingState />}
+        {isInitialLoading && <CartLoadingState />}
 
         {/* Empty state */}
         {isEmpty && <EmptyCartState />}
 
         {/* Main cart content */}
-        {!isLoading && !isEmpty && (
+        {!isInitialLoading && !isEmpty && (
           <div className="lg:grid lg:grid-cols-12 lg:gap-x-8 lg:items-start">
             {/* Left column: items + saved + recommendations */}
             <div className="lg:col-span-8 space-y-4">
@@ -193,7 +218,7 @@ export default function CartPage() {
                 subtotal={subtotal}
                 discount={discount}
                 total={total}
-                totalItems={totalItems}
+                totalItems={visibleQuantitySum}
                 deliveryCalculation={deliveryCalculation}
                 onClearCart={clearCart}
               />
@@ -203,8 +228,8 @@ export default function CartPage() {
       </div>
 
       {/* Sticky mobile action bar (hidden sm+) */}
-      {!isLoading && !isEmpty && (
-        <MobileCartActionBar total={total} totalItems={totalItems} />
+      {!isInitialLoading && !isEmpty && (
+        <MobileCartActionBar total={total} totalItems={visibleQuantitySum} />
       )}
     </div>
   );

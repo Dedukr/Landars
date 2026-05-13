@@ -261,6 +261,7 @@ class ShippingService:
         *,
         address: dict[str, Any],
         items: list[Any],
+        weight_based_single_method: bool | None = None,
     ) -> list[dict[str, Any]]:
         sender_raw = getattr(settings, "SENDCLOUD_SENDER_ADDRESS_ID", None)
         if sender_raw in (None, ""):
@@ -279,7 +280,7 @@ class ShippingService:
             weight=weight,
             sender_address_id=sender_address_id,
         )
-        out: list[dict[str, Any]] = []
+        eligible: list[dict[str, Any]] = []
         for m in methods:
             if not isinstance(m, dict) or m.get("id") is None:
                 continue
@@ -290,6 +291,87 @@ class ShippingService:
                 continue
             if not method_row_accepts_parcel_weight(m, weight):
                 continue
+            eligible.append(m)
+
+        collapse = weight_based_single_method
+        if collapse is None:
+            collapse = bool(
+                getattr(settings, "POST_SHIPMENT_USE_WEIGHT_BASED_LOGICAL", True)
+            )
+
+        methods_to_quote = eligible
+        if collapse and eligible:
+            from .method_mapping import (
+                logical_shipping_option_for_billable_kg,
+                pick_sendcloud_method_row,
+            )
+
+            t24_raw = getattr(settings, "POST_SHIPMENT_TRACKED_24_MIN_KG", None)
+            if t24_raw is not None:
+                t_min = float(t24_raw)
+                w = float(weight)
+                if w > t_min + 1e-9:
+                    logical = "uk_tracked_24"
+                    try:
+                        methods_to_quote = [
+                            pick_sendcloud_method_row(eligible, logical, w)
+                        ]
+                    except ValueError as exc:
+                        logger.warning(
+                            "Weight-based Sendcloud quote pick failed (%s); "
+                            "returning all eligible methods for this address.",
+                            exc,
+                        )
+                        methods_to_quote = eligible
+                else:
+                    picked_rows: list[dict[str, Any]] = []
+                    for logical_key in ("uk_tracked_48", "uk_tracked_24"):
+                        try:
+                            picked_rows.append(
+                                pick_sendcloud_method_row(
+                                    eligible, logical_key, w
+                                )
+                            )
+                        except ValueError:
+                            continue
+                    seen_ids: set[int] = set()
+                    methods_to_quote = []
+                    for row in picked_rows:
+                        mid = row.get("id")
+                        if mid is None:
+                            continue
+                        try:
+                            iid = int(mid)
+                        except (TypeError, ValueError):
+                            continue
+                        if iid in seen_ids:
+                            continue
+                        seen_ids.add(iid)
+                        methods_to_quote.append(row)
+                    if not methods_to_quote:
+                        logger.warning(
+                            "No Tracked 48/24 quote rows for weight %s kg at threshold %s; "
+                            "returning all eligible methods.",
+                            w,
+                            t_min,
+                        )
+                        methods_to_quote = eligible
+            else:
+                logical = logical_shipping_option_for_billable_kg(weight)
+                try:
+                    methods_to_quote = [
+                        pick_sendcloud_method_row(eligible, logical, weight)
+                    ]
+                except ValueError as exc:
+                    logger.warning(
+                        "Weight-based Sendcloud quote pick failed (%s); "
+                        "returning all eligible methods for this address.",
+                        exc,
+                    )
+                    methods_to_quote = eligible
+
+        out: list[dict[str, Any]] = []
+        for m in methods_to_quote:
             out.append(
                 _method_to_quote_option(
                     self.client,

@@ -373,6 +373,7 @@ class SendcloudClient:
         weight: float,
         from_country: Optional[str] = None,
         from_postal_code: Optional[str] = None,
+        weight_unit: str = "kilogram",
     ) -> Optional[Dict[str, Any]]:
         """
         Get shipping price for a specific method and destination.
@@ -381,18 +382,20 @@ class SendcloudClient:
             shipping_method_id: Sendcloud shipping method ID
             to_country: Destination country code (ISO 3166-1 alpha-2)
             to_postal_code: Destination postal code
-            weight: Parcel weight in kg
+            weight: Parcel weight (interpreted per ``weight_unit``)
             from_country: Sender country code
             from_postal_code: Sender postal code
+            weight_unit: Sendcloud requires this on GET /shipping-price (e.g. ``kilogram``).
 
         Returns:
             Price information dictionary or None if not available
         """
         params = {
-            "shipping_method": shipping_method_id,
+            "shipping_method_id": shipping_method_id,
             "to_country": to_country.upper(),
             "to_postal_code": to_postal_code,
             "weight": weight,
+            "weight_unit": weight_unit,
         }
 
         if from_country or hasattr(settings, "SENDCLOUD_SENDER_COUNTRY"):
@@ -408,7 +411,8 @@ class SendcloudClient:
         try:
             logger.debug(
                 f"Requesting shipping price from Sendcloud: method_id={shipping_method_id}, "
-                f"to_country={to_country}, to_postal_code={to_postal_code}, weight={weight}kg"
+                f"to_country={to_country}, to_postal_code={to_postal_code}, "
+                f"weight={weight} {weight_unit}"
             )
             response = self._make_request("GET", "/shipping-price", params=params)
 

@@ -5,6 +5,7 @@
 import React, { useState } from "react";
 import Image from "next/image";
 import type { ShipmentQuoteOption } from "@/hooks/useShipmentQuoteOptions";
+import { parseShipmentMethodName } from "@/lib/shipmentMethodDisplay";
 import LoadingSpinner from "./LoadingSpinner";
 
 interface ShipmentQuoteOptionsProps {
@@ -13,6 +14,8 @@ interface ShipmentQuoteOptionsProps {
   onSelectOption: (optionId: number) => void;
   loading?: boolean;
   error?: string | null;
+  /** Single option from API (weight-based); hide picker affordances */
+  assignmentMode?: boolean;
 }
 
 function LogoImage({
@@ -60,6 +63,7 @@ export default function ShipmentQuoteOptions({
   onSelectOption,
   loading = false,
   error = null,
+  assignmentMode = false,
 }: ShipmentQuoteOptionsProps) {
   if (loading) {
     return (
@@ -182,16 +186,6 @@ export default function ShipmentQuoteOptions({
     );
   };
 
-  const extractServiceDetails = (serviceName: string) => {
-    const details = serviceName
-      .replace(/Royal Mail/gi, "")
-      .replace(/Tracked 48/gi, "")
-      .replace(/Tracked 24/gi, "")
-      .replace(/^[\s-]+|[\s-]+$/g, "");
-
-    return details || serviceName;
-  };
-
   return (
     <div
       className="rounded-lg shadow-sm p-6"
@@ -204,7 +198,7 @@ export default function ShipmentQuoteOptions({
         className="text-xl font-semibold mb-6"
         style={{ color: "var(--foreground)" }}
       >
-        Shipping Options
+        {assignmentMode ? "Delivery method" : "Shipping Options"}
       </h2>
 
       <div className="space-y-3">
@@ -215,14 +209,23 @@ export default function ShipmentQuoteOptions({
             option.max_delivery_days
           );
           const carrierDisplayName = getCarrierDisplayName(option.carrier);
-          const serviceDetails = extractServiceDetails(option.name);
+          const { headline: methodHeadline, subtitle: methodSubtitle } =
+            parseShipmentMethodName(option.name);
           const logoUrl = option.logo_url || "";
 
           return (
             <div
               key={option.id}
-              onClick={() => onSelectOption(option.id)}
-              className="cursor-pointer rounded-lg p-4 transition-all"
+              onClick={
+                assignmentMode
+                  ? undefined
+                  : () => onSelectOption(option.id)
+              }
+              className={
+                assignmentMode
+                  ? "rounded-lg p-4"
+                  : "cursor-pointer rounded-lg p-4 transition-all"
+              }
               style={{
                 border: isSelected
                   ? "2px solid var(--primary)"
@@ -234,23 +237,25 @@ export default function ShipmentQuoteOptions({
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-start space-x-4 flex-1">
-                  <div className="flex items-center h-6 mt-1">
-                    <div
-                      className="w-5 h-5 rounded-full border-2 flex items-center justify-center"
-                      style={{
-                        borderColor: isSelected
-                          ? "var(--primary)"
-                          : "var(--sidebar-border)",
-                      }}
-                    >
-                      {isSelected && (
-                        <div
-                          className="w-3 h-3 rounded-full"
-                          style={{ background: "var(--primary)" }}
-                        />
-                      )}
+                  {!assignmentMode && (
+                    <div className="flex items-center h-6 mt-1">
+                      <div
+                        className="w-5 h-5 rounded-full border-2 flex items-center justify-center"
+                        style={{
+                          borderColor: isSelected
+                            ? "var(--primary)"
+                            : "var(--sidebar-border)",
+                        }}
+                      >
+                        {isSelected && (
+                          <div
+                            className="w-3 h-3 rounded-full"
+                            style={{ background: "var(--primary)" }}
+                          />
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   <div className="flex-shrink-0">
                     {logoUrl ? (
@@ -281,15 +286,38 @@ export default function ShipmentQuoteOptions({
                     >
                       {carrierDisplayName}
                     </h3>
-                    <p
-                      className="text-sm mt-0.5"
-                      style={{
-                        color: "var(--foreground)",
-                        opacity: 0.8,
-                      }}
-                    >
-                      {serviceDetails}
-                    </p>
+                    {methodHeadline && (
+                      <p
+                        className="text-sm font-semibold mt-1"
+                        style={{
+                          color: "var(--foreground)",
+                          opacity: 0.95,
+                        }}
+                      >
+                        {methodHeadline}
+                      </p>
+                    )}
+                    {methodSubtitle ? (
+                      <p
+                        className="text-sm mt-0.5"
+                        style={{
+                          color: "var(--foreground)",
+                          opacity: 0.75,
+                        }}
+                      >
+                        {methodSubtitle}
+                      </p>
+                    ) : !methodHeadline ? (
+                      <p
+                        className="text-sm mt-0.5"
+                        style={{
+                          color: "var(--foreground)",
+                          opacity: 0.8,
+                        }}
+                      >
+                        {option.name}
+                      </p>
+                    ) : null}
 
                     {deliveryTime && (
                       <p
@@ -340,7 +368,9 @@ export default function ShipmentQuoteOptions({
           }}
         >
           <p className="text-sm" style={{ color: "var(--success-text)" }}>
-            ✓ Shipping method selected
+            {assignmentMode
+              ? "✓ Delivery service assigned for your parcel weight"
+              : "✓ Shipping method selected"}
           </p>
         </div>
       )}

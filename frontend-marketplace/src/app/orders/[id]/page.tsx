@@ -4,6 +4,7 @@ import { useParams, usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { getAuthUrl } from "@/utils/authHelpers";
 import { httpClient } from "@/utils/httpClient";
+import { parseShipmentMethodName } from "@/lib/shipmentMethodDisplay";
 import { Button } from "@/components/ui/Button";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import OrderReviewItem from "@/components/OrderReviewItem";
@@ -99,6 +100,46 @@ const statusConfig = {
     progress: 0,
   },
 };
+
+function OrderShipmentMethodLines({
+  carrier,
+  serviceName,
+}: {
+  carrier?: string;
+  serviceName?: string;
+}) {
+  if (!carrier?.trim() && !serviceName?.trim()) {
+    return null;
+  }
+  const { headline, subtitle } = serviceName?.trim()
+    ? parseShipmentMethodName(serviceName)
+    : { headline: "", subtitle: "" };
+
+  return (
+    <div
+      className="text-sm mt-1 space-y-1"
+      style={{ color: "var(--muted-foreground)" }}
+    >
+      {carrier?.trim() ? (
+        <p style={{ color: "var(--foreground)" }}>{carrier}</p>
+      ) : null}
+      {serviceName?.trim() ? (
+        <>
+          {headline ? (
+            <p className="font-semibold" style={{ color: "var(--foreground)" }}>
+              {headline}
+            </p>
+          ) : null}
+          {subtitle ? (
+            <p>{subtitle}</p>
+          ) : !headline ? (
+            <p>{serviceName}</p>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
+}
 
 export default function OrderDetailPage() {
   const params = useParams();
@@ -535,15 +576,11 @@ export default function OrderDetailPage() {
                     </p>
                     {!order.is_home_delivery &&
                       (order.shipping_carrier || order.shipping_service_name) && (
-                      <p
-                        className="text-sm mt-1"
-                        style={{ color: "var(--muted-foreground)" }}
-                      >
-                        {order.shipping_carrier && order.shipping_service_name
-                          ? `${order.shipping_carrier} - ${order.shipping_service_name}`
-                          : order.shipping_carrier || order.shipping_service_name}
-                      </p>
-                    )}
+                        <OrderShipmentMethodLines
+                          carrier={order.shipping_carrier}
+                          serviceName={order.shipping_service_name}
+                        />
+                      )}
                   </div>
 
                   {order.notes && (
@@ -626,15 +663,10 @@ export default function OrderDetailPage() {
                           Shipping Method
                         </p>
                       </div>
-                      <p
-                        className="text-sm"
-                        style={{ color: "var(--muted-foreground)" }}
-                      >
-                        {order.shipping_carrier && order.shipping_service_name
-                          ? `${order.shipping_carrier} - ${order.shipping_service_name}`
-                          : order.shipping_carrier ||
-                            order.shipping_service_name}
-                      </p>
+                      <OrderShipmentMethodLines
+                        carrier={order.shipping_carrier}
+                        serviceName={order.shipping_service_name}
+                      />
                     </div>
                   )}
 

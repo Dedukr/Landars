@@ -1,43 +1,48 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Heart, ShoppingBag } from "lucide-react";
+import { ArrowLeft, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 
-export interface WishlistHeroProps {
+export interface CartHeroProps {
   /**
-   * Count of products **shown in the list below** (must match the grid).
-   * Use `filteredAndSortedProducts.length` on the main wishlist view.
+   * Sum of line quantities **for products currently shown** in the basket list
+   * (must match `CartItemList` rows × quantities).
    */
   itemCount: number;
+  /** Distinct product rows currently listed. */
+  lineCount?: number;
   /**
-   * Total product ids on the wishlist (from context). Optional context for copy when
-   * `itemCount` is lower (filters) or zero while saves still exist (e.g. load error).
+   * Full cart quantity total when higher than `itemCount` (e.g. product rows still loading).
+   * Optional; used only for desktop helper copy.
    */
-  savedTotalCount?: number;
-  /** While product rows are loading — count badge is hidden to avoid mismatch. */
+  pendingQuantityTotal?: number;
+  /** Product catalogue / basket merge still in flight. */
   isLoading?: boolean;
-  /** Product detail fetch failed for all rows — badge hidden; `savedTotalCount` can inform copy. */
-  hasError?: boolean;
+  /** Full-page cart skeleton: loading with no lines yet. */
+  isInitialLoading?: boolean;
+  /** Basket has no lines (after load). */
+  isEmpty?: boolean;
   className?: string;
 }
 
 /**
- * Premium marketplace-style wishlist header (mobile-first).
- * Uses CSS theme variables only — no hardcoded palette.
+ * Premium marketplace-style basket header (mobile-first), aligned with `WishlistHero`.
  */
-export default function WishlistHero({
+export default function CartHero({
   itemCount,
-  savedTotalCount,
+  lineCount = 0,
+  pendingQuantityTotal,
   isLoading = false,
-  hasError = false,
+  isInitialLoading = false,
+  isEmpty = false,
   className,
-}: WishlistHeroProps) {
-  const showCountBadge = !isLoading && itemCount > 0;
+}: CartHeroProps) {
+  const showCountBadge = !isLoading && !isEmpty && itemCount > 0;
   const countLabel = itemCount === 1 ? "1 item" : `${itemCount} items`;
 
-  const savedTotal = savedTotalCount ?? itemCount;
+  const pending = pendingQuantityTotal ?? itemCount;
 
   return (
     <header className={cn("mb-6 sm:mb-8", className)}>
@@ -48,10 +53,9 @@ export default function WishlistHero({
           borderColor: "var(--sidebar-border)",
           boxShadow: "var(--card-shadow)",
         }}
-        aria-labelledby="wishlist-hero-title"
-        aria-busy={isLoading}
+        aria-labelledby="cart-hero-title"
+        aria-busy={isLoading || isInitialLoading}
       >
-        {/* Warm accent wash — food-marketplace feel, theme-safe */}
         <div
           className="pointer-events-none absolute inset-0 opacity-[0.12] dark:opacity-[0.18]"
           style={{
@@ -63,9 +67,7 @@ export default function WishlistHero({
 
         <div className="relative px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
           <div className="flex flex-col gap-6 lg:grid lg:grid-cols-12 lg:items-center lg:gap-8">
-            {/* Main column */}
             <div className="min-w-0 lg:col-span-8">
-              {/* Compact shop exit — mobile-first */}
               <Link
                 href="/shop"
                 className="mb-3 inline-flex min-h-[44px] items-center gap-1.5 text-sm font-semibold transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card-bg)] rounded-md -ml-1 px-1"
@@ -78,11 +80,11 @@ export default function WishlistHero({
 
               <div className="flex flex-wrap items-start gap-3 gap-y-2">
                 <h1
-                  id="wishlist-hero-title"
+                  id="cart-hero-title"
                   className="text-2xl font-bold leading-tight tracking-tight sm:text-3xl lg:text-[1.75rem] lg:leading-snug"
                   style={{ color: "var(--foreground)" }}
                 >
-                  Your saved favourites
+                  Your basket
                 </h1>
                 {showCountBadge && (
                   <span
@@ -102,19 +104,12 @@ export default function WishlistHero({
                 className="mt-2 max-w-2xl text-sm leading-relaxed sm:text-[0.9375rem]"
                 style={{ color: "var(--muted-foreground)" }}
               >
-                Review your saved items and add them to your basket when you are ready. Your favourite
-                LandarsFood products, saved in one place.
+                {isEmpty
+                  ? "When you add products from the shop, they will appear here so you can review quantities before you continue."
+                  : isInitialLoading
+                    ? "We are preparing your basket—this only takes a moment."
+                    : "Review what you have added and change quantities before you continue. Add more from the shop whenever you like—no rush."}
               </p>
-
-              {hasError && (
-                <p
-                  className="mt-2 max-w-2xl text-sm font-medium"
-                  style={{ color: "var(--muted-foreground)" }}
-                  role="status"
-                >
-                  Product details could not be loaded below—your list is still here.
-                </p>
-              )}
 
               <div className="mt-5">
                 <Button variant="primary" size="md" className="w-full min-h-[48px] sm:w-auto sm:min-w-[11rem]" asChild>
@@ -126,7 +121,6 @@ export default function WishlistHero({
               </div>
             </div>
 
-            {/* Desktop accent card — decorative + brand, no fake data */}
             <div
               className="hidden lg:col-span-4 lg:flex lg:flex-col lg:items-center lg:justify-center lg:rounded-2xl lg:border lg:px-5 lg:py-6"
               style={{
@@ -142,21 +136,23 @@ export default function WishlistHero({
                   color: "var(--accent)",
                 }}
               >
-                <Heart className="h-7 w-7" strokeWidth={2} aria-hidden />
+                <ShoppingBag className="h-7 w-7" strokeWidth={2} aria-hidden />
               </div>
               <p className="text-center text-sm font-semibold" style={{ color: "var(--foreground)" }}>
-                Saved for later
+                Your order basket
               </p>
               <p className="mt-1 text-center text-xs leading-relaxed" style={{ color: "var(--muted-foreground)" }}>
-                {hasError && savedTotal > 0
-                  ? "We couldn't load product rows—your saves are still on your account."
-                  : itemCount > 0
-                    ? "Add anything here to your basket whenever you like."
-                    : isLoading && savedTotal > 0
-                      ? "Fetching your saved products…"
-                      : itemCount === 0 && savedTotal > 0 && !hasError && !isLoading
-                        ? "Nothing matches your filters right now. Clear search or category to see all saved items."
-                        : "Save products from the shop to see them here."}
+                {isEmpty && !isInitialLoading
+                  ? "Nothing here yet—browse the shop to add sausages, dairy, pastries, and more."
+                  : isLoading && pending > 0 && lineCount === 0
+                    ? "Loading your basket lines…"
+                    : itemCount > 0
+                      ? lineCount === 1
+                        ? "One product in your basket—adjust the quantity if you need more."
+                        : `${lineCount} products in your basket—tap a line to update or remove.`
+                      : isLoading
+                        ? "Preparing your basket…"
+                        : "Save time by reviewing everything here before the next step."}
               </p>
             </div>
           </div>

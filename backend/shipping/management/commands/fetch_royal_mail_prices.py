@@ -66,7 +66,11 @@ class Command(BaseCommand):
 
             self.stdout.write("Fetching shipping options from Sendcloud...\n")
 
-            options_list = service.get_shipping_options(address=address, items=items)
+            options_list = service.get_shipping_options(
+                address=address,
+                items=items,
+                weight_based_single_method=False,
+            )
 
             royal_mail_options = [
                 opt

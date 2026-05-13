@@ -12,8 +12,10 @@ Only **non-signed** small/medium lines are matched (no Large Letter, no Signed).
 ``Shipment.logical_shipping_option`` is ``uk_tracked_48`` or ``uk_tracked_24`` (see
 :func:`logical_shipping_option_for_billable_kg`), or is aligned at ship time from the
 checkout method (see :func:`resolve_checkout_sendcloud_method_id`).
+Checkout quotes below ``POST_SHIPMENT_TRACKED_24_MIN_KG`` (when set) offer **both**
+Tracked 48 and 24; heavier parcels are quoted as Tracked 24 only.
 ``uk_standard_small_parcel`` is kept only for legacy DB rows; new snapshots use
-Tracked 48 for all weights below ``POST_SHIPMENT_TRACKED_24_MIN_KG`` when no checkout
+Tracked 48 as the default fallback logical below that threshold when no checkout
 method is stored yet.
 
 At ship time, ``pick_sendcloud_method_id`` picks the **tightest** method row whose
@@ -258,14 +260,19 @@ def resolve_checkout_sendcloud_method_id(
 
 def logical_shipping_option_for_billable_kg(billable_weight_kg: float) -> str:
     """
-    Map billable kg (goods + packaging) to ``Shipment.logical_shipping_option``.
+    Map billable kg (goods + packaging) to ``Shipment.logical_shipping_option`` (fallback).
+
+    Used when building the order snapshot and when Celery must fall back from an invalid
+    checkout method id. Checkout's stored Sendcloud method id is still preferred when valid.
 
     * If ``POST_SHIPMENT_TRACKED_24_MIN_KG`` is set and weight is **strictly greater than**
-      that value → ``uk_tracked_24`` (Small + Medium tiers for Tracked **24**).
-    * Otherwise (including weight **equal** to the threshold) → ``uk_tracked_48``.
+      that value → ``uk_tracked_24`` (only Tracked **24** tiers apply for heavy parcels).
+    * Otherwise (including weight **equal** to the threshold) → ``uk_tracked_48`` as the
+      default fallback logical (light parcels may have chosen Tracked 24 at checkout; the
+      checkout method id disambiguates).
 
-    The concrete Sendcloud product (small vs 0–5 / 5–10 / 10–20 kg medium) is resolved
-    at ship time by :func:`pick_sendcloud_method_id` from parcel weight.
+    Checkout **quotes** for light parcels include both Tracked 48 and 24 when the threshold
+    is set; see :meth:`ShippingService.get_shipping_options`.
     """
     from django.conf import settings as django_settings
 

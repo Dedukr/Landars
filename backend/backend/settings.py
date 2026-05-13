@@ -419,11 +419,14 @@ SENDCLOUD_WEBHOOK_SECRET = os.getenv("SENDCLOUD_WEBHOOK_SECRET", "")
 SENDCLOUD_ALLOWED_CARRIERS = os.getenv(
     "SENDCLOUD_ALLOWED_CARRIERS", "royal_mailv2"
 ).split(",")
+# Service name substrings (lowercase) on Sendcloud method rows. Include both speeds so
+# ``POST_SHIPMENT_TRACKED_24_MIN_KG`` / ``uk_tracked_24`` can resolve (exclude list must
+# not blanket-ban ``tracked 24`` when heavier parcels use that tier).
 SENDCLOUD_ALLOWED_SERVICES = os.getenv(
-    "SENDCLOUD_ALLOWED_SERVICES", "tracked 48"
+    "SENDCLOUD_ALLOWED_SERVICES", "tracked 48,tracked 24"
 ).split(",")
 SENDCLOUD_EXCLUDE_SERVICES = os.getenv(
-    "SENDCLOUD_EXCLUDE_SERVICES", "signed,tracked 24,express,large letter"
+    "SENDCLOUD_EXCLUDE_SERVICES", "signed,express,large letter"
 ).split(",")
 
 # Sendcloud panel sender address (integer ID). Required for post-delivery shipment automation.
@@ -437,7 +440,10 @@ POST_SHIPMENT_LOGICAL_OPTION = os.getenv(
 POST_SHIPMENT_USE_WEIGHT_BASED_LOGICAL = os.getenv(
     "POST_SHIPMENT_USE_WEIGHT_BASED_LOGICAL", "True"
 ).lower() in ("1", "true", "yes")
-# If set, billable kg *strictly above* this uses uk_tracked_24; at or below uses uk_tracked_48.
+# If set (kg): checkout quotes **both** Tracked 48 and Tracked 24 for parcel weight **at or
+# below** this value; **strictly above** it, only Tracked 24 is quoted. Snapshot / Celery
+# fallback logical: above → uk_tracked_24; at or below → uk_tracked_48 (checkout method id
+# remains authoritative when still valid).
 _post_t24 = (os.getenv("POST_SHIPMENT_TRACKED_24_MIN_KG") or "").strip()
 POST_SHIPMENT_TRACKED_24_MIN_KG = float(_post_t24) if _post_t24 else None
 # Prefix for Sendcloud parcel ``order_number``: {prefix}-{order_id}-{random10digits}.
