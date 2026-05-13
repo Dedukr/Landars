@@ -161,6 +161,12 @@ class Product(models.Model):
         validators=[MinValueValidator(0)],
         help_text="Weight of the product",
     )
+    created_at = models.DateTimeField(
+        default=timezone.now,
+        editable=False,
+        db_index=True,
+        help_text="When the product was first created (used for newest-first listings).",
+    )
     # image = models.ImageField(
     #     upload_to="products/", blank=True, null=True
     # )
@@ -170,6 +176,7 @@ class Product(models.Model):
         ordering = ["name"]
         indexes = [
             models.Index(fields=["name"]),
+            models.Index(fields=["created_at"]),
         ]
 
     def __str__(self):

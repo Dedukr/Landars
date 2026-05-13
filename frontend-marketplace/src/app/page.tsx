@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import HomeHero from "@/components/home/HomeHero";
 import HowItWorksSection from "@/components/home/HowItWorksSection";
-// import CategoryGrid from "@/components/home/CategoryGrid";
+import CategoryGrid from "@/components/home/CategoryGrid";
 import ProductPreviewSection from "@/components/home/ProductPreviewSection";
 import FeaturedProductsSection from "@/components/home/FeaturedProductsSection";
 import TrustBenefitsSection from "@/components/home/TrustBenefitsSection";
@@ -23,7 +23,7 @@ export default function HomePage() {
       <HowItWorksSection />
 
       {/* ── Browse by category ───────────────────────────── */}
-      {/* <CategoryGrid /> */}
+      <CategoryGrid />
 
       {/* ── Popular picks ────────────────────────────────── */}
       {/*
@@ -39,16 +39,11 @@ export default function HomePage() {
         background="subtle"
       />
 
-      {/* ── Fresh picks (editorial 2-column layout) ──────── */}
-      {/*
-        Future: replace sort="price_asc" with sort="created_at_desc"
-        and subtitle="Newly added" once the backend exposes that sort.
-        Or use ?is_featured=true for a curated featured section.
-      */}
+      {/* ── Fresh picks (newest products) ───────────────── */}
       <FeaturedProductsSection
         title="Fresh picks"
-        subtitle="More to explore"
-        sort="price_asc"
+        subtitle="Newly added"
+        sort="created_at_desc"
         limit={4}
       />
 

@@ -6,12 +6,8 @@ import { ArrowRight, Package, ChevronRight } from "lucide-react";
 import { scopeProductsQueryString } from "@/utils/catalogScope";
 
 // ─────────────────────────────────────────────────────────────────
-// Future: When backend adds `is_featured=true` or `created_at`,
-// update the fetch URL to ?is_featured=true or ?sort=created_at_desc
-// to power genuine "Featured" or "New Arrivals" sections.
-// Current behaviour: shows 4 products from a different slice to
-// complement the "Popular Picks" section above.
-// Backend fields needed: is_featured (boolean), created_at (datetime)
+// Uses `sort` query param (e.g. created_at_desc) from ProductList API.
+// Optional future: ?is_featured=true for a curated block.
 // ─────────────────────────────────────────────────────────────────
 
 interface Product {
@@ -40,7 +36,7 @@ interface FeaturedProductsProps {
   /** Title shown in section header */
   title?: string;
   subtitle?: string;
-  /** API sort param. Currently uses price_asc as a safe placeholder. */
+  /** API sort param (e.g. created_at_desc, price_asc). */
   sort?: string;
   limit?: number;
 }
@@ -48,7 +44,7 @@ interface FeaturedProductsProps {
 export default function FeaturedProductsSection({
   title = "Fresh picks",
   subtitle = "More to explore",
-  sort = "price_asc",
+  sort = "created_at_desc",
   limit = 4,
 }: FeaturedProductsProps) {
   const [products, setProducts] = useState<Product[]>([]);

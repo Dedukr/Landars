@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, ChevronRight, Truck, Leaf, Star, ShieldCheck } from "lucide-react";
+import { Search, ChevronRight, Truck, Leaf, Star, ShieldCheck, Award } from "lucide-react";
 import HeroProductPreview from "./HeroProductPreview";
 
 const trustItems = [
@@ -61,6 +61,7 @@ export default function HomeHero() {
             >
               <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
               Authentic Eastern European Foods · Delivered Across the UK
+              <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
             </div>
 
             {/* Headline */}
@@ -77,14 +78,41 @@ export default function HomeHero() {
             </h1>
 
             {/* Subtitle */}
-            <p
-              className="text-base sm:text-lg mb-7 sm:mb-8 leading-relaxed max-w-xl"
+            <div
+              className="text-base sm:text-lg mb-7 sm:mb-8 leading-relaxed max-w-2xl space-y-3"
               style={{ color: "var(--muted-foreground)" }}
             >
-              Premium sausages, dairy, pastries and pantry staples —
-              crafted with tradition, sourced with care, and delivered
-              fresh to your door anywhere in the UK.
-            </p>
+              <p>
+                Homemade semi-ready products, ready meals, sausages and meat products,
+                bakery and desserts. Catering, in-house delivery throughout England.
+              </p>
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-2">
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-sm font-bold border -translate-y-px"
+                  style={{
+                    background: "var(--success-bg)",
+                    borderColor: "var(--success-border)",
+                    color: "var(--success-text)",
+                  }}
+                >
+                  <Award className="w-4 h-4 shrink-0" strokeWidth={2.25} aria-hidden />
+                  Four years of experience
+                </span>
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-sm font-bold border -translate-y-px"
+                  style={{
+                    background: "var(--success-bg)",
+                    borderColor: "var(--success-border)",
+                    color: "var(--success-text)",
+                  }}
+                >
+                  <ShieldCheck className="w-4 h-4 shrink-0" strokeWidth={2.25} aria-hidden />
+                  food hygiene <span className="tabular-nums">5</span>
+                  <span aria-hidden>★</span>
+                </span>
+              </p>
+              <p>Ukrainian, Slavic, European cuisine</p>
+            </div>
 
             {/* Search bar */}
             <form onSubmit={handleSearch} className="mb-6 sm:mb-7">

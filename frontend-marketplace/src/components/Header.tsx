@@ -17,6 +17,7 @@ import {
   Package,
   LogOut,
   LayoutDashboard,
+  ShieldCheck,
 } from "lucide-react";
 
 const navLinks = [
@@ -141,30 +142,49 @@ export default function Header() {
             </span>
           </Link>
 
-          {/* Desktop Navigation */}
-          <nav className="hidden lg:flex items-center gap-1">
-            {navLinks.map((link) => (
-              <Link
-                key={link.name}
-                href={link.href}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  isActive(link.href)
-                    ? "font-semibold"
-                    : "hover:opacity-80"
-                }`}
-                style={{
-                  color: isActive(link.href)
-                    ? "var(--accent)"
-                    : "var(--foreground)",
-                  background: isActive(link.href)
-                    ? "var(--info-bg)"
-                    : "transparent",
-                }}
-              >
-                {link.name}
-              </Link>
-            ))}
-          </nav>
+          {/* Desktop navigation + food hygiene trust */}
+          <div className="hidden lg:flex items-center justify-center gap-4 flex-1 min-w-0">
+            <nav className="flex items-center gap-1">
+              {navLinks.map((link) => (
+                <Link
+                  key={link.name}
+                  href={link.href}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                    isActive(link.href)
+                      ? "font-semibold"
+                      : "hover:opacity-80"
+                  }`}
+                  style={{
+                    color: isActive(link.href)
+                      ? "var(--accent)"
+                      : "var(--foreground)",
+                    background: isActive(link.href)
+                      ? "var(--info-bg)"
+                      : "transparent",
+                  }}
+                >
+                  {link.name}
+                </Link>
+              ))}
+            </nav>
+            <span
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-bold border shadow-sm shrink-0"
+              style={{
+                background: "var(--success-bg)",
+                borderColor: "var(--success-border)",
+                color: "var(--success-text)",
+              }}
+              title="Food hygiene rating 5 (FSA scale — very good)"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" strokeWidth={2.25} aria-hidden />
+              <span className="tracking-tight whitespace-nowrap">
+                Food hygiene <span className="tabular-nums">5</span>
+                <span className="text-[0.95em] ml-0.5" aria-hidden>
+                  ★
+                </span>
+              </span>
+            </span>
+          </div>
 
           {/* Right side actions */}
           <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
@@ -353,6 +373,23 @@ export default function Header() {
                   Theme
                 </span>
                 <CompactThemeToggle />
+              </div>
+
+              <div
+                className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl mb-3 border shadow-sm"
+                style={{
+                  background: "var(--success-bg)",
+                  borderColor: "var(--success-border)",
+                  color: "var(--success-text)",
+                }}
+              >
+                <ShieldCheck className="w-4 h-4 shrink-0" strokeWidth={2.25} aria-hidden />
+                <span className="text-sm font-bold tracking-tight">
+                  Food hygiene <span className="tabular-nums">5</span>
+                  <span className="ml-0.5" aria-hidden>
+                    ★
+                  </span>
+                </span>
               </div>
 
               {/* Nav links */}

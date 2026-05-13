@@ -1,7 +1,8 @@
 import type { SortOption } from "@/components/SortList";
 
 /**
- * Backend-supported values: name_asc, name_desc, price_asc, price_desc (ProductList APIView).
+ * Backend-supported values: name_asc, name_desc, price_asc, price_desc,
+ * created_at_desc, created_at_asc (ProductList APIView).
  * Use `SHOP_INITIAL_SORT` for initial/reset UI state (explicit name ascending).
  */
 export const SHOP_INITIAL_SORT = "name_asc";
