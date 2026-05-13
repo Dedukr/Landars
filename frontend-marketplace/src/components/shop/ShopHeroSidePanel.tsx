@@ -1,16 +1,10 @@
 "use client";
 
 import React from "react";
-import {
-  Leaf,
-  Search,
-  ShoppingBag,
-  SlidersHorizontal,
-  Sparkles,
-} from "lucide-react";
+import { Leaf, Search, ShoppingBag, Sparkles } from "lucide-react";
 
 /**
- * Decorative marketplace hero ornament for large screens — UI-focused hints only (no promises).
+ * Decorative marketplace hero — UI-focused overview only (no promises).
  */
 export function ShopHeroSidePanel() {
   return (
@@ -25,11 +19,9 @@ export function ShopHeroSidePanel() {
         style={{ background: "var(--accent)" }}
       />
 
-      <div className="relative grid grid-cols-2 gap-3 sm:gap-4">
-        {/* Hero tile */}
-        <div
-          className="col-span-2 rounded-2xl border p-6 sm:p-7 overflow-hidden relative shadow-md"
-          style={{
+      <div
+        className="rounded-2xl border p-6 sm:p-7 overflow-hidden relative shadow-md"
+        style={{
             borderColor: "var(--sidebar-border)",
             background: `linear-gradient(
               155deg,
@@ -104,70 +96,8 @@ export function ShopHeroSidePanel() {
           </div>
         </div>
 
-        {/* Compact tiles */}
-        <div
-          className="rounded-2xl border p-4 sm:p-5 flex flex-col gap-3 min-h-[7.75rem]"
-          style={{
-            borderColor: "var(--sidebar-border)",
-            background: "color-mix(in srgb, var(--card-bg) 96%, var(--sidebar-bg))",
-            boxShadow: "var(--card-shadow)",
-          }}
-        >
-          <div className="flex items-center gap-2.5" style={{ color: "var(--accent)" }}>
-            <Search className="h-5 w-5 shrink-0" strokeWidth={2} aria-hidden />
-            <span className="text-sm font-bold" style={{ color: "var(--foreground)" }}>
-              Search
-            </span>
-          </div>
-          <p className="text-xs leading-snug mt-auto" style={{ color: "var(--muted-foreground)" }}>
-            Find products quickly from the toolbar below.
-          </p>
-        </div>
-
-        <div
-          className="rounded-2xl border p-4 sm:p-5 flex flex-col gap-3 min-h-[7.75rem]"
-          style={{
-            borderColor: "var(--sidebar-border)",
-            background: "color-mix(in srgb, var(--card-bg) 96%, var(--accent) 5%)",
-            boxShadow: "var(--card-shadow)",
-          }}
-        >
-          <div className="flex items-center gap-2.5" style={{ color: "var(--accent)" }}>
-            <SlidersHorizontal className="h-5 w-5 shrink-0" strokeWidth={2} aria-hidden />
-            <span className="text-sm font-bold" style={{ color: "var(--foreground)" }}>
-              Refine & sort
-            </span>
-          </div>
-          <p className="text-xs leading-snug mt-auto" style={{ color: "var(--muted-foreground)" }}>
-            Use categories and price on the side or in the drawer on mobile.
-          </p>
-        </div>
-
-        {/* Wide stripe */}
-        <div
-          className="col-span-2 rounded-2xl border px-4 py-4 sm:px-5 flex flex-wrap items-center gap-3 justify-between"
-          style={{
-            borderColor: "var(--sidebar-border)",
-            background: "var(--sidebar-bg)",
-          }}
-        >
-          <div className="flex items-center gap-3 min-w-[12rem]">
-            <ShoppingBag className="h-7 w-7 shrink-0" style={{ color: "var(--accent)" }} strokeWidth={1.85} aria-hidden />
-            <div>
-              <p className="text-sm font-semibold leading-tight" style={{ color: "var(--foreground)" }}>
-                Your basket persists
-              </p>
-              <p className="text-xs mt-1 max-w-[16rem]" style={{ color: "var(--muted-foreground)" }}>
-                Items stay in your basket while you keep exploring the storefront.
-              </p>
-            </div>
-          </div>
-          <Leaf className="h-8 w-8 shrink-0 hidden sm:block opacity-35" aria-hidden strokeWidth={1.5} />
-        </div>
-      </div>
-
       <span className="sr-only">
-        Decorative panel: hints for search, filters, sorting, and basket behaviour on the shop page.
+        Decorative panel: overview of browsing, refining, and basket behaviour on the shop page.
       </span>
     </div>
   );

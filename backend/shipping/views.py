@@ -319,9 +319,37 @@ def sendcloud_webhook(request):
         tracking_number = parcel.get("tracking_number")
         tracking_url = parcel.get("tracking_url")
 
+        # Sendcloud uses "expected_delivery_date" in most webhook versions;
+        # some older responses used "delivery_expected_date".
+        raw_expected_date = parcel.get("expected_delivery_date") or parcel.get(
+            "delivery_expected_date"
+        )
+
+        # Webhook timestamps: prefer "updated_at"; fall back to "created_at" in the payload.
+        raw_event_ts = parcel.get("updated_at") or parcel.get("created_at")
+
+        from django.utils import timezone as dj_tz
+
+        event_at = dj_tz.now()
+        if raw_event_ts:
+            try:
+                from datetime import datetime as _dt
+
+                parsed = _dt.fromisoformat(str(raw_event_ts).replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    from datetime import timezone as _tz
+
+                    parsed = parsed.replace(tzinfo=_tz.utc)
+                event_at = parsed
+            except (ValueError, TypeError):
+                pass
+
         logger.info(
-            f"Received SendCloud webhook for parcel {parcel_id}: "
-            f"status={status_message} (ID: {status_id})"
+            "Received Sendcloud webhook for parcel %s: status=%r (id=%s) event_at=%s",
+            parcel_id,
+            status_message,
+            status_id,
+            event_at,
         )
 
         try:
@@ -330,18 +358,77 @@ def sendcloud_webhook(request):
             )
         except Order.DoesNotExist:
             logger.warning(
-                f"No order found with sendcloud_parcel_id={parcel_id}. "
-                f"This may be a parcel created outside our system."
+                "No order found with sendcloud_parcel_id=%s. "
+                "This may be a parcel created outside our system.",
+                parcel_id,
             )
             return HttpResponse(status=200)
 
         details = order.ensure_shipping_details()
+
+        # Stale event guard: discard if we already have a newer update from Sendcloud.
+        if (
+            details.sendcloud_last_webhook_at
+            and details.sendcloud_last_webhook_at > event_at
+        ):
+            logger.info(
+                "Discarding stale Sendcloud webhook for parcel %s / order %s "
+                "(event_at=%s, last_webhook_at=%s)",
+                parcel_id,
+                order.id,
+                event_at,
+                details.sendcloud_last_webhook_at,
+            )
+            return HttpResponse(status=200)
 
         new_shipping_status = _map_sendcloud_status_to_shipping_status(
             status_message, status_id
         )
 
         update_fields: list[str] = []
+
+        # Always record the carrier status id + message from Sendcloud.
+        if status_id is not None and details.sendcloud_carrier_status_id != status_id:
+            details.sendcloud_carrier_status_id = status_id
+            update_fields.append("sendcloud_carrier_status_id")
+
+        msg_capped = (status_message or "")[:512]
+        if msg_capped and details.sendcloud_carrier_status_message != msg_capped:
+            details.sendcloud_carrier_status_message = msg_capped
+            update_fields.append("sendcloud_carrier_status_message")
+
+        # Persist webhook timestamp so future stale events can be discarded.
+        details.sendcloud_last_webhook_at = event_at
+        update_fields.append("sendcloud_last_webhook_at")
+
+        # Parse and store expected delivery date when provided.
+        if raw_expected_date:
+            from datetime import date as _date
+
+            try:
+                if isinstance(raw_expected_date, _date):
+                    parsed_date = raw_expected_date
+                else:
+                    from datetime import datetime as _dt2
+
+                    parsed_date = _dt2.fromisoformat(
+                        str(raw_expected_date).split("T")[0]
+                    ).date()
+                if details.expected_delivery_date != parsed_date:
+                    details.expected_delivery_date = parsed_date
+                    update_fields.append("expected_delivery_date")
+            except (ValueError, TypeError) as exc:
+                logger.warning(
+                    "Could not parse expected_delivery_date %r for parcel %s: %s",
+                    raw_expected_date,
+                    parcel_id,
+                    exc,
+                )
+
+        # Mark delivered_at when Sendcloud confirms delivery.
+        if new_shipping_status == "delivered" and not details.delivered_at:
+            details.delivered_at = event_at
+            update_fields.append("delivered_at")
 
         if new_shipping_status == "shipment_failed":
             if details.status != Shipment.Status.FAILED_FINAL:
@@ -361,7 +448,9 @@ def sendcloud_webhook(request):
         if tracking_number and details.shipping_tracking_number != tracking_number:
             details.shipping_tracking_number = tracking_number
             update_fields.append("shipping_tracking_number")
-            logger.info(f"Updated order {order.id} tracking number: {tracking_number}")
+            logger.info(
+                "Updated order %s tracking number: %s", order.id, tracking_number
+            )
 
         if tracking_url and details.shipping_tracking_url != tracking_url:
             details.shipping_tracking_url = tracking_url
@@ -377,11 +466,15 @@ def sendcloud_webhook(request):
         if update_fields:
             details.save(update_fields=sorted(set(update_fields)))
             logger.info(
-                f"Successfully updated shipping details for order {order.id}: "
-                f"{', '.join(update_fields)}"
+                "Updated shipping details for order %s (parcel %s): %s",
+                order.id,
+                parcel_id,
+                ", ".join(sorted(set(update_fields))),
             )
         else:
-            logger.debug(f"No updates needed for order {order.id} (parcel {parcel_id})")
+            logger.debug(
+                "No updates needed for order %s (parcel %s)", order.id, parcel_id
+            )
 
         return HttpResponse(status=200)
 

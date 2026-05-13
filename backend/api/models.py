@@ -13,6 +13,13 @@ from django.db import models
 from django.utils import timezone
 
 
+def _post_suitable_category_pk() -> int:
+    """Royal Mail / post-suitable scope: same category as ``SAUSAGE_CATEGORY_ID``."""
+    from django.conf import settings
+
+    return int(getattr(settings, "SAUSAGE_CATEGORY_ID", 16))
+
+
 # ProductCategory model
 class ProductCategory(models.Model):
     name = models.CharField(max_length=255)
@@ -616,14 +623,10 @@ class Order(models.Model):
             return True, Decimal("10")
 
         # Check if any item is NOT in post-suitable category
-        post_category = "Sausages and Marinated products"
+        post_id = _post_suitable_category_pk()
         has_non_post_items = any(
             item.product
-            and post_category.lower()
-            not in [
-                name.lower()
-                for name in item.product.categories.values_list("name", flat=True)
-            ]
+            and not item.product.categories.filter(id=post_id).exists()
             for item in items
         )
 
@@ -693,13 +696,9 @@ class Order(models.Model):
             return True, Decimal("10")
 
         # Determine if any item is not in the post-suitable category
-        post_category = "Sausages and Marinated products"
+        post_id = _post_suitable_category_pk()
         has_non_post_items = any(
-            prod
-            and post_category.lower()
-            not in [
-                name.lower() for name in prod.categories.values_list("name", flat=True)
-            ]
+            prod and not prod.categories.filter(id=post_id).exists()
             for prod, _ in normalized
         )
         if has_non_post_items:

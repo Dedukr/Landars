@@ -308,6 +308,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
 SAUSAGE_ONLY_MODE = True
+# Scoped catalogue + post-suitable delivery: anchor category by PK (not name).
+SAUSAGE_CATEGORY_ID = int(os.getenv("SAUSAGE_CATEGORY_ID", "16"))
 
 # AWS Configuration
 

@@ -65,9 +65,13 @@ export interface MarketplaceOrderDetail {
   shipping_tracking_url?: string;
   shipping_label_url?: string;
   sendcloud_parcel_id?: number | string;
-  /** Shipment FSM status from backend when exposed */
+  /** Human-readable Sendcloud carrier status (e.g. "In transit", "Delivered") */
   shipment_status?: string;
   /** Legacy/alternate key used in some clients */
   shipping_status?: string;
   shipping_error_message?: string;
+  /** ISO date string (YYYY-MM-DD) — estimated delivery date from Sendcloud/carrier */
+  expected_delivery_date?: string | null;
+  /** ISO datetime string — confirmed delivered timestamp from Sendcloud webhook */
+  delivered_at?: string | null;
 }

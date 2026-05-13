@@ -687,6 +687,23 @@ class OrderSerializer(serializers.ModelSerializer):
     invoice_link = serializers.SerializerMethodField()
     address = AddressSerializer(read_only=True)
 
+    # --- Shipping / Sendcloud fields (read-only, sourced from shipping_details) ---
+    shipping_method_id = serializers.SerializerMethodField()
+    shipping_tracking_number = serializers.SerializerMethodField()
+    shipping_tracking_url = serializers.SerializerMethodField()
+    shipping_label_url = serializers.SerializerMethodField()
+    shipping_carrier = serializers.SerializerMethodField()
+    shipping_service_name = serializers.SerializerMethodField()
+    sendcloud_parcel_id = serializers.SerializerMethodField()
+    # Human-readable Sendcloud carrier status message (e.g. "In transit", "Delivered").
+    shipment_status = serializers.SerializerMethodField()
+    # Expected delivery date provided by the carrier via Sendcloud (ISO date string).
+    expected_delivery_date = serializers.SerializerMethodField()
+    # Datetime confirmed delivered via Sendcloud webhook.
+    delivered_at = serializers.SerializerMethodField()
+    # Customer-safe error hint when shipping has failed (blank when no issue).
+    shipping_error_message = serializers.SerializerMethodField()
+
     class Meta:
         model = Order
         fields = [
@@ -710,6 +727,18 @@ class OrderSerializer(serializers.ModelSerializer):
             "sum_price",
             "total_price",
             "total_items",
+            # Shipping fields
+            "shipping_method_id",
+            "shipping_tracking_number",
+            "shipping_tracking_url",
+            "shipping_label_url",
+            "shipping_carrier",
+            "shipping_service_name",
+            "sendcloud_parcel_id",
+            "shipment_status",
+            "expected_delivery_date",
+            "delivered_at",
+            "shipping_error_message",
         ]
         read_only_fields = [
             "id",
@@ -719,6 +748,13 @@ class OrderSerializer(serializers.ModelSerializer):
             "total_items",
             "invoice_link",
         ]
+
+    def _shipping(self, obj):
+        """Return shipping_details or None (avoids repeated try/except)."""
+        try:
+            return obj.shipping_details
+        except Exception:
+            return None
 
     def get_sum_price(self, obj):
         return str(obj.sum_price)
@@ -745,6 +781,95 @@ class OrderSerializer(serializers.ModelSerializer):
             address = obj.address
             return f"{address.address_line + ', ' if address.address_line else ''}{address.address_line2 + ', ' if address.address_line2 else ''}{address.city + ', ' if address.city else ''}{address.postal_code if address.postal_code else ''}"
         return obj.customer_address
+
+    def get_shipping_method_id(self, obj):
+        s = self._shipping(obj)
+        return s.shipping_method_id if s else None
+
+    def get_shipping_tracking_number(self, obj):
+        s = self._shipping(obj)
+        if not s:
+            return None
+        tn = (s.shipping_tracking_number or "").strip()
+        return tn or None
+
+    def get_shipping_tracking_url(self, obj):
+        s = self._shipping(obj)
+        if not s:
+            return None
+        # Use the model helper which builds Royal Mail fallback URLs.
+        url = s.get_tracking_url()
+        return url or None
+
+    def get_shipping_label_url(self, obj):
+        s = self._shipping(obj)
+        if not s:
+            return None
+        url = (s.provider_label_url or "").strip()
+        return url or None
+
+    def get_shipping_carrier(self, obj):
+        s = self._shipping(obj)
+        if not s:
+            return None
+        code = (s.carrier_code or "").strip()
+        return code or None
+
+    def get_shipping_service_name(self, obj):
+        s = self._shipping(obj)
+        if not s:
+            return None
+        inp = s.sendcloud_inputs or {}
+        name = str(inp.get("shipping_method_full_name") or "").strip()
+        return name or None
+
+    def get_sendcloud_parcel_id(self, obj):
+        s = self._shipping(obj)
+        return s.sendcloud_parcel_id if s else None
+
+    def get_shipment_status(self, obj):
+        """
+        Return the human-readable Sendcloud carrier status message
+        (e.g. "In transit", "Delivered"). Falls back to None if unavailable.
+        """
+        s = self._shipping(obj)
+        if not s:
+            return None
+        msg = (s.sendcloud_carrier_status_message or "").strip()
+        return msg or None
+
+    def get_expected_delivery_date(self, obj):
+        """ISO date string (YYYY-MM-DD) if Sendcloud provided an estimated delivery date."""
+        s = self._shipping(obj)
+        if not s or not s.expected_delivery_date:
+            return None
+        return s.expected_delivery_date.isoformat()
+
+    def get_delivered_at(self, obj):
+        """ISO datetime string when delivery was confirmed via Sendcloud webhook."""
+        s = self._shipping(obj)
+        if not s or not s.delivered_at:
+            return None
+        return s.delivered_at.isoformat()
+
+    def get_shipping_error_message(self, obj):
+        """
+        Customer-safe shipping error hint. Only exposed when shipping has
+        visibly failed; internal technical errors are not forwarded.
+        """
+        from shipping.models import Shipment as _Shipment
+
+        s = self._shipping(obj)
+        if not s:
+            return None
+        if s.status in (
+            _Shipment.Status.FAILED_RETRYABLE,
+            _Shipment.Status.FAILED_FINAL,
+        ):
+            err = (s.last_error or "").strip()
+            if err:
+                return err[:512]
+        return None
 
     def get_invoice_link(self, obj):
         """

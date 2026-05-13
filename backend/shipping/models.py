@@ -96,6 +96,35 @@ class Shipment(models.Model):
         default=0,
     )
 
+    # --- Sendcloud carrier tracking fields (added by migration 0002) ---
+    sendcloud_carrier_status_id = models.IntegerField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Sendcloud parcel status id (webhook / API).",
+    )
+    sendcloud_carrier_status_message = models.CharField(
+        max_length=512,
+        blank=True,
+        default="",
+        help_text="Sendcloud parcel status message (human-readable, e.g. 'In transit').",
+    )
+    sendcloud_last_webhook_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp of the last applied Sendcloud parcel webhook — used to discard stale events.",
+    )
+    expected_delivery_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Carrier / Sendcloud expected delivery date when provided.",
+    )
+    delivered_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the parcel was confirmed delivered (set from Sendcloud webhook).",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

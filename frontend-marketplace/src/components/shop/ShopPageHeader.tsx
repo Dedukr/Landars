@@ -19,7 +19,7 @@ export function ShopPageHeader({
 
   return (
     <section
-      className="relative overflow-hidden rounded-2xl border px-5 py-8 sm:px-8 sm:py-10 mb-6 sm:mb-8"
+      className="relative overflow-hidden rounded-2xl border px-4 py-5 sm:px-8 sm:py-10 mb-4 sm:mb-8 lg:mb-8"
       style={{
         borderColor: "var(--sidebar-border)",
         background:
@@ -42,23 +42,26 @@ export function ShopPageHeader({
       <div className="relative flex flex-col gap-10 lg:flex-row lg:items-center lg:justify-between lg:gap-12 xl:gap-16">
         <div className="min-w-0 flex-1 max-w-xl lg:max-w-[min(100%,540px)]">
           <p
-            className="text-xs sm:text-sm font-semibold uppercase tracking-[0.2em] mb-2"
+            className="hidden lg:block text-xs sm:text-sm font-semibold uppercase tracking-[0.2em] mb-2"
             style={{ color: "var(--accent)" }}
           >
             Browse the range
           </p>
           <h1
-            className="text-2xl sm:text-3xl lg:text-[2.15rem] xl:text-4xl font-extrabold tracking-tight leading-[1.12] mb-3"
+            className="text-2xl sm:text-3xl lg:text-[2.15rem] xl:text-4xl font-extrabold tracking-tight leading-[1.12] mb-0 lg:mb-3"
             style={{ color: "var(--foreground)" }}
           >
             Shop fresh food
           </h1>
-          <p className="text-sm sm:text-base leading-relaxed" style={{ color: "var(--muted-foreground)" }}>
+          <p
+            className="hidden lg:block text-sm sm:text-base leading-relaxed"
+            style={{ color: "var(--muted-foreground)" }}
+          >
             Explore Landar&apos;s Food products, filter by category, sort by price or name, and add items to your
             basket. Adjust your search anytime — your cart stays with you as you browse.
           </p>
           {showCounts && (
-            <div className="mt-6 flex flex-wrap gap-3 sm:gap-4">
+            <div className="hidden lg:flex mt-6 flex-wrap gap-3 sm:gap-4">
               <div
                 className="inline-flex flex-col rounded-xl px-4 py-3 border"
                 style={{
@@ -92,7 +95,11 @@ export function ShopPageHeader({
             </div>
           )}
           {statsLoading && (
-            <div className="mt-6 flex gap-3 animate-pulse" aria-busy aria-label="Loading shop stats">
+            <div
+              className="hidden lg:flex mt-6 gap-3 animate-pulse"
+              aria-busy
+              aria-label="Loading shop stats"
+            >
               <div className="h-[4.75rem] w-36 rounded-xl" style={{ background: "var(--sidebar-bg)" }} />
               <div className="h-[4.75rem] w-36 rounded-xl" style={{ background: "var(--sidebar-bg)" }} />
             </div>
