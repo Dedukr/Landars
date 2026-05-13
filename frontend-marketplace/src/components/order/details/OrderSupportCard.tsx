@@ -1,0 +1,50 @@
+"use client";
+
+import { LifeBuoy } from "lucide-react";
+import { OrderSectionCard } from "./OrderSectionCard";
+
+export function OrderSupportCard() {
+  const phone = process.env.NEXT_PUBLIC_SUPPORT_PHONE ?? "";
+  const digits = phone.replace(/\D/g, "");
+  const whatsAppUrl = digits ? `https://api.whatsapp.com/send?phone=${digits}` : null;
+
+  return (
+    <OrderSectionCard>
+      <div className="flex gap-3">
+        <LifeBuoy
+          className="mt-0.5 h-5 w-5 shrink-0"
+          style={{ color: "var(--accent)" }}
+          aria-hidden
+        />
+        <div>
+          <p className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>
+            Need help?
+          </p>
+          <p className="mt-1 text-sm leading-relaxed" style={{ color: "var(--muted-foreground)" }}>
+            Questions about this order? Reach us on{" "}
+            {whatsAppUrl ? (
+              <a
+                href={whatsAppUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-sm"
+                style={{ color: "var(--primary)" }}
+              >
+                WhatsApp
+              </a>
+            ) : (
+              <span style={{ color: "var(--foreground)" }}>WhatsApp</span>
+            )}
+            {phone ? (
+              <>
+                {" "}
+                <span className="tabular-nums">({phone})</span>
+              </>
+            ) : null}
+            .
+          </p>
+        </div>
+      </div>
+    </OrderSectionCard>
+  );
+}
