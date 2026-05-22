@@ -3,6 +3,10 @@
 import React, { useMemo } from "react";
 import type { ShopListingFilters } from "@/types/shop-filters";
 import type { ShopCategoryRecord } from "./ShopFilterPanelContent";
+import {
+  categoryMatchesShopChip,
+  shopCategoryChipSortIndex,
+} from "@/constants/shopCategoryChips";
 import { cn } from "@/lib/utils";
 
 interface ShopCategoryChipsProps {
@@ -20,8 +24,11 @@ export function ShopCategoryChips({
 }: ShopCategoryChipsProps) {
   const chips = useMemo(() => {
     return categories
-      .filter((c) => c.parent != null)
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .filter((c) => categoryMatchesShopChip(c.name))
+      .sort(
+        (a, b) =>
+          shopCategoryChipSortIndex(a.name) - shopCategoryChipSortIndex(b.name)
+      );
   }, [categories]);
 
   if (chips.length === 0) return null;
@@ -37,9 +44,9 @@ export function ShopCategoryChips({
   }
 
   return (
-    <div className={cn("w-full overscroll-x-none", className)}>
+    <div className={cn("w-full", className)}>
       <div
-        className="flex gap-2 overflow-x-auto pb-2 pt-0.5 snap-x snap-mandatory"
+        className="flex flex-wrap gap-2"
         role="listbox"
         aria-label="Filter by category"
       >
@@ -53,7 +60,7 @@ export function ShopCategoryChips({
               aria-selected={selected}
               onClick={() => toggle(c.id)}
               className={cn(
-                "snap-start shrink-0 px-4 py-2.5 rounded-full text-sm font-semibold transition-all border",
+                "px-4 py-2.5 rounded-full text-sm font-semibold transition-all border",
                 "outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)]"
               )}
               style={{

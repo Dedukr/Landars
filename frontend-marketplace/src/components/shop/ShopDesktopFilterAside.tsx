@@ -22,11 +22,11 @@ export function ShopDesktopFilterAside({
 }: ShopDesktopFilterAsideProps) {
   return (
     <aside
-      className="hidden md:block shrink-0 w-[min(100%,var(--sidebar-width))]"
+      className="hidden md:block shrink-0 self-start w-[min(100%,var(--sidebar-width))]"
       aria-label="Product filters"
     >
       <div
-        className="sticky top-20 max-h-[calc(100dvh-5.5rem)] overflow-y-auto rounded-2xl border p-5 shadow-sm"
+        className="sticky top-20 rounded-2xl border p-5 shadow-sm"
         style={{
           background: "var(--card-bg)",
           borderColor: "var(--sidebar-border)",

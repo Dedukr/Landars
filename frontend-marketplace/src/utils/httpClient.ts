@@ -153,6 +153,7 @@ async function refreshJWTToken(): Promise<boolean> {
       localStorage.removeItem("refreshToken");
       localStorage.removeItem("user");
       localStorage.removeItem("wishlist");
+      localStorage.removeItem("guest_wishlist");
 
       // Token refresh failed
 
@@ -165,6 +166,7 @@ async function refreshJWTToken(): Promise<boolean> {
     localStorage.removeItem("refreshToken");
     localStorage.removeItem("user");
     localStorage.removeItem("wishlist");
+    localStorage.removeItem("guest_wishlist");
 
     // Token refresh failed
 

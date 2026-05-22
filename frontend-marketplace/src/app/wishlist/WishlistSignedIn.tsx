@@ -2,7 +2,6 @@
 
 import React, { useState, useCallback, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { useCart } from "@/contexts/CartContext";
 import { SortOption } from "@/components/SortList";
 import { toast } from "sonner";
 import ProductRecommendations from "@/components/ProductRecommendations";
@@ -11,8 +10,6 @@ import { useWishlistItems } from "@/hooks/useWishlistItems";
 import WishlistHero from "@/components/wishlist/WishlistHero";
 import WishlistSummaryStrip from "@/components/wishlist/WishlistSummaryStrip";
 import WishlistFilters from "@/components/wishlist/WishlistFilters";
-import WishlistBulkActionsPanel from "@/components/wishlist/WishlistBulkActionsPanel";
-import WishlistMobileBulkBar from "@/components/wishlist/WishlistMobileBulkBar";
 import WishlistGrid from "@/components/wishlist/WishlistGrid";
 import WishlistEmptyState from "@/components/wishlist/WishlistEmptyState";
 import WishlistErrorState from "@/components/wishlist/WishlistErrorState";
@@ -36,8 +33,6 @@ export default function WishlistSignedIn() {
     retryProductsFetch,
   } = useWishlistOptimized();
   const { filteredProducts, removingIds, removeItem } = useWishlistItems(products);
-  const { addToCart } = useCart();
-  const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"name" | "name_desc" | "price" | "price_desc">(
     "name"
@@ -105,35 +100,8 @@ export default function WishlistSignedIn() {
     })),
   ];
 
-  const handleBulkAddToCart = useCallback(() => {
-    selectedItems.forEach((productId) => {
-      addToCart(productId, 1);
-    });
-    const count = selectedItems.size;
-    setSelectedItems(new Set());
-    toast.success(`Added ${count} item${count !== 1 ? "s" : ""} to your basket`);
-  }, [selectedItems, addToCart]);
-
-  const handleBulkRemove = useCallback(() => {
-    selectedItems.forEach((productId) => {
-      removeItem(productId);
-    });
-    const count = selectedItems.size;
-    setSelectedItems(new Set());
-    toast.success(`Removed ${count} item${count !== 1 ? "s" : ""} from your wishlist`);
-  }, [selectedItems, removeItem]);
-
   const handleItemAddToBasket = useCallback((productName: string) => {
     toast.success(`${productName} added to your basket`);
-  }, []);
-
-  const handleSelect = useCallback((productId: number, selected: boolean) => {
-    setSelectedItems((prev) => {
-      const next = new Set(prev);
-      if (selected) next.add(productId);
-      else next.delete(productId);
-      return next;
-    });
   }, []);
 
   const handleSearchChange = useCallback((query: string) => {
@@ -186,9 +154,6 @@ export default function WishlistSignedIn() {
       : [];
   }, [productsWithLeafCategories, searchQuery, filterCategory, sortBy]);
 
-  const selectedCount = selectedItems.size;
-  const bottomPadForBulk = selectedCount > 0;
-
   if (loading) {
     return (
       <div className="min-h-screen" style={{ background: "var(--background)" }}>
@@ -234,9 +199,7 @@ export default function WishlistSignedIn() {
 
   return (
     <div className="min-h-screen py-6 sm:py-8" style={{ background: "var(--background)" }}>
-      <div
-        className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 ${bottomPadForBulk ? "pb-28 md:pb-0" : ""}`}
-      >
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <WishlistHero
           itemCount={filteredAndSortedProducts.length}
           savedTotalCount={wishlist.length}
@@ -254,12 +217,6 @@ export default function WishlistSignedIn() {
           onSearchChange={handleSearchChange}
           onSortChange={handleSortChange}
           onFilterChange={handleFilterChange}
-        />
-
-        <WishlistBulkActionsPanel
-          selectedCount={selectedCount}
-          onBulkAddToBasket={handleBulkAddToCart}
-          onBulkRemove={handleBulkRemove}
         />
 
         <section
@@ -305,9 +262,7 @@ export default function WishlistSignedIn() {
             <WishlistGrid
               products={filteredAndSortedProducts}
               removingIds={removingIds}
-              selectedItems={selectedItems}
               onRemove={removeItem}
-              onSelect={handleSelect}
               onAddedToBasket={handleItemAddToBasket}
             />
           )}
@@ -332,12 +287,6 @@ export default function WishlistSignedIn() {
           </Button>
         </div>
       </div>
-
-      <WishlistMobileBulkBar
-        selectedCount={selectedCount}
-        onBulkAddToBasket={handleBulkAddToCart}
-        onBulkRemove={handleBulkRemove}
-      />
     </div>
   );
 }

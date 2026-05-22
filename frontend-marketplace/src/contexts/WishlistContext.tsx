@@ -5,6 +5,7 @@ import {
   useContext,
   useState,
   useEffect,
+  useLayoutEffect,
   useCallback,
   useMemo,
   useRef,
@@ -12,6 +13,11 @@ import {
 } from "react";
 import { useAuth } from "./AuthContext";
 import { httpClient } from "@/utils/httpClient";
+import {
+  clearWishlistStorage,
+  GUEST_WISHLIST_STORAGE_KEY,
+  parseStoredGuestWishlist,
+} from "@/utils/wishlistStorage";
 
 interface WishlistResponse {
   items: Array<{
@@ -39,20 +45,6 @@ const WishlistContext = createContext<WishlistContextType | undefined>(
   undefined
 );
 
-function parseStoredGuestWishlist(raw: string | null): number[] {
-  if (!raw) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (id): id is number =>
-        typeof id === "number" && Number.isFinite(id) && id > 0
-    );
-  } catch {
-    return [];
-  }
-}
-
 /** Union of guest product ids (e.g. localStorage + in-memory snapshot before login). */
 function combineWishlistIds(a: number[], b: number[]): number[] {
   return [...new Set([...a, ...b])];
@@ -62,10 +54,23 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
   const [wishlist, setWishlist] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const { user, token, loading: authLoading } = useAuth();
-  /** Prior `user` to detect logout (signed-in → signed-out); avoids clearing guest wishlist on normal browsing. */
+  /** Prior `user` to detect logout (signed-in → signed-out). */
   const prevUserRef = useRef<typeof user | undefined>(undefined);
-  /** Guest wishlist while signed out; used on sign-in if `guest_wishlist` in localStorage lagged behind React state. */
+  /** Guest wishlist while signed out; used on sign-in if storage lagged behind React state. */
   const guestWishlistSnapshotRef = useRef<number[]>([]);
+  /** Skip one guest persist after logout so stale in-memory ids are not re-written. */
+  const skipGuestPersistRef = useRef(false);
+
+  const resetWishlistState = useCallback(() => {
+    skipGuestPersistRef.current = true;
+    setWishlist([]);
+    clearWishlistStorage();
+    guestWishlistSnapshotRef.current = [];
+  }, []);
+
+  const handleSessionLogout = useCallback(() => {
+    resetWishlistState();
+  }, [resetWishlistState]);
 
   // Load wishlist from backend when user is authenticated
   const loadWishlistFromBackend = useCallback(async () => {
@@ -90,15 +95,17 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
 
   // Load wishlist from localStorage for guest users
   const loadGuestWishlist = useCallback(() => {
-    const stored = localStorage.getItem("guest_wishlist");
+    const stored = localStorage.getItem(GUEST_WISHLIST_STORAGE_KEY);
     const parsed = parseStoredGuestWishlist(stored);
     const merged = combineWishlistIds(parsed, guestWishlistSnapshotRef.current);
     setWishlist(merged);
   }, []);
 
-  // Save guest wishlist to localStorage
   const saveGuestWishlist = (wishlistItems: number[]) => {
-    localStorage.setItem("guest_wishlist", JSON.stringify(wishlistItems));
+    localStorage.setItem(
+      GUEST_WISHLIST_STORAGE_KEY,
+      JSON.stringify(wishlistItems)
+    );
   };
 
   /** POST guest-only ids to the account wishlist, then reload from backend. */
@@ -126,7 +133,7 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
           }
         }
 
-        localStorage.removeItem("guest_wishlist");
+        clearWishlistStorage();
         guestWishlistSnapshotRef.current = [];
 
         const refreshed = await httpClient.get<WishlistResponse>("/api/wishlist/");
@@ -142,19 +149,22 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
     [user, token, authLoading]
   );
 
-  // Snapshot guest wishlist while signed out (for post-login merge if localStorage lags).
+  // Snapshot guest likes only while browsing as a guest — never copy server wishlist on logout.
   useEffect(() => {
-    if (!user && Array.isArray(wishlist)) {
+    const prev = prevUserRef.current;
+    const browsingAsGuest =
+      prev === null || prev === undefined;
+    if (!user && browsingAsGuest) {
       guestWishlistSnapshotRef.current = wishlist;
     }
   }, [wishlist, user]);
 
-  // Authenticated: merge guest wishlist (storage + snapshot) into account, then load; guest: load combined local state
+  // Authenticated: merge guest wishlist then load; guest: load storage; logout: clear (no reload).
   useEffect(() => {
     if (user && token) {
       if (authLoading) return;
       const fromLs = parseStoredGuestWishlist(
-        localStorage.getItem("guest_wishlist")
+        localStorage.getItem(GUEST_WISHLIST_STORAGE_KEY)
       );
       const combined = combineWishlistIds(
         fromLs,
@@ -165,9 +175,17 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
       } else {
         void loadWishlistFromBackend();
       }
-    } else {
-      loadGuestWishlist();
+      return;
     }
+
+    const wasAuthenticated =
+      prevUserRef.current !== undefined && prevUserRef.current !== null;
+    if (wasAuthenticated) {
+      resetWishlistState();
+      return;
+    }
+
+    loadGuestWishlist();
   }, [
     user,
     token,
@@ -175,38 +193,30 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
     mergeGuestIntoBackend,
     loadGuestWishlist,
     loadWishlistFromBackend,
+    resetWishlistState,
   ]);
 
-  // Clear wishlist when user transitions from authenticated → anonymous (logout),
-  // not on every render while browsing as a guest (that broke guest wishlist + strained the app).
-  useEffect(() => {
+  useLayoutEffect(() => {
     const prev = prevUserRef.current;
     if (prev !== undefined && prev !== null && user === null) {
-      setWishlist([]);
-      localStorage.removeItem("guest_wishlist");
-      guestWishlistSnapshotRef.current = [];
+      resetWishlistState();
     }
     prevUserRef.current = user;
-  }, [user]);
+  }, [user, resetWishlistState]);
 
-  // Listen for logout events
   useEffect(() => {
-    const handleLogout = () => {
-      setWishlist([]);
-      localStorage.removeItem("guest_wishlist");
-      guestWishlistSnapshotRef.current = [];
+    window.addEventListener("user:logout", handleSessionLogout);
+    window.addEventListener("auth:logout", handleSessionLogout);
+    return () => {
+      window.removeEventListener("user:logout", handleSessionLogout);
+      window.removeEventListener("auth:logout", handleSessionLogout);
     };
+  }, [handleSessionLogout]);
 
-    window.addEventListener("user:logout", handleLogout);
-    return () => window.removeEventListener("user:logout", handleLogout);
-  }, []);
-
-  // Listen for storage changes (when wishlist is cleared on logout)
   useEffect(() => {
     const handleStorageChange = () => {
       if (!user) {
-        // Only handle storage changes for guest users
-        const stored = localStorage.getItem("guest_wishlist");
+        const stored = localStorage.getItem(GUEST_WISHLIST_STORAGE_KEY);
         if (stored) {
           setWishlist(parseStoredGuestWishlist(stored));
         } else {
@@ -222,6 +232,10 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
   // Save guest wishlist to localStorage when it changes (only for unauthenticated users)
   useEffect(() => {
     if (!user) {
+      if (skipGuestPersistRef.current) {
+        skipGuestPersistRef.current = false;
+        return;
+      }
       saveGuestWishlist(wishlist);
     }
   }, [wishlist, user]);
@@ -326,12 +340,9 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
         setWishlist(previousWishlist);
       }
     } else {
-      // Guest user - clear local state
-      setWishlist([]);
-      localStorage.removeItem("guest_wishlist");
-      guestWishlistSnapshotRef.current = [];
+      resetWishlistState();
     }
-  }, [user, token, wishlist, loadWishlistFromBackend]);
+  }, [user, token, wishlist, loadWishlistFromBackend, resetWishlistState]);
 
   // Memoize the context value to prevent unnecessary re-renders
   const contextValue = useMemo(

@@ -151,7 +151,7 @@ export function ShopFilterPanelContent({
           <span className="text-xs font-normal opacity-70">{collapseCategory ? "Hide" : "Show"}</span>
         </button>
         {collapseCategory && (
-          <div className="flex flex-col gap-0.5 pl-1 max-h-[50vh] overflow-y-auto rounded-lg py-2" style={{ scrollbarColor: "var(--sidebar-border) transparent" }}>
+          <div className="flex flex-col gap-0.5 pl-1 rounded-lg py-2">
             {categoriesLoading ? (
               <p className="text-sm animate-pulse" style={{ color: "var(--muted-foreground)" }}>
                 Loading categories…

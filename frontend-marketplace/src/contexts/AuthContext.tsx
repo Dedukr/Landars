@@ -8,6 +8,7 @@ import React, {
   useCallback,
 } from "react";
 import { httpClient } from "@/utils/httpClient";
+import { clearWishlistStorage } from "@/utils/wishlistStorage";
 
 interface User {
   id: number;
@@ -145,19 +146,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error("Logout error:", error);
     } finally {
-      // Clear local state regardless of API call result
-      setToken(null);
-      setRefreshTokenValue(null);
-      setUser(null);
+      clearWishlistStorage();
       localStorage.removeItem("authToken");
       localStorage.removeItem("refreshToken");
       localStorage.removeItem("user");
-      localStorage.removeItem("wishlist");
       localStorage.removeItem("cart");
-      localStorage.removeItem("guest_wishlist");
 
-      // Dispatch custom logout event to notify other contexts
+      // Clear wishlist hearts before auth state drops (WishlistContext listens sync)
       window.dispatchEvent(new CustomEvent("user:logout"));
+
+      setToken(null);
+      setRefreshTokenValue(null);
+      setUser(null);
     }
   }, [token, refreshTokenValue]);
 

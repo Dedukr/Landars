@@ -13,9 +13,7 @@ import type { WishlistProduct } from "@/lib/wishlistTypes";
 interface WishlistItemCardProps {
   product: WishlistProduct;
   isRemoving: boolean;
-  isSelected: boolean;
   onRemove: (productId: number) => void;
-  onSelect: (productId: number, selected: boolean) => void;
   onAddedToBasket?: (productName: string) => void;
 }
 
@@ -67,9 +65,7 @@ function AvailabilityBadge({
 export const WishlistItemCard = memo(function WishlistItemCard({
   product,
   isRemoving,
-  isSelected,
   onRemove,
-  onSelect,
   onAddedToBasket,
 }: WishlistItemCardProps) {
   const { addToCart } = useCart();
@@ -105,13 +101,6 @@ export const WishlistItemCard = memo(function WishlistItemCard({
   const handleRemove = useCallback(() => {
     onRemove(product.id);
   }, [onRemove, product.id]);
-
-  const handleSelectChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      onSelect(product.id, e.target.checked);
-    },
-    [onSelect, product.id]
-  );
 
   return (
     <article
@@ -152,24 +141,6 @@ export const WishlistItemCard = memo(function WishlistItemCard({
           </div>
         )}
         </Link>
-
-        <div className="absolute top-2.5 left-2.5 z-20 pointer-events-auto">
-          <label
-            className="inline-flex cursor-pointer rounded-full bg-[var(--card-bg)]/95 border border-[var(--sidebar-border)] min-w-[44px] min-h-[44px] items-center justify-center shadow-sm backdrop-blur-sm hover:opacity-95 active:scale-95 transition-transform"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-          >
-            <input
-              type="checkbox"
-              checked={isSelected}
-              onChange={handleSelectChange}
-              onClick={(e) => e.stopPropagation()}
-              className="h-6 w-6 rounded-md shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
-              style={{ accentColor: "var(--primary)" }}
-              aria-label={`Select ${displayName} for bulk actions`}
-            />
-          </label>
-        </div>
 
         <div className="absolute top-2.5 right-2.5 z-20 pointer-events-auto">
           <button

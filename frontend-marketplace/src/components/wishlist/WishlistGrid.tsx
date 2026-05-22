@@ -7,18 +7,14 @@ import type { WishlistProduct } from "@/lib/wishlistTypes";
 interface WishlistGridProps {
   products: WishlistProduct[];
   removingIds: Set<number>;
-  selectedItems: Set<number>;
   onRemove: (productId: number) => void;
-  onSelect: (productId: number, selected: boolean) => void;
   onAddedToBasket?: (productName: string) => void;
 }
 
 const WishlistGrid = memo(function WishlistGrid({
   products,
   removingIds,
-  selectedItems,
   onRemove,
-  onSelect,
   onAddedToBasket,
 }: WishlistGridProps) {
   return (
@@ -29,9 +25,7 @@ const WishlistGrid = memo(function WishlistGrid({
             key={product.id}
             product={product}
             isRemoving={removingIds.has(product.id)}
-            isSelected={selectedItems.has(product.id)}
             onRemove={onRemove}
-            onSelect={onSelect}
             onAddedToBasket={onAddedToBasket}
           />
         ))}
