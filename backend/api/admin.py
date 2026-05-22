@@ -655,7 +655,9 @@ def create_and_upload_invoice(modeladmin, request, queryset):
 
 @admin.action(description="Mark selected orders as Pending")
 def mark_orders_pending(modeladmin, request, queryset):
-    updated = queryset.update(status="pending")
+    from api.services.product_sales import bulk_set_order_status
+
+    updated = bulk_set_order_status(queryset, "pending")
     modeladmin.message_user(
         request,
         f"{updated} order(s) marked as pending.",
@@ -668,7 +670,9 @@ def mark_orders_paid(modeladmin, request, queryset):
     from billing.models import Invoice
     from django.utils import timezone
 
-    updated = queryset.update(status="paid")
+    from api.services.product_sales import bulk_set_order_status
+
+    updated = bulk_set_order_status(queryset, "paid")
 
     # Update related invoices to mark them as paid
     invoice_updated = 0
@@ -698,7 +702,9 @@ def mark_orders_paid(modeladmin, request, queryset):
 
 @admin.action(description="Mark selected orders as Cancelled")
 def mark_orders_cancelled(modeladmin, request, queryset):
-    updated = queryset.update(status="cancelled")
+    from api.services.product_sales import bulk_set_order_status
+
+    updated = bulk_set_order_status(queryset, "cancelled")
     modeladmin.message_user(
         request,
         f"{updated} order(s) marked as cancelled.",
@@ -758,9 +764,9 @@ def create_credit_note_for_invoices(modeladmin, request, queryset):
                 request=request,
             )
 
-            # Update order status to cancelled
-            order.status = "cancelled"
-            order.save(update_fields=["status"])
+            from api.services.product_sales import set_order_status
+
+            set_order_status(order, "cancelled")
 
             success_count += 1
             logger.info(

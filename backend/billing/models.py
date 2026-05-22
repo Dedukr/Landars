@@ -156,9 +156,9 @@ def create_invoice(order, request):
     """
     invoice = Invoice.create_and_publish_from_order(order=order, request=request)
 
-    # Update order status to issued when invoice is created
-    order.status = "issued"
-    order.save(update_fields=["status"])
+    from api.services.product_sales import set_order_status
+
+    set_order_status(order, "issued")
 
     return invoice
 

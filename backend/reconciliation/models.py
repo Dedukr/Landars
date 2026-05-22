@@ -131,10 +131,10 @@ class BankTransaction(models.Model):
             self.confidence_score = confidence_score
         self.save()
         
-        # Update order status to paid if not already
         if order and order.status != "paid":
-            order.status = "paid"
-            order.save(update_fields=["status"])
+            from api.services.product_sales import set_order_status
+
+            set_order_status(order, "paid")
 
         if order:
             from shipping.order_shipping import OrderShippingService

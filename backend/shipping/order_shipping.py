@@ -66,8 +66,9 @@ class OrderShippingService:
             return False
         if not OrderShippingService.requires_courier_shipment(order):
             return False
-        order.status = "ready_to_ship"
-        order.save(update_fields=["status"])
+        from api.services.product_sales import set_order_status
+
+        set_order_status(order, "ready_to_ship")
         return True
 
     @classmethod

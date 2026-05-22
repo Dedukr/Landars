@@ -180,10 +180,11 @@ class Command(BaseCommand):
         """
         qs = Order.objects.filter(created_at__date__lt=cutoff).exclude(status="paid")
 
+        from api.services.product_sales import set_order_status
+
         updated = 0
         for order in qs:
-            order.status = "paid"
-            order.save(update_fields=["status"])
+            set_order_status(order, "paid")
             from shipping.order_shipping import OrderShippingService
 
             order.refresh_from_db()

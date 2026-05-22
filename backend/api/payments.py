@@ -115,11 +115,10 @@ def stripe_webhook(request):
         try:
             order = Order.objects.get(payment_intent_id=payment_intent_id)
 
-            # Update order status to paid if not already
+            from api.services.product_sales import set_order_status
+
             if order.status != "paid":
-                order.status = "paid"
-                order.payment_status = "succeeded"
-                order.save(update_fields=["status", "payment_status"])
+                set_order_status(order, "paid", payment_status="succeeded")
                 logger.info(f"Updated order {order.id} status to paid")
             elif order.payment_status != "succeeded":
                 order.payment_status = "succeeded"

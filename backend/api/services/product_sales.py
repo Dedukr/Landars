@@ -9,6 +9,7 @@ fulfilment, and invoiced states. Pending / cancelled orders never contribute.
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import Iterable
 from decimal import Decimal, InvalidOperation
 
@@ -20,17 +21,69 @@ logger = logging.getLogger(__name__)
 # Keep in sync with verified-purchase logic in api.serializers.ProductReviewSerializer
 SOLD_ORDER_STATUSES: tuple[str, ...] = ("paid", "ready_to_ship", "issued")
 
+_pending_local = threading.local()
 
-def collect_product_ids_for_order(order) -> list[int]:
-    """Distinct non-null product PKs on this order (for batch rebuild)."""
+
+def _pending_state():
+    if not hasattr(_pending_local, "product_ids"):
+        _pending_local.product_ids: set[int] = set()
+        _pending_local.flush_scheduled = False
+    return _pending_local
+
+
+def schedule_product_sales_rebuild(product_ids: Iterable[int]) -> None:
+    """
+    Queue products for a single aggregate rebuild after the current DB transaction commits.
+
+    Multiple saves in the same request/transaction coalesce into one ``rebuild`` call.
+    """
+    state = _pending_state()
+    added = False
+    for pid in product_ids:
+        if pid is not None:
+            state.product_ids.add(int(pid))
+            added = True
+    if not added:
+        return
+    if not state.flush_scheduled:
+        state.flush_scheduled = True
+        transaction.on_commit(_flush_scheduled_product_sales_rebuild)
+
+
+def _flush_scheduled_product_sales_rebuild() -> None:
+    state = _pending_state()
+    ids = list(state.product_ids)
+    state.product_ids.clear()
+    state.flush_scheduled = False
+    if ids:
+        rebuild_product_sales_counters(ids)
+
+
+def product_ids_for_orders(order_ids: Iterable[int]) -> list[int]:
+    """Distinct product PKs on the given orders (non-null FK only)."""
     from api.models import OrderItem
 
+    ids = [int(oid) for oid in order_ids if oid is not None]
+    if not ids:
+        return []
     return list(
-        OrderItem.objects.filter(order_id=order.pk)
+        OrderItem.objects.filter(order_id__in=ids)
         .exclude(product_id__isnull=True)
         .values_list("product_id", flat=True)
         .distinct()
     )
+
+
+def schedule_product_sales_rebuild_for_orders(order_ids: Iterable[int]) -> None:
+    """Queue rebuild for every product line on these orders (admin bulk status, etc.)."""
+    schedule_product_sales_rebuild(product_ids_for_orders(order_ids))
+
+
+def collect_product_ids_for_order(order) -> list[int]:
+    """Distinct non-null product PKs on this order (for batch rebuild)."""
+    if not order.pk:
+        return []
+    return product_ids_for_orders([order.pk])
 
 
 def rebuild_product_sales_counters(product_ids: Iterable[int]) -> None:
@@ -41,6 +94,7 @@ def rebuild_product_sales_counters(product_ids: Iterable[int]) -> None:
     - ``sold_orders_count``: distinct sold orders containing the product.
 
     Idempotent; safe to call after any order/item change affecting totals.
+    Prefer :func:`schedule_product_sales_rebuild` from signal handlers.
     """
     from api.models import OrderItem, Product
 
@@ -89,6 +143,30 @@ def rebuild_product_sales_counters(product_ids: Iterable[int]) -> None:
                     "rebuild_product_sales_counters: product id=%s not found (skipped)",
                     pid,
                 )
+
+
+def set_order_status(order, status: str, **extra_fields) -> None:
+    """
+    Persist one order's status via ``save()`` (signals + on-commit counter batching).
+
+    Pass additional model fields as keywords, e.g.
+    ``set_order_status(order, "paid", payment_status="succeeded")``.
+    """
+    order.status = status
+    update_fields = ["status"]
+    for name, value in extra_fields.items():
+        setattr(order, name, value)
+        update_fields.append(name)
+    order.save(update_fields=update_fields)
+
+
+def bulk_set_order_status(queryset, status: str) -> int:
+    """
+    Bulk ``Order`` status update. Prefer this over raw ``queryset.update(status=...)``.
+
+    ``OrderQuerySet.update`` schedules product sales counter rebuilds when ``status`` changes.
+    """
+    return queryset.update(status=status)
 
 
 def rebuild_all_product_sales_counters() -> int:

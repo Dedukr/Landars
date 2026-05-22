@@ -1,7 +1,9 @@
 """
 Recompute denormalised ``Product.sold_quantity`` and ``sold_orders_count`` from orders.
 
-Use after bulk admin updates (``queryset.update``), data imports, or fixing drift.
+Use after data imports, raw SQL, or fixing drift. Normal ORM status changes
+(``set_order_status`` / ``bulk_set_order_status`` / ``OrderQuerySet.update``) schedule
+rebuilds automatically.
 """
 
 from django.core.management.base import BaseCommand

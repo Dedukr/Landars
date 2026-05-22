@@ -228,10 +228,10 @@ class InvoiceAdmin(admin.ModelAdmin):
                     request=request,
                 )
 
-                # Update order status to cancelled
                 if invoice.order:
-                    invoice.order.status = "cancelled"
-                    invoice.order.save(update_fields=["status"])
+                    from api.services.product_sales import set_order_status
+
+                    set_order_status(invoice.order, "cancelled")
 
                 success_count += 1
                 logger.info(

@@ -292,8 +292,24 @@ class ProductReview(models.Model):
 #         self.save()
 
 
+class OrderQuerySet(models.QuerySet):
+    """Custom queryset: bulk ``status`` updates refresh denormalised product sales counters."""
+
+    def update(self, **kwargs):
+        order_ids: list[int] | None = None
+        if "status" in kwargs:
+            order_ids = list(self.values_list("pk", flat=True))
+        rows = super().update(**kwargs)
+        if order_ids:
+            from api.services.product_sales import schedule_product_sales_rebuild_for_orders
+
+            schedule_product_sales_rebuild_for_orders(order_ids)
+        return rows
+
+
 # Order model
 class Order(models.Model):
+    objects = OrderQuerySet.as_manager()
     customer = models.ForeignKey(
         CustomUser, on_delete=models.SET_NULL, related_name="orders", null=True
     )
