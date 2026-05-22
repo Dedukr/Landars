@@ -246,14 +246,25 @@ class ProductImageInline(admin.TabularInline):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ["name", "get_price", "get_vat_display", "get_categories"]
+    list_display = ["name", "get_price", "get_vat_display", "sold_quantity", "sold_orders_count", "get_categories"]
     list_filter = ["categories", "vat"]
     filter_horizontal = ["categories"]
     search_fields = ["name"]
     ordering = ["name"]
     inlines = [ProductImageInline]
-
-    fields = ["name", "description", "base_price", "holiday_fee", "vat", "weight", "categories"]
+    readonly_fields = ["sold_quantity", "sold_orders_count", "created_at"]
+    fields = [
+        "name",
+        "description",
+        "base_price",
+        "holiday_fee",
+        "vat",
+        "weight",
+        "categories",
+        "sold_quantity",
+        "sold_orders_count",
+        "created_at",
+    ]
 
     class Media:
         js = ("admin/js/prevent_double_submit.js",)

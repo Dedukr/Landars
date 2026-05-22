@@ -5,21 +5,6 @@ import { ChevronRight, Package } from "lucide-react";
 import HomeProductCard from "./HomeProductCard";
 import { scopeProductsQueryString } from "@/utils/catalogScope";
 
-// ─────────────────────────────────────────────────────────────────
-// NOTE FOR FUTURE DEVELOPMENT:
-// This section currently displays a limited selection of products
-// sorted by name. When the backend exposes one or more of the fields
-// below, update the `buildApiUrl` function accordingly:
-//
-//   - `sort=sales_count` / `order_count` → Most sold products
-//   - `is_featured=true`                → Editorially featured
-//   - `sort=created_at_desc`             → Newest arrivals
-//   - `rating=desc`                      → Top rated
-//   - `review_count`                     → Most reviewed
-//
-// These fields should be exposed by the Django products API.
-// ─────────────────────────────────────────────────────────────────
-
 interface Product {
   id: number;
   name: string;
@@ -30,6 +15,8 @@ interface Product {
   primary_image?: string | null;
   categories?: string[];
   stock_quantity?: number;
+  sold_quantity?: number;
+  sold_orders_count?: number;
 }
 
 interface PaginatedResponse {
@@ -43,6 +30,10 @@ interface ProductPreviewSectionProps {
   /** Sort query param sent to /api/products/. Default "name_asc". */
   sort?: string;
   limit?: number;
+  /** Pagination offset into the sorted catalogue (e.g. second “popular” band). */
+  offset?: number;
+  /** When true, render nothing if the fetch returns zero products (e.g. offset past catalogue end). */
+  hideWhenEmpty?: boolean;
   /** Background style: "default" = var(--background), "subtle" = var(--sidebar-bg) */
   background?: "default" | "subtle";
   className?: string;
@@ -53,6 +44,8 @@ export default function ProductPreviewSection({
   subtitle,
   sort = "name_asc",
   limit = 8,
+  offset = 0,
+  hideWhenEmpty = false,
   background = "default",
   className = "",
 }: ProductPreviewSectionProps) {
@@ -61,11 +54,10 @@ export default function ProductPreviewSection({
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    // Future: replace sort param once backend exposes sales_count, is_featured, etc.
     const qs = scopeProductsQueryString(
       new URLSearchParams({
         limit: String(limit),
-        offset: "0",
+        offset: String(offset),
         sort,
       }).toString()
     );
@@ -80,10 +72,14 @@ export default function ProductPreviewSection({
       })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
-  }, [limit, sort]);
+  }, [limit, offset, sort]);
 
   const bg =
     background === "subtle" ? "var(--sidebar-bg)" : "var(--background)";
+
+  if (hideWhenEmpty && !loading && !error && products.length === 0) {
+    return null;
+  }
 
   return (
     <section

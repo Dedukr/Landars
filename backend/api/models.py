@@ -167,6 +167,16 @@ class Product(models.Model):
         db_index=True,
         help_text="When the product was first created (used for newest-first listings).",
     )
+    sold_quantity = models.PositiveIntegerField(
+        default=0,
+        db_index=True,
+        help_text="Total units sold (sum of order line quantities in paid/ready/issued orders).",
+    )
+    sold_orders_count = models.PositiveIntegerField(
+        default=0,
+        db_index=True,
+        help_text="Distinct completed orders containing this product.",
+    )
     # image = models.ImageField(
     #     upload_to="products/", blank=True, null=True
     # )
@@ -177,6 +187,7 @@ class Product(models.Model):
         indexes = [
             models.Index(fields=["name"]),
             models.Index(fields=["created_at"]),
+            models.Index(fields=["-sold_quantity", "id"]),
         ]
 
     def __str__(self):

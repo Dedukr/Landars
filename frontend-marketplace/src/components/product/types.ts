@@ -10,6 +10,8 @@ export interface ProductDetail {
   stock_quantity?: number;
   in_stock?: boolean;
   categories?: string[];
+  sold_quantity?: number;
+  sold_orders_count?: number;
   category?: {
     id: number;
     name: string;

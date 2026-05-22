@@ -93,7 +93,7 @@ class ProductList(APIView):
     def get(self, request):
         """Retrieve products with filtering, sorting, and pagination."""
         # Cache key version suffix bumps stale entries when search logic changes
-        cache_key = f"products_v6_{hash(str(request.query_params))}"
+        cache_key = f"products_v7_{hash(str(request.query_params))}"
 
         # Try to get cached response
         cached_response = cache.get(cache_key)
@@ -167,6 +167,10 @@ class ProductList(APIView):
             products = products.order_by("-created_at")
         elif sort == "created_at_asc":
             products = products.order_by("created_at")
+        elif sort == "sales_desc":
+            products = products.order_by("-sold_quantity", "-sold_orders_count", "id")
+        elif sort == "sales_asc":
+            products = products.order_by("sold_quantity", "sold_orders_count", "id")
 
         # Get total count before pagination
         total_count = products.count()

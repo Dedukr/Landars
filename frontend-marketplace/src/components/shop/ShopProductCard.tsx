@@ -17,6 +17,8 @@ export interface ShopProductDto {
   primary_image?: string | null;
   categories?: string[];
   stock_quantity?: number;
+  sold_quantity?: number;
+  sold_orders_count?: number;
 }
 
 function collectImageUrls(product: ShopProductDto): string[] {

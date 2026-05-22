@@ -56,7 +56,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "account",
-    "api",
+    "api.apps.ApiConfig",
     "storages",
     "billing",
     "shipping",

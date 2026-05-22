@@ -12,6 +12,7 @@ interface HomeProduct {
   images?: Array<string | { image_url: string }>;
   primary_image?: string | null;
   categories?: string[];
+  sold_quantity?: number;
 }
 
 interface HomeProductCardProps {
@@ -83,6 +84,21 @@ export default function HomeProductCard({ product, className = "" }: HomeProduct
               }}
             >
               {product.categories[0]}
+            </span>
+          </div>
+        )}
+        {typeof product.sold_quantity === "number" && product.sold_quantity > 0 && (
+          <div className="absolute top-2.5 right-2.5">
+            <span
+              className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold tabular-nums"
+              style={{
+                background: "var(--success-bg)",
+                color: "var(--success-text)",
+                border: "1px solid var(--success-border)",
+              }}
+              title="Units sold on completed orders"
+            >
+              {product.sold_quantity} sold
             </span>
           </div>
         )}

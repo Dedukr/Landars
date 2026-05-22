@@ -19,6 +19,7 @@ from .models import (
     WishlistItem,
 )
 from .validators import ProductImageValidationMixin
+from api.services.product_sales import SOLD_ORDER_STATUSES
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -87,24 +88,21 @@ class ProductReviewSerializer(serializers.ModelSerializer):
         """
         Check if the reviewer has purchased this product (has a paid order containing it).
         """
-        from .models import OrderItem
-        
         user = getattr(obj, "user", None)
         product = getattr(obj, "product", None)
-        
+
         if not user or not product:
             return False
-        
-        # Check if user has any paid orders containing this product
+
         # Check both by product FK and by item_name (in case product was deleted)
         has_purchased = OrderItem.objects.filter(
             order__customer=user,
-            order__status__in=["paid", "ready_to_ship", "issued"],
+            order__status__in=SOLD_ORDER_STATUSES,
         ).filter(
             # Match by product FK or by stored item_name
             Q(product=product) | Q(item_name=product.name)
         ).exists()
-        
+
         return has_purchased
 
     class Meta:
@@ -131,8 +129,10 @@ class ProductSerializer(ProductImageValidationMixin, serializers.ModelSerializer
             "categories",
             "images",
             "primary_image",
+            "sold_quantity",
+            "sold_orders_count",
         ]
-        read_only_fields = ["id", "primary_image"]
+        read_only_fields = ["id", "primary_image", "sold_quantity", "sold_orders_count"]
 
     def get_categories(self, obj):
         """Return all category names for the product, including parent categories."""
@@ -223,6 +223,8 @@ class ProductListSerializer(serializers.ModelSerializer):
             "categories",
             "primary_image",
             "images",
+            "sold_quantity",
+            "sold_orders_count",
         ]
 
     def get_primary_image(self, obj):

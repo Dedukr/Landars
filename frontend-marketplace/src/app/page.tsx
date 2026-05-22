@@ -16,30 +16,31 @@ export const metadata: Metadata = {
 export default function HomePage() {
   return (
     <div style={{ background: "var(--background)" }}>
-      {/* ── Hero (search + CTAs + product preview) ───────── */}
       <HomeHero />
 
-      {/* ── How it works ─────────────────────────────────── */}
       <HowItWorksSection />
 
-      {/* ── Browse by category ───────────────────────────── */}
       <CategoryGrid />
 
-      {/* ── Popular picks ────────────────────────────────── */}
-      {/*
-        Future: when backend exposes `sales_count` or `order_count`,
-        pass sort="sales_count" to show genuinely popular products.
-        For now, displays a curated selection from the catalogue.
-      */}
       <ProductPreviewSection
-        title="Popular picks"
-        subtitle="Customer favourites"
-        sort="name_asc"
+        title="Most popular picks"
+        subtitle="Best sellers by units sold"
+        sort="sales_desc"
         limit={8}
+        offset={0}
         background="subtle"
       />
 
-      {/* ── Fresh picks (newest products) ───────────────── */}
+      <ProductPreviewSection
+        title="Customer favourites"
+        subtitle="More top sellers from your orders"
+        sort="sales_desc"
+        limit={8}
+        offset={8}
+        hideWhenEmpty
+        background="default"
+      />
+
       <FeaturedProductsSection
         title="Fresh picks"
         subtitle="Newly added"
@@ -47,10 +48,8 @@ export default function HomePage() {
         limit={4}
       />
 
-      {/* ── Trust & benefits ─────────────────────────────── */}
       <TrustBenefitsSection />
 
-      {/* ── Final CTA ────────────────────────────────────── */}
       <HomeCTASection />
     </div>
   );
