@@ -19,6 +19,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from api.models import Cart
+
 from .models import Shipment
 from .sendcloud_client import SendcloudAPIError
 from .sendcloud_shipping import ShippingService
@@ -48,6 +50,13 @@ def get_shipping_options(request):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        try:
+            cart = Cart.objects.get(user=request.user)
+        except Cart.DoesNotExist:
+            cart = None
+        if cart and cart.is_home_delivery:
+            return Response({"success": True, "options": []})
 
         service = ShippingService()
         options = service.get_shipping_options(address=address, items=items)

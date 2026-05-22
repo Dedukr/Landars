@@ -163,6 +163,7 @@ export default function CheckoutPage() {
     loading: shipmentQuoteLoading,
     error: shipmentQuoteError,
     fetchShipmentQuotes,
+    clearOptions: clearShipmentQuotes,
   } = useShipmentQuoteOptions();
   const [selectedShipmentQuote, setSelectedShipmentQuote] =
     useState<ShipmentQuoteOption | null>(null);
@@ -511,8 +512,14 @@ export default function CheckoutPage() {
     return () => clearTimeout(timeoutId);
   }, [shippingForm.notes, user, cartData, updateCartNotes]);
 
-  // Fetch courier quotes from Django shipping app when address is complete
+  // Fetch courier quotes from Django shipping app when address is complete (post only)
   useEffect(() => {
+    if (cartData?.is_home_delivery ?? true) {
+      clearShipmentQuotes();
+      setSelectedShipmentQuote(null);
+      return;
+    }
+
     // Check if required address fields are filled
     const hasCompleteAddress =
       shippingForm.address_line.trim() &&
@@ -543,7 +550,9 @@ export default function CheckoutPage() {
     shippingForm.city,
     shippingForm.postal_code,
     cartData,
+    cartData?.is_home_delivery,
     fetchShipmentQuotes,
+    clearShipmentQuotes,
   ]);
 
   // Handle courier quote selection (Sendcloud method id → order later)
@@ -1062,15 +1071,16 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              {/* Courier quotes (Django shipment app) */}
-              <ShipmentQuoteOptions
-                options={shipmentQuoteOptions}
-                selectedOptionId={resolvedPostShipmentQuote?.id ?? null}
-                onSelectOption={handleSelectShipmentQuote}
-                loading={shipmentQuoteLoading}
-                error={shipmentQuoteError}
-                assignmentMode={shipmentQuoteOptions.length === 1}
-              />
+              {!cartIsHomeDelivery ? (
+                <ShipmentQuoteOptions
+                  options={shipmentQuoteOptions}
+                  selectedOptionId={resolvedPostShipmentQuote?.id ?? null}
+                  onSelectOption={handleSelectShipmentQuote}
+                  loading={shipmentQuoteLoading}
+                  error={shipmentQuoteError}
+                  assignmentMode={shipmentQuoteOptions.length === 1}
+                />
+              ) : null}
 
               {/* Validation Error for Shipping */}
               {errors.shipping && (

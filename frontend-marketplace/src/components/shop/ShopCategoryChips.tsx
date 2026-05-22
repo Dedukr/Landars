@@ -3,10 +3,7 @@
 import React, { useMemo } from "react";
 import type { ShopListingFilters } from "@/types/shop-filters";
 import type { ShopCategoryRecord } from "./ShopFilterPanelContent";
-import {
-  categoryMatchesShopChip,
-  shopCategoryChipSortIndex,
-} from "@/constants/shopCategoryChips";
+import { resolveShopFeaturedCategories } from "@/constants/shopCategoryChips";
 import { cn } from "@/lib/utils";
 
 interface ShopCategoryChipsProps {
@@ -22,14 +19,10 @@ export function ShopCategoryChips({
   setFilters,
   className,
 }: ShopCategoryChipsProps) {
-  const chips = useMemo(() => {
-    return categories
-      .filter((c) => categoryMatchesShopChip(c.name))
-      .sort(
-        (a, b) =>
-          shopCategoryChipSortIndex(a.name) - shopCategoryChipSortIndex(b.name)
-      );
-  }, [categories]);
+  const chips = useMemo(
+    () => resolveShopFeaturedCategories(categories),
+    [categories]
+  );
 
   if (chips.length === 0) return null;
 

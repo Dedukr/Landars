@@ -18,8 +18,6 @@ export default function HomePage() {
     <div style={{ background: "var(--background)" }}>
       <HomeHero />
 
-      <HowItWorksSection />
-
       <CategoryGrid />
 
       <ProductPreviewSection
@@ -31,22 +29,14 @@ export default function HomePage() {
         background="subtle"
       />
 
-      <ProductPreviewSection
-        title="Customer favourites"
-        subtitle="More top sellers from your orders"
-        sort="sales_desc"
-        limit={8}
-        offset={8}
-        hideWhenEmpty
-        background="default"
-      />
-
       <FeaturedProductsSection
         title="Fresh picks"
         subtitle="Newly added"
         sort="created_at_desc"
         limit={4}
       />
+
+      <HowItWorksSection />
 
       <TrustBenefitsSection />
 

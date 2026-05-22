@@ -13,6 +13,10 @@ function shipmentStatusText(order: MarketplaceOrderDetail): string | null {
 }
 
 export function ShippingTrackingCard({ order }: { order: MarketplaceOrderDetail }) {
+  if (order.is_home_delivery) {
+    return null;
+  }
+
   const statusText = shipmentStatusText(order);
   const hasTracking = !!order.shipping_tracking_number?.trim();
   const hasCarrier = !!(

@@ -15,6 +15,19 @@ interface Product {
   categories?: string[];
 }
 
+const HERO_PREVIEW_POOL_SIZE = 24;
+const HERO_PREVIEW_COUNT = 3;
+
+function pickRandomItems<T>(items: T[], count: number): T[] {
+  if (items.length <= count) return items;
+  const pool = [...items];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, count);
+}
+
 function getProductImage(p: Product): string | null {
   if (p.primary_image) return p.primary_image;
   if (p.image_url) return p.image_url;
@@ -32,7 +45,9 @@ export default function HeroProductPreview() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    const qs = scopeProductsQueryString("limit=3&sort=name_asc");
+    const qs = scopeProductsQueryString(
+      `limit=${HERO_PREVIEW_POOL_SIZE}&sort=created_at_desc`
+    );
     fetch(`/api/products/?${qs}`)
       .then((r) => {
         if (!r.ok) throw new Error("fetch failed");
@@ -40,7 +55,7 @@ export default function HeroProductPreview() {
       })
       .then((data) => {
         const results = Array.isArray(data) ? data : data.results ?? [];
-        setProducts(results.slice(0, 3));
+        setProducts(pickRandomItems(results, HERO_PREVIEW_COUNT));
         setLoaded(true);
       })
       .catch(() => {

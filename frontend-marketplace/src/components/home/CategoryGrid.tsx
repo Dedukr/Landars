@@ -5,17 +5,14 @@ import Image from "next/image";
 import {
   Utensils,
   Beef,
-  Milk,
-  Wheat,
-  Apple,
-  Fish,
-  Coffee,
+  Soup,
   Cookie,
-  ShoppingBasket,
-  Wine,
-  Carrot,
   ChevronRight,
 } from "lucide-react";
+import {
+  resolveShopFeaturedCategories,
+  shopFeaturedCategoryFallbacks,
+} from "@/constants/shopCategoryChips";
 
 interface Category {
   id: number;
@@ -26,29 +23,14 @@ interface Category {
   products_count?: number | null;  // Number of products in this category
 }
 
-// Map common Eastern European food category names to lucide icons
 function getCategoryIcon(name: string): React.ElementType {
   const lc = name.toLowerCase();
-  if (lc.includes("sausage") || lc.includes("meat") || lc.includes("pork") || lc.includes("beef")) return Beef;
-  if (lc.includes("dairy") || lc.includes("milk") || lc.includes("cheese") || lc.includes("cream")) return Milk;
-  if (lc.includes("bread") || lc.includes("bakery") || lc.includes("pastry") || lc.includes("wheat")) return Wheat;
-  if (lc.includes("fruit") || lc.includes("apple") || lc.includes("jam") || lc.includes("preserve")) return Apple;
-  if (lc.includes("fish") || lc.includes("seafood")) return Fish;
-  if (lc.includes("drink") || lc.includes("beverage") || lc.includes("juice") || lc.includes("tea") || lc.includes("coffee")) return Coffee;
-  if (lc.includes("cookie") || lc.includes("sweet") || lc.includes("candy") || lc.includes("biscuit") || lc.includes("dessert")) return Cookie;
-  if (lc.includes("wine") || lc.includes("alcohol") || lc.includes("beer") || lc.includes("spirit")) return Wine;
-  if (lc.includes("vegetable") || lc.includes("pickle") || lc.includes("ferment") || lc.includes("carrot")) return Carrot;
-  if (lc.includes("fish") || lc.includes("herring")) return Fish;
+  if (lc.includes("dumpling") || lc.includes("varenyky")) return Cookie;
+  if (lc.includes("lard")) return Utensils;
+  if (lc.includes("meat snack") || lc.includes("snack")) return Beef;
+  if (lc.includes("soup")) return Soup;
   return Utensils;
 }
-
-// Static fallback categories to show if API returns nothing
-const STATIC_FALLBACK_CATEGORIES: Array<{ id: number; name: string; parent: null }> = [
-  { id: -1, name: "Sausages & Meats", parent: null },
-  { id: -2, name: "Dairy Products", parent: null },
-  { id: -3, name: "Bread & Pastries", parent: null },
-  { id: -4, name: "Pickles & Preserves", parent: null },
-];
 
 interface CategoryCardProps {
   category: Category;
@@ -122,13 +104,14 @@ export default function CategoryGrid() {
         return r.json();
       })
       .then((data: Category[]) => {
-        // Show only root categories (parent === null) on the homepage
-        const roots = data.filter((c) => c.parent === null);
-        setCategories(roots.length > 0 ? roots : STATIC_FALLBACK_CATEGORIES);
+        const list = Array.isArray(data) ? data : [];
+        const featured = resolveShopFeaturedCategories(list);
+        setCategories(
+          featured.length > 0 ? featured : shopFeaturedCategoryFallbacks()
+        );
       })
       .catch(() => {
-        // Use static fallback if API is unavailable
-        setCategories(STATIC_FALLBACK_CATEGORIES);
+        setCategories(shopFeaturedCategoryFallbacks());
       })
       .finally(() => setLoading(false));
   }, []);
@@ -170,8 +153,8 @@ export default function CategoryGrid() {
 
         {/* Category grid */}
         {loading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {Array.from({ length: 8 }).map((_, i) => (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            {Array.from({ length: 5 }).map((_, i) => (
               <div
                 key={i}
                 className="h-28 rounded-2xl animate-pulse"
@@ -180,36 +163,10 @@ export default function CategoryGrid() {
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
             {categories.map((cat) => (
               <CategoryCard key={cat.id} category={cat} />
             ))}
-            {/* "All products" catch-all card */}
-            <Link
-              href="/shop"
-              className="group flex flex-col items-center gap-3 p-5 rounded-2xl border transition-all duration-200 hover:shadow-md hover:-translate-y-0.5"
-              style={{
-                background: "var(--background)",
-                borderColor: "var(--sidebar-border)",
-                borderStyle: "dashed",
-              }}
-            >
-              <div
-                className="w-14 h-14 rounded-xl flex items-center justify-center"
-                style={{ background: "var(--sidebar-bg)" }}
-              >
-                <ShoppingBasket
-                  className="w-7 h-7"
-                  style={{ color: "var(--muted-foreground)" }}
-                />
-              </div>
-              <span
-                className="text-sm font-semibold text-center"
-                style={{ color: "var(--muted-foreground)" }}
-              >
-                View all
-              </span>
-            </Link>
           </div>
         )}
 

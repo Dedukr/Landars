@@ -89,7 +89,7 @@ export default function OrderDetailPage() {
             <OrderPaidHighlightCard order={order} />
             <OrderItemsSection items={items} totalItems={order.total_items} />
             <DeliveryFulfillmentCard order={order} />
-            <ShippingTrackingCard order={order} />
+            {!order.is_home_delivery ? <ShippingTrackingCard order={order} /> : null}
           </div>
 
           <aside className="space-y-6 lg:col-span-5 xl:col-span-4">
