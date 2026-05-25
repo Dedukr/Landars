@@ -1,11 +1,5 @@
 // CSRF token utility functions
-// API configuration - use NEXT_PUBLIC_API_BASE_URL directly
-const getApiBaseUrl = () => {
-  // Use NEXT_PUBLIC_API_BASE_URL if available, otherwise fallback to https://localhost
-  return process.env.NEXT_PUBLIC_API_BASE_URL || "https://localhost";
-};
-
-const API_BASE_URL = getApiBaseUrl();
+import { getClientApiBaseUrl } from "@/config/api";
 
 let csrfToken: string | null = null;
 
@@ -18,7 +12,7 @@ export async function fetchCSRFToken(): Promise<string> {
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/auth/csrf-token/`, {
+    const response = await fetch(`${getClientApiBaseUrl()}/api/auth/csrf-token/`, {
       method: "GET",
       credentials: "include", // Important for CSRF cookies
     });

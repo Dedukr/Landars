@@ -8,7 +8,15 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import F
+from django.db.models import (
+    DecimalField,
+    ExpressionWrapper,
+    F,
+    OuterRef,
+    Subquery,
+    Sum,
+)
+from django.db.models.functions import Coalesce
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.template.loader import render_to_string
@@ -397,6 +405,52 @@ class CategoryList(APIView):
 #         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+def _annotate_total_for_sort(orders):
+    """Annotate an Order queryset with ``_total_sort`` matching Order.total_price.
+
+    ``Order.total_price`` is a Python @property, so it cannot appear directly in
+    ``.order_by()``. We replicate it at the DB level so price-based sorting works
+    for the customer order list views.
+    """
+    from decimal import Decimal
+
+    decimal_field = DecimalField(max_digits=14, decimal_places=2)
+
+    # Per-item line total preferring the snapshot ``item_price``, falling back to
+    # the current ``product.price`` for legacy rows.
+    line_total = ExpressionWrapper(
+        Coalesce(F("item_price"), F("product__price")) * F("quantity"),
+        output_field=decimal_field,
+    )
+
+    items_total_subquery = (
+        OrderItem.objects.filter(order=OuterRef("pk"))
+        .annotate(_line=line_total)
+        .values("order")
+        .annotate(_sum=Sum("_line"))
+        .values("_sum")
+    )
+
+    zero = Decimal("0.00")
+    hundred = Decimal("100")
+
+    return orders.annotate(
+        _items_total=Coalesce(
+            Subquery(items_total_subquery, output_field=decimal_field),
+            zero,
+            output_field=decimal_field,
+        ),
+    ).annotate(
+        _total_sort=ExpressionWrapper(
+            F("_items_total")
+            + (F("_items_total") * F("holiday_fee") / hundred)
+            + F("delivery_fee")
+            - F("discount"),
+            output_field=decimal_field,
+        ),
+    )
+
+
 class OrderListView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -443,6 +497,13 @@ class OrderListView(APIView):
                 sort = "created_at"
             elif sort == "-order_date":
                 sort = "-created_at"
+            # total_price is a Python @property, not a DB column.
+            # Annotate the queryset with a DB-level computed total that mirrors
+            # Order.total_price = sum(line_total) * (1 + holiday_fee/100)
+            #                    + delivery_fee - discount
+            if sort in ("total_price", "-total_price"):
+                orders = _annotate_total_for_sort(orders)
+                sort = "_total_sort" if sort == "total_price" else "-_total_sort"
             orders = orders.order_by(sort)
 
         # Pagination
@@ -1247,6 +1308,16 @@ class UserOrdersView(APIView):
                 "total_price",
                 "-total_price",
             ]:
+                if sort == "order_date":
+                    sort = "created_at"
+                elif sort == "-order_date":
+                    sort = "-created_at"
+                # total_price is a Python @property; annotate at the DB level
+                if sort in ("total_price", "-total_price"):
+                    orders = _annotate_total_for_sort(orders)
+                    sort = (
+                        "_total_sort" if sort == "total_price" else "-_total_sort"
+                    )
                 orders = orders.order_by(sort)
 
             # Pagination

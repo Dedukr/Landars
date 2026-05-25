@@ -7,7 +7,12 @@ import {
   XCircle,
 } from "lucide-react";
 
-export type OrderStatusKey = "pending" | "paid" | "issued" | "cancelled";
+export type OrderStatusKey =
+  | "pending"
+  | "paid"
+  | "ready_to_ship"
+  | "issued"
+  | "cancelled";
 
 export interface OrderStatusPresentation {
   label: string;
@@ -29,6 +34,12 @@ const STATUS_MAP: Record<OrderStatusKey, OrderStatusPresentation> = {
     description: "Your order is confirmed and being prepared.",
     Icon: CheckCircle2,
     tone: "success",
+  },
+  ready_to_ship: {
+    label: "Ready to ship",
+    description: "Your order is packed and ready to go out.",
+    Icon: Package,
+    tone: "accent",
   },
   issued: {
     label: "Issued",

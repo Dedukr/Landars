@@ -52,7 +52,7 @@ export default function NotAuthenticatedState({
           </Link>
           {showShopLink && (
             <Link
-              href="/"
+              href="/shop"
               className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold border transition-all duration-200 hover:opacity-80"
               style={{
                 borderColor: "var(--sidebar-border)",
@@ -61,7 +61,7 @@ export default function NotAuthenticatedState({
               }}
             >
               <ShoppingBag className="w-4 h-4" />
-              Browse Shop
+              Browse the shop
             </Link>
           )}
         </div>

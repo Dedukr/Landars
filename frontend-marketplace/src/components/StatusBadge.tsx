@@ -1,54 +1,9 @@
 import React from "react";
-import { Clock, CheckCircle, Package, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-type OrderStatus = "pending" | "paid" | "issued" | "cancelled";
-
-const STATUS_MAP: Record<
-  OrderStatus,
-  {
-    label: string;
-    icon: React.ElementType;
-    style: React.CSSProperties;
-  }
-> = {
-  pending: {
-    label: "Pending",
-    icon: Clock,
-    style: {
-      background: "rgba(217,164,65,0.12)",
-      color: "#b8860b",
-      border: "1px solid rgba(217,164,65,0.35)",
-    },
-  },
-  paid: {
-    label: "Confirmed",
-    icon: CheckCircle,
-    style: {
-      background: "var(--success-bg)",
-      color: "var(--success-text)",
-      border: "1px solid var(--success-border)",
-    },
-  },
-  issued: {
-    label: "Issued",
-    icon: Package,
-    style: {
-      background: "var(--info-bg)",
-      color: "var(--info-text)",
-      border: "1px solid var(--info-border)",
-    },
-  },
-  cancelled: {
-    label: "Cancelled",
-    icon: XCircle,
-    style: {
-      background: "rgba(220,38,38,0.1)",
-      color: "var(--destructive)",
-      border: "1px solid rgba(220,38,38,0.3)",
-    },
-  },
-};
+import {
+  getOrderStatusPresentation,
+  toneSurfaceClass,
+} from "@/lib/orderStatusDisplay";
 
 interface StatusBadgeProps {
   status: string;
@@ -61,23 +16,29 @@ export default function StatusBadge({
   size = "md",
   className,
 }: StatusBadgeProps) {
-  const cfg = STATUS_MAP[status as OrderStatus] ?? STATUS_MAP.pending;
-  const Icon = cfg.icon;
+  const presentation = getOrderStatusPresentation(status);
+  const tone = toneSurfaceClass(presentation.tone);
+  const Icon = presentation.Icon;
 
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full font-medium",
+        "inline-flex items-center gap-1.5 rounded-full border font-medium",
         size === "sm" ? "px-2.5 py-0.5 text-xs" : "px-3 py-1 text-sm",
         className
       )}
-      style={cfg.style}
+      style={{
+        background: tone.bg,
+        color: "var(--foreground)",
+        borderColor: tone.border,
+      }}
     >
-      <Icon className={size === "sm" ? "w-3 h-3" : "w-3.5 h-3.5"} />
-      {cfg.label}
+      <Icon
+        className={cn("shrink-0", size === "sm" ? "h-3 w-3" : "h-3.5 w-3.5")}
+        style={{ color: tone.iconWrap }}
+        aria-hidden
+      />
+      <span>{presentation.label}</span>
     </span>
   );
 }
-
-export { STATUS_MAP };
-export type { OrderStatus };

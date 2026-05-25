@@ -8,13 +8,7 @@
  * - Error handling and user feedback
  */
 
-// API configuration - use NEXT_PUBLIC_API_BASE_URL directly
-const getApiBaseUrl = () => {
-  // Use NEXT_PUBLIC_API_BASE_URL if available, otherwise fallback to https://localhost
-  return process.env.NEXT_PUBLIC_API_BASE_URL || "https://localhost";
-};
-
-const API_BASE_URL = getApiBaseUrl();
+import { getClientApiBaseUrl } from "@/config/api";
 
 // Types for the HTTP client
 interface RequestConfig extends RequestInit {
@@ -49,7 +43,7 @@ async function fetchCSRFToken(): Promise<string> {
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/auth/csrf-token/`, {
+    const response = await fetch(`${getClientApiBaseUrl()}/api/auth/csrf-token/`, {
       method: "GET",
       credentials: "include",
     });
@@ -123,7 +117,7 @@ async function refreshJWTToken(): Promise<boolean> {
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/auth/token/refresh/`, {
+    const response = await fetch(`${getClientApiBaseUrl()}/api/auth/token/refresh/`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -228,6 +222,10 @@ export class HttpClient {
     this.baseURL = baseURL;
   }
 
+  private resolveBaseURL(): string {
+    return this.baseURL || getClientApiBaseUrl();
+  }
+
   /**
    * Make an HTTP request with automatic token refresh
    */
@@ -272,7 +270,7 @@ export class HttpClient {
     }
 
     // Make the request
-    const response = await fetch(this.baseURL + url, {
+    const response = await fetch(this.resolveBaseURL() + url, {
       ...requestConfig,
       headers,
       credentials: "include",
@@ -426,7 +424,7 @@ export class HttpClient {
 }
 
 // Create and export a default instance
-export const httpClient = new HttpClient(API_BASE_URL);
+export const httpClient = new HttpClient();
 
 // Export the class for custom instances
 export default HttpClient;

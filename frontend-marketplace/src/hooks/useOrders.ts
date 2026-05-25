@@ -1,72 +1,43 @@
 "use client";
+
 import { useState, useCallback } from "react";
 import { httpClient } from "@/utils/httpClient";
+import type {
+  OrderListEntry,
+  OrdersListResponse,
+  UseOrdersFilters,
+} from "@/lib/orderTypes";
 
-interface OrderItem {
-  id: number;
-  product: number;
-  product_name: string;
-  product_price: string;
-  product_image_url?: string;
-  quantity: string;
-  total_price: string;
-}
-
-interface Order {
-  id: number;
-  customer: number;
-  customer_name?: string;
-  customer_phone?: string;
-  customer_address?: string;
-  notes?: string;
-  delivery_date: string | null;
-  is_home_delivery: boolean;
-  delivery_fee: string;
-  discount: string;
-  created_at: string;
-  status: "pending" | "paid" | "issued" | "cancelled";
-  invoice_link?: string;
-  items: OrderItem[];
-  total_price: string;
-  total_items: number;
-}
-
-interface OrderStats {
-  total_orders: number;
-  pending_orders: number;
-  paid_orders: number;
-  cancelled_orders: number;
-  total_spent: number;
-  average_order_value: number;
-}
-
-interface UseOrdersFilters {
-  status: string;
-  dateFrom: string;
-  dateTo: string;
-  sort: string;
-}
+const PAGE_SIZE = 20;
 
 interface UseOrdersReturn {
-  orders: Order[];
+  orders: OrderListEntry[];
   loading: boolean;
+  loadingMore: boolean;
   error: string | null;
-  stats: OrderStats | null;
+  totalCount: number;
+  hasMore: boolean;
   fetchOrders: (loadMore?: boolean) => Promise<void>;
   cancelOrder: (orderId: number) => Promise<void>;
   reorderItems: (orderId: number) => Promise<void>;
 }
 
 export function useOrders(filters: UseOrdersFilters): UseOrdersReturn {
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<OrderListEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [stats, setStats] = useState<OrderStats | null>(null);
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [offset, setOffset] = useState(0);
 
   const fetchOrders = useCallback(
     async (loadMore = false) => {
-      setLoading(true);
+      if (loadMore) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
       setError(null);
 
       try {
@@ -77,56 +48,33 @@ export function useOrders(filters: UseOrdersFilters): UseOrdersReturn {
         if (filters.dateTo) queryParams.append("date_to", filters.dateTo);
         if (filters.sort) queryParams.append("sort", filters.sort);
 
-        queryParams.append("limit", "20");
-        queryParams.append("offset", loadMore ? offset.toString() : "0");
+        const currentOffset = loadMore ? offset : 0;
+        queryParams.append("limit", String(PAGE_SIZE));
+        queryParams.append("offset", String(currentOffset));
 
-        const response = (await httpClient.get(
+        const response = await httpClient.get<OrdersListResponse>(
           `/api/orders/?${queryParams.toString()}`
-        )) as { results: Order[]; count: number };
+        );
 
-        const ordersData = response.results || [];
+        const ordersData = response.results ?? [];
+        const count = response.count ?? ordersData.length;
 
         if (loadMore) {
           setOrders((prev) => [...prev, ...ordersData]);
         } else {
           setOrders(ordersData);
-          setOffset(0);
         }
 
-        setOffset((prev) => prev + 20);
-        const totalOrders = ordersData.length;
-        const pendingOrders = ordersData.filter(
-          (order: Order) => order.status === "pending"
-        ).length;
-        const paidOrders = ordersData.filter(
-          (order: Order) => order.status === "paid"
-        ).length;
-        const cancelledOrders = ordersData.filter(
-          (order: Order) => order.status === "cancelled"
-        ).length;
-        const totalSpent = ordersData
-          .filter((order: Order) => order.status === "paid")
-          .reduce(
-            (sum: number, order: Order) => sum + parseFloat(order.total_price),
-            0
-          );
-        const averageOrderValue = paidOrders > 0 ? totalSpent / paidOrders : 0;
-
-        setStats({
-          total_orders: totalOrders,
-          pending_orders: pendingOrders,
-          paid_orders: paidOrders,
-          cancelled_orders: cancelledOrders,
-          total_spent: totalSpent,
-          average_order_value: averageOrderValue,
-        });
+        const nextOffset = currentOffset + ordersData.length;
+        setOffset(nextOffset);
+        setTotalCount(count);
+        setHasMore(nextOffset < count);
       } catch (err: unknown) {
         console.error("Error fetching orders:", err);
-        const errorMessage =
-          err instanceof Error ? err.message : "Failed to fetch orders";
-        setError(errorMessage);
+        setError("We could not load your orders. Please try again.");
       } finally {
         setLoading(false);
+        setLoadingMore(false);
       }
     },
     [filters, offset]
@@ -138,7 +86,6 @@ export function useOrders(filters: UseOrdersFilters): UseOrdersReturn {
         status: "cancelled",
       });
 
-      // Update the order in the local state
       setOrders((prev) =>
         prev.map((order) =>
           order.id === orderId
@@ -154,14 +101,11 @@ export function useOrders(filters: UseOrdersFilters): UseOrdersReturn {
 
   const reorderItems = useCallback(async (orderId: number) => {
     try {
-      // Get the order details
-      const orderResponse = (await httpClient.get(
+      const order = await httpClient.get<OrderListEntry>(
         `/api/orders/${orderId}/`
-      )) as { data: Order };
-      const order = orderResponse.data;
+      );
 
-      // Add each item from the order to the cart
-      for (const item of order.items) {
+      for (const item of order.items ?? []) {
         await httpClient.post("/api/cart/", {
           product_id: item.product,
           quantity: parseFloat(item.quantity),
@@ -176,10 +120,14 @@ export function useOrders(filters: UseOrdersFilters): UseOrdersReturn {
   return {
     orders,
     loading,
+    loadingMore,
     error,
-    stats,
+    totalCount,
+    hasMore,
     fetchOrders,
     cancelOrder,
     reorderItems,
   };
 }
+
+export type { OrderListEntry };
