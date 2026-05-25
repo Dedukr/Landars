@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { getAuthUrl } from "@/utils/authHelpers";
@@ -136,7 +136,7 @@ export default function CheckoutPage() {
   const router = useRouter();
   const pathname = usePathname();
   const { user, token } = useAuth();
-  const { cart, clearCart } = useCart();
+  const { cart, clearCart, isLoading: cartIsLoading } = useCart();
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -168,17 +168,22 @@ export default function CheckoutPage() {
   const [selectedShipmentQuote, setSelectedShipmentQuote] =
     useState<ShipmentQuoteOption | null>(null);
 
-  // Redirect if cart is empty (but not if we're showing order review)
+  // Redirect if cart is empty (but not if we're showing order review).
+  // Use `cartData` (the backend snapshot fetched only after CartContext
+  // finishes the guest→user merge) as the source of truth so we don't
+  // bounce a freshly-signed-in user out of checkout while their guest
+  // cart is still being merged into the backend cart.
   useEffect(() => {
     if (
-      cart.length === 0 &&
+      cartData !== null &&
+      cartData.items.length === 0 &&
       checkoutStep !== 3 &&
       !orderDetails &&
       !orderCompleted
     ) {
       router.push("/cart");
     }
-  }, [cart.length, router, checkoutStep, orderDetails, orderCompleted]);
+  }, [cartData, router, checkoutStep, orderDetails, orderCompleted]);
 
   // Form states
   const [shippingForm, setShippingForm] = useState<ShippingFormData>({
@@ -219,12 +224,27 @@ export default function CheckoutPage() {
     }
   }, [user, shippingForm.notes]);
 
-  // Fetch cart data when component mounts and user is available
+  // Fetch cart data when component mounts and user is available.
+  // Wait for CartContext to finish loading/merging the guest cart so the
+  // GET /api/cart/ call returns the merged cart and not a stale snapshot.
+  // When cartIsLoading transitions back to false (merge complete), this
+  // effect re-runs and refetches the up-to-date cart data.
   useEffect(() => {
-    if (user) {
+    if (user && !cartIsLoading) {
       fetchCartData();
     }
-  }, [user, fetchCartData]);
+  }, [user, cartIsLoading, fetchCartData]);
+
+  // While the cart context is loading/merging, drop any previously fetched
+  // cartData so the UI shows the loading spinner (rather than a stale order
+  // summary) until the merge completes and fresh data is fetched.
+  const wasCartLoadingRef = useRef(false);
+  useEffect(() => {
+    if (cartIsLoading && !wasCartLoadingRef.current) {
+      setCartData(null);
+    }
+    wasCartLoadingRef.current = cartIsLoading;
+  }, [cartIsLoading]);
 
   // Save/update all cart information when entering checkout
   // This ensures cart metadata is synced before order creation
@@ -891,7 +911,10 @@ export default function CheckoutPage() {
 
   // No outer form submit; payment handled by StripePaymentForm
 
-  if (loading || !cartData) {
+  // Show spinner while: profile is loading, the guest→user cart merge is
+  // running in CartContext, or cartData hasn't been fetched yet. This
+  // prevents flashing an empty/stale order summary right after sign-in.
+  if (loading || cartIsLoading || !cartData) {
     return (
       <div
         className="min-h-screen flex items-center justify-center"
@@ -902,8 +925,16 @@ export default function CheckoutPage() {
     );
   }
 
-  // Don't redirect if we're showing the review step with order details
-  if (cart.length === 0 && checkoutStep !== 3 && !orderDetails) {
+  // Don't redirect if we're showing the review step with order details.
+  // Use `cartData` (only set after the cart merge completes) as the source
+  // of truth so we don't bail out before a freshly-merged guest cart is
+  // visible in the backend snapshot.
+  if (
+    cartData !== null &&
+    cartData.items.length === 0 &&
+    checkoutStep !== 3 &&
+    !orderDetails
+  ) {
     return null; // Will redirect
   }
 
@@ -934,8 +965,8 @@ export default function CheckoutPage() {
 
         {checkoutStep === 2 ? (
           <div className="lg:grid lg:grid-cols-12 lg:gap-x-12 lg:items-start">
-            {/* Shipping & Payment Forms */}
-            <div className="lg:col-span-8 space-y-8">
+            {/* Shipping & Payment Forms (row 1 left on desktop) */}
+            <div className="lg:col-span-8 lg:col-start-1 lg:row-start-1 space-y-8">
               {/* Shipping Information */}
               <div
                 className="rounded-lg shadow-sm p-6"
@@ -1166,53 +1197,10 @@ export default function CheckoutPage() {
                 )}
               </div> */}
 
-              {/* Place Order Button */}
-              <div className="mt-6">
-                <Button
-                  onClick={handlePlaceOrder}
-                  disabled={submitting}
-                  fullWidth
-                  style={{
-                    background: "var(--primary)",
-                    color: "white",
-                    padding: "0.75rem 1.5rem",
-                    fontSize: "1rem",
-                    fontWeight: "600",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!submitting) {
-                      e.currentTarget.style.background = "var(--primary-hover)";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!submitting) {
-                      e.currentTarget.style.background = "var(--primary)";
-                    }
-                  }}
-                >
-                  {submitting ? "Placing Order..." : "Place Order"}
-                </Button>
-                {errors.submit && (
-                  <div
-                    className="mt-4 p-3 rounded-md"
-                    style={{
-                      background: "var(--destructive-bg)",
-                      border: "1px solid var(--destructive-border)",
-                    }}
-                  >
-                    <p
-                      className="text-sm"
-                      style={{ color: "var(--destructive)" }}
-                    >
-                      {errors.submit}
-                    </p>
-                  </div>
-                )}
-              </div>
             </div>
 
-            {/* Order Summary */}
-            <div className="mt-8 lg:mt-0 lg:col-span-4">
+            {/* Order Summary (row 1 right on desktop) */}
+            <div className="mt-8 lg:mt-0 lg:col-span-4 lg:col-start-9 lg:row-start-1">
               <div
                 className="rounded-lg shadow-sm"
                 style={{
@@ -1398,6 +1386,52 @@ export default function CheckoutPage() {
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Place Order Button: on mobile renders after the order summary
+                (source order); on desktop placed in row 2 under the shipping
+                form column. */}
+            <div className="mt-6 lg:col-span-8 lg:col-start-1 lg:row-start-2">
+              <Button
+                onClick={handlePlaceOrder}
+                disabled={submitting}
+                fullWidth
+                style={{
+                  background: "var(--primary)",
+                  color: "white",
+                  padding: "0.75rem 1.5rem",
+                  fontSize: "1rem",
+                  fontWeight: "600",
+                }}
+                onMouseEnter={(e) => {
+                  if (!submitting) {
+                    e.currentTarget.style.background = "var(--primary-hover)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!submitting) {
+                    e.currentTarget.style.background = "var(--primary)";
+                  }
+                }}
+              >
+                {submitting ? "Placing Order..." : "Place Order"}
+              </Button>
+              {errors.submit && (
+                <div
+                  className="mt-4 p-3 rounded-md"
+                  style={{
+                    background: "var(--destructive-bg)",
+                    border: "1px solid var(--destructive-border)",
+                  }}
+                >
+                  <p
+                    className="text-sm"
+                    style={{ color: "var(--destructive)" }}
+                  >
+                    {errors.submit}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         ) : checkoutStep === 3 && orderDetails ? (

@@ -181,8 +181,8 @@ export default function CartPage() {
         {/* Main cart content */}
         {!isInitialLoading && !isEmpty && (
           <div className="lg:grid lg:grid-cols-12 lg:gap-x-8 lg:items-start">
-            {/* Left column: items + saved + recommendations */}
-            <div className="lg:col-span-8 space-y-4">
+            {/* Left column row 1: items + saved */}
+            <div className="lg:col-span-8 lg:col-start-1 lg:row-start-1 space-y-4">
               <CartItemList
                 products={filteredProducts}
                 cart={cart}
@@ -199,21 +199,10 @@ export default function CartPage() {
                 onMoveToCart={handleMoveToCart}
                 onRemoveSaved={handleRemoveSaved}
               />
-
-              {/* Recommendations */}
-              <ProductRecommendations
-                excludeProducts={filteredProducts}
-                limit={4}
-                title="You might also like"
-                showWishlist={false}
-                showQuickAdd={true}
-                gridCols={{ default: 2, md: 4 }}
-                className="mt-2"
-              />
             </div>
 
-            {/* Right column: sticky order summary (desktop) */}
-            <div className="mt-6 lg:mt-0 lg:col-span-4 lg:sticky lg:top-6">
+            {/* Right column row 1: sticky order summary (desktop) */}
+            <div className="mt-6 lg:mt-0 lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:sticky lg:top-6">
               <CartSummary
                 subtotal={subtotal}
                 discount={discount}
@@ -221,6 +210,19 @@ export default function CartPage() {
                 totalItems={visibleQuantitySum}
                 deliveryCalculation={deliveryCalculation}
                 onClearCart={clearCart}
+              />
+            </div>
+
+            {/* Recommendations: on mobile renders after the summary (source order);
+                on desktop placed in row 2 under the items column. */}
+            <div className="mt-6 lg:mt-4 lg:col-span-8 lg:col-start-1 lg:row-start-2">
+              <ProductRecommendations
+                excludeProducts={filteredProducts}
+                limit={4}
+                title="You might also like"
+                showWishlist={false}
+                showQuickAdd={true}
+                gridCols={{ default: 2, md: 4 }}
               />
             </div>
           </div>
