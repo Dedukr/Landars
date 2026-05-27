@@ -23,6 +23,7 @@ const customJestConfig = {
     "!src/app/**", // Exclude Next.js app directory
   ],
   testMatch: ["**/__tests__/**/*.[jt]s?(x)", "**/?(*.)+(spec|test).[jt]s?(x)"],
+  testPathIgnorePatterns: ["/node_modules/", "/e2e/"],
   coverageReporters: ["text", "lcov", "html"],
   coverageDirectory: "coverage",
   transformIgnorePatterns: [

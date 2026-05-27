@@ -13,6 +13,11 @@ import {
   Award,
 } from "lucide-react";
 import { FoodHygieneRating } from "@/components/FoodHygieneRating";
+import { ContactLink } from "@/components/ContactLink";
+
+const supportPhone = process.env.NEXT_PUBLIC_SUPPORT_PHONE;
+const whatsappDigits = supportPhone?.replace(/\D/g, "") ?? "";
+const whatsappHref = whatsappDigits ? `https://wa.me/${whatsappDigits}` : null;
 
 export const metadata: Metadata = {
   title: "About Us",
@@ -319,12 +324,25 @@ export default function AboutPage() {
             Ready to explore our range?
           </h2>
           <p
-            className="text-base mb-6"
+            className="text-base mb-4"
             style={{ color: "var(--muted-foreground)" }}
           >
             Browse hundreds of authentic Eastern European products, available
             for delivery across the UK.
           </p>
+          {whatsappHref && (
+            <p
+              className="text-base mb-6"
+              style={{ color: "var(--muted-foreground)" }}
+            >
+              Questions? Message us on{" "}
+              <ContactLink href={whatsappHref} variant="inline">
+                WhatsApp
+              </ContactLink>
+              .
+            </p>
+          )}
+          {!whatsappHref && <div className="mb-6" />}
           <div className="flex flex-wrap justify-center gap-3">
             <Link
               href="/"
