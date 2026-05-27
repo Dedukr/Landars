@@ -185,10 +185,7 @@ class Command(BaseCommand):
         updated = 0
         for order in qs:
             set_order_status(order, "paid")
-            from shipping.order_shipping import OrderShippingService
-
             order.refresh_from_db()
-            OrderShippingService.transition_to_ready_to_ship(order)
             updated += 1
 
         return updated

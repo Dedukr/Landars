@@ -696,9 +696,9 @@ class OrderListView(APIView):
                         exc_info=True,
                     )
 
-            from shipping.order_shipping import OrderShippingService
-
-            OrderShippingService.transition_to_ready_to_ship(order)
+            # Do not auto-promote paid → ready_to_ship.
+            # If ops sets status to ready_to_ship manually, shipment automation
+            # remains automatic via shipping signals on that transition.
 
             # Delete the cart instance completely after order is created
             # This ensures all cart data is transferred to the order

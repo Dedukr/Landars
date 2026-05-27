@@ -137,10 +137,10 @@ class BankTransaction(models.Model):
             set_order_status(order, "paid")
 
         if order:
-            from shipping.order_shipping import OrderShippingService
-
             order.refresh_from_db()
-            OrderShippingService.transition_to_ready_to_ship(order)
+            # Do not auto-promote paid → ready_to_ship.
+            # Ops can move the order to ready_to_ship explicitly; shipment automation
+            # remains automatic via shipping signals on that transition.
 
     def mark_as_rejected(self):
         """Mark transaction as rejected (don't suggest again)."""

@@ -1801,10 +1801,9 @@ class OrderAdmin(admin.ModelAdmin):
         # Update related invoice when order status changes to "paid"
         if status_changed_to_paid:
             self._update_invoice_to_paid(obj)
-
-        from shipping.order_shipping import OrderShippingService
-
-        OrderShippingService.transition_to_ready_to_ship(obj)
+        # NOTE: Do not auto-promote paid → ready_to_ship.
+        # Ops can set ready_to_ship explicitly; shipment automation is triggered
+        # on the ready_to_ship transition via shipping signals.
 
     def _update_invoice_to_paid(self, order):
         """

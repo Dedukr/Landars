@@ -70,6 +70,41 @@ def on_order_transition_ready_to_ship(sender, instance, **kwargs) -> None:
         )
 
 
+@receiver(post_save, sender=Order, dispatch_uid="shipping.on_order_cancelled_transition")
+def on_order_transition_cancelled(sender, instance, **kwargs) -> None:
+    """
+    When an order transitions into ``cancelled``, cancel any related courier shipment too.
+
+    We delete the ``Shipment`` row so the existing ``pre_delete`` hook runs:
+    - cancel Sendcloud parcel (if any)
+    - delete stored label PDF from S3 (if any)
+    """
+    previous = getattr(instance, "_order_previous_status", None)
+    if instance.status != "cancelled":
+        return
+    if previous == "cancelled":
+        return
+
+    ship = Shipment.objects.filter(order_id=instance.pk).first()
+    if ship is None:
+        return
+    try:
+        ship.delete()
+        logger.info(
+            "Order %s cancelled: deleted Shipment %s (Sendcloud cancel handled by pre_delete)",
+            instance.pk,
+            ship.pk,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Order %s cancelled: failed to delete Shipment %s: %s",
+            instance.pk,
+            ship.pk,
+            exc,
+            exc_info=True,
+        )
+
+
 def _delete_shipment_label_from_s3(instance: Shipment) -> None:
     """Remove stored label PDF from S3 (best-effort; DB delete still proceeds on failure)."""
     key = (getattr(instance, "label_s3_key", None) or "").strip()

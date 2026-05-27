@@ -157,10 +157,9 @@ def stripe_webhook(request):
                     order.id,
                 )
 
-            # Post / courier: paid → ready_to_ship (snapshot + Celery run on that transition only)
-            from shipping.order_shipping import OrderShippingService
-
-            OrderShippingService.transition_to_ready_to_ship(order)
+            # Do not auto-promote paid → ready_to_ship.
+            # If ops sets status to ready_to_ship manually, shipment automation
+            # remains automatic via shipping signals on that transition.
 
         except Order.DoesNotExist:
             logger.warning(
