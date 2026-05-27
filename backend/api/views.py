@@ -12,9 +12,11 @@ from django.db.models import (
     DecimalField,
     ExpressionWrapper,
     F,
+    Min,
     OuterRef,
     Subquery,
     Sum,
+    Value,
 )
 from django.db.models.functions import Coalesce
 from django.http import HttpResponse, JsonResponse
@@ -101,7 +103,7 @@ class ProductList(APIView):
     def get(self, request):
         """Retrieve products with filtering, sorting, and pagination."""
         # Cache key version suffix bumps stale entries when search logic changes
-        cache_key = f"products_v7_{hash(str(request.query_params))}"
+        cache_key = f"products_v9_{hash(str(request.query_params))}"
 
         # Try to get cached response
         cached_response = cache.get(cache_key)
@@ -179,6 +181,17 @@ class ProductList(APIView):
             products = products.order_by("-sold_quantity", "-sold_orders_count", "id")
         elif sort == "sales_asc":
             products = products.order_by("sold_quantity", "sold_orders_count", "id")
+        elif sort == "category_asc":
+            products = (
+                products.annotate(
+                    category_parent_sort=Coalesce(
+                        Min("categories__parent__name"), Value("")
+                    ),
+                    category_sort=Coalesce(Min("categories__name"), Value("")),
+                )
+                .order_by("category_parent_sort", "category_sort", "id")
+                .distinct()
+            )
 
         # Get total count before pagination
         total_count = products.count()
@@ -338,14 +351,21 @@ class CategoryList(APIView):
 
     def get(self, request):
         """Retrieve all categories."""
-        cache_key = "categories_list_v3"
+        cache_key = "categories_list_v4"
         cached_response = cache.get(cache_key)
         if cached_response:
             return Response(cached_response)
 
-        categories = ProductCategory.objects.all()
+        categories = list(ProductCategory.objects.all())
+        category_ids = [c.id for c in categories]
 
-        serializer = CategorySerializer(categories, many=True)
+        from api.services.category_display import category_display_context
+
+        serializer = CategorySerializer(
+            categories,
+            many=True,
+            context=category_display_context(category_ids),
+        )
         response_data = serializer.data
 
         # Cache for 1 hour since categories don't change frequently

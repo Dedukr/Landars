@@ -386,16 +386,16 @@ run_health_checks() {
         fi
         
         # Check backend
-        if curl -f http://localhost:8000/health/ > /dev/null 2>&1; then
-            log "✅ Backend is healthy"
+        if curl -f -sk https://127.0.0.1/health/ > /dev/null 2>&1; then
+            log "✅ Backend is healthy (via nginx)"
         else
             error "❌ Backend health check failed"
             all_healthy=false
         fi
         
         # Check frontend
-        if curl -f http://localhost:3000 > /dev/null 2>&1; then
-            log "✅ Frontend is healthy"
+        if curl -f -sk https://127.0.0.1/ > /dev/null 2>&1; then
+            log "✅ Frontend is healthy (via nginx)"
         else
             error "❌ Frontend health check failed"
             all_healthy=false

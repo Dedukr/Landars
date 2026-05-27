@@ -26,10 +26,30 @@ class CategorySerializer(serializers.ModelSerializer):
     parent = serializers.PrimaryKeyRelatedField(
         queryset=ProductCategory.objects.all(), allow_null=True
     )
+    products_count = serializers.SerializerMethodField()
+    image_url = serializers.SerializerMethodField()
+    top_seller_sold_quantity = serializers.SerializerMethodField()
 
     class Meta:
         model = ProductCategory
-        fields = ["id", "name", "parent", "description"]
+        fields = [
+            "id",
+            "name",
+            "parent",
+            "description",
+            "products_count",
+            "image_url",
+            "top_seller_sold_quantity",
+        ]
+
+    def get_products_count(self, obj):
+        return self.context.get("products_count", {}).get(obj.id, 0)
+
+    def get_image_url(self, obj):
+        return self.context.get("top_seller_image", {}).get(obj.id)
+
+    def get_top_seller_sold_quantity(self, obj):
+        return self.context.get("top_seller_sold_quantity", {}).get(obj.id, 0)
 
 
 class ProductImageSerializer(serializers.ModelSerializer):

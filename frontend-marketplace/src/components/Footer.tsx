@@ -2,6 +2,7 @@ import React from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { MapPin, MessageCircle, Mail, Heart } from "lucide-react";
+import { ContactLink } from "@/components/ContactLink";
 
 const quickLinks = [
   { name: "Shop", href: "/shop" },
@@ -130,15 +131,6 @@ export default function Footer() {
               Get in Touch
             </h3>
             <ul className="space-y-3">
-              <li className="flex items-start gap-2.5">
-                <MapPin
-                  className="w-4 h-4 mt-0.5 flex-shrink-0"
-                  style={{ color: "var(--accent)" }}
-                />
-                <span className="text-sm" style={{ color: "var(--muted-foreground)" }}>
-                  United Kingdom
-                </span>
-              </li>
               {whatsappHref && (
                 <li className="flex items-center gap-2.5">
                   <MessageCircle
@@ -157,36 +149,36 @@ export default function Footer() {
                   </a>
                 </li>
               )}
-              {supportEmail && (
+              {supportEmail ? (
                 <li className="flex items-center gap-2.5">
                   <Mail
                     className="w-4 h-4 flex-shrink-0"
                     style={{ color: "var(--accent)" }}
                   />
-                  <a
-                    href={`mailto:${supportEmail}`}
-                    className="text-sm transition-colors hover:opacity-80 break-all"
-                    style={{ color: "var(--muted-foreground)" }}
-                  >
+                  <ContactLink href={`mailto:${supportEmail}`} variant="footer">
                     {supportEmail}
-                  </a>
+                  </ContactLink>
                 </li>
-              )}
-              {!supportEmail && (
+              ) : (
                 <li className="flex items-center gap-2.5">
                   <Mail
                     className="w-4 h-4 flex-shrink-0"
                     style={{ color: "var(--accent)" }}
                   />
-                  <a
-                    href="mailto:info@landarsfood.com"
-                    className="text-sm transition-colors hover:opacity-80"
-                    style={{ color: "var(--muted-foreground)" }}
-                  >
+                  <ContactLink href="mailto:info@landarsfood.com" variant="footer">
                     info@landarsfood.com
-                  </a>
+                  </ContactLink>
                 </li>
               )}
+              <li className="flex items-start gap-2.5">
+                <MapPin
+                  className="w-4 h-4 mt-0.5 flex-shrink-0"
+                  style={{ color: "var(--accent)" }}
+                />
+                <span className="text-sm" style={{ color: "var(--muted-foreground)" }}>
+                  United Kingdom
+                </span>
+              </li>
             </ul>
           </div>
         </div>

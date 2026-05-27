@@ -167,12 +167,12 @@ check_backend() {
         if ! docker compose ps backend | grep -q "Up"; then
             warn "Backend container is not running"
         else
-            # Try health endpoint
-            if curl -f -s http://localhost:8000/health/ > /dev/null 2>&1; then
+            # Backend is not published on the host; check via nginx (same path as production traffic).
+            if curl -f -sk https://127.0.0.1/health/ > /dev/null 2>&1; then
                 log "✅ Backend API is healthy"
                 
                 # Check admin endpoint
-                if curl -f -s -o /dev/null -w "%{http_code}" http://localhost:8000/admin/ | grep -q "200\|302"; then
+                if curl -f -sk -o /dev/null -w "%{http_code}" https://127.0.0.1/admin/ | grep -q "200\|302"; then
                     log "✅ Backend admin is accessible"
                 fi
                 
@@ -207,8 +207,8 @@ check_frontend() {
             warn "Frontend container is not running"
         else
             # Try to connect to frontend
-            if curl -f -s http://localhost:3000 > /dev/null 2>&1; then
-                log "✅ Frontend is healthy"
+            if curl -f -sk https://127.0.0.1/ > /dev/null 2>&1; then
+                log "✅ Frontend is healthy (via nginx)"
                 return 0
             fi
         fi

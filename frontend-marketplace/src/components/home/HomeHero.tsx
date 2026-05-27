@@ -2,8 +2,10 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { Search, ChevronRight, Truck, Leaf, Star, ShieldCheck, Award } from "lucide-react";
 import HeroProductPreview from "./HeroProductPreview";
+import { FoodHygieneRating } from "@/components/FoodHygieneRating";
 
 const trustItems = [
   { icon: Truck, label: "UK-Wide Delivery" },
@@ -64,54 +66,78 @@ export default function HomeHero() {
               <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
             </div>
 
-            {/* Headline */}
-            <h1
-              className="text-4xl sm:text-5xl lg:text-6xl font-extrabold leading-[1.1] tracking-tight mb-4 sm:mb-5"
-              style={{ color: "var(--foreground)" }}
-            >
-              Discover the{" "}
-              <span style={{ color: "var(--accent)" }}>Flavours</span>
-              <br />
-              <span className="text-3xl sm:text-4xl lg:text-5xl font-bold opacity-75">
-                of Eastern Europe
-              </span>
-            </h1>
+            {/* Headline + logo */}
+            <div className="flex items-center gap-3 sm:gap-5 lg:gap-6 mb-4 sm:mb-5 min-w-0">
+              <Image
+                src="/landars_food_logo.svg"
+                alt=""
+                width={160}
+                height={160}
+                priority
+                aria-hidden
+                className="shrink-0 w-auto object-contain h-[4.5rem] sm:h-[5.75rem] lg:h-[7.25rem]"
+              />
+              <h1
+                className="min-w-0 flex-1 text-4xl sm:text-5xl lg:text-6xl font-extrabold leading-[1.1] tracking-tight"
+                style={{ color: "var(--foreground)" }}
+              >
+                Discover the{" "}
+                <span style={{ color: "var(--accent)" }}>Flavours</span>
+                <br />
+                <span className="text-3xl sm:text-4xl lg:text-5xl font-bold opacity-75">
+                  of Eastern Europe
+                </span>
+              </h1>
+            </div>
 
             {/* Subtitle */}
-            <div
-              className="text-base sm:text-lg mb-7 sm:mb-8 leading-relaxed max-w-2xl space-y-3"
-              style={{ color: "var(--muted-foreground)" }}
-            >
-              <p>
-                Homemade semi-ready products, ready meals, sausages and meat products,
-                bakery and desserts. Catering, in-house delivery throughout England.
+            <div className="mb-7 sm:mb-8 max-w-2xl flex flex-col gap-4">
+              <p
+                className="block w-full text-base sm:text-lg font-semibold leading-snug"
+                style={{ color: "var(--foreground)" }}
+              >
+                Homemade Food &amp; Catering Delivered Across England
               </p>
-              <p className="flex flex-wrap items-center gap-x-2 gap-y-2">
+              <p
+                className="block w-full text-base sm:text-lg leading-relaxed"
+                style={{ color: "var(--muted-foreground)" }}
+              >
+                Homemade semi-prepared products, ready meals, sausages and meat products, fresh bakery items, and desserts.
+              </p>
+              <p
+                className="block w-full text-base sm:text-lg leading-relaxed"
+                style={{ color: "var(--muted-foreground)" }}
+              >
+                Catering services for private and corporate events.
+              </p>
+              <p
+                className="block w-full text-base sm:text-lg leading-relaxed"
+                style={{ color: "var(--muted-foreground)" }}
+              >
+                Own delivery across England.
+              </p>
+              <div className="flex w-full max-w-2xl items-center gap-3 pt-1 lg:justify-between">
                 <span
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-sm font-bold border -translate-y-px"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-sm font-bold"
                   style={{
                     background: "var(--success-bg)",
                     borderColor: "var(--success-border)",
                     color: "var(--success-text)",
                   }}
                 >
-                  <Award className="w-4 h-4 shrink-0" strokeWidth={2.25} aria-hidden />
+                  <Award className="h-4 w-4 shrink-0" strokeWidth={2.25} aria-hidden />
                   Four years of experience
                 </span>
-                <span
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-sm font-bold border -translate-y-px"
-                  style={{
-                    background: "var(--success-bg)",
-                    borderColor: "var(--success-border)",
-                    color: "var(--success-text)",
-                  }}
-                >
-                  <ShieldCheck className="w-4 h-4 shrink-0" strokeWidth={2.25} aria-hidden />
-                  food hygiene <span className="tabular-nums">5</span>
-                  <span aria-hidden>★</span>
-                </span>
+                <div className="min-w-0 flex-1 lg:ml-auto lg:flex-none lg:max-w-[9.5rem] xl:max-w-[11rem]">
+                  <FoodHygieneRating fluid />
+                </div>
+              </div>
+              <p
+                className="block w-full text-base sm:text-lg leading-relaxed"
+                style={{ color: "var(--muted-foreground)" }}
+              >
+                Ukrainian, Slavic, European cuisine
               </p>
-              <p>Ukrainian, Slavic, European cuisine</p>
             </div>
 
             {/* Search bar */}

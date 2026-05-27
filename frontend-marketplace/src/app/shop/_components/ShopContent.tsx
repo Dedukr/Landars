@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import ProductGrid, { type ShopListingMeta } from "@/components/ProductGrid";
 import { ShopPageHeader } from "@/components/shop/ShopPageHeader";
-import { ShopCategoryChips } from "@/components/shop/ShopCategoryChips";
+import CategoryCarousel from "@/components/categories/CategoryCarousel";
 import { ShopSearchBar } from "@/components/shop/ShopSearchBar";
 import {
   ShopDesktopFilterAside,
@@ -15,6 +15,7 @@ import { ShopFilterPanelContent } from "@/components/shop/ShopFilterPanelContent
 import type { ShopCategoryRecord } from "@/components/shop/ShopFilterPanelContent";
 import {
   SHOP_INITIAL_SORT,
+  SHOP_CATEGORY_SORT,
   SHOP_SORT_OPTIONS,
 } from "@/components/shop/shop-sort-options";
 import {
@@ -22,23 +23,32 @@ import {
   SHOP_PRICE_MAX_UNLIMITED,
 } from "@/types/shop-filters";
 import { normalizeListResponse } from "@/components/shop/normalizeListResponse";
-import { countLeafShopCategories } from "@/components/shop/countLeafShopCategories";
 import { scopeProductsQueryString } from "@/utils/catalogScope";
+import {
+  parseShopCategoryParams,
+  shopCategoryParamKey,
+  buildShopListingHref,
+} from "@/lib/parseShopCategoryParams";
+import {
+  prepareHomeDisplayCategories,
+  type ApiCategory,
+} from "@/lib/prepareHomeDisplayCategories";
 
 export default function ShopContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
 
-  const rawCategory = searchParams.get("category");
-  const rawSearch = searchParams.get("q") || "";
+  const categoryFromUrl = shopCategoryParamKey(searchParams);
+  const searchFromUrl = searchParams.get("q") ?? "";
 
   const [filters, setFilters] = useState<ShopListingFilters>({
-    categories: rawCategory ? [parseInt(rawCategory, 10)] : [],
+    categories: parseShopCategoryParams(searchParams),
     price: [0, SHOP_PRICE_MAX_UNLIMITED],
     inStock: false,
   });
 
   const [sort, setSort] = useState(SHOP_INITIAL_SORT);
-  const [search, setSearch] = useState(rawSearch);
+  const [search, setSearch] = useState(searchFromUrl);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
 
   const [categories, setCategories] = useState<ShopCategoryRecord[]>([]);
@@ -49,6 +59,44 @@ export default function ShopContent() {
   const [statsLoading, setStatsLoading] = useState(true);
 
   const [listingMeta, setListingMeta] = useState<ShopListingMeta | null>(null);
+
+  const displayCategories = useMemo(() => {
+    const apiList: ApiCategory[] = categories.map((c) => ({
+      id: c.id,
+      name: c.name,
+      parent: c.parent ?? null,
+      image_url: c.image_url ?? null,
+      products_count: c.products_count ?? null,
+      top_seller_sold_quantity: c.top_seller_sold_quantity ?? null,
+    }));
+    return prepareHomeDisplayCategories(apiList);
+  }, [categories]);
+
+  /** Apply category (and search) filters when arriving from home carousel or other links. */
+  useEffect(() => {
+    const categories = parseShopCategoryParams(searchParams);
+    setFilters((prev) => ({
+      ...prev,
+      categories,
+    }));
+    setSearch(searchFromUrl);
+  }, [searchParams, categoryFromUrl, searchFromUrl]);
+
+  const categoryFilterKey = useMemo(
+    () => [...filters.categories].sort((a, b) => a - b).join(","),
+    [filters.categories]
+  );
+
+  /** Category filters show products grouped A–Z by category (not product name). */
+  useEffect(() => {
+    if (filters.categories.length > 0) {
+      setSort(SHOP_CATEGORY_SORT);
+      return;
+    }
+    setSort((current) =>
+      current === SHOP_CATEGORY_SORT ? SHOP_INITIAL_SORT : current
+    );
+  }, [categoryFilterKey, filters.categories.length]);
 
   useEffect(() => {
     async function loadCategories() {
@@ -89,7 +137,15 @@ export default function ShopContent() {
         if (cres.ok) {
           const cdata = await cres.json();
           const list = normalizeListResponse<ShopCategoryRecord>(cdata);
-          cLen = countLeafShopCategories(list);
+          const apiList: ApiCategory[] = list.map((c) => ({
+            id: c.id,
+            name: c.name,
+            parent: c.parent ?? null,
+            image_url: c.image_url ?? null,
+            products_count: c.products_count ?? null,
+            top_seller_sold_quantity: c.top_seller_sold_quantity ?? null,
+          }));
+          cLen = prepareHomeDisplayCategories(apiList).length;
         }
         setProductCount(pCount);
         setCategoryCount(cLen);
@@ -120,6 +176,7 @@ export default function ShopContent() {
       });
       setSearch("");
       setSort(SHOP_INITIAL_SORT);
+      router.replace("/shop/", { scroll: false });
     }
 
     window.addEventListener(
@@ -138,7 +195,7 @@ export default function ShopContent() {
         handleClearFilters as EventListener
       );
     };
-  }, []);
+  }, [router]);
 
   const hasActiveFilters =
     filters.categories.length > 0 ||
@@ -148,6 +205,17 @@ export default function ShopContent() {
     search.length > 0 ||
     sort !== SHOP_INITIAL_SORT;
 
+  const handleCategorySelect = useCallback(
+    (categoryIds: number[]) => {
+      setFilters((prev) => ({ ...prev, categories: categoryIds }));
+      router.replace(
+        buildShopListingHref({ categoryIds, q: search || undefined }),
+        { scroll: false }
+      );
+    },
+    [router, search]
+  );
+
   const resetAll = useCallback(() => {
     setFilters({
       categories: [],
@@ -156,7 +224,8 @@ export default function ShopContent() {
     });
     setSearch("");
     setSort(SHOP_INITIAL_SORT);
-  }, []);
+    router.replace("/shop/", { scroll: false });
+  }, [router]);
 
   return (
     <div className="min-h-screen pb-16 sm:pb-10" style={{ background: "var(--background)" }}>
@@ -199,10 +268,13 @@ export default function ShopContent() {
           />
 
           <div className="mt-4 mb-6">
-            <ShopCategoryChips
-              categories={categories}
-              filters={filters}
-              setFilters={setFilters}
+            <CategoryCarousel
+              categories={displayCategories}
+              loading={categoriesLoading}
+              mode="filter"
+              activeCategoryIds={filters.categories}
+              onCategorySelect={handleCategorySelect}
+              ariaLabel="Filter by category"
             />
           </div>
 
