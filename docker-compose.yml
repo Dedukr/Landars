@@ -63,8 +63,9 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
+    # No host ports — only nginx (and other services) reach Django on the Docker network.
+    expose:
+      - "8000"
     env_file:
       - .env
     volumes:
@@ -161,8 +162,9 @@ services:
         - NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}
         - NEXT_PUBLIC_SUPPORT_PHONE=${NEXT_PUBLIC_SUPPORT_PHONE:-}
         - NEXT_PUBLIC_SUPPORT_EMAIL=${NEXT_PUBLIC_SUPPORT_EMAIL:-}
-    ports:
-      - "3000:3000"
+    # No host ports — only nginx reaches Next.js on the Docker network.
+    expose:
+      - "3000"
     environment:
       - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
       # Server-only: generateMetadata for /product/[id] fetches JSON here (see frontend-marketplace/src/lib/serverProductMetadataFetch.ts).

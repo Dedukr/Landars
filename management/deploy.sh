@@ -256,16 +256,16 @@ run_health_checks() {
         
         # Check backend
         sleep 5
-        if curl -f http://localhost:8000/health/ > /dev/null 2>&1; then
-            log "✅ Backend is responding"
+        if curl -f -sk https://127.0.0.1/health/ > /dev/null 2>&1; then
+            log "✅ Backend is responding (via nginx)"
         else
             warn "⚠️ Backend health check failed"
             all_healthy=false
         fi
         
         # Check frontend
-        if curl -f http://localhost:3000 > /dev/null 2>&1; then
-            log "✅ Frontend is responding"
+        if curl -f -sk https://127.0.0.1/ > /dev/null 2>&1; then
+            log "✅ Frontend is responding (via nginx)"
         else
             warn "⚠️ Frontend health check failed"
             all_healthy=false

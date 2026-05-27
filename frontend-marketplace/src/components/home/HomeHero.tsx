@@ -82,10 +82,15 @@ export default function HomeHero() {
               className="text-base sm:text-lg mb-7 sm:mb-8 leading-relaxed max-w-2xl space-y-3"
               style={{ color: "var(--muted-foreground)" }}
             >
-              <p>
-                Homemade semi-ready products, ready meals, sausages and meat products,
-                bakery and desserts. Catering, in-house delivery throughout England.
+              <p className="font-semibold" style={{ color: "var(--foreground)" }}>
+                Homemade Food &amp; Catering Delivered Across England
               </p>
+              <p>
+                Homemade semi-prepared products, ready meals, sausages and meat products,
+                fresh bakery items, and desserts.
+              </p>
+              <p>Catering services for private and corporate events.</p>
+              <p>Own delivery across England.</p>
               <p className="flex flex-wrap items-center gap-x-2 gap-y-2">
                 <span
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-sm font-bold border -translate-y-px"

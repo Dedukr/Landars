@@ -557,5 +557,10 @@ LOGGING = {
             "level": "ERROR",
             "propagate": False,
         },
+        # Scanner traffic with bogus Host headers — Django already returns 400.
+        "django.security.DisallowedHost": {
+            "level": "CRITICAL",
+            "propagate": False,
+        },
     },
 }

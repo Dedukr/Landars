@@ -9,11 +9,6 @@ import {
   Cookie,
   ChevronRight,
 } from "lucide-react";
-import {
-  resolveShopFeaturedCategories,
-  shopFeaturedCategoryFallbacks,
-} from "@/constants/shopCategoryChips";
-
 interface Category {
   id: number;
   name: string;
@@ -105,13 +100,12 @@ export default function CategoryGrid() {
       })
       .then((data: Category[]) => {
         const list = Array.isArray(data) ? data : [];
-        const featured = resolveShopFeaturedCategories(list);
         setCategories(
-          featured.length > 0 ? featured : shopFeaturedCategoryFallbacks()
+          [...list].sort((a, b) => a.name.localeCompare(b.name))
         );
       })
       .catch(() => {
-        setCategories(shopFeaturedCategoryFallbacks());
+        setCategories([]);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -153,8 +147,8 @@ export default function CategoryGrid() {
 
         {/* Category grid */}
         {loading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-            {Array.from({ length: 5 }).map((_, i) => (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+            {Array.from({ length: 8 }).map((_, i) => (
               <div
                 key={i}
                 className="h-28 rounded-2xl animate-pulse"
@@ -162,8 +156,12 @@ export default function CategoryGrid() {
               />
             ))}
           </div>
+        ) : categories.length === 0 ? (
+          <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>
+            No categories available right now.
+          </p>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
             {categories.map((cat) => (
               <CategoryCard key={cat.id} category={cat} />
             ))}
