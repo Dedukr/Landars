@@ -1,6 +1,7 @@
 "use client";
 
 import { LifeBuoy } from "lucide-react";
+import { ContactLink } from "@/components/ContactLink";
 import { OrderSectionCard } from "./OrderSectionCard";
 
 export function OrderSupportCard() {
@@ -23,23 +24,23 @@ export function OrderSupportCard() {
           <p className="mt-1 text-sm leading-relaxed" style={{ color: "var(--muted-foreground)" }}>
             Questions about this order? Reach us on{" "}
             {whatsAppUrl ? (
-              <a
-                href={whatsAppUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-semibold underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-sm"
-                style={{ color: "var(--primary)" }}
-              >
+              <ContactLink href={whatsAppUrl} variant="inline">
                 WhatsApp
-              </a>
+              </ContactLink>
             ) : (
-              <span style={{ color: "var(--foreground)" }}>WhatsApp</span>
+              <span className="font-semibold" style={{ color: "var(--foreground)" }}>
+                WhatsApp
+              </span>
             )}
-            {phone ? (
+            {phone && digits ? (
               <>
                 {" "}
-                <span className="tabular-nums">({phone})</span>
+                <ContactLink href={`tel:${digits}`} variant="inline" className="tabular-nums">
+                  ({phone})
+                </ContactLink>
               </>
+            ) : phone ? (
+              <span className="tabular-nums"> ({phone})</span>
             ) : null}
             .
           </p>

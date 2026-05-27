@@ -2,6 +2,7 @@
 
 import { User } from "lucide-react";
 import type { MarketplaceOrderDetail } from "@/lib/orderDetailTypes";
+import { ContactLink } from "@/components/ContactLink";
 import { OrderSectionCard } from "./OrderSectionCard";
 
 export function CustomerDetailsCard({ order }: { order: MarketplaceOrderDetail }) {
@@ -45,13 +46,13 @@ export function CustomerDetailsCard({ order }: { order: MarketplaceOrderDetail }
               Email
             </dt>
             <dd>
-              <a
+              <ContactLink
                 href={`mailto:${encodeURIComponent(email)}`}
-                className="break-all font-medium underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-sm"
-                style={{ color: "var(--primary)" }}
+                variant="inline"
+                className="break-all"
               >
                 {email}
-              </a>
+              </ContactLink>
             </dd>
           </div>
         ) : null}
@@ -61,13 +62,9 @@ export function CustomerDetailsCard({ order }: { order: MarketplaceOrderDetail }
               Phone
             </dt>
             <dd>
-              <a
-                href={`tel:${phone.replace(/\s/g, "")}`}
-                className="font-medium underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded-sm"
-                style={{ color: "var(--primary)" }}
-              >
+              <ContactLink href={`tel:${phone.replace(/\s/g, "")}`} variant="inline">
                 {phone}
-              </a>
+              </ContactLink>
             </dd>
           </div>
         ) : null}

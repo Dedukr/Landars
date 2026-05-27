@@ -12,6 +12,7 @@ import {
   Users,
   Award,
 } from "lucide-react";
+import { FoodHygieneRating } from "@/components/FoodHygieneRating";
 
 export const metadata: Metadata = {
   title: "About Us",
@@ -131,6 +132,11 @@ export default function AboutPage() {
                 </span>
               </div>
             ))}
+          </div>
+          <div className="flex justify-center px-4 pb-8 pt-4 sm:px-6 lg:px-8">
+            <div className="w-full max-w-lg">
+              <FoodHygieneRating fluid />
+            </div>
           </div>
         </div>
       </section>

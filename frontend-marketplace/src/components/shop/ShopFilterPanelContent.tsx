@@ -8,6 +8,9 @@ export interface ShopCategoryRecord {
   id: number;
   name: string;
   parent?: number | null;
+  image_url?: string | null;
+  products_count?: number | null;
+  top_seller_sold_quantity?: number | null;
 }
 
 interface ShopFilterPanelContentProps {

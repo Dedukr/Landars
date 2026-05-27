@@ -17,7 +17,6 @@ import {
   Package,
   LogOut,
   LayoutDashboard,
-  ShieldCheck,
 } from "lucide-react";
 
 const navLinks = [
@@ -36,7 +35,7 @@ export default function Header() {
     { name: "My Orders", href: "/orders", icon: Package },
     ...(user?.is_staff
       ? [{ name: "Admin Panel", href: "/admin", icon: LayoutDashboard }]
-      : [{ name: "Wishlist", href: "/wishlist", icon: Heart }]),
+      : [{ name: "Wishlist", href: "/wishlist" }]),
     { name: "Log Out", action: "logout", icon: LogOut },
   ];
 
@@ -142,49 +141,30 @@ export default function Header() {
             </span>
           </Link>
 
-          {/* Desktop navigation + food hygiene trust */}
-          <div className="hidden lg:flex items-center justify-center gap-4 flex-1 min-w-0">
-            <nav className="flex items-center gap-1">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.name}
-                  href={link.href}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                    isActive(link.href)
-                      ? "font-semibold"
-                      : "hover:opacity-80"
-                  }`}
-                  style={{
-                    color: isActive(link.href)
-                      ? "var(--accent)"
-                      : "var(--foreground)",
-                    background: isActive(link.href)
-                      ? "var(--info-bg)"
-                      : "transparent",
-                  }}
-                >
-                  {link.name}
-                </Link>
-              ))}
-            </nav>
-            <span
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-bold border shadow-sm shrink-0"
-              style={{
-                background: "var(--success-bg)",
-                borderColor: "var(--success-border)",
-                color: "var(--success-text)",
-              }}
-              title="Food hygiene rating 5 (FSA scale — very good)"
-            >
-              <ShieldCheck className="w-3.5 h-3.5" strokeWidth={2.25} aria-hidden />
-              <span className="tracking-tight whitespace-nowrap">
-                Food hygiene <span className="tabular-nums">5</span>
-                <span className="text-[0.95em] ml-0.5" aria-hidden>
-                  ★
-                </span>
-              </span>
-            </span>
-          </div>
+          {/* Desktop navigation */}
+          <nav className="hidden lg:flex items-center justify-center gap-1 flex-1 min-w-0">
+            {navLinks.map((link) => (
+              <Link
+                key={link.name}
+                href={link.href}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                  isActive(link.href)
+                    ? "font-semibold"
+                    : "hover:opacity-80"
+                }`}
+                style={{
+                  color: isActive(link.href)
+                    ? "var(--accent)"
+                    : "var(--foreground)",
+                  background: isActive(link.href)
+                    ? "var(--info-bg)"
+                    : "transparent",
+                }}
+              >
+                {link.name}
+              </Link>
+            ))}
+          </nav>
 
           {/* Right side actions */}
           <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
@@ -294,17 +274,22 @@ export default function Header() {
                     {/* Menu items */}
                     <div className="py-1">
                       {userMenu.map((item) => {
-                        const Icon = item.icon;
+                        const Icon = "icon" in item ? item.icon : undefined;
                         const isLogout = item.name === "Log Out";
                         return item.href ? (
                           <Link
                             key={item.name}
                             href={item.href}
-                            className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:opacity-80"
+                            className={`flex items-center px-4 py-2.5 text-sm transition-colors hover:opacity-80 ${Icon ? "gap-3" : ""}`}
                             style={{ color: "var(--foreground)" }}
                             onClick={() => setMenuOpen(false)}
                           >
-                            <Icon className="w-4 h-4 flex-shrink-0" style={{ color: "var(--accent)" }} />
+                            {Icon ? (
+                              <Icon
+                                className="w-4 h-4 flex-shrink-0"
+                                style={{ color: "var(--accent)" }}
+                              />
+                            ) : null}
                             {item.name}
                           </Link>
                         ) : (
@@ -317,7 +302,7 @@ export default function Header() {
                             }}
                             onClick={() => handleMenuClick(item)}
                           >
-                            <Icon className="w-4 h-4 flex-shrink-0" />
+                            {Icon ? <Icon className="w-4 h-4 flex-shrink-0" /> : null}
                             {item.name}
                           </button>
                         );
@@ -375,23 +360,6 @@ export default function Header() {
                 <CompactThemeToggle />
               </div>
 
-              <div
-                className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl mb-3 border shadow-sm"
-                style={{
-                  background: "var(--success-bg)",
-                  borderColor: "var(--success-border)",
-                  color: "var(--success-text)",
-                }}
-              >
-                <ShieldCheck className="w-4 h-4 shrink-0" strokeWidth={2.25} aria-hidden />
-                <span className="text-sm font-bold tracking-tight">
-                  Food hygiene <span className="tabular-nums">5</span>
-                  <span className="ml-0.5" aria-hidden>
-                    ★
-                  </span>
-                </span>
-              </div>
-
               {/* Nav links */}
               {navLinks.map((link) => (
                 <Link
@@ -409,11 +377,10 @@ export default function Header() {
               ))}
               <Link
                 href="/wishlist"
-                className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 hover:opacity-80"
+                className="flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 hover:opacity-80"
                 style={{ color: "var(--foreground)" }}
                 onClick={closeMobileMenu}
               >
-                <Heart className="w-4 h-4" style={{ color: "var(--accent)" }} />
                 Wishlist
               </Link>
 
@@ -432,27 +399,36 @@ export default function Header() {
                     </p>
                   </div>
                   {userMenu.map((item) => {
-                    const Icon = item.icon;
+                    const Icon = "icon" in item ? item.icon : undefined;
                     const isLogout = item.name === "Log Out";
                     return item.href ? (
                       <Link
                         key={item.name}
                         href={item.href}
-                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 hover:opacity-80"
+                        className={`flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 hover:opacity-80 ${Icon ? "gap-3" : ""}`}
                         style={{ color: "var(--foreground)" }}
                         onClick={closeMobileMenu}
                       >
-                        <Icon className="w-4 h-4" style={{ color: "var(--accent)" }} />
+                        {Icon ? (
+                          <Icon className="w-4 h-4" style={{ color: "var(--accent)" }} />
+                        ) : null}
                         {item.name}
                       </Link>
                     ) : (
                       <button
                         key={item.name}
-                        className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 hover:opacity-80"
+                        className={`flex items-center w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 hover:opacity-80 ${Icon ? "gap-3" : ""}`}
                         style={{ color: isLogout ? "var(--destructive)" : "var(--foreground)" }}
                         onClick={() => handleMenuClick(item)}
                       >
-                        <Icon className="w-4 h-4" />
+                        {Icon ? (
+                          <Icon
+                            className="w-4 h-4"
+                            style={{
+                              color: isLogout ? "var(--destructive)" : "var(--accent)",
+                            }}
+                          />
+                        ) : null}
                         {item.name}
                       </button>
                     );
