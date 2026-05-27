@@ -58,6 +58,7 @@ class ShipmentAdmin(admin.ModelAdmin):
         "sendcloud_tracking_url_display",
         "stored_tracking_url_ro",
         "label_link",
+        "label_print_list_link",
         "last_error",
         "retry_count",
         "created_at",

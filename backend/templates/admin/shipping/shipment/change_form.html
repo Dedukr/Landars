@@ -1,4 +1,8 @@
 {% extends "admin/change_form.html" %}
+{% block extrahead %}
+{{ block.super }}
+{% include "admin/shipping/shipment/_label_print_js.html" %}
+{% endblock %}
 {% block after_related_objects %}
 {{ block.super }}
 {% if shipment_ops_retry %}

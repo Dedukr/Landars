@@ -712,6 +712,23 @@ def mark_orders_cancelled(modeladmin, request, queryset):
     )
 
 
+@admin.action(description="Mark selected orders as Ready to ship")
+def mark_orders_ready_to_ship(modeladmin, request, queryset):
+    from api.services.product_sales import set_order_status
+
+    updated = 0
+    for order in queryset:
+        if order.status == "ready_to_ship":
+            continue
+        set_order_status(order, "ready_to_ship")
+        updated += 1
+    modeladmin.message_user(
+        request,
+        f"{updated} order(s) marked as ready to ship.",
+        level=messages.SUCCESS,
+    )
+
+
 @admin.action(description="Create Credit Note")
 def create_credit_note_for_invoices(modeladmin, request, queryset):
     """
@@ -1097,15 +1114,19 @@ class OrderShipmentInline(admin.StackedInline):
                 "Shipment after the parcel exists.</span>"
             )
         try:
-            url = obj.get_presigned_label_url()
+            download_url = obj.get_presigned_label_url()
         except (ValidationError, Exception):
             return format_html(
                 '<span class="help">Label key set but URL could not be generated '
                 "(check AWS credentials / bucket).</span>"
             )
+        pdf_url = reverse("admin:shipping_shipment_label_pdf", args=[obj.pk])
         return format_html(
-            '<a href="{}" target="_blank" rel="noopener noreferrer">Download shipping label</a>',
-            url,
+            '<a href="{}" target="_blank" rel="noopener noreferrer">Download</a>'
+            "&nbsp;&nbsp;"
+            '<a href="#" class="button js-shipment-label-print" data-pdf-url="{}">Print</a>',
+            download_url,
+            pdf_url,
         )
 
 
@@ -1343,6 +1364,7 @@ retry_shipment_creation.short_description = (
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
     form = OrderAdminForm
+    change_form_template = "admin/api/order/change_form.html"
 
     class Media:
         js = (
@@ -1377,6 +1399,7 @@ class OrderAdmin(admin.ModelAdmin):
         # create_and_upload_invoice,
         create_credit_note_and_new_invoice,
         mark_orders_paid,
+        mark_orders_ready_to_ship,
         # mark_orders_cancelled,
         # mark_orders_pending,
         calculate_sum,
