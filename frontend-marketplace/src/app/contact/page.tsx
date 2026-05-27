@@ -2,7 +2,6 @@ import React from "react";
 import type { Metadata } from "next";
 import { Mail, MessageCircle, MapPin } from "lucide-react";
 import ContactForm from "@/components/ContactForm";
-import { ContactLink } from "@/components/ContactLink";
 
 export const metadata: Metadata = {
   title: "Contact Us",
@@ -111,9 +110,16 @@ export default function ContactPage() {
                     {title}
                   </p>
                   {href ? (
-                    <ContactLink href={href} variant="card">
+                    <a
+                      href={href}
+                      {...(/^https?:\/\//.test(href)
+                        ? { target: "_blank", rel: "noopener noreferrer" }
+                        : {})}
+                      className="text-sm font-medium underline underline-offset-2 whitespace-pre-line transition-opacity hover:opacity-80"
+                      style={{ color: "var(--primary)" }}
+                    >
                       {value}
-                    </ContactLink>
+                    </a>
                   ) : (
                     <p
                       className="text-sm font-medium whitespace-pre-line"

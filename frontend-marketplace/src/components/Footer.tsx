@@ -137,16 +137,13 @@ export default function Footer() {
                     className="w-4 h-4 flex-shrink-0"
                     style={{ color: "var(--accent)" }}
                   />
-                  <a
+                  <ContactLink
                     href={whatsappHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    variant="footer"
                     aria-label="Chat with us on WhatsApp"
-                    className="text-sm transition-colors hover:opacity-80"
-                    style={{ color: "var(--muted-foreground)" }}
                   >
                     WhatsApp
-                  </a>
+                  </ContactLink>
                 </li>
               )}
               {supportEmail ? (

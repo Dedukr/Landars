@@ -116,6 +116,12 @@ export default function HomeHero() {
               >
                 Own delivery across England.
               </p>
+              <p
+                className="block w-full text-base sm:text-lg leading-relaxed"
+                style={{ color: "var(--muted-foreground)" }}
+              >
+                Ukrainian, Slavic, European cuisine
+              </p>
               <div className="flex w-full max-w-2xl items-center gap-3 pt-1 lg:justify-between">
                 <span
                   className="inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-sm font-bold"
@@ -132,12 +138,6 @@ export default function HomeHero() {
                   <FoodHygieneRating fluid />
                 </div>
               </div>
-              <p
-                className="block w-full text-base sm:text-lg leading-relaxed"
-                style={{ color: "var(--muted-foreground)" }}
-              >
-                Ukrainian, Slavic, European cuisine
-              </p>
             </div>
 
             {/* Search bar */}
