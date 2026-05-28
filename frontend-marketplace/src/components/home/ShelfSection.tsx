@@ -5,8 +5,8 @@ import { ChevronRight } from "lucide-react";
 type ShelfSectionProps = {
   title: string;
   subtitle?: string;
-  /** Background style: "default" = var(--background), "subtle" = var(--sidebar-bg) */
-  background?: "default" | "subtle";
+  /** Background style: "default" = var(--background), "subtle" = var(--sidebar-bg), "transparent" = none */
+  background?: "default" | "subtle" | "transparent";
   /** Optional "See all" link on the right side of the header. */
   seeAllHref?: string;
   seeAllLabel?: string;
@@ -23,17 +23,19 @@ export default function ShelfSection({
   className = "",
   children,
 }: ShelfSectionProps) {
-  const bg =
-    background === "subtle" ? "var(--sidebar-bg)" : "var(--background)";
+  const sectionStyle: React.CSSProperties =
+    background === "transparent"
+      ? {}
+      : {
+          background:
+            background === "subtle"
+              ? "var(--sidebar-bg)"
+              : "var(--background)",
+          borderBottom: "1px solid var(--sidebar-border)",
+        };
 
   return (
-    <section
-      className={`py-16 md:py-20 ${className}`}
-      style={{
-        background: bg,
-        borderBottom: "1px solid var(--sidebar-border)",
-      }}
-    >
+    <section className={`py-16 md:py-20 ${className}`} style={sectionStyle}>
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-end justify-between mb-8">
           <div>

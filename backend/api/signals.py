@@ -8,10 +8,12 @@ Bulk status changes should use ``Order.objects.update(status=...)`` or
 
 import logging
 
-from django.db.models.signals import post_delete, post_save, pre_save
+from django.core.cache import cache
+from django.db.models.signals import m2m_changed, post_delete, post_save, pre_save
 from django.dispatch import receiver
 
-from api.models import Order, OrderItem
+from api.models import CategoryGroup, Order, OrderItem
+from api.services.post_delivery_categories import invalidate_post_delivery_category_cache
 from api.services.product_sales import (
     collect_product_ids_for_order,
     schedule_product_sales_rebuild,
@@ -83,3 +85,25 @@ def order_schedule_sales_on_status_change(sender, instance, **kwargs):
             "order_schedule_sales_on_status_change failed for order_id=%s",
             getattr(instance, "pk", None),
         )
+
+
+@receiver(post_save, sender=CategoryGroup, dispatch_uid="api.category_group_cache_clear")
+@receiver(post_delete, sender=CategoryGroup, dispatch_uid="api.category_group_delete_cache_clear")
+def category_group_invalidate_post_delivery_cache(sender, instance, **kwargs):
+    invalidate_post_delivery_category_cache(instance.pk)
+    cache.delete(f"category_group_post_delivery_v1:{instance.pk}")
+    cache.delete("category_groups_list_v1")
+
+
+@receiver(
+    m2m_changed,
+    sender=CategoryGroup.categories.through,
+    dispatch_uid="api.category_group_m2m_cache_clear",
+)
+def category_group_categories_changed(sender, instance, action, **kwargs):
+    if action in ("post_add", "post_remove", "post_clear") and isinstance(
+        instance, CategoryGroup
+    ):
+        invalidate_post_delivery_category_cache(instance.pk)
+        cache.delete(f"category_group_post_delivery_v1:{instance.pk}")
+        cache.delete("category_groups_list_v1")

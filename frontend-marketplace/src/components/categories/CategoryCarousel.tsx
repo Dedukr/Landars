@@ -130,7 +130,7 @@ interface CategoryTileProps {
   category: HomeDisplayCategory;
   mode: "link" | "filter";
   isActive?: boolean;
-  onSelect?: (categoryIds: number[]) => void;
+  onSelect?: (categoryIds: number[], categoryGroupId?: number) => void;
   panelTone?: "sidebar" | "card";
 }
 
@@ -202,7 +202,10 @@ function CategoryTile({
 
   if (mode === "link") {
     const href = category.combinedCategoryIds?.length
-      ? buildCombinedCategoryShopHref(category.combinedCategoryIds)
+      ? buildCombinedCategoryShopHref(
+          category.combinedCategoryIds,
+          category.categoryGroupId
+        )
       : buildShopCategoryHref({ categoryId: category.id });
 
     return (
@@ -223,7 +226,7 @@ function CategoryTile({
         if (isActive) {
           onSelect?.([]);
         } else {
-          onSelect?.(filterIds);
+          onSelect?.(filterIds, category.categoryGroupId);
         }
       }}
     >
@@ -240,7 +243,7 @@ export interface CategoryCarouselProps {
   /** Visual / interaction style. `pagedGrid` is the existing 2-row paged grid. */
   layout?: "pagedGrid" | "shelfRow";
   activeCategoryIds?: number[];
-  onCategorySelect?: (categoryIds: number[]) => void;
+  onCategorySelect?: (categoryIds: number[], categoryGroupId?: number) => void;
   className?: string;
   ariaLabel?: string;
   /** `card` on cream sections; `sidebar` when nested in a white card (e.g. shop). */

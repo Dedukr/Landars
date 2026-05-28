@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import ProductGrid, { type ShopListingMeta } from "@/components/ProductGrid";
 import { ShopPageHeader } from "@/components/shop/ShopPageHeader";
-import CategoryCarousel from "@/components/categories/CategoryCarousel";
+import CategoryDisplayGrid from "@/components/categories/CategoryDisplayGrid";
 import { ShopSearchBar } from "@/components/shop/ShopSearchBar";
 import {
   ShopDesktopFilterAside,
@@ -26,13 +26,18 @@ import { normalizeListResponse } from "@/components/shop/normalizeListResponse";
 import { scopeProductsQueryString } from "@/utils/catalogScope";
 import {
   parseShopCategoryParams,
+  shopCategoryGroupIdFromParams,
   shopCategoryParamKey,
   buildShopListingHref,
 } from "@/lib/parseShopCategoryParams";
+import { fetchPostDeliveryCategoryGroup } from "@/lib/postDeliveryCategoryGroup";
+import { fetchCategoryGroups } from "@/lib/fetchCategoryGroups";
 import {
-  prepareHomeDisplayCategories,
+  buildShopByCategoryDisplay,
+  buildShopFilterPanelCategories,
   type ApiCategory,
 } from "@/lib/prepareHomeDisplayCategories";
+import type { PostDeliveryCategoryGroup } from "@/lib/postDeliveryCategoryGroup";
 
 export default function ShopContent() {
   const searchParams = useSearchParams();
@@ -60,6 +65,17 @@ export default function ShopContent() {
 
   const [listingMeta, setListingMeta] = useState<ShopListingMeta | null>(null);
 
+  const [categoryGroups, setCategoryGroups] = useState<
+    Awaited<ReturnType<typeof fetchCategoryGroups>>
+  >([]);
+  const [postDeliveryGroup, setPostDeliveryGroup] =
+    useState<PostDeliveryCategoryGroup | null>(null);
+
+  useEffect(() => {
+    fetchCategoryGroups().then(setCategoryGroups);
+    fetchPostDeliveryCategoryGroup().then(setPostDeliveryGroup);
+  }, []);
+
   const displayCategories = useMemo(() => {
     const apiList: ApiCategory[] = categories.map((c) => ({
       id: c.id,
@@ -69,17 +85,57 @@ export default function ShopContent() {
       products_count: c.products_count ?? null,
       top_seller_sold_quantity: c.top_seller_sold_quantity ?? null,
     }));
-    return prepareHomeDisplayCategories(apiList);
-  }, [categories]);
+    return buildShopByCategoryDisplay(apiList, categoryGroups);
+  }, [categories, categoryGroups]);
+
+  const filterPanelCategories = useMemo(
+    () =>
+      buildShopFilterPanelCategories(
+        categories,
+        categoryGroups,
+        postDeliveryGroup
+      ),
+    [categories, categoryGroups, postDeliveryGroup]
+  );
 
   /** Apply category (and search) filters when arriving from home carousel or other links. */
   useEffect(() => {
-    const categories = parseShopCategoryParams(searchParams);
-    setFilters((prev) => ({
-      ...prev,
-      categories,
-    }));
-    setSearch(searchFromUrl);
+    let cancelled = false;
+
+    async function applyFromUrl() {
+      let categoryIds = parseShopCategoryParams(searchParams);
+
+      if (!categoryIds.length) {
+        const groupId = shopCategoryGroupIdFromParams(searchParams);
+        if (groupId) {
+          const groups = await fetchCategoryGroups();
+          const group = groups.find((g) => g.id === groupId);
+          if (group?.category_ids?.length) {
+            categoryIds = [...group.category_ids];
+          }
+        } else {
+          const postFlag = searchParams.get("post_delivery");
+          if (postFlag === "1" || postFlag === "true" || postFlag === "yes") {
+            const pd = await fetchPostDeliveryCategoryGroup();
+            if (pd?.category_ids?.length) {
+              categoryIds = [...pd.category_ids];
+            }
+          }
+        }
+      }
+
+      if (cancelled) return;
+      setFilters((prev) => ({
+        ...prev,
+        categories: categoryIds,
+      }));
+      setSearch(searchFromUrl);
+    }
+
+    void applyFromUrl();
+    return () => {
+      cancelled = true;
+    };
   }, [searchParams, categoryFromUrl, searchFromUrl]);
 
   const categoryFilterKey = useMemo(
@@ -145,7 +201,8 @@ export default function ShopContent() {
             products_count: c.products_count ?? null,
             top_seller_sold_quantity: c.top_seller_sold_quantity ?? null,
           }));
-          cLen = prepareHomeDisplayCategories(apiList).length;
+          const groups = await fetchCategoryGroups();
+          cLen = buildShopByCategoryDisplay(apiList, groups).length;
         }
         setProductCount(pCount);
         setCategoryCount(cLen);
@@ -206,10 +263,14 @@ export default function ShopContent() {
     sort !== SHOP_INITIAL_SORT;
 
   const handleCategorySelect = useCallback(
-    (categoryIds: number[]) => {
+    (categoryIds: number[], categoryGroupId?: number) => {
       setFilters((prev) => ({ ...prev, categories: categoryIds }));
       router.replace(
-        buildShopListingHref({ categoryIds, q: search || undefined }),
+        buildShopListingHref({
+          categoryIds: categoryGroupId ? undefined : categoryIds,
+          categoryGroupId,
+          q: search || undefined,
+        }),
         { scroll: false }
       );
     },
@@ -236,7 +297,7 @@ export default function ShopContent() {
         <ShopFilterPanelContent
           filters={filters}
           setFilters={setFilters}
-          categories={categories}
+          categories={filterPanelCategories}
           categoriesLoading={categoriesLoading}
         />
       </ShopMobileFilterDrawer>
@@ -268,9 +329,10 @@ export default function ShopContent() {
           />
 
           <div className="mt-4 mb-6">
-            <CategoryCarousel
+            <CategoryDisplayGrid
               categories={displayCategories}
               loading={categoriesLoading}
+              size="compact"
               mode="filter"
               activeCategoryIds={filters.categories}
               onCategorySelect={handleCategorySelect}
@@ -282,7 +344,7 @@ export default function ShopContent() {
             <ShopDesktopFilterAside
               filters={filters}
               setFilters={setFilters}
-              categories={categories}
+              categories={filterPanelCategories}
               categoriesLoading={categoriesLoading}
             />
 

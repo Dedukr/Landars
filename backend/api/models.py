@@ -13,13 +13,6 @@ from django.db import models
 from django.utils import timezone
 
 
-def _post_suitable_category_pk() -> int:
-    """Royal Mail post-suitable scope: ``POST_SUITABLE_CATEGORY_ID`` in settings."""
-    from django.conf import settings
-
-    return int(getattr(settings, "POST_SUITABLE_CATEGORY_ID", 16))
-
-
 # ProductCategory model
 class ProductCategory(models.Model):
     name = models.CharField(max_length=255)
@@ -75,6 +68,27 @@ class ProductCategory(models.Model):
     def get_product_list(self):
         """Get a list of products in this category."""
         return [product.get_product_details() for product in self.get_products()]
+
+
+class CategoryGroup(models.Model):
+    """Groups multiple product categories for navigation or merchandising."""
+
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    categories = models.ManyToManyField(
+        ProductCategory,
+        related_name="category_groups",
+        blank=True,
+        verbose_name="Child categories",
+    )
+
+    class Meta:
+        verbose_name = "Category group"
+        verbose_name_plural = "Category groups"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
 
 
 # ProductImage model
@@ -661,9 +675,13 @@ class Order(models.Model):
         """
         Calculate delivery fee and home delivery status based on order items.
         Returns a tuple (is_home_delivery, delivery_fee).
-        Uses Royal Mail pricing for post-suitable items (same as cart).
+        Uses Royal Mail pricing for post-delivery group categories (same as cart).
         """
         from decimal import Decimal
+
+        from api.services.post_delivery_categories import (
+            product_has_post_delivery_category,
+        )
 
         if self.delivery_fee_manual:
             return self.is_home_delivery, self.delivery_fee
@@ -672,11 +690,8 @@ class Order(models.Model):
         if not items.exists():
             return True, Decimal("10")
 
-        # Check if any item is NOT in post-suitable category
-        post_id = _post_suitable_category_pk()
         has_non_post_items = any(
-            item.product
-            and not item.product.categories.filter(id=post_id).exists()
+            item.product and not product_has_post_delivery_category(item.product)
             for item in items
         )
 
@@ -745,10 +760,12 @@ class Order(models.Model):
         if not normalized:
             return True, Decimal("10")
 
-        # Determine if any item is not in the post-suitable category
-        post_id = _post_suitable_category_pk()
+        from api.services.post_delivery_categories import (
+            product_has_post_delivery_category,
+        )
+
         has_non_post_items = any(
-            prod and not prod.categories.filter(id=post_id).exists()
+            prod and not product_has_post_delivery_category(prod)
             for prod, _ in normalized
         )
         if has_non_post_items:

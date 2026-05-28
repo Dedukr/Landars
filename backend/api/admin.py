@@ -55,6 +55,7 @@ from .search_text import whole_word_regex_pattern
 from .models import (
     Cart,
     CartItem,
+    CategoryGroup,
     CustomUser,
     Order,
     OrderItem,
@@ -397,6 +398,22 @@ class ProductCategoryAdmin(admin.ModelAdmin):
         )
 
     products_inline.short_description = "Products"
+
+
+@admin.register(CategoryGroup)
+class CategoryGroupAdmin(admin.ModelAdmin):
+    list_display = ["name", "description", "categories_count"]
+    search_fields = ["name", "description"]
+    ordering = ["name"]
+    filter_horizontal = ["categories"]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related("categories")
+
+    def categories_count(self, obj):
+        return obj.categories.count()
+
+    categories_count.short_description = "Categories"
 
 
 class CartItemInline(admin.TabularInline):

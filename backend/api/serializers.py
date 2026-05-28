@@ -9,6 +9,7 @@ from shipping.models import Shipment
 from .models import (
     Cart,
     CartItem,
+    CategoryGroup,
     Order,
     OrderItem,
     Product,
@@ -20,6 +21,35 @@ from .models import (
 )
 from .validators import ProductImageValidationMixin
 from api.services.product_sales import SOLD_ORDER_STATUSES
+
+
+class CategoryGroupSerializer(serializers.ModelSerializer):
+    category_ids = serializers.SerializerMethodField()
+    category_names = serializers.SerializerMethodField()
+    products_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CategoryGroup
+        fields = [
+            "id",
+            "name",
+            "description",
+            "category_ids",
+            "category_names",
+            "products_count",
+        ]
+
+    def get_category_ids(self, obj):
+        return list(obj.categories.values_list("id", flat=True).order_by("id"))
+
+    def get_category_names(self, obj):
+        return list(obj.categories.values_list("name", flat=True).order_by("name"))
+
+    def get_products_count(self, obj):
+        counts = self.context.get("products_count", {})
+        if counts:
+            return counts.get(obj.id, 0)
+        return sum(c.get_product_count() for c in obj.categories.all())
 
 
 class CategorySerializer(serializers.ModelSerializer):

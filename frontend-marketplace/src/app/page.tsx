@@ -34,7 +34,7 @@ export default function HomePage() {
         sort="created_at_desc"
         limit={8}
         offset={0}
-        background="default"
+        background="transparent"
       />
 
       <HowItWorksSection />

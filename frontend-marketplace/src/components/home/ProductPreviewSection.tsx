@@ -35,8 +35,8 @@ interface ProductPreviewSectionProps {
   offset?: number;
   /** When true, render nothing if the fetch returns zero products (e.g. offset past catalogue end). */
   hideWhenEmpty?: boolean;
-  /** Background style: "default" = var(--background), "subtle" = var(--sidebar-bg) */
-  background?: "default" | "subtle";
+  /** Background style: "default" = var(--background), "subtle" = var(--sidebar-bg), "transparent" = none */
+  background?: "default" | "subtle" | "transparent";
   className?: string;
 }
 
