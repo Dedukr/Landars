@@ -37,6 +37,7 @@ class CategorySerializer(serializers.ModelSerializer):
             "name",
             "parent",
             "description",
+            "sold_quantity",
             "products_count",
             "image_url",
             "top_seller_sold_quantity",

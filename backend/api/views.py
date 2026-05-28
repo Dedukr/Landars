@@ -102,13 +102,15 @@ class ProductList(APIView):
 
     def get(self, request):
         """Retrieve products with filtering, sorting, and pagination."""
+        no_cache = request.query_params.get("no_cache") == "1"
         # Cache key version suffix bumps stale entries when search logic changes
         cache_key = f"products_v9_{hash(str(request.query_params))}"
 
         # Try to get cached response
-        cached_response = cache.get(cache_key)
-        if cached_response:
-            return Response(cached_response)
+        if not no_cache:
+            cached_response = cache.get(cache_key)
+            if cached_response:
+                return Response(cached_response)
 
         # Optimize database queries: prefetch categories (and parent) to avoid N+1 in serializer
         products = (
@@ -228,7 +230,8 @@ class ProductList(APIView):
         }
 
         # Cache the response for 5 minutes
-        cache.set(cache_key, response_data, 300)
+        if not no_cache:
+            cache.set(cache_key, response_data, 300)
 
         # Return paginated response
         return Response(response_data)

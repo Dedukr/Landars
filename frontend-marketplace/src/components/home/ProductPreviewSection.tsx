@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ChevronRight, Package } from "lucide-react";
 import HomeProductCard from "./HomeProductCard";
 import { scopeProductsQueryString } from "@/utils/catalogScope";
+import ShelfSection from "@/components/home/ShelfSection";
 
 interface Product {
   id: number;
@@ -74,48 +75,19 @@ export default function ProductPreviewSection({
       .finally(() => setLoading(false));
   }, [limit, offset, sort]);
 
-  const bg =
-    background === "subtle" ? "var(--sidebar-bg)" : "var(--background)";
-
   if (hideWhenEmpty && !loading && !error && products.length === 0) {
     return null;
   }
 
   return (
-    <section
-      className={`py-16 md:py-20 ${className}`}
-      style={{
-        background: bg,
-        borderBottom: "1px solid var(--sidebar-border)",
-      }}
+    <ShelfSection
+      title={title}
+      subtitle={subtitle}
+      background={background}
+      className={className}
+      seeAllHref="/shop"
+      seeAllLabel="See all"
     >
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="flex items-end justify-between mb-8">
-          <div>
-            <p
-              className="text-xs font-semibold uppercase tracking-widest mb-1"
-              style={{ color: "var(--accent)" }}
-            >
-              {subtitle}
-            </p>
-            <h2
-              className="text-3xl sm:text-4xl font-bold"
-              style={{ color: "var(--foreground)" }}
-            >
-              {title}
-            </h2>
-          </div>
-          <Link
-            href="/shop"
-            className="hidden sm:inline-flex items-center gap-1.5 text-sm font-medium transition-opacity hover:opacity-70"
-            style={{ color: "var(--accent)" }}
-          >
-            See all
-            <ChevronRight className="w-4 h-4" />
-          </Link>
-        </div>
-
         {/* Loading skeleton */}
         {loading && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-5">
@@ -198,7 +170,6 @@ export default function ProductPreviewSection({
             </div>
           </>
         )}
-      </div>
-    </section>
+    </ShelfSection>
   );
 }

@@ -237,6 +237,8 @@ export interface CategoryCarouselProps {
   loading?: boolean;
   /** `link` navigates to shop; `filter` applies category filter on the shop page. */
   mode?: "link" | "filter";
+  /** Visual / interaction style. `pagedGrid` is the existing 2-row paged grid. */
+  layout?: "pagedGrid" | "shelfRow";
   activeCategoryIds?: number[];
   onCategorySelect?: (categoryIds: number[]) => void;
   className?: string;
@@ -249,6 +251,7 @@ export default function CategoryCarousel({
   categories,
   loading = false,
   mode = "link",
+  layout = "pagedGrid",
   activeCategoryIds = [],
   onCategorySelect,
   className,
@@ -330,6 +333,28 @@ export default function CategoryCarousel({
           No categories available right now.
         </p>
       </CategoryCarouselShell>
+    );
+  }
+
+  if (layout === "shelfRow") {
+    return (
+      <div className={cn("min-w-0", className)}>
+        <div className="overflow-x-auto -mx-4 px-4 sm:-mx-6 sm:px-6 lg:mx-0 lg:px-0 pb-2">
+          <div className="flex gap-4 w-max lg:w-auto">
+            {categories.map((cat) => (
+              <div key={cat.isCombined ? `combined-${cat.name}` : cat.id} className="w-44 sm:w-52">
+                <CategoryTile
+                  category={cat}
+                  mode={mode}
+                  panelTone={panelTone}
+                  isActive={isCategoryFilterActive(cat, activeCategoryIds)}
+                  onSelect={onCategorySelect}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     );
   }
 

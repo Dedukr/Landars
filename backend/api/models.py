@@ -31,6 +31,14 @@ class ProductCategory(models.Model):
         related_name="subcategories",
         on_delete=models.CASCADE,
     )
+    sold_quantity = models.PositiveIntegerField(
+        default=0,
+        db_index=True,
+        help_text=(
+            "Total units sold across products in this category "
+            "(sum of order line quantities in paid/ready/issued orders)."
+        ),
+    )
 
     class Meta:
         verbose_name_plural = "Product Categories"
@@ -53,6 +61,7 @@ class ProductCategory(models.Model):
                 else None
             ),
             "description": self.description,
+            "sold_quantity": int(self.sold_quantity or 0),
         }
 
     def get_products(self):
@@ -349,8 +358,10 @@ class Order(models.Model):
         choices=[
             ("pending", "Pending"),
             ("paid", "Paid"),
-            ("ready_to_ship", "Ready to ship"),
             ("issued", "Issued"),
+            ("ready_to_ship", "Ready to ship"),
+            ("out_for_delivery", "Out for delivery"),
+            ("delivered", "Delivered"),
             ("cancelled", "Cancelled"),
         ],
         default="pending",
