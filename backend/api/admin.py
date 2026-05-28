@@ -37,7 +37,7 @@ from django.forms import ModelForm
 from django.http import HttpResponse, HttpResponseRedirect
 from django.template.loader import render_to_string
 from django.urls import path, reverse
-from django.utils.html import escape, format_html
+from django.utils.html import escape, format_html, format_html_join
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 from openpyxl import Workbook
@@ -349,13 +349,53 @@ class HolidayFeeFilter(admin.SimpleListFilter):
 
 @admin.register(ProductCategory)
 class ProductCategoryAdmin(admin.ModelAdmin):
-    list_display = ["name", "description", "parent"]
+    list_display = ["name", "description", "parent", "products_count"]
     list_filter = [ParentCategoriesFilter]
     search_fields = ["name"]
     ordering = ["parent__name", "name"]
+    readonly_fields = ["products_inline"]
+    fields = ["name", "description", "parent", "products_inline"]
 
     class Media:
         js = ("admin/js/prevent_double_submit.js",)
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.prefetch_related("products")
+
+    def products_count(self, obj):
+        return obj.products.count()
+
+    products_count.short_description = "Products"
+
+    def products_inline(self, obj):
+        """
+        Vertical list of products in this category, linking to each product's admin page.
+        """
+        if not obj.pk:
+            return "-"
+
+        products = obj.products.all().order_by("name")
+        if not products.exists():
+            return "No products in this category."
+
+        links = format_html_join(
+            "\n",
+            '<li style="margin: 0 0 4px 0;">'
+            '<a href="{}" style="text-decoration: underline;">{}</a>'
+            "</li>",
+            (
+                (reverse("admin:api_product_change", args=[p.pk]), escape(p.name))
+                for p in products
+            ),
+        )
+
+        return format_html(
+            '<ul style="margin: 0; padding-left: 18px; list-style: disc;">{}</ul>',
+            links,
+        )
+
+    products_inline.short_description = "Products"
 
 
 class CartItemInline(admin.TabularInline):
