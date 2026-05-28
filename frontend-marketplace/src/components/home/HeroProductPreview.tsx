@@ -68,7 +68,7 @@ export default function HeroProductPreview() {
   if (!loaded || products.length === 0) return null;
 
   return (
-    <div className="hidden lg:flex flex-col gap-3 w-64 xl:w-72 flex-shrink-0 animate-fade-in-up">
+    <div className="hidden lg:flex flex-col gap-3 w-64 xl:w-72 flex-shrink-0 animate-fade-in-up mt-6 xl:mt-10">
       {/* Header label */}
       <div className="flex items-center justify-between mb-1 px-1">
         <span
