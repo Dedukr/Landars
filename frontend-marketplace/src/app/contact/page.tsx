@@ -2,6 +2,8 @@ import React from "react";
 import type { Metadata } from "next";
 import { Mail, MessageCircle, MapPin } from "lucide-react";
 import ContactForm from "@/components/ContactForm";
+import { ContactLink } from "@/components/ContactLink";
+import { getWhatsAppHref } from "@/lib/supportWhatsApp";
 
 export const metadata: Metadata = {
   title: "Contact Us",
@@ -9,35 +11,33 @@ export const metadata: Metadata = {
     "Get in touch with the Landar's Food team. We're here to help with orders, products, and delivery queries.",
 };
 
-const supportPhone = process.env.NEXT_PUBLIC_SUPPORT_PHONE;
 const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL;
-// `wa.me` requires the international number with digits only (no `+`, spaces, or dashes).
-const whatsappDigits = supportPhone?.replace(/\D/g, "") ?? "";
+const whatsappHref = getWhatsAppHref();
 
 const contactDetails = [
-  {
-    icon: Mail,
-    title: "Email Us",
-    value: supportEmail || "info@landarsfood.com",
-    href: `mailto:${supportEmail || "info@landarsfood.com"}`,
-    description: "We aim to reply within one business day",
-  },
-  ...(whatsappDigits
+  ...(whatsappHref
     ? [
         {
           icon: MessageCircle,
-          title: "WhatsApp Us",
+          title: "WhatsApp",
           value: "WhatsApp",
-          href: `https://wa.me/${whatsappDigits}`,
+          href: whatsappHref,
           description: "Message us on WhatsApp for a quick reply",
         },
       ]
     : []),
   {
+    icon: Mail,
+    title: "Email",
+    value: supportEmail || "info@landarsfood.com",
+    href: `mailto:${supportEmail || "info@landarsfood.com"}`,
+    description: "We aim to reply within one business day",
+  },
+  {
     icon: MapPin,
     title: "Location",
     value: "United Kingdom",
-    href: null,
+    href: null as string | null,
     description: "Serving customers across the UK",
   },
 ];
@@ -110,16 +110,9 @@ export default function ContactPage() {
                     {title}
                   </p>
                   {href ? (
-                    <a
-                      href={href}
-                      {...(/^https?:\/\//.test(href)
-                        ? { target: "_blank", rel: "noopener noreferrer" }
-                        : {})}
-                      className="text-sm font-medium underline underline-offset-2 whitespace-pre-line transition-opacity hover:opacity-80"
-                      style={{ color: "var(--primary)" }}
-                    >
+                    <ContactLink href={href} variant="card">
                       {value}
-                    </a>
+                    </ContactLink>
                   ) : (
                     <p
                       className="text-sm font-medium whitespace-pre-line"

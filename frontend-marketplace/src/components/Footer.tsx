@@ -3,6 +3,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { MapPin, MessageCircle, Mail, Heart } from "lucide-react";
 import { ContactLink } from "@/components/ContactLink";
+import { getWhatsAppHref } from "@/lib/supportWhatsApp";
 
 const quickLinks = [
   { name: "Shop", href: "/shop" },
@@ -20,11 +21,8 @@ const supportLinks = [
 ];
 
 export default function Footer() {
-  const supportPhone = process.env.NEXT_PUBLIC_SUPPORT_PHONE;
   const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL;
-  // `wa.me` requires the international number with digits only (no `+`, spaces, or dashes).
-  const whatsappDigits = supportPhone?.replace(/\D/g, "") ?? "";
-  const whatsappHref = whatsappDigits ? `https://wa.me/${whatsappDigits}` : null;
+  const whatsappHref = getWhatsAppHref();
 
   return (
     <footer
