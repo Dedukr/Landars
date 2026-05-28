@@ -247,7 +247,7 @@ class ProductImageInline(admin.TabularInline):
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
     list_display = ["name", "get_price", "get_vat_display", "sold_quantity", "sold_orders_count", "get_categories"]
-    list_filter = ["categories", "vat"]
+    list_filter = ["active", "categories", "vat"]
     filter_horizontal = ["categories"]
     search_fields = ["name"]
     ordering = ["name"]
@@ -256,6 +256,7 @@ class ProductAdmin(admin.ModelAdmin):
     fields = [
         "name",
         "description",
+        "active",
         "base_price",
         "holiday_fee",
         "vat",

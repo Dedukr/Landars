@@ -57,7 +57,7 @@ class ProductCategory(models.Model):
 
     def get_products(self):
         """Get all products in this category."""
-        return Product.objects.filter(categories__name=self.name)
+        return Product.objects.filter(categories__name=self.name, active=True)
 
     def get_product_count(self):
         """Get the count of products in this category."""
@@ -136,6 +136,11 @@ class ProductImage(models.Model):
 class Product(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
+    active = models.BooleanField(
+        default=True,
+        db_index=True,
+        help_text="If disabled, the product is hidden from the storefront and API listings.",
+    )
     categories = models.ManyToManyField(ProductCategory, related_name="products")
     base_price = models.DecimalField(
         max_digits=10,

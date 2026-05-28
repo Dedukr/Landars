@@ -113,7 +113,7 @@ class ProductList(APIView):
         # Optimize database queries: prefetch categories (and parent) to avoid N+1 in serializer
         products = (
             Product.objects.prefetch_related("categories__parent", "images")
-            .all()
+            .filter(active=True)
         )
 
         # Filtering
@@ -300,7 +300,11 @@ class ProductDetail(APIView):
     def get_object(product_id):
         """Helper method to retrieve a product by ID with images prefetched."""
         try:
-            return Product.objects.prefetch_related("images").get(id=product_id)
+            return (
+                Product.objects.filter(active=True)
+                .prefetch_related("images")
+                .get(id=product_id)
+            )
         except Product.DoesNotExist:
             return None
 
@@ -315,7 +319,7 @@ class ProductReviewListCreate(APIView):
 
     def get_product(self, product_id):
         try:
-            return Product.objects.get(id=product_id)
+            return Product.objects.filter(active=True).get(id=product_id)
         except Product.DoesNotExist:
             return None
 
@@ -874,7 +878,7 @@ class OrderItemView(APIView):
 
         # Validate product exists
         try:
-            product = Product.objects.get(id=product_id)
+            product = Product.objects.filter(active=True).get(id=product_id)
         except Product.DoesNotExist:
             return Response(
                 {"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND
@@ -944,7 +948,7 @@ class WishlistView(APIView):
             )
 
         try:
-            product = Product.objects.get(id=product_id)
+            product = Product.objects.filter(active=True).get(id=product_id)
         except Product.DoesNotExist:
             return Response(
                 {"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND
@@ -1048,7 +1052,7 @@ class CartView(APIView):
             )
 
         try:
-            product = Product.objects.get(id=product_id)
+            product = Product.objects.filter(active=True).get(id=product_id)
         except Product.DoesNotExist:
             return Response(
                 {"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND
@@ -1462,7 +1466,7 @@ class PresignedUploadView(APIView):
         # Validate product exists if product_id is provided
         if product_id:
             try:
-                Product.objects.get(id=product_id)
+                Product.objects.filter(active=True).get(id=product_id)
             except Product.DoesNotExist:
                 return Response(
                     {"error": "Product not found"},
