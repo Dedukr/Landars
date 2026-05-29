@@ -329,7 +329,9 @@ class OrderQuerySet(models.QuerySet):
             order_ids = list(self.values_list("pk", flat=True))
         rows = super().update(**kwargs)
         if order_ids:
-            from api.services.product_sales import schedule_product_sales_rebuild_for_orders
+            from api.services.product_sales import (
+                schedule_product_sales_rebuild_for_orders,
+            )
 
             schedule_product_sales_rebuild_for_orders(order_ids)
         return rows
@@ -425,7 +427,6 @@ class Order(models.Model):
         or create a checkout-only row (``status=draft``).
         """
         from django.core.exceptions import ObjectDoesNotExist
-
         from shipping.models import Shipment
 
         try:
@@ -785,17 +786,13 @@ class Order(models.Model):
                 line_merch += Decimal(str(lt))
                 n_line += 1
         n_in = sum(
-            1
-            for raw in items_data or []
-            if raw.get("product") and raw.get("quantity")
+            1 for raw in items_data or [] if raw.get("product") and raw.get("quantity")
         )
         if n_line > 0 and n_line == n_in:
             merch = line_merch
         else:
             merch = sum(
-                (prod.price * Decimal(str(q)))
-                for prod, q in normalized
-                if prod
+                (prod.price * Decimal(str(q))) for prod, q in normalized if prod
             )
         if merch > Decimal("220"):
             return False, Decimal("0")
