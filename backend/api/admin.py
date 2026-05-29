@@ -1500,6 +1500,7 @@ class OrderAdmin(admin.ModelAdmin):
             fields += [
                 "customer_phone",
                 "customer_address",
+                "created_at",
                 "get_total_items",
                 "get_holiday_fee_amount",
                 "get_total_price",
@@ -1519,6 +1520,7 @@ class OrderAdmin(admin.ModelAdmin):
 
     def get_readonly_fields(self, request, obj=None):
         readonly = [
+            "created_at",
             "customer_name",
             "customer_phone",
             "customer_address",
