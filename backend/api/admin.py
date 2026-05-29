@@ -37,7 +37,7 @@ from django.forms import ModelForm
 from django.http import HttpResponse, HttpResponseRedirect
 from django.template.loader import render_to_string
 from django.urls import path, reverse
-from django.utils.html import escape, format_html
+from django.utils.html import escape, format_html, format_html_join
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 from openpyxl import Workbook
@@ -55,6 +55,7 @@ from .search_text import whole_word_regex_pattern
 from .models import (
     Cart,
     CartItem,
+    CategoryGroup,
     CustomUser,
     Order,
     OrderItem,
@@ -247,7 +248,7 @@ class ProductImageInline(admin.TabularInline):
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
     list_display = ["name", "get_price", "get_vat_display", "sold_quantity", "sold_orders_count", "get_categories"]
-    list_filter = ["categories", "vat"]
+    list_filter = ["active", "categories", "vat"]
     filter_horizontal = ["categories"]
     search_fields = ["name"]
     ordering = ["name"]
@@ -256,6 +257,7 @@ class ProductAdmin(admin.ModelAdmin):
     fields = [
         "name",
         "description",
+        "active",
         "base_price",
         "holiday_fee",
         "vat",
@@ -349,13 +351,69 @@ class HolidayFeeFilter(admin.SimpleListFilter):
 
 @admin.register(ProductCategory)
 class ProductCategoryAdmin(admin.ModelAdmin):
-    list_display = ["name", "description", "parent"]
+    list_display = ["name", "description", "parent", "products_count"]
     list_filter = [ParentCategoriesFilter]
     search_fields = ["name"]
     ordering = ["parent__name", "name"]
+    readonly_fields = ["products_inline"]
+    fields = ["name", "description", "parent", "products_inline"]
 
     class Media:
         js = ("admin/js/prevent_double_submit.js",)
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.prefetch_related("products")
+
+    def products_count(self, obj):
+        return obj.products.count()
+
+    products_count.short_description = "Products"
+
+    def products_inline(self, obj):
+        """
+        Vertical list of products in this category, linking to each product's admin page.
+        """
+        if not obj.pk:
+            return "-"
+
+        products = obj.products.all().order_by("name")
+        if not products.exists():
+            return "No products in this category."
+
+        links = format_html_join(
+            "\n",
+            '<li style="margin: 0 0 4px 0;">'
+            '<a href="{}" style="text-decoration: underline;">{}</a>'
+            "</li>",
+            (
+                (reverse("admin:api_product_change", args=[p.pk]), escape(p.name))
+                for p in products
+            ),
+        )
+
+        return format_html(
+            '<ul style="margin: 0; padding-left: 18px; list-style: disc;">{}</ul>',
+            links,
+        )
+
+    products_inline.short_description = "Products"
+
+
+@admin.register(CategoryGroup)
+class CategoryGroupAdmin(admin.ModelAdmin):
+    list_display = ["name", "description", "categories_count"]
+    search_fields = ["name", "description"]
+    ordering = ["name"]
+    filter_horizontal = ["categories"]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related("categories")
+
+    def categories_count(self, obj):
+        return obj.categories.count()
+
+    categories_count.short_description = "Categories"
 
 
 class CartItemInline(admin.TabularInline):
@@ -1465,6 +1523,7 @@ class OrderAdmin(admin.ModelAdmin):
             fields += [
                 "customer_phone",
                 "customer_address",
+                "created_at",
                 "get_total_items",
                 "get_holiday_fee_amount",
                 "get_total_price",
@@ -1484,6 +1543,7 @@ class OrderAdmin(admin.ModelAdmin):
 
     def get_readonly_fields(self, request, obj=None):
         readonly = [
+            "created_at",
             "customer_name",
             "customer_phone",
             "customer_address",

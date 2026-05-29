@@ -8,6 +8,7 @@ import { useCartOptimized } from "@/hooks/useCartOptimized";
 import { useCartItems } from "@/hooks/useCartItems";
 import { useDeliveryFee } from "@/hooks/useDeliveryFee";
 import { useCartCalculations } from "@/hooks/useCartCalculations";
+import { fetchPostDeliveryCategoryGroup } from "@/lib/postDeliveryCategoryGroup";
 import { httpClient } from "@/utils/httpClient";
 
 import CartHero from "@/components/cart/CartHero";
@@ -59,6 +60,13 @@ export default function CartPage() {
   const { addToCart, isLoading: cartIsLoading } = useCart();
   const [savedItems, setSavedItems] = useState<number[]>([]);
   const [cartData, setCartData] = useState<CartData | null>(null);
+  const [postDeliveryGroup, setPostDeliveryGroup] = useState<
+    Awaited<ReturnType<typeof fetchPostDeliveryCategoryGroup>>
+  >(null);
+
+  useEffect(() => {
+    fetchPostDeliveryCategoryGroup().then(setPostDeliveryGroup);
+  }, []);
 
   const fetchCartData = useCallback(async () => {
     if (!user) return;
@@ -103,6 +111,7 @@ export default function CartPage() {
     products: cartProducts,
     subtotal,
     discount,
+    postDeliveryGroup,
   });
 
   // Total shown in cart = subtotal - discount (delivery calculated at checkout)

@@ -3,9 +3,9 @@ import type { SortOption } from "@/components/SortList";
 /**
  * Backend-supported values: name_asc, name_desc, price_asc, price_desc,
  * created_at_desc, created_at_asc, sales_desc, category_asc (ProductList APIView).
- * `SHOP_INITIAL_SORT` is the default shop listing order (featured / best sellers).
+ * `SHOP_INITIAL_SORT` is the default shop listing order.
  */
-export const SHOP_INITIAL_SORT = "sales_desc";
+export const SHOP_INITIAL_SORT = "name_asc";
 export const SHOP_CATEGORY_SORT = "category_asc";
 
 export const SHOP_SORT_OPTIONS: SortOption[] = [

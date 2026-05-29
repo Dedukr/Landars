@@ -1,5 +1,6 @@
 "use client";
 import { useMemo } from "react";
+import type { PostDeliveryCategoryGroup } from "@/lib/postDeliveryCategoryGroup";
 import {
   calculateDeliveryFee,
   getDeliveryFeeBreakdown,
@@ -12,6 +13,7 @@ interface UseDeliveryFeeProps {
   products: CartProduct[];
   subtotal: number;
   discount?: number;
+  postDeliveryGroup?: PostDeliveryCategoryGroup | null;
 }
 
 interface UseDeliveryFeeReturn {
@@ -24,8 +26,8 @@ export function useDeliveryFee({
   products,
   subtotal,
   discount = 0,
+  postDeliveryGroup = null,
 }: UseDeliveryFeeProps): UseDeliveryFeeReturn {
-  // Calculate delivery fee when products or subtotal changes
   const deliveryCalculation = useMemo(() => {
     if (products.length === 0) {
       return {
@@ -39,15 +41,13 @@ export function useDeliveryFee({
       };
     }
 
-    return calculateDeliveryFee(products);
-  }, [products]);
+    return calculateDeliveryFee(products, postDeliveryGroup);
+  }, [products, postDeliveryGroup]);
 
-  // Get delivery fee breakdown for display
   const deliveryBreakdown = useMemo(() => {
     return getDeliveryFeeBreakdown(deliveryCalculation);
   }, [deliveryCalculation]);
 
-  // Calculate total price including delivery fee and discount
   const totalPrice = useMemo(() => {
     return calculateTotalPrice(
       subtotal,

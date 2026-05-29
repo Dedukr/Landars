@@ -3,7 +3,6 @@ import HomeHero from "@/components/home/HomeHero";
 import HowItWorksSection from "@/components/home/HowItWorksSection";
 import CategoryGrid from "@/components/home/CategoryGrid";
 import ProductPreviewSection from "@/components/home/ProductPreviewSection";
-import FeaturedProductsSection from "@/components/home/FeaturedProductsSection";
 import TrustBenefitsSection from "@/components/home/TrustBenefitsSection";
 import HomeCTASection from "@/components/home/HomeCTASection";
 
@@ -29,11 +28,13 @@ export default function HomePage() {
         background="subtle"
       />
 
-      <FeaturedProductsSection
+      <ProductPreviewSection
         title="Fresh picks"
         subtitle="Newly added"
         sort="created_at_desc"
-        limit={4}
+        limit={8}
+        offset={0}
+        background="transparent"
       />
 
       <HowItWorksSection />

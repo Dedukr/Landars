@@ -27,21 +27,21 @@ function ShopSkeleton() {
           className="h-14 rounded-2xl animate-pulse max-w-3xl"
           style={{ background: "var(--card-bg)", border: "1px solid var(--sidebar-border)" }}
         />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6">
           {Array.from({ length: 8 }).map((_, i) => (
             <div
               key={i}
-              className="rounded-2xl border overflow-hidden animate-pulse min-h-[22rem]"
+              className="rounded-xl sm:rounded-2xl border overflow-hidden animate-pulse min-h-0 sm:min-h-[22rem]"
               style={{
                 borderColor: "var(--sidebar-border)",
                 background: "var(--card-bg)",
               }}
             >
               <div className="aspect-[4/3] w-full" style={{ background: "var(--sidebar-bg)" }} />
-              <div className="p-4 space-y-3">
-                <div className="h-4 rounded w-3/4" style={{ background: "var(--sidebar-bg)" }} />
-                <div className="h-3 rounded w-1/2" style={{ background: "var(--sidebar-bg)" }} />
-                <div className="h-8 rounded-lg w-24 ml-auto" style={{ background: "var(--sidebar-bg)" }} />
+              <div className="p-2.5 sm:p-4 space-y-2 sm:space-y-3">
+                <div className="h-3 sm:h-4 rounded w-3/4" style={{ background: "var(--sidebar-bg)" }} />
+                <div className="hidden sm:block h-3 rounded w-1/2" style={{ background: "var(--sidebar-bg)" }} />
+                <div className="h-9 sm:h-8 rounded-lg w-full sm:w-24 sm:ml-auto" style={{ background: "var(--sidebar-bg)" }} />
               </div>
             </div>
           ))}

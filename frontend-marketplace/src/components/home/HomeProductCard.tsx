@@ -43,11 +43,10 @@ export default function HomeProductCard({ product, className = "" }: HomeProduct
   return (
     <Link
       href={`/product/${product.id}`}
-      className={`group flex flex-col rounded-2xl border overflow-hidden transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 ${className}`}
+      className={`group flex flex-col rounded-2xl border overflow-hidden transition-all duration-200 hover:-translate-y-0.5 ${className}`}
       style={{
         background: "var(--card-bg)",
         borderColor: "var(--sidebar-border)",
-        boxShadow: "var(--card-shadow)",
       }}
     >
       {/* Product image */}

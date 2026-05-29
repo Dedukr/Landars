@@ -53,30 +53,36 @@ export default function HomeHero() {
           {/* Left column */}
           <div className="flex-1 min-w-0">
             {/* Badge */}
-            <div
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold mb-5 sm:mb-6 border"
-              style={{
-                background: "var(--success-bg)",
-                borderColor: "var(--success-border)",
-                color: "var(--success-text)",
-              }}
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
-              Authentic Eastern European Foods · Delivered Across the UK
-              <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+            <div className="mb-5 sm:mb-6 flex flex-wrap items-center gap-2">
+              <div
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border"
+                style={{
+                  background: "var(--success-bg)",
+                  borderColor: "var(--success-border)",
+                  color: "var(--success-text)",
+                }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+                Authentic Eastern European Foods · Delivered Across the UK
+                <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+              </div>
+
+              {/* Desktop-only: show experience next to the badge */}
+              <span
+                className="hidden lg:inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold"
+                style={{
+                  background: "var(--success-bg)",
+                  borderColor: "var(--success-border)",
+                  color: "var(--success-text)",
+                }}
+              >
+                <Award className="h-4 w-4 shrink-0" strokeWidth={2.25} aria-hidden />
+                Four years of experience
+              </span>
             </div>
 
             {/* Headline + logo */}
-            <div className="flex items-center gap-3 sm:gap-5 lg:gap-6 mb-4 sm:mb-5 min-w-0">
-              <Image
-                src="/landars_food_logo.svg"
-                alt=""
-                width={160}
-                height={160}
-                priority
-                aria-hidden
-                className="shrink-0 w-auto object-contain h-[4.5rem] sm:h-[5.75rem] lg:h-[7.25rem]"
-              />
+            <div className="flex items-center justify-between gap-4 sm:gap-6 mb-4 sm:mb-5 min-w-0">
               <h1
                 className="min-w-0 flex-1 text-4xl sm:text-5xl lg:text-6xl font-extrabold leading-[1.1] tracking-tight"
                 style={{ color: "var(--foreground)" }}
@@ -88,6 +94,15 @@ export default function HomeHero() {
                   of Eastern Europe
                 </span>
               </h1>
+              <Image
+                src="/landars_food_logo.svg"
+                alt=""
+                width={320}
+                height={320}
+                priority
+                aria-hidden
+                className="shrink-0 w-auto object-contain h-[6.25rem] sm:h-[8rem] lg:h-[10rem]"
+              />
             </div>
 
             {/* Subtitle */}
@@ -122,9 +137,12 @@ export default function HomeHero() {
               >
                 Ukrainian, Slavic, European cuisine
               </p>
-              <div className="flex w-full max-w-2xl items-center gap-3 pt-1 lg:justify-between">
+              <div className="flex w-full max-w-2xl flex-col items-center gap-2 pt-1 text-center lg:flex-row lg:items-center lg:justify-between lg:gap-3 lg:text-left">
+                <div className="order-2 min-w-0 w-full max-w-[18rem] sm:max-w-[20rem] lg:order-1 lg:w-auto lg:flex-none lg:max-w-[9.5rem] xl:max-w-[11rem]">
+                  <FoodHygieneRating fluid />
+                </div>
                 <span
-                  className="inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-sm font-bold"
+                  className="order-1 inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-sm font-bold lg:order-2 lg:hidden"
                   style={{
                     background: "var(--success-bg)",
                     borderColor: "var(--success-border)",
@@ -134,9 +152,6 @@ export default function HomeHero() {
                   <Award className="h-4 w-4 shrink-0" strokeWidth={2.25} aria-hidden />
                   Four years of experience
                 </span>
-                <div className="min-w-0 flex-1 lg:ml-auto lg:flex-none lg:max-w-[9.5rem] xl:max-w-[11rem]">
-                  <FoodHygieneRating fluid />
-                </div>
               </div>
             </div>
 

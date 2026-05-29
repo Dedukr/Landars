@@ -67,8 +67,6 @@ from .serializers import (
 logger = logging.getLogger(__name__)
 from .validators import validate_image_file_extension
 
-POST_SUITABLE_CATEGORY_ID = int(getattr(settings, "POST_SUITABLE_CATEGORY_ID", 16))
-
 
 # Custom throttle for categories - more permissive since it's read-only
 class CategoryThrottle(AnonRateThrottle):
@@ -102,31 +100,58 @@ class ProductList(APIView):
 
     def get(self, request):
         """Retrieve products with filtering, sorting, and pagination."""
+        no_cache = request.query_params.get("no_cache") == "1"
         # Cache key version suffix bumps stale entries when search logic changes
         cache_key = f"products_v9_{hash(str(request.query_params))}"
 
         # Try to get cached response
-        cached_response = cache.get(cache_key)
-        if cached_response:
-            return Response(cached_response)
+        if not no_cache:
+            cached_response = cache.get(cache_key)
+            if cached_response:
+                return Response(cached_response)
 
         # Optimize database queries: prefetch categories (and parent) to avoid N+1 in serializer
         products = (
             Product.objects.prefetch_related("categories__parent", "images")
-            .all()
+            .filter(active=True)
         )
 
-        # Filtering
+        # Filtering (categories, optional group shortcut, include subcategories)
+        from api.services.category_groups import (
+            category_ids_for_group,
+            expand_category_ids_for_product_filter,
+        )
+
+        filter_category_ids: list[int] = []
+
+        category_group = request.query_params.get("category_group")
+        if category_group and category_group.isdigit():
+            filter_category_ids.extend(category_ids_for_group(int(category_group)))
+
         categories = request.query_params.get("categories")
         if categories:
-            category_ids = [int(cid) for cid in categories.split(",") if cid.isdigit()]
-            if category_ids:
-                products = products.filter(categories__id__in=category_ids).distinct()
+            filter_category_ids.extend(
+                int(cid) for cid in categories.split(",") if cid.isdigit()
+            )
 
-        # Support single category parameter for backward compatibility
         category = request.query_params.get("category")
         if category and category.isdigit():
-            products = products.filter(categories__id=int(category)).distinct()
+            filter_category_ids.append(int(category))
+
+        post_delivery = request.query_params.get("post_delivery")
+        if post_delivery in ("1", "true", "yes"):
+            from api.services.post_delivery_categories import (
+                get_post_delivery_category_ids,
+            )
+
+            filter_category_ids.extend(get_post_delivery_category_ids())
+
+        if filter_category_ids:
+            expanded = expand_category_ids_for_product_filter(filter_category_ids)
+            if expanded:
+                products = products.filter(categories__id__in=expanded).distinct()
+            else:
+                products = products.none()
 
         # Exclude specific products
         exclude = request.query_params.get("exclude")
@@ -228,7 +253,8 @@ class ProductList(APIView):
         }
 
         # Cache the response for 5 minutes
-        cache.set(cache_key, response_data, 300)
+        if not no_cache:
+            cache.set(cache_key, response_data, 300)
 
         # Return paginated response
         return Response(response_data)
@@ -300,7 +326,11 @@ class ProductDetail(APIView):
     def get_object(product_id):
         """Helper method to retrieve a product by ID with images prefetched."""
         try:
-            return Product.objects.prefetch_related("images").get(id=product_id)
+            return (
+                Product.objects.filter(active=True)
+                .prefetch_related("images")
+                .get(id=product_id)
+            )
         except Product.DoesNotExist:
             return None
 
@@ -315,7 +345,7 @@ class ProductReviewListCreate(APIView):
 
     def get_product(self, product_id):
         try:
-            return Product.objects.get(id=product_id)
+            return Product.objects.filter(active=True).get(id=product_id)
         except Product.DoesNotExist:
             return None
 
@@ -372,6 +402,83 @@ class CategoryList(APIView):
         cache.set(cache_key, response_data, 3600)
 
         return Response(response_data)
+
+
+class CategoryGroupList(APIView):
+    """All category groups for storefront navigation."""
+
+    permission_classes = [AllowAny]
+    throttle_classes = []
+
+    def get(self, request):
+        from api.models import CategoryGroup
+        from api.serializers import CategoryGroupSerializer
+        from api.services.category_display import products_count_by_category_id
+
+        cache_key = "category_groups_list_v1"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response(cached)
+
+        groups = list(
+            CategoryGroup.objects.prefetch_related("categories").order_by("-name")
+        )
+        all_cat_ids: list[int] = []
+        for group in groups:
+            all_cat_ids.extend(c.id for c in group.categories.all())
+        products_count = products_count_by_category_id(list(set(all_cat_ids)))
+
+        data = []
+        for group in groups:
+            row = CategoryGroupSerializer(
+                group,
+                context={
+                    "products_count": {
+                        group.id: sum(
+                            products_count.get(cid, 0)
+                            for cid in group.categories.values_list("id", flat=True)
+                        )
+                    }
+                },
+            ).data
+            data.append(row)
+
+        cache.set(cache_key, data, 3600)
+        return Response(data)
+
+
+class CategoryGroupPostDelivery(APIView):
+    """Post-delivery category group (``POST_DELIVERY_CATEGORY_GROUP_ID``, default 1)."""
+
+    permission_classes = [AllowAny]
+    throttle_classes = []
+
+    def get(self, request):
+        from api.models import CategoryGroup
+        from api.serializers import CategoryGroupSerializer
+        from api.services.post_delivery_categories import (
+            post_delivery_category_group_id,
+        )
+
+        cache_key = f"category_group_post_delivery_v1:{post_delivery_category_group_id()}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response(cached)
+
+        group = (
+            CategoryGroup.objects.filter(pk=post_delivery_category_group_id())
+            .prefetch_related("categories")
+            .first()
+        )
+        if not group:
+            return Response(
+                {"error": "Post-delivery category group not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        data = CategoryGroupSerializer(group).data
+        cache.set(cache_key, data, 3600)
+        return Response(data)
 
 
 # class StockUpdateView(APIView):
@@ -746,24 +853,25 @@ class OrderListView(APIView):
     def _calculate_delivery_type_and_fee(self, order):
         """
         Calculate delivery type and fee automatically based on cart contents.
-        Uses Royal Mail pricing for post-suitable items (same as cart).
+        Uses Royal Mail pricing for post-delivery group categories (same as cart).
         """
         from decimal import Decimal
 
+        from api.services.post_delivery_categories import (
+            product_has_post_delivery_category,
+        )
         from shipping.sendcloud_shipping import ShippingService
 
         items = order.items.select_related("product").all()
 
         if not order.delivery_fee_manual:
-            # Post-suitable when every line item includes the scoped category
-            all_products_are_sausages = True
-            for item in items:
-                if not item.product.categories.filter(id=POST_SUITABLE_CATEGORY_ID).exists():
-                    all_products_are_sausages = False
-                    break
+            all_post_delivery = all(
+                item.product and product_has_post_delivery_category(item.product)
+                for item in items
+            ) and items.exists()
 
-            if all_products_are_sausages:
-                # ALL products are sausages, use post delivery with Royal Mail pricing
+            if all_post_delivery:
+                # All lines are in the post-delivery category group — Royal Mail pricing
                 order.is_home_delivery = False
                 merch = Decimal(0)
                 for item in items:
@@ -784,7 +892,6 @@ class OrderListView(APIView):
                         to_postal_code=postal or None,
                     )
             else:
-                # Mixed products or no sausages, use home delivery
                 order.is_home_delivery = True
                 order.delivery_fee = Decimal("10")
         order.save()
@@ -874,7 +981,7 @@ class OrderItemView(APIView):
 
         # Validate product exists
         try:
-            product = Product.objects.get(id=product_id)
+            product = Product.objects.filter(active=True).get(id=product_id)
         except Product.DoesNotExist:
             return Response(
                 {"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND
@@ -944,7 +1051,7 @@ class WishlistView(APIView):
             )
 
         try:
-            product = Product.objects.get(id=product_id)
+            product = Product.objects.filter(active=True).get(id=product_id)
         except Product.DoesNotExist:
             return Response(
                 {"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND
@@ -1048,7 +1155,7 @@ class CartView(APIView):
             )
 
         try:
-            product = Product.objects.get(id=product_id)
+            product = Product.objects.filter(active=True).get(id=product_id)
         except Product.DoesNotExist:
             return Response(
                 {"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND
@@ -1188,10 +1295,13 @@ class CartView(APIView):
     def _calculate_delivery_type_and_fee(self, cart):
         """
         Calculate delivery type and fee automatically based on cart contents.
-        Uses preassigned Royal Mail delivery fee map for post delivery (sausages).
+        Uses Royal Mail pricing for post-delivery group categories.
         """
         from decimal import Decimal
 
+        from api.services.post_delivery_categories import (
+            product_has_post_delivery_category,
+        )
         from shipping.sendcloud_shipping import ShippingService
 
         items = cart.items.select_related("product").all()
@@ -1201,15 +1311,13 @@ class CartView(APIView):
             cart.delivery_fee = Decimal("0")
             return
 
-        # Post-suitable when every line item includes the scoped category
-        all_products_are_sausages = True
-        for item in items:
-            if not item.product.categories.filter(id=POST_SUITABLE_CATEGORY_ID).exists():
-                all_products_are_sausages = False
-                break
+        all_post_delivery = all(
+            item.product and product_has_post_delivery_category(item.product)
+            for item in items
+        )
 
-        if all_products_are_sausages:
-            # ALL products are sausages, use post delivery with Royal Mail pricing
+        if all_post_delivery:
+            # All lines are in the post-delivery category group — Royal Mail pricing
             cart.is_home_delivery = False
             if cart.sum_price > 220:
                 cart.delivery_fee = Decimal("0")
@@ -1219,7 +1327,6 @@ class CartView(APIView):
                     total_weight
                 )
         else:
-            # Mixed products or no sausages, use home delivery
             cart.is_home_delivery = True
             cart.delivery_fee = Decimal("10")
 
@@ -1462,7 +1569,7 @@ class PresignedUploadView(APIView):
         # Validate product exists if product_id is provided
         if product_id:
             try:
-                Product.objects.get(id=product_id)
+                Product.objects.filter(active=True).get(id=product_id)
             except Product.DoesNotExist:
                 return Response(
                     {"error": "Product not found"},

@@ -74,9 +74,9 @@ export function ShopProductCard({
   return (
     <article
       className={[
-        "group relative flex flex-col rounded-2xl border overflow-hidden shadow-sm transition-all duration-200",
-        "hover:shadow-lg hover:-translate-y-0.5",
-        "min-h-[22rem]",
+        "group relative flex flex-col rounded-xl sm:rounded-2xl border overflow-hidden shadow-sm transition-all duration-200",
+        "hover:shadow-lg sm:hover:-translate-y-0.5",
+        "min-h-0 sm:min-h-[22rem]",
         "focus-within:ring-2 focus-within:ring-[var(--ring)] focus-within:ring-offset-2 focus-within:ring-offset-[var(--background)]",
       ].join(" ")}
       style={{
@@ -86,7 +86,7 @@ export function ShopProductCard({
       }}
       data-product-id={product.id}
     >
-      <div className="absolute top-2.5 right-2.5 z-10">
+      <div className="absolute top-1.5 right-1.5 sm:top-2.5 sm:right-2.5 z-10">
         <button
           type="button"
           onClick={(e) => {
@@ -94,7 +94,7 @@ export function ShopProductCard({
             e.stopPropagation();
             onWishlistToggle();
           }}
-          className="inline-flex items-center justify-center w-11 h-11 rounded-full backdrop-blur-sm transition-transform hover:scale-105 active:scale-95"
+          className="inline-flex items-center justify-center w-8 h-8 sm:w-11 sm:h-11 rounded-full backdrop-blur-sm transition-transform hover:scale-105 active:scale-95"
           style={{
             background: "var(--card-bg)",
             border: "1px solid var(--sidebar-border)",
@@ -110,7 +110,11 @@ export function ShopProductCard({
           }
           aria-pressed={inWishlist}
         >
-          <Heart className={`w-5 h-5 ${inWishlist ? "fill-current" : ""}`} strokeWidth={2} aria-hidden />
+          <Heart
+            className={`w-4 h-4 sm:w-5 sm:h-5 ${inWishlist ? "fill-current" : ""}`}
+            strokeWidth={2}
+            aria-hidden
+          />
         </button>
       </div>
 
@@ -125,18 +129,21 @@ export function ShopProductCard({
             alt={product.name}
             fill
             className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 24vw"
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 50vw, 24vw"
             loading="lazy"
           />
         ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center">
-            <Package className="w-10 h-10 opacity-35" aria-hidden />
-            <span className="text-xs font-medium" style={{ color: "var(--muted-foreground)" }}>
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 sm:gap-2 p-3 sm:p-4 text-center">
+            <Package className="w-7 h-7 sm:w-10 sm:h-10 opacity-35" aria-hidden />
+            <span
+              className="text-[10px] sm:text-xs font-medium"
+              style={{ color: "var(--muted-foreground)" }}
+            >
               Photo coming soon
             </span>
           </div>
         )}
-        <div className="absolute inset-x-0 bottom-0 flex flex-wrap gap-1.5 px-3 pb-3 pt-6 bg-gradient-to-t from-black/50 to-transparent opacity-95 pointer-events-none">
+        <div className="absolute inset-x-0 bottom-0 hidden sm:flex flex-wrap gap-1.5 px-3 pb-3 pt-6 bg-gradient-to-t from-black/50 to-transparent opacity-95 pointer-events-none">
           {categoryLabel && (
             <span
               className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
@@ -163,37 +170,46 @@ export function ShopProductCard({
         </div>
       </Link>
 
-      <div className="flex flex-1 flex-col p-4 pt-3">
+      <div className="flex flex-1 flex-col p-2.5 pt-2 sm:p-4 sm:pt-3">
         <Link
           href={`/product/${product.id}/`}
           prefetch={false}
           className="outline-none rounded-md focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
         >
           <h3
-            className="font-semibold text-base leading-snug line-clamp-2 mb-2"
+            className="font-semibold text-xs sm:text-base leading-snug line-clamp-2 mb-1 sm:mb-2"
             style={{ color: "var(--foreground)" }}
           >
             {product.name}
           </h3>
           {product.description ? (
             <p
-              className="text-sm leading-relaxed line-clamp-2 mb-4"
+              className="hidden sm:block text-sm leading-relaxed line-clamp-2 mb-4"
               style={{ color: "var(--muted-foreground)" }}
             >
               {product.description}
             </p>
           ) : (
-            <div className="mb-4" />
+            <div className="hidden sm:block mb-4" />
           )}
         </Link>
 
-        <div className="mt-auto flex flex-col gap-3 pt-2 border-t" style={{ borderColor: "var(--sidebar-border)" }}>
+        <div
+          className="mt-auto flex flex-col gap-2 sm:gap-3 pt-2 border-t"
+          style={{ borderColor: "var(--sidebar-border)" }}
+        >
           <div className="flex items-end justify-between gap-2">
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider mb-0.5" style={{ color: "var(--muted-foreground)" }}>
+              <p
+                className="hidden sm:block text-[10px] font-semibold uppercase tracking-wider mb-0.5"
+                style={{ color: "var(--muted-foreground)" }}
+              >
                 Price
               </p>
-              <p className="text-xl font-bold tabular-nums" style={{ color: "var(--primary)" }}>
+              <p
+                className="text-base sm:text-xl font-bold tabular-nums"
+                style={{ color: "var(--primary)" }}
+              >
                 {priceDisplay}
               </p>
             </div>
@@ -202,7 +218,7 @@ export function ShopProductCard({
             <Link
               href={`/product/${product.id}/`}
               prefetch={false}
-              className="text-sm font-medium underline-offset-4 hover:underline shrink-0"
+              className="hidden sm:inline text-sm font-medium underline-offset-4 hover:underline shrink-0"
               style={{ color: "var(--accent)" }}
             >
               View details
@@ -222,7 +238,7 @@ export function ShopProductCard({
                   size="sm"
                   disabled={outOfStock}
                   onClick={onAddToCart}
-                  className="w-full sm:w-auto min-h-[44px]"
+                  className="w-full sm:w-auto min-h-[36px] sm:min-h-[44px] text-xs sm:text-sm px-2 sm:px-3"
                 >
                   {outOfStock ? "Unavailable" : "Add to basket"}
                 </Button>

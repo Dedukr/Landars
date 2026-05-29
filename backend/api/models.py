@@ -13,13 +13,6 @@ from django.db import models
 from django.utils import timezone
 
 
-def _post_suitable_category_pk() -> int:
-    """Royal Mail post-suitable scope: ``POST_SUITABLE_CATEGORY_ID`` in settings."""
-    from django.conf import settings
-
-    return int(getattr(settings, "POST_SUITABLE_CATEGORY_ID", 16))
-
-
 # ProductCategory model
 class ProductCategory(models.Model):
     name = models.CharField(max_length=255)
@@ -30,6 +23,14 @@ class ProductCategory(models.Model):
         blank=True,
         related_name="subcategories",
         on_delete=models.CASCADE,
+    )
+    sold_quantity = models.PositiveIntegerField(
+        default=0,
+        db_index=True,
+        help_text=(
+            "Total units sold across products in this category "
+            "(sum of order line quantities in paid/ready/issued orders)."
+        ),
     )
 
     class Meta:
@@ -53,11 +54,12 @@ class ProductCategory(models.Model):
                 else None
             ),
             "description": self.description,
+            "sold_quantity": int(self.sold_quantity or 0),
         }
 
     def get_products(self):
         """Get all products in this category."""
-        return Product.objects.filter(categories__name=self.name)
+        return Product.objects.filter(categories__name=self.name, active=True)
 
     def get_product_count(self):
         """Get the count of products in this category."""
@@ -66,6 +68,27 @@ class ProductCategory(models.Model):
     def get_product_list(self):
         """Get a list of products in this category."""
         return [product.get_product_details() for product in self.get_products()]
+
+
+class CategoryGroup(models.Model):
+    """Groups multiple product categories for navigation or merchandising."""
+
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    categories = models.ManyToManyField(
+        ProductCategory,
+        related_name="category_groups",
+        blank=True,
+        verbose_name="Child categories",
+    )
+
+    class Meta:
+        verbose_name = "Category group"
+        verbose_name_plural = "Category groups"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
 
 
 # ProductImage model
@@ -136,6 +159,11 @@ class ProductImage(models.Model):
 class Product(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
+    active = models.BooleanField(
+        default=True,
+        db_index=True,
+        help_text="If disabled, the product is hidden from the storefront and API listings.",
+    )
     categories = models.ManyToManyField(ProductCategory, related_name="products")
     base_price = models.DecimalField(
         max_digits=10,
@@ -301,7 +329,9 @@ class OrderQuerySet(models.QuerySet):
             order_ids = list(self.values_list("pk", flat=True))
         rows = super().update(**kwargs)
         if order_ids:
-            from api.services.product_sales import schedule_product_sales_rebuild_for_orders
+            from api.services.product_sales import (
+                schedule_product_sales_rebuild_for_orders,
+            )
 
             schedule_product_sales_rebuild_for_orders(order_ids)
         return rows
@@ -344,8 +374,10 @@ class Order(models.Model):
         choices=[
             ("pending", "Pending"),
             ("paid", "Paid"),
-            ("ready_to_ship", "Ready to ship"),
             ("issued", "Issued"),
+            ("ready_to_ship", "Ready to ship"),
+            ("out_for_delivery", "Out for delivery"),
+            ("delivered", "Delivered"),
             ("cancelled", "Cancelled"),
         ],
         default="pending",
@@ -395,7 +427,6 @@ class Order(models.Model):
         or create a checkout-only row (``status=draft``).
         """
         from django.core.exceptions import ObjectDoesNotExist
-
         from shipping.models import Shipment
 
         try:
@@ -645,9 +676,13 @@ class Order(models.Model):
         """
         Calculate delivery fee and home delivery status based on order items.
         Returns a tuple (is_home_delivery, delivery_fee).
-        Uses Royal Mail pricing for post-suitable items (same as cart).
+        Uses Royal Mail pricing for post-delivery group categories (same as cart).
         """
         from decimal import Decimal
+
+        from api.services.post_delivery_categories import (
+            product_has_post_delivery_category,
+        )
 
         if self.delivery_fee_manual:
             return self.is_home_delivery, self.delivery_fee
@@ -656,11 +691,8 @@ class Order(models.Model):
         if not items.exists():
             return True, Decimal("10")
 
-        # Check if any item is NOT in post-suitable category
-        post_id = _post_suitable_category_pk()
         has_non_post_items = any(
-            item.product
-            and not item.product.categories.filter(id=post_id).exists()
+            item.product and not product_has_post_delivery_category(item.product)
             for item in items
         )
 
@@ -729,10 +761,12 @@ class Order(models.Model):
         if not normalized:
             return True, Decimal("10")
 
-        # Determine if any item is not in the post-suitable category
-        post_id = _post_suitable_category_pk()
+        from api.services.post_delivery_categories import (
+            product_has_post_delivery_category,
+        )
+
         has_non_post_items = any(
-            prod and not prod.categories.filter(id=post_id).exists()
+            prod and not product_has_post_delivery_category(prod)
             for prod, _ in normalized
         )
         if has_non_post_items:
@@ -752,17 +786,13 @@ class Order(models.Model):
                 line_merch += Decimal(str(lt))
                 n_line += 1
         n_in = sum(
-            1
-            for raw in items_data or []
-            if raw.get("product") and raw.get("quantity")
+            1 for raw in items_data or [] if raw.get("product") and raw.get("quantity")
         )
         if n_line > 0 and n_line == n_in:
             merch = line_merch
         else:
             merch = sum(
-                (prod.price * Decimal(str(q)))
-                for prod, q in normalized
-                if prod
+                (prod.price * Decimal(str(q))) for prod, q in normalized if prod
             )
         if merch > Decimal("220"):
             return False, Decimal("0")

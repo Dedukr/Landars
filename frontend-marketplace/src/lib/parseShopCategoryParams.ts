@@ -1,4 +1,4 @@
-/** Parse `?category=12` or `?categories=18,19,12` from shop URL. */
+/** Parse category filters from shop URL query params. */
 export function parseShopCategoryParams(
   searchParams: Pick<URLSearchParams, "get">
 ): number[] {
@@ -13,10 +13,28 @@ export function parseShopCategoryParams(
   const single = searchParams.get("category");
   if (single) {
     const n = parseInt(single, 10);
-    return Number.isFinite(n) && n > 0 ? [n] : [];
+    if (Number.isFinite(n) && n > 0) return [n];
   }
 
   return [];
+}
+
+/** True when the shop URL requests post-delivery / category-group scoped products. */
+export function shopUsesPostDeliveryScope(
+  searchParams: Pick<URLSearchParams, "get">
+): boolean {
+  const flag = searchParams.get("post_delivery");
+  if (flag === "1" || flag === "true" || flag === "yes") return true;
+  return Boolean(searchParams.get("category_group")?.trim());
+}
+
+export function shopCategoryGroupIdFromParams(
+  searchParams: Pick<URLSearchParams, "get">
+): number | null {
+  const raw = searchParams.get("category_group");
+  if (!raw) return null;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 /** Stable key for effects when category query params change. */
@@ -48,12 +66,17 @@ export function buildShopCategoryHref(options: {
 /** Shop URL with category filter and optional search query. */
 export function buildShopListingHref(options: {
   categoryIds?: number[];
+  categoryGroupId?: number;
   q?: string;
 }): string {
   const params = new URLSearchParams();
-  const ids = options.categoryIds ?? [];
-  if (ids.length === 1) params.set("category", String(ids[0]));
-  else if (ids.length > 1) params.set("categories", ids.join(","));
+  if (options.categoryGroupId != null && options.categoryGroupId > 0) {
+    params.set("category_group", String(options.categoryGroupId));
+  } else {
+    const ids = options.categoryIds ?? [];
+    if (ids.length === 1) params.set("category", String(ids[0]));
+    else if (ids.length > 1) params.set("categories", ids.join(","));
+  }
   const q = options.q?.trim();
   if (q) params.set("q", q);
   const qs = params.toString();

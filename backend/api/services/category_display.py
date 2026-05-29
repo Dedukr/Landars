@@ -33,7 +33,7 @@ def top_seller_by_category_id(
     best: dict[int, tuple[int, int, int]] = {}
 
     rows = (
-        Product.objects.filter(categories__id__in=category_ids)
+        Product.objects.filter(categories__id__in=category_ids, active=True)
         .values("id", "sold_quantity", "sold_orders_count", "categories__id")
         .order_by("categories__id", "-sold_quantity", "-sold_orders_count", "id")
     )

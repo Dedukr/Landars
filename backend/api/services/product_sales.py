@@ -19,7 +19,8 @@ from django.db.models import Count, Sum
 logger = logging.getLogger(__name__)
 
 # Keep in sync with verified-purchase logic in api.serializers.ProductReviewSerializer
-SOLD_ORDER_STATUSES: tuple[str, ...] = ("paid", "ready_to_ship", "issued")
+# "Sold" means the order has been paid (and only paid).
+SOLD_ORDER_STATUSES: tuple[str, ...] = ("paid",)
 
 _pending_local = threading.local()
 
@@ -57,6 +58,14 @@ def _flush_scheduled_product_sales_rebuild() -> None:
     state.flush_scheduled = False
     if ids:
         rebuild_product_sales_counters(ids)
+        # Keep category counters in sync with product counters.
+        try:
+            rebuild_category_sales_counters(category_ids_for_products(ids))
+        except Exception:
+            logger.exception(
+                "category sales rebuild failed for product_ids=%s",
+                ids[:200],
+            )
 
 
 def product_ids_for_orders(order_ids: Iterable[int]) -> list[int]:
@@ -145,6 +154,63 @@ def rebuild_product_sales_counters(product_ids: Iterable[int]) -> None:
                 )
 
 
+def category_ids_for_products(product_ids: Iterable[int]) -> list[int]:
+    """Distinct category PKs attached to these products."""
+    from api.models import ProductCategory
+
+    ids = sorted({int(p) for p in product_ids if p is not None})
+    if not ids:
+        return []
+    return list(
+        ProductCategory.objects.filter(products__id__in=ids)
+        .values_list("id", flat=True)
+        .distinct()
+    )
+
+
+def rebuild_category_sales_counters(category_ids: Iterable[int]) -> None:
+    """
+    Set ``ProductCategory.sold_quantity`` from live order lines.
+
+    - ``sold_quantity``: sum of ``OrderItem.quantity`` for lines in sold orders,
+      across all products assigned to the category.
+    """
+    from api.models import OrderItem, ProductCategory
+
+    ids = sorted({int(c) for c in category_ids if c is not None})
+    if not ids:
+        return
+
+    rows = (
+        OrderItem.objects.filter(
+            product_id__isnull=False,
+            product__categories__id__in=ids,
+            order__status__in=SOLD_ORDER_STATUSES,
+        )
+        .values("product__categories__id")
+        .annotate(sold_qty=Sum("quantity"))
+    )
+
+    agg: dict[int, int] = {}
+    for row in rows:
+        cid = row["product__categories__id"]
+        raw_qty = row["sold_qty"]
+        try:
+            sq = int(raw_qty) if raw_qty is not None else 0
+        except (TypeError, ValueError, InvalidOperation):
+            try:
+                sq = int(Decimal(str(raw_qty)))
+            except (InvalidOperation, TypeError, ValueError):
+                sq = 0
+        agg[int(cid)] = max(0, sq)
+
+    with transaction.atomic():
+        for cid in ids:
+            ProductCategory.objects.filter(pk=cid).update(
+                sold_quantity=agg.get(cid, 0)
+            )
+
+
 def set_order_status(order, status: str, **extra_fields) -> None:
     """
     Persist one order's status via ``save()`` (signals + on-commit counter batching).
@@ -184,4 +250,17 @@ def rebuild_all_product_sales_counters() -> int:
         .distinct()
     )
     rebuild_product_sales_counters(pids)
+    # Category counters derive from order lines too.
+    try:
+        from api.models import ProductCategory
+
+        ProductCategory.objects.update(sold_quantity=0)
+        cids = list(
+            ProductCategory.objects.filter(products__orderitem__isnull=False)
+            .values_list("id", flat=True)
+            .distinct()
+        )
+        rebuild_category_sales_counters(cids)
+    except Exception:
+        logger.exception("failed to rebuild category sales counters")
     return len(pids)
