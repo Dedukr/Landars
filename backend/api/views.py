@@ -670,170 +670,8 @@ class OrderListView(APIView):
             )
 
         try:
-            # Get user's cart
-            cart = Cart.objects.get(user=request.user)
-            cart_items = cart.items.all()
-
-            if not cart_items.exists():
-                return Response(
-                    {"error": "Cart is empty"}, status=status.HTTP_400_BAD_REQUEST
-                )
-
-            # Create order using values from cart (ensure consistency)
-            # Prioritize cart values as the single source of truth - all cart fields are saved to order
-            # Convert discount and delivery_fee to Decimal to avoid type errors
-            discount_value = cart.discount or request.data.get("discount", 0)
-
-            # If shipping option is selected, use its price as delivery_fee
-            # Otherwise fall back to cart delivery_fee or request delivery_fee
-            shipping_cost = request.data.get("shipping_cost")
-            if shipping_cost:
-                # Use shipping option price as delivery fee
-                delivery_fee_value = shipping_cost
-            else:
-                delivery_fee_value = cart.delivery_fee or request.data.get(
-                    "delivery_fee", 0
-                )
-
-            # Ensure values are Decimal type
-            if isinstance(discount_value, str):
-                discount_value = (
-                    Decimal(discount_value) if discount_value else Decimal(0)
-                )
-            elif not isinstance(discount_value, Decimal):
-                discount_value = Decimal(str(discount_value))
-
-            if isinstance(delivery_fee_value, str):
-                delivery_fee_value = (
-                    Decimal(delivery_fee_value) if delivery_fee_value else Decimal(0)
-                )
-            elif not isinstance(delivery_fee_value, Decimal):
-                delivery_fee_value = Decimal(str(delivery_fee_value))
-
-            # Convert shipping_cost to Decimal if provided
-            shipping_cost_decimal = None
-            if shipping_cost:
-                if isinstance(shipping_cost, str):
-                    shipping_cost_decimal = (
-                        Decimal(shipping_cost) if shipping_cost else None
-                    )
-                elif not isinstance(shipping_cost, Decimal):
-                    shipping_cost_decimal = Decimal(str(shipping_cost))
-                else:
-                    shipping_cost_decimal = shipping_cost
-
-            order_data = {
-                "customer": request.user,
-                "notes": cart.notes or request.data.get("notes", ""),
-                "delivery_date": cart.delivery_date
-                or request.data.get("delivery_date"),
-                "discount": discount_value,
-                "is_home_delivery": cart.is_home_delivery,
-                "delivery_fee": delivery_fee_value,
-                "status": "pending",
-            }
-
-            shipping_details_data = {}
-            if request.data.get("shipping_method_id"):
-                shipping_details_data["shipping_method_id"] = request.data.get(
-                    "shipping_method_id"
-                )
-
-            # Handle payment information if provided
-            payment_intent_id = request.data.get("payment_intent_id")
-            payment_status = request.data.get("payment_status")
-
-            if payment_intent_id:
-                order_data["payment_intent_id"] = payment_intent_id
-
-            if payment_status:
-                # Map "paid" to "succeeded" for payment_status field (Stripe uses "succeeded")
-                if payment_status == "paid":
-                    order_data["payment_status"] = "succeeded"
-                else:
-                    order_data["payment_status"] = payment_status
-
-                # If payment is succeeded/paid, update order status
-                if payment_status in ["succeeded", "paid"]:
-                    order_data["status"] = "paid"
-
-            # Handle address from form data
-            address_data = request.data.get("address")
-            if address_data:
-                # Create a new address instance for this order
-                address = Address.objects.create(
-                    address_line=address_data.get("address_line", ""),
-                    address_line2=address_data.get("address_line2", ""),
-                    city=address_data.get("city", ""),
-                    postal_code=address_data.get("postal_code", ""),
-                )
-                order_data["address"] = address
-
-            order = Order.objects.create(**order_data)
-            if shipping_details_data:
-                Shipment.objects.create(
-                    order=order,
-                    status=Shipment.Status.DRAFT,
-                    **shipping_details_data,
-                )
-
-            # Create order items from cart items
-            for cart_item in cart_items:
-                OrderItem.objects.create(
-                    order=order, product=cart_item.product, quantity=cart_item.quantity
-                )
-
-            # If shipping option was selected, don't recalculate delivery fee
-            # The delivery_fee is already set from shipping_cost
-            # Only recalculate if no shipping option was selected and delivery_fee_manual is False
-            if not order.delivery_fee_manual and not shipping_cost:
-                self._calculate_delivery_type_and_fee(order)
-
-            # Trigger shipment creation if order is paid and has shipping method
-            shipping_details = getattr(order, "shipping_details", None)
-            if (
-                order.status == "paid"
-                and shipping_details
-                and shipping_details.shipping_method_id
-                and order.is_home_delivery
-            ):
-                # Import here to avoid circular imports
-                from shipping.sendcloud_shipping import ShippingService
-
-                try:
-                    shipping_service = ShippingService()
-                    result = shipping_service.create_shipment_for_order(order)
-
-                    if result.get("skipped"):
-                        pass
-                    elif result.get("success"):
-                        logger.info(
-                            f"Shipment created for order {order.id}: "
-                            f"tracking={result.get('tracking_number')}"
-                        )
-                    else:
-                        logger.warning(
-                            f"Failed to create shipment for order {order.id}: "
-                            f"{result.get('error')}"
-                        )
-                except Exception as e:
-                    # Don't fail the order creation if shipment creation fails
-                    logger.error(
-                        f"Exception while creating shipment for order {order.id}: {e}",
-                        exc_info=True,
-                    )
-
-            # Do not auto-promote paid → ready_to_ship.
-            # If ops sets status to ready_to_ship manually, shipment automation
-            # remains automatic via shipping signals on that transition.
-
-            # Delete the cart instance completely after order is created
-            # This ensures all cart data is transferred to the order
-            cart.delete()
-
-            serializer = OrderSerializer(order)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-
+            with transaction.atomic():
+                return self._create_order_from_cart(request)
         except Cart.DoesNotExist:
             return Response(
                 {"error": "Cart not found"}, status=status.HTTP_404_NOT_FOUND
@@ -849,6 +687,179 @@ class OrderListView(APIView):
                 {"error": f"Failed to create order: {error_details}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+    def _create_order_from_cart(self, request):
+        """Create order, items, and shipment inside an atomic transaction."""
+        from notifications.services.order_alerts import (
+            schedule_new_frontend_order_telegram_alert,
+        )
+
+        # Get user's cart
+        cart = Cart.objects.get(user=request.user)
+        cart_items = cart.items.all()
+
+        if not cart_items.exists():
+            return Response(
+                {"error": "Cart is empty"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Create order using values from cart (ensure consistency)
+        # Prioritize cart values as the single source of truth - all cart fields are saved to order
+        # Convert discount and delivery_fee to Decimal to avoid type errors
+        discount_value = cart.discount or request.data.get("discount", 0)
+
+        # If shipping option is selected, use its price as delivery_fee
+        # Otherwise fall back to cart delivery_fee or request delivery_fee
+        shipping_cost = request.data.get("shipping_cost")
+        if shipping_cost:
+            # Use shipping option price as delivery fee
+            delivery_fee_value = shipping_cost
+        else:
+            delivery_fee_value = cart.delivery_fee or request.data.get(
+                "delivery_fee", 0
+            )
+
+        # Ensure values are Decimal type
+        if isinstance(discount_value, str):
+            discount_value = (
+                Decimal(discount_value) if discount_value else Decimal(0)
+            )
+        elif not isinstance(discount_value, Decimal):
+            discount_value = Decimal(str(discount_value))
+
+        if isinstance(delivery_fee_value, str):
+            delivery_fee_value = (
+                Decimal(delivery_fee_value) if delivery_fee_value else Decimal(0)
+            )
+        elif not isinstance(delivery_fee_value, Decimal):
+            delivery_fee_value = Decimal(str(delivery_fee_value))
+
+        # Convert shipping_cost to Decimal if provided
+        shipping_cost_decimal = None
+        if shipping_cost:
+            if isinstance(shipping_cost, str):
+                shipping_cost_decimal = (
+                    Decimal(shipping_cost) if shipping_cost else None
+                )
+            elif not isinstance(shipping_cost, Decimal):
+                shipping_cost_decimal = Decimal(str(shipping_cost))
+            else:
+                shipping_cost_decimal = shipping_cost
+
+        order_data = {
+            "customer": request.user,
+            "notes": cart.notes or request.data.get("notes", ""),
+            "delivery_date": cart.delivery_date
+            or request.data.get("delivery_date"),
+            "discount": discount_value,
+            "is_home_delivery": cart.is_home_delivery,
+            "delivery_fee": delivery_fee_value,
+            "status": "pending",
+            "source": Order.Source.FRONTEND,
+        }
+
+        shipping_details_data = {}
+        if request.data.get("shipping_method_id"):
+            shipping_details_data["shipping_method_id"] = request.data.get(
+                "shipping_method_id"
+            )
+
+        # Handle payment information if provided
+        payment_intent_id = request.data.get("payment_intent_id")
+        payment_status = request.data.get("payment_status")
+
+        if payment_intent_id:
+            order_data["payment_intent_id"] = payment_intent_id
+
+        if payment_status:
+            # Map "paid" to "succeeded" for payment_status field (Stripe uses "succeeded")
+            if payment_status == "paid":
+                order_data["payment_status"] = "succeeded"
+            else:
+                order_data["payment_status"] = payment_status
+
+            # If payment is succeeded/paid, update order status
+            if payment_status in ["succeeded", "paid"]:
+                order_data["status"] = "paid"
+
+        # Handle address from form data
+        address_data = request.data.get("address")
+        if address_data:
+            # Create a new address instance for this order
+            address = Address.objects.create(
+                address_line=address_data.get("address_line", ""),
+                address_line2=address_data.get("address_line2", ""),
+                city=address_data.get("city", ""),
+                postal_code=address_data.get("postal_code", ""),
+            )
+            order_data["address"] = address
+
+        order = Order.objects.create(**order_data)
+        if shipping_details_data:
+            Shipment.objects.create(
+                order=order,
+                status=Shipment.Status.DRAFT,
+                **shipping_details_data,
+            )
+
+        # Create order items from cart items
+        for cart_item in cart_items:
+            OrderItem.objects.create(
+                order=order, product=cart_item.product, quantity=cart_item.quantity
+            )
+
+        # If shipping option was selected, don't recalculate delivery fee
+        # The delivery_fee is already set from shipping_cost
+        # Only recalculate if no shipping option was selected and delivery_fee_manual is False
+        if not order.delivery_fee_manual and not shipping_cost:
+            self._calculate_delivery_type_and_fee(order)
+
+        # Trigger shipment creation if order is paid and has shipping method
+        shipping_details = getattr(order, "shipping_details", None)
+        if (
+            order.status == "paid"
+            and shipping_details
+            and shipping_details.shipping_method_id
+            and order.is_home_delivery
+        ):
+            # Import here to avoid circular imports
+            from shipping.sendcloud_shipping import ShippingService
+
+            try:
+                shipping_service = ShippingService()
+                result = shipping_service.create_shipment_for_order(order)
+
+                if result.get("skipped"):
+                    pass
+                elif result.get("success"):
+                    logger.info(
+                        f"Shipment created for order {order.id}: "
+                        f"tracking={result.get('tracking_number')}"
+                    )
+                else:
+                    logger.warning(
+                        f"Failed to create shipment for order {order.id}: "
+                        f"{result.get('error')}"
+                    )
+            except Exception as e:
+                # Don't fail the order creation if shipment creation fails
+                logger.error(
+                    f"Exception while creating shipment for order {order.id}: {e}",
+                    exc_info=True,
+                )
+
+        # Do not auto-promote paid → ready_to_ship.
+        # If ops sets status to ready_to_ship manually, shipment automation
+        # remains automatic via shipping signals on that transition.
+
+        # Delete the cart instance completely after order is created
+        # This ensures all cart data is transferred to the order
+        cart.delete()
+
+        schedule_new_frontend_order_telegram_alert(order.id)
+
+        serializer = OrderSerializer(order)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def _calculate_delivery_type_and_fee(self, order):
         """

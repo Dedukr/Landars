@@ -1521,6 +1521,7 @@ class OrderAdmin(admin.ModelAdmin):
         ]
         if obj:
             fields += [
+                "source",
                 "customer_phone",
                 "customer_address",
                 "created_at",
@@ -1544,6 +1545,7 @@ class OrderAdmin(admin.ModelAdmin):
     def get_readonly_fields(self, request, obj=None):
         readonly = [
             "created_at",
+            "source",
             "customer_name",
             "customer_phone",
             "customer_address",
@@ -1878,6 +1880,9 @@ class OrderAdmin(admin.ModelAdmin):
         status_changed_to_paid = False
         if change and "status" in form.changed_data and obj.status == "paid":
             status_changed_to_paid = True
+
+        if not change:
+            obj.source = Order.Source.ADMIN
 
         super().save_model(request, obj, form, change)
 

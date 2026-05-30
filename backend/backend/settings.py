@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     "billing",
     "shipping",
     "reconciliation",
+    "notifications",
 ]
 
 MIDDLEWARE = [
@@ -523,6 +524,19 @@ def get_frontend_url():
 
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", get_frontend_url())
+
+# Public site URL for admin links in notifications (defaults to URL_BASE).
+SITE_URL = os.getenv("SITE_URL", URL_BASE).rstrip("/")
+
+# Telegram admin order alerts
+TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+TELEGRAM_ADMIN_CHAT_ID = (os.getenv("TELEGRAM_ADMIN_CHAT_ID") or "").strip()
+TELEGRAM_ORDER_ALERTS_ENABLED = os.getenv(
+    "TELEGRAM_ORDER_ALERTS_ENABLED", "false"
+).lower() in ("true", "1", "yes")
+TELEGRAM_ORDER_ALERTS_TIMEOUT_SECONDS = int(
+    os.getenv("TELEGRAM_ORDER_ALERTS_TIMEOUT_SECONDS", "10")
+)
 
 # Simple logging configuration
 LOGGING = {

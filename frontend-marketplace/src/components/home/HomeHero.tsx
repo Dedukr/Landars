@@ -106,37 +106,39 @@ export default function HomeHero() {
             </div>
 
             {/* Subtitle */}
-            <div className="mb-7 sm:mb-8 max-w-2xl flex flex-col gap-4">
+            <div className="mb-7 sm:mb-8 max-w-2xl flex flex-col gap-3">
               <p
                 className="block w-full text-base sm:text-lg font-semibold leading-snug"
                 style={{ color: "var(--foreground)" }}
               >
                 Homemade Food &amp; Catering Delivered Across England
               </p>
-              <p
-                className="block w-full text-base sm:text-lg leading-relaxed"
-                style={{ color: "var(--muted-foreground)" }}
-              >
-                Homemade semi-prepared products, ready meals, sausages and meat products, fresh bakery items, and desserts.
-              </p>
-              <p
-                className="block w-full text-base sm:text-lg leading-relaxed"
-                style={{ color: "var(--muted-foreground)" }}
-              >
-                Catering services for private and corporate events.
-              </p>
-              <p
-                className="block w-full text-base sm:text-lg leading-relaxed"
-                style={{ color: "var(--muted-foreground)" }}
-              >
-                Own delivery across England.
-              </p>
-              <p
-                className="block w-full text-base sm:text-lg leading-relaxed"
-                style={{ color: "var(--muted-foreground)" }}
-              >
-                Ukrainian, Slavic, European cuisine
-              </p>
+              <div className="flex flex-col gap-1 sm:gap-1.5">
+                <p
+                  className="block w-full text-base sm:text-lg leading-snug"
+                  style={{ color: "var(--muted-foreground)" }}
+                >
+                  Homemade semi-prepared products, ready meals, sausages and meat products, fresh bakery items, and desserts.
+                </p>
+                <p
+                  className="block w-full text-base sm:text-lg leading-snug"
+                  style={{ color: "var(--muted-foreground)" }}
+                >
+                  Catering services for private and corporate events.
+                </p>
+                <p
+                  className="block w-full text-base sm:text-lg leading-snug"
+                  style={{ color: "var(--muted-foreground)" }}
+                >
+                  Own delivery across England.
+                </p>
+                <p
+                  className="block w-full text-base sm:text-lg leading-snug"
+                  style={{ color: "var(--muted-foreground)" }}
+                >
+                  Ukrainian, Slavic, European cuisine
+                </p>
+              </div>
               <div className="flex w-full max-w-2xl flex-col items-center gap-2 pt-1 text-center lg:flex-row lg:items-center lg:justify-between lg:gap-3 lg:text-left">
                 <div className="order-2 min-w-0 w-full max-w-[18rem] sm:max-w-[20rem] lg:order-1 lg:w-auto lg:flex-none lg:max-w-[9.5rem] xl:max-w-[11rem]">
                   <FoodHygieneRating fluid />

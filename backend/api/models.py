@@ -339,7 +339,19 @@ class OrderQuerySet(models.QuerySet):
 
 # Order model
 class Order(models.Model):
+    class Source(models.TextChoices):
+        FRONTEND = "frontend", "Frontend"
+        ADMIN = "admin", "Admin"
+        SYSTEM = "system", "System"
+
     objects = OrderQuerySet.as_manager()
+    source = models.CharField(
+        max_length=30,
+        choices=Source.choices,
+        default=Source.ADMIN,
+        db_index=True,
+        help_text="Where this order was created (frontend website, admin panel, or system).",
+    )
     customer = models.ForeignKey(
         CustomUser, on_delete=models.SET_NULL, related_name="orders", null=True
     )
