@@ -9,6 +9,8 @@ interface DeliveryFeeDisplayProps {
   weight?: number;
   dependsOnCourier?: boolean;
   overweight?: boolean;
+  /** When true, show "Enter address" instead of a fee (checkout before address). */
+  addressPending?: boolean;
 }
 
 const DeliveryFeeDisplay = memo<DeliveryFeeDisplayProps>(({
@@ -19,6 +21,7 @@ const DeliveryFeeDisplay = memo<DeliveryFeeDisplayProps>(({
   weight,
   dependsOnCourier,
   overweight,
+  addressPending = false,
 }) => {
   return (
     <>
@@ -32,7 +35,9 @@ const DeliveryFeeDisplay = memo<DeliveryFeeDisplayProps>(({
           className="font-medium"
           style={{ color: "var(--foreground)" }}
         >
-          {dependsOnCourier ? (
+          {addressPending ? (
+            <span style={{ opacity: 0.7 }}>Enter address</span>
+          ) : dependsOnCourier ? (
             <span style={{ opacity: 0.7 }}>Depends on courier</span>
           ) : isFree ? (
             "Free"
@@ -43,7 +48,7 @@ const DeliveryFeeDisplay = memo<DeliveryFeeDisplayProps>(({
       </div>
 
       {/* Delivery Fee Breakdown */}
-      {!dependsOnCourier && deliveryFee > 0 && (
+      {!addressPending && !dependsOnCourier && deliveryFee > 0 && (
         <div
           className="text-xs"
           style={{ color: "var(--foreground)", opacity: 0.6 }}

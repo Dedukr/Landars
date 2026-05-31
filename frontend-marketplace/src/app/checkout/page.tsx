@@ -348,8 +348,9 @@ export default function CheckoutPage() {
   }, [cartIsHomeDelivery, selectedShipmentQuote, shipmentQuoteOptions]);
 
   // Check if address is filled (required for delivery fee calculation)
-  const isAddressFilled =
-    shippingForm.postal_code.trim() && shippingForm.address_line.trim();
+  const isAddressFilled = Boolean(
+    shippingForm.postal_code.trim() && shippingForm.address_line.trim()
+  );
 
   // Calculate delivery fee - use API price from selected shipping option, or first available option
   const getDeliveryFeeFromAPI = (): number => {
@@ -419,13 +420,16 @@ export default function CheckoutPage() {
 
   const deliveryDisplayProps = {
     deliveryFee: displayDeliveryFee,
-    isFree: displayDeliveryFee === 0 && cartIsHomeDelivery,
+    addressPending: !isAddressFilled,
+    isFree:
+      isAddressFilled && displayDeliveryFee === 0 && cartIsHomeDelivery,
     reasoning: getDeliveryFeeReasoning(),
     hasSausages: !cartIsHomeDelivery,
     weight: cartTotalWeight,
     dependsOnCourier:
-      (!cartIsHomeDelivery && shipmentQuoteOptions.length === 0) ||
-      isOverweightSausageOrder, // Depends on courier if no options loaded yet or overweight
+      isAddressFilled &&
+      ((!cartIsHomeDelivery && shipmentQuoteOptions.length === 0) ||
+        isOverweightSausageOrder),
     overweight: isOverweightSausageOrder,
   };
 

@@ -4,26 +4,35 @@ import React from "react";
 import { ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+const linkUnderline = [
+  "underline decoration-1 underline-offset-[0.22em]",
+  "decoration-[color-mix(in_srgb,var(--primary)_28%,transparent)]",
+  "hover:decoration-[color-mix(in_srgb,var(--accent)_45%,transparent)]",
+] as const;
+
 const variantStyles = {
   /** Inline within body text (order help, paragraphs). */
   inline: [
     "inline-flex items-center gap-1 font-semibold",
-    "text-[var(--primary)] underline decoration-[var(--primary)] decoration-2 underline-offset-[0.22em]",
-    "transition-colors hover:text-[var(--accent)] hover:decoration-[var(--accent)]",
+    "text-[var(--primary)]",
+    ...linkUnderline,
+    "transition-colors hover:text-[var(--accent)]",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 rounded-sm",
   ],
   /** Footer and compact list rows. */
   footer: [
     "inline-flex items-center gap-1 text-sm font-semibold",
-    "text-[var(--primary)] underline decoration-[var(--primary)] decoration-2 underline-offset-[0.22em]",
-    "transition-colors hover:text-[var(--accent)] hover:decoration-[var(--accent)]",
+    "text-[var(--primary)]",
+    ...linkUnderline,
+    "transition-colors hover:text-[var(--accent)]",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 rounded-sm break-all",
   ],
   /** Contact page cards — prominent tap target. */
   card: [
     "inline-flex items-center gap-1.5 text-sm sm:text-base font-semibold",
-    "text-[var(--primary)] underline decoration-[var(--primary)] decoration-2 underline-offset-[0.22em]",
-    "transition-colors hover:text-[var(--accent)] hover:decoration-[var(--accent)]",
+    "text-[var(--primary)]",
+    ...linkUnderline,
+    "transition-colors hover:text-[var(--accent)]",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 rounded-sm",
     "min-h-[44px] py-1",
   ],

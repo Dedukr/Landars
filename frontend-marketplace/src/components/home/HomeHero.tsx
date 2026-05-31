@@ -101,7 +101,7 @@ export default function HomeHero() {
                 height={320}
                 priority
                 aria-hidden
-                className="shrink-0 w-auto object-contain h-[6.25rem] sm:h-[8rem] lg:h-[10rem]"
+                className="shrink-0 w-auto object-contain h-[8rem] lg:h-[12rem]"
               />
             </div>
 
@@ -140,7 +140,7 @@ export default function HomeHero() {
                 </p>
               </div>
               <div className="flex w-full max-w-2xl flex-col items-center gap-2 pt-1 text-center lg:flex-row lg:items-center lg:justify-between lg:gap-3 lg:text-left">
-                <div className="order-2 min-w-0 w-full max-w-[18rem] sm:max-w-[20rem] lg:order-1 lg:w-auto lg:flex-none lg:max-w-[9.5rem] xl:max-w-[11rem]">
+                <div className="order-2 min-w-0 w-full max-w-[10rem] sm:max-w-[18rem] lg:order-1 lg:w-auto lg:flex-none lg:max-w-[9.5rem] xl:max-w-[11rem]">
                   <FoodHygieneRating fluid />
                 </div>
                 <span

@@ -32,16 +32,6 @@ export function OrderSupportCard() {
                 WhatsApp
               </span>
             )}
-            {phone && digits ? (
-              <>
-                {" "}
-                <ContactLink href={`tel:${digits}`} variant="inline" className="tabular-nums">
-                  ({phone})
-                </ContactLink>
-              </>
-            ) : phone ? (
-              <span className="tabular-nums"> ({phone})</span>
-            ) : null}
             .
           </p>
         </div>

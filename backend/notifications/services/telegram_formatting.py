@@ -12,6 +12,50 @@ if TYPE_CHECKING:
     from api.models import Order
 
 
+def _phone_to_whatsapp_url(phone: str) -> str:
+    """
+    Build a WhatsApp link for a UK phone number.
+    Format: https://wa.me/[number] with no +, spaces, dashes, or leading 0.
+    """
+    if not phone:
+        return ""
+    digits = "".join(c for c in str(phone) if c.isdigit())
+    digits = digits.lstrip("0") or "0"
+    if digits == "0":
+        return ""
+    if len(digits) == 10 and digits[0] == "7":
+        digits = "44" + digits
+    return f"https://wa.me/{digits}"
+
+
+def _format_phone_line_for_telegram(phone: str) -> str:
+    """Format phone as a WhatsApp link using the number as link text."""
+    original_text = phone.strip()
+    if not original_text:
+        return ""
+
+    def part_block(display: str, digits_source: str) -> str:
+        url = _phone_to_whatsapp_url(digits_source)
+        safe_display = html.escape(display)
+        if url:
+            safe_url = html.escape(url, quote=True)
+            return f'<a href="{safe_url}">{safe_display}</a>'
+        return safe_display
+
+    if "+" in original_text:
+        parts = original_text.split("+")
+        blocks: list[str] = []
+        for index, part in enumerate(parts):
+            part = part.strip()
+            if not part:
+                continue
+            display = f"+{part}" if index > 0 else part
+            blocks.append(part_block(display, part))
+        return "\n".join(blocks)
+
+    return part_block(original_text, original_text)
+
+
 def format_money(value) -> str:
     """Format a numeric value as GBP."""
     if value is None or value == "":
@@ -129,8 +173,7 @@ def format_order_for_telegram(order: Order) -> str:
 
     phone = _customer_phone(order)
     if phone:
-        lines.append(f"<b>Phone:</b> {html.escape(phone)}")
-
+        lines.append(f"<b>Phone:</b> {_format_phone_line_for_telegram(phone)}")
     email = _customer_email(order)
     if email:
         lines.append(f"<b>Email:</b> {html.escape(email)}")
@@ -138,6 +181,15 @@ def format_order_for_telegram(order: Order) -> str:
     items_text = format_order_items_for_telegram(order)
     if items_text:
         lines.extend(["", "<b>Items:</b>", items_text])
+
+    delivery_fee = order.delivery_fee
+    if delivery_fee is not None:
+        if delivery_fee == 0:
+            lines.append("<b>Delivery:</b> Free")
+        else:
+            delivery_price = format_money(delivery_fee)
+            if delivery_price:
+                lines.append(f"<b>Delivery:</b> {html.escape(delivery_price)}")
 
     total = format_money(order.total_price)
     if total:
@@ -154,10 +206,6 @@ def format_order_for_telegram(order: Order) -> str:
         lines.append(
             f"<b>Delivery date:</b> {html.escape(order.delivery_date.strftime('%Y-%m-%d'))}"
         )
-
-    status = order.get_status_display() if hasattr(order, "get_status_display") else order.status
-    if status:
-        lines.append(f"<b>Status:</b> {html.escape(str(status))}")
 
     created = _format_created_at(order)
     if created:

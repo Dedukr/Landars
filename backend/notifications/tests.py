@@ -70,6 +70,44 @@ class TelegramFormattingTests(TestCase):
         self.assertNotIn("None", message)
         self.assertNotIn("Phone:", message)
 
+    def test_format_order_for_telegram_phone_is_whatsapp_link(self):
+        user = User.objects.create_user(
+            name="Anna Smith", email="anna@example.com", password="pass"
+        )
+        Profile.objects.create(user=user, phone="+441234567890")
+        order = Order.objects.create(customer=user, source=Order.Source.FRONTEND)
+        message = format_order_for_telegram(order)
+        self.assertIn(
+            '<a href="https://wa.me/441234567890">+441234567890</a>',
+            message,
+        )
+        self.assertNotIn("WhatsApp", message)
+        self.assertIn("<b>Phone:</b>", message)
+
+    def test_format_order_for_telegram_includes_delivery_price(self):
+        user = User.objects.create_user(
+            name="Anna Smith", email="anna@example.com", password="pass"
+        )
+        order = Order.objects.create(
+            customer=user,
+            source=Order.Source.FRONTEND,
+            delivery_fee=Decimal("10.00"),
+        )
+        message = format_order_for_telegram(order)
+        self.assertIn("<b>Delivery:</b> £10.00", message)
+
+    def test_format_order_for_telegram_shows_free_delivery(self):
+        user = User.objects.create_user(
+            name="Anna Smith", email="anna@example.com", password="pass"
+        )
+        order = Order.objects.create(
+            customer=user,
+            source=Order.Source.FRONTEND,
+            delivery_fee=Decimal("0"),
+        )
+        message = format_order_for_telegram(order)
+        self.assertIn("<b>Delivery:</b> Free", message)
+
 
 @override_settings(**_telegram_settings())
 class SendNewOrderAdminAlertTests(TestCase):
