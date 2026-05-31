@@ -214,6 +214,6 @@ def format_order_for_telegram(order: Order) -> str:
     admin_url = _admin_order_url(order)
     if admin_url:
         safe_url = html.escape(admin_url, quote=True)
-        lines.extend(["", f'<a href="{safe_url}">Open in Django admin</a>'])
+        lines.extend(["", f'<a href="{safe_url}">Open in admin panel</a>'])
 
     return "\n".join(lines)
