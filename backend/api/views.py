@@ -31,7 +31,6 @@ from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from rest_framework.views import APIView
 from shipping.models import Shipment
 
-from .search_text import whole_word_regex_pattern
 from .models import (
     Cart,
     CartItem,
@@ -102,7 +101,7 @@ class ProductList(APIView):
         """Retrieve products with filtering, sorting, and pagination."""
         no_cache = request.query_params.get("no_cache") == "1"
         # Cache key version suffix bumps stale entries when search logic changes
-        cache_key = f"products_v9_{hash(str(request.query_params))}"
+        cache_key = f"products_v10_{hash(str(request.query_params))}"
 
         # Try to get cached response
         if not no_cache:
@@ -162,16 +161,11 @@ class ProductList(APIView):
 
         search = request.query_params.get("search")
         if search:
-            # Each word (len > 1) must appear as a whole word in the product name,
-            # not as a substring inside another word (iregex + word boundaries).
-            terms = [t.strip() for t in search.split() if len(t.strip()) > 1]
-            if terms:
-                for term in terms:
-                    products = products.filter(
-                        name__iregex=whole_word_regex_pattern(term)
-                    )
-            else:
-                products = products.filter(name__icontains=search.strip())
+            # Use partial matching so normal typing (prefix/infix) returns results.
+            # Require all terms to appear somewhere in the product name.
+            terms = [t.strip() for t in search.split() if t.strip()]
+            for term in terms:
+                products = products.filter(name__icontains=term)
 
         # Annotate with calculated price (base_price + holiday_fee) for filtering and sorting
         products = products.annotate(calculated_price=F("base_price") + F("holiday_fee"))

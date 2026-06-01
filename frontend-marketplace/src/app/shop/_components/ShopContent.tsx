@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import ProductGrid, { type ShopListingMeta } from "@/components/ProductGrid";
+import ProductGrid from "@/components/ProductGrid";
 import { ShopPageHeader } from "@/components/shop/ShopPageHeader";
+import { ShopHeroSidePanel } from "@/components/shop/ShopHeroSidePanel";
 import CategoryDisplayGrid from "@/components/categories/CategoryDisplayGrid";
 import { ShopSearchBar } from "@/components/shop/ShopSearchBar";
 import {
@@ -27,7 +28,6 @@ import { scopeProductsQueryString } from "@/utils/catalogScope";
 import {
   parseShopCategoryParams,
   shopCategoryGroupIdFromParams,
-  shopCategoryParamKey,
   buildShopListingHref,
 } from "@/lib/parseShopCategoryParams";
 import { fetchPostDeliveryCategoryGroup } from "@/lib/postDeliveryCategoryGroup";
@@ -43,8 +43,8 @@ export default function ShopContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const categoryFromUrl = shopCategoryParamKey(searchParams);
-  const searchFromUrl = searchParams.get("q") ?? "";
+  const initialSearchFromUrl = searchParams.get("q") ?? "";
+  const urlParamsKey = searchParams.toString();
 
   const [filters, setFilters] = useState<ShopListingFilters>({
     categories: parseShopCategoryParams(searchParams),
@@ -53,7 +53,7 @@ export default function ShopContent() {
   });
 
   const [sort, setSort] = useState(SHOP_INITIAL_SORT);
-  const [search, setSearch] = useState(searchFromUrl);
+  const [search, setSearch] = useState(initialSearchFromUrl);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
 
   const [categories, setCategories] = useState<ShopCategoryRecord[]>([]);
@@ -63,7 +63,7 @@ export default function ShopContent() {
   const [categoryCount, setCategoryCount] = useState<number | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
 
-  const [listingMeta, setListingMeta] = useState<ShopListingMeta | null>(null);
+  const previousSearchRef = useRef(search);
 
   const [categoryGroups, setCategoryGroups] = useState<
     Awaited<ReturnType<typeof fetchCategoryGroups>>
@@ -101,12 +101,14 @@ export default function ShopContent() {
   /** Apply category (and search) filters when arriving from home carousel or other links. */
   useEffect(() => {
     let cancelled = false;
+    const params = new URLSearchParams(urlParamsKey);
+    const searchFromUrl = params.get("q") ?? "";
 
     async function applyFromUrl() {
-      let categoryIds = parseShopCategoryParams(searchParams);
+      let categoryIds = parseShopCategoryParams(params);
 
       if (!categoryIds.length) {
-        const groupId = shopCategoryGroupIdFromParams(searchParams);
+        const groupId = shopCategoryGroupIdFromParams(params);
         if (groupId) {
           const groups = await fetchCategoryGroups();
           const group = groups.find((g) => g.id === groupId);
@@ -114,7 +116,7 @@ export default function ShopContent() {
             categoryIds = [...group.category_ids];
           }
         } else {
-          const postFlag = searchParams.get("post_delivery");
+          const postFlag = params.get("post_delivery");
           if (postFlag === "1" || postFlag === "true" || postFlag === "yes") {
             const pd = await fetchPostDeliveryCategoryGroup();
             if (pd?.category_ids?.length) {
@@ -136,7 +138,7 @@ export default function ShopContent() {
     return () => {
       cancelled = true;
     };
-  }, [searchParams, categoryFromUrl, searchFromUrl]);
+  }, [urlParamsKey]);
 
   const categoryFilterKey = useMemo(
     () => [...filters.categories].sort((a, b) => a - b).join(","),
@@ -254,6 +256,17 @@ export default function ShopContent() {
     };
   }, [router]);
 
+  useEffect(() => {
+    const prev = previousSearchRef.current;
+    previousSearchRef.current = search;
+
+    if (typeof window === "undefined") return;
+    if (!search.trim()) return;
+    if (search === prev) return;
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [search]);
+
   const hasActiveFilters =
     filters.categories.length > 0 ||
     filters.price[0] > 0 ||
@@ -303,11 +316,16 @@ export default function ShopContent() {
       </ShopMobileFilterDrawer>
 
       <div className="px-3 sm:px-5 lg:px-10 pt-4 sm:pt-6 lg:content-offset-md">
-        <ShopPageHeader
-          productCount={productCount}
-          categoryCount={categoryCount}
-          statsLoading={statsLoading}
-        />
+        <div className="md:hidden mb-4">
+          <ShopHeroSidePanel />
+        </div>
+        <div className="hidden md:block">
+          <ShopPageHeader
+            productCount={productCount}
+            categoryCount={categoryCount}
+            statsLoading={statsLoading}
+          />
+        </div>
 
         <div
           className="mt-4 rounded-2xl border px-4 py-5 sm:px-6 sm:py-6 shadow-sm mb-8"
@@ -349,14 +367,8 @@ export default function ShopContent() {
             />
 
             <div className="flex-1 min-w-0 w-full">
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                <h2
-                  className="text-lg sm:text-xl font-bold"
-                  style={{ color: "var(--foreground)" }}
-                >
-                  {hasActiveFilters ? "Filtered selection" : "All products"}
-                </h2>
-                {hasActiveFilters && (
+              {hasActiveFilters && (
+                <div className="flex justify-end mb-4">
                   <button
                     type="button"
                     className="text-sm font-semibold px-3 py-2 rounded-lg border transition-opacity hover:opacity-90 outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
@@ -369,29 +381,13 @@ export default function ShopContent() {
                   >
                     Reset filters
                   </button>
-                )}
-              </div>
-
-              {listingMeta &&
-                !listingMeta.loading &&
-                listingMeta.totalCount > 0 && (
-                  <p
-                    className="text-xs sm:text-sm mb-4"
-                    style={{ color: "var(--muted-foreground)" }}
-                  >
-                    {listingMeta.displayedCount} on screen · {listingMeta.totalCount}{" "}
-                    in this view
-                    {listingMeta.hasMoreRemote
-                      ? " · more load as you scroll"
-                      : ""}
-                  </p>
-                )}
+                </div>
+              )}
 
               <ProductGrid
                 filters={filters}
                 sort={sort}
                 search={search}
-                onListingMeta={setListingMeta}
               />
             </div>
           </div>
