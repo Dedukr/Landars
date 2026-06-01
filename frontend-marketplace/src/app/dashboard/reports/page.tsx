@@ -1,10 +1,17 @@
+import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
+import { AdminEmptyState } from "@/components/admin/ui/AdminEmptyState";
+
 export default function ReportsDashboardPage() {
   return (
-    <div>
-      <h1 className="text-2xl font-semibold">Reports</h1>
-      <p className="text-sm text-muted-foreground">
-        Operational and accounting reports will be implemented in the next phase.
-      </p>
-    </div>
+    <>
+      <AdminPageHeader
+        title="Reports"
+        description="Generate operational and accounting reports."
+      />
+      <AdminEmptyState
+        title="Reports module is not connected yet"
+        description="The design shell is ready. Reporting data will be connected in the next implementation phase."
+      />
+    </>
   );
 }

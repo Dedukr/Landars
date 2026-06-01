@@ -1,10 +1,17 @@
+import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
+import { AdminEmptyState } from "@/components/admin/ui/AdminEmptyState";
+
 export default function NotificationsDashboardPage() {
   return (
-    <div>
-      <h1 className="text-2xl font-semibold">Notifications</h1>
-      <p className="text-sm text-muted-foreground">
-        Notification logs and controls will be implemented in the next phase.
-      </p>
-    </div>
+    <>
+      <AdminPageHeader
+        title="Notifications"
+        description="Monitor operational notification delivery."
+      />
+      <AdminEmptyState
+        title="Notifications module is not connected yet"
+        description="The design shell is ready. Notification data will be connected in the next implementation phase."
+      />
+    </>
   );
 }

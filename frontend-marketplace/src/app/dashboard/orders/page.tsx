@@ -1,10 +1,17 @@
+import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
+import { AdminEmptyState } from "@/components/admin/ui/AdminEmptyState";
+
 export default function OrdersDashboardPage() {
   return (
-    <div>
-      <h1 className="text-2xl font-semibold">Orders</h1>
-      <p className="text-sm text-muted-foreground">
-        Order management will be implemented in the next phase.
-      </p>
-    </div>
+    <>
+      <AdminPageHeader
+        title="Orders"
+        description="View and manage customer orders."
+      />
+      <AdminEmptyState
+        title="Orders module is not connected yet"
+        description="The design shell is ready. Order data will be connected in the next implementation phase."
+      />
+    </>
   );
 }

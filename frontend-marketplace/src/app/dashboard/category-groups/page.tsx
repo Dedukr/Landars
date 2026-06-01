@@ -1,10 +1,17 @@
+import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
+import { AdminEmptyState } from "@/components/admin/ui/AdminEmptyState";
+
 export default function CategoryGroupsDashboardPage() {
   return (
-    <div>
-      <h1 className="text-2xl font-semibold">Category Groups</h1>
-      <p className="text-sm text-muted-foreground">
-        Category group management will be implemented in the next phase.
-      </p>
-    </div>
+    <>
+      <AdminPageHeader
+        title="Category Groups"
+        description="Manage merchandising category groups."
+      />
+      <AdminEmptyState
+        title="Category groups module is not connected yet"
+        description="The design shell is ready. Category group data will be connected in the next implementation phase."
+      />
+    </>
   );
 }

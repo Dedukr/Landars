@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 
+import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
+import { AdminErrorState } from "@/components/admin/ui/AdminErrorState";
+import { AdminLoadingState } from "@/components/admin/ui/AdminLoadingState";
+import { AdminMetricCard } from "@/components/admin/ui/AdminMetricCard";
 import { DashboardSummary, getDashboardSummary } from "@/lib/api/dashboard";
 
 export default function DashboardPage() {
@@ -24,37 +28,33 @@ export default function DashboardPage() {
     loadSummary();
   }, []);
 
-  if (isLoading) {
-    return <p className="text-sm text-muted-foreground">Loading dashboard...</p>;
-  }
-
-  if (error) {
-    return <p className="text-sm text-red-500">{error}</p>;
-  }
-
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Admin Dashboard</h1>
-        <p className="text-sm text-muted-foreground">
-          Overview of LandarsFood operations.
-        </p>
-      </div>
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <SummaryCard title="Total orders" value={data?.total_orders ?? 0} />
-        <SummaryCard title="Pending orders" value={data?.pending_orders ?? 0} />
-        <SummaryCard title="Products" value={data?.total_products ?? 0} />
-        <SummaryCard title="Customers" value={data?.total_customers ?? 0} />
-      </div>
-    </div>
-  );
-}
+    <div>
+      <AdminPageHeader
+        title="Dashboard"
+        description="Overview of LandarsFood operations."
+      />
 
-function SummaryCard({ title, value }: { title: string; value: number }) {
-  return (
-    <div className="rounded-lg border bg-card p-4">
-      <p className="text-sm text-muted-foreground">{title}</p>
-      <p className="text-2xl font-semibold">{value}</p>
+      {isLoading ? <AdminLoadingState rows={4} /> : null}
+
+      {!isLoading && error ? (
+        <AdminErrorState
+          title="Could not load dashboard summary"
+          message={error}
+        />
+      ) : null}
+
+      {!isLoading && !error ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <AdminMetricCard label="Total orders" value={data?.total_orders ?? 0} />
+          <AdminMetricCard
+            label="Pending orders"
+            value={data?.pending_orders ?? 0}
+          />
+          <AdminMetricCard label="Products" value={data?.total_products ?? 0} />
+          <AdminMetricCard label="Customers" value={data?.total_customers ?? 0} />
+        </div>
+      ) : null}
     </div>
   );
 }

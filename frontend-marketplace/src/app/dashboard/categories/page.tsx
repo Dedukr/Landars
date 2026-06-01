@@ -1,10 +1,17 @@
+import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
+import { AdminEmptyState } from "@/components/admin/ui/AdminEmptyState";
+
 export default function CategoriesDashboardPage() {
   return (
-    <div>
-      <h1 className="text-2xl font-semibold">Categories</h1>
-      <p className="text-sm text-muted-foreground">
-        Category management will be implemented in the next phase.
-      </p>
-    </div>
+    <>
+      <AdminPageHeader
+        title="Categories"
+        description="Manage product category hierarchy."
+      />
+      <AdminEmptyState
+        title="Categories module is not connected yet"
+        description="The design shell is ready. Category data will be connected in the next implementation phase."
+      />
+    </>
   );
 }

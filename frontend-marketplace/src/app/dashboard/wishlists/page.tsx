@@ -1,10 +1,17 @@
+import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
+import { AdminEmptyState } from "@/components/admin/ui/AdminEmptyState";
+
 export default function WishlistsDashboardPage() {
   return (
-    <div>
-      <h1 className="text-2xl font-semibold">Wishlists</h1>
-      <p className="text-sm text-muted-foreground">
-        Wishlist management will be implemented in the next phase.
-      </p>
-    </div>
+    <>
+      <AdminPageHeader
+        title="Wishlists"
+        description="Review customer wishlist activity."
+      />
+      <AdminEmptyState
+        title="Wishlists module is not connected yet"
+        description="The design shell is ready. Wishlist data will be connected in the next implementation phase."
+      />
+    </>
   );
 }

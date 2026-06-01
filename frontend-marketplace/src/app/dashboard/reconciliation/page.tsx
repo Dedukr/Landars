@@ -1,10 +1,17 @@
+import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
+import { AdminEmptyState } from "@/components/admin/ui/AdminEmptyState";
+
 export default function ReconciliationDashboardPage() {
   return (
-    <div>
-      <h1 className="text-2xl font-semibold">Reconciliation</h1>
-      <p className="text-sm text-muted-foreground">
-        Reconciliation tools will be implemented in the next phase.
-      </p>
-    </div>
+    <>
+      <AdminPageHeader
+        title="Reconciliation"
+        description="Review and match bank transactions with orders."
+      />
+      <AdminEmptyState
+        title="Reconciliation module is not connected yet"
+        description="The design shell is ready. Reconciliation data will be connected in the next implementation phase."
+      />
+    </>
   );
 }
