@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 
 import { AdminGuard } from "@/components/dashboard/AdminGuard";
+import { TooltipProvider } from "@/components/admin/ui/tooltip";
 
 const links = [
   { href: "/dashboard", label: "Dashboard" },
@@ -19,33 +20,35 @@ const links = [
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <AdminGuard>
-      <div className="min-h-screen bg-background">
-        <div className="flex min-h-screen">
-          <aside className="hidden w-64 border-r bg-card p-4 md:block">
-            <div className="mb-6">
-              <h1 className="text-lg font-semibold">LandarsFood</h1>
-              <p className="text-sm text-muted-foreground">Admin Panel</p>
-            </div>
-            <nav className="space-y-2">
-              {links.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className="block rounded-md px-3 py-2 text-sm hover:bg-muted"
-                >
-                  {link.label}
-                </Link>
-              ))}
-            </nav>
-          </aside>
-          <main className="flex-1">
-            <header className="border-b px-6 py-4">
-              <h2 className="text-xl font-semibold">Dashboard</h2>
-            </header>
-            <div className="p-6">{children}</div>
-          </main>
+      <TooltipProvider>
+        <div className="min-h-screen bg-background">
+          <div className="flex min-h-screen">
+            <aside className="hidden w-64 border-r bg-card p-4 md:block">
+              <div className="mb-6">
+                <h1 className="text-lg font-semibold">LandarsFood</h1>
+                <p className="text-sm text-muted-foreground">Admin Panel</p>
+              </div>
+              <nav className="space-y-2">
+                {links.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className="block rounded-md px-3 py-2 text-sm hover:bg-muted"
+                  >
+                    {link.label}
+                  </Link>
+                ))}
+              </nav>
+            </aside>
+            <main className="flex-1">
+              <header className="border-b px-6 py-4">
+                <h2 className="text-xl font-semibold">Dashboard</h2>
+              </header>
+              <div className="p-6">{children}</div>
+            </main>
+          </div>
         </div>
-      </div>
+      </TooltipProvider>
     </AdminGuard>
   );
 }
