@@ -34,7 +34,7 @@ export default function Header() {
     { name: "My Profile", href: "/profile", icon: User },
     { name: "My Orders", href: "/orders", icon: Package },
     ...(user?.is_staff
-      ? [{ name: "Admin Panel", href: "/admin", icon: LayoutDashboard }]
+      ? [{ name: "Admin Panel", href: "/dashboard", icon: LayoutDashboard }]
       : [{ name: "Wishlist", href: "/wishlist" }]),
     { name: "Log Out", action: "logout", icon: LogOut },
   ];

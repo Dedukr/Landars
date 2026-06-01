@@ -357,6 +357,8 @@ def user_profile(request):
                 "email": user.email,
                 "last_login": user.last_login,
                 "is_staff": user.is_staff,
+                "is_superuser": user.is_superuser,
+                "is_authenticated": user.is_authenticated,
             }
         }
 

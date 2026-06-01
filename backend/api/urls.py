@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import include, path
 
 from .views import (
     ProductList,
@@ -18,6 +18,7 @@ from .views import (
 )
 
 urlpatterns = [
+    path("dashboard/", include("api.admin_api.urls")),
     # Product endpoints
     path("products/", ProductList.as_view(), name="product-list"),
     path("products/<int:product_id>/", ProductDetail.as_view(), name="product-detail"),
