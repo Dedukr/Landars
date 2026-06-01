@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { LogOut, Shield } from "lucide-react";
+import { LogOut, User } from "lucide-react";
 
 import { useAuth } from "@/contexts/AuthContext";
 import { Avatar, AvatarFallback } from "@/components/admin/ui/avatar";
@@ -33,27 +33,27 @@ export function AdminUserMenu() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
-        <Avatar className="size-7">
+      <DropdownMenuTrigger render={<Button variant="ghost" className="gap-2 px-2" />}>
+        <Avatar className="h-8 w-8">
           <AvatarFallback className="text-xs">
-            {getInitials(user?.name)}
+            {getInitials(user?.name ?? "LF")}
           </AvatarFallback>
         </Avatar>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuLabel className="space-y-0.5">
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuLabel>
           <p className="text-sm font-medium">{user?.name ?? "Admin User"}</p>
           <p className="text-xs text-muted-foreground">
-            {user?.email ?? "No email"}
+            {user?.is_superuser ? "Superuser" : "Staff"}
           </p>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem disabled>
-          <Shield className="mr-2 size-4" />
-          {user?.is_staff ? "Staff access" : "User access"}
+        <DropdownMenuItem onClick={() => router.push("/profile")}>
+          <User className="mr-2 h-4 w-4" />
+          Account
         </DropdownMenuItem>
         <DropdownMenuItem onClick={handleLogout}>
-          <LogOut className="mr-2 size-4" />
+          <LogOut className="mr-2 h-4 w-4" />
           Log out
         </DropdownMenuItem>
       </DropdownMenuContent>

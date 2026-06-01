@@ -13,36 +13,38 @@ import {
 } from "@/components/admin/ui/breadcrumb";
 
 function formatSegment(segment: string) {
-  return segment
-    .split("-")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+  return segment.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 export function AdminBreadcrumbs() {
   const pathname = usePathname();
-  const segments = pathname.split("/").filter(Boolean);
+  const segments = pathname
+    .split("/")
+    .filter(Boolean)
+    .filter((segment) => segment !== "dashboard");
 
-  const dashboardIndex = segments.indexOf("dashboard");
-  const breadcrumbSegments =
-    dashboardIndex >= 0 ? segments.slice(dashboardIndex) : ["dashboard"];
+  const items = [
+    { label: "Dashboard", href: "/dashboard" },
+    ...segments.map((segment, index) => ({
+      label: formatSegment(segment),
+      href: `/dashboard/${segments.slice(0, index + 1).join("/")}`,
+    })),
+  ];
 
   return (
     <Breadcrumb>
       <BreadcrumbList>
-        {breadcrumbSegments.map((segment, index) => {
-          const href = `/${breadcrumbSegments.slice(0, index + 1).join("/")}`;
-          const isLast = index === breadcrumbSegments.length - 1;
-          const label = formatSegment(segment);
+        {items.map((item, index) => {
+          const isLast = index === items.length - 1;
 
           return (
-            <BreadcrumbItem key={href}>
+            <BreadcrumbItem key={item.href}>
               {isLast ? (
-                <BreadcrumbPage>{label}</BreadcrumbPage>
+                <BreadcrumbPage>{item.label}</BreadcrumbPage>
               ) : (
                 <>
-                  <BreadcrumbLink render={<Link href={href} />}>
-                    {label}
+                  <BreadcrumbLink render={<Link href={item.href} />}>
+                    {item.label}
                   </BreadcrumbLink>
                   <BreadcrumbSeparator />
                 </>
