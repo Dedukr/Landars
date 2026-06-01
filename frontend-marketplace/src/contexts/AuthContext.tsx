@@ -15,6 +15,7 @@ interface User {
   name: string;
   email: string;
   is_staff?: boolean;
+  is_superuser?: boolean;
 }
 
 interface AuthTokens {
@@ -73,6 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             name: data.user.name,
             email: data.user.email,
             is_staff: data.user.is_staff || false,
+            is_superuser: data.user.is_superuser || false,
           };
         }
 
