@@ -36,7 +36,6 @@ export function ShopSearchBar({
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
-  const comboboxRootRef = useRef<HTMLDivElement>(null);
   const suggestionPickRef = useRef(false);
   const fetchSeqRef = useRef(0);
 
@@ -60,10 +59,25 @@ export function ShopSearchBar({
   async function handleSearchChange(e: React.ChangeEvent<HTMLInputElement>) {
     const value = e.target.value;
     setSearch(value);
+    const isMobileViewport =
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 767px)").matches;
+
+    if (isMobileViewport) {
+      setSuggestions([]);
+      closeSuggestions();
+      return;
+    }
+
     if (value.length > 1) {
       const seq = ++fetchSeqRef.current;
       const qs = scopeProductsQueryString(
-        new URLSearchParams({ search: value }).toString()
+        new URLSearchParams({
+          search: value,
+          sort: "name_asc",
+          limit: "8",
+          offset: "0",
+        }).toString()
       );
       const res = await fetch(`/api/products/?${qs}`);
       if (seq !== fetchSeqRef.current) return;
@@ -87,7 +101,7 @@ export function ShopSearchBar({
       return;
     }
     const next = e.relatedTarget as Node | null;
-    if (next && comboboxRootRef.current?.contains(next)) return;
+    if (next && e.currentTarget.contains(next)) return;
     closeSuggestions();
   }
 
@@ -141,13 +155,141 @@ export function ShopSearchBar({
 
   return (
     <div className={cn("flex flex-col gap-4", className)}>
-      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:gap-4">
+      <div
+        className="md:hidden"
+      >
         <div
-          ref={comboboxRootRef}
+          className="relative w-full rounded-full border p-1 shadow-2xl backdrop-blur-xl mb-2"
+          style={{
+            borderColor: "color-mix(in srgb, var(--accent) 30%, var(--sidebar-border))",
+            background:
+              "linear-gradient(165deg, color-mix(in srgb, var(--card-bg) 86%, white 14%) 0%, color-mix(in srgb, var(--card-bg) 90%, transparent) 100%)",
+            boxShadow:
+              "0 10px 30px color-mix(in srgb, var(--accent) 20%, transparent), inset 0 1px 0 color-mix(in srgb, white 55%, transparent)",
+          }}
+        >
+          <div className="relative" onBlur={handleComboboxBlur}>
+            <label htmlFor="shop-search-input-mobile" className="sr-only">
+              Search products by name
+            </label>
+            <Search
+              className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4"
+              style={{ color: "var(--muted-foreground)" }}
+              aria-hidden
+            />
+            <input
+              id="shop-search-input-mobile"
+              type="search"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={expanded}
+              aria-controls={expanded ? listboxId : undefined}
+              aria-activedescendant={
+                expanded && activeSuggestionIndex >= 0
+                  ? `shop-search-opt-${activeSuggestionIndex}`
+                  : undefined
+              }
+              autoComplete="off"
+              value={search}
+              onChange={handleSearchChange}
+              placeholder="Search products..."
+              className="w-full rounded-full py-3 pr-12 pl-11 text-[16px] outline-none transition-[box-shadow] focus:ring-2 focus:ring-[var(--ring)]"
+              style={{
+                border: "1px solid color-mix(in srgb, var(--accent) 18%, var(--sidebar-border))",
+                background: "color-mix(in srgb, var(--card-bg) 92%, transparent)",
+                color: "var(--foreground)",
+                WebkitTextSizeAdjust: "100%",
+              }}
+              onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+              onKeyDown={handleInputKeyDown}
+            />
+            {search.length > 0 && (
+              <button
+                type="button"
+                aria-label="Clear search"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-opacity hover:opacity-80 outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                style={{ color: "var(--muted-foreground)" }}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setSearch("");
+                  setSuggestions([]);
+                  closeSuggestions();
+                }}
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            )}
+            {expanded && (
+              <ul
+                id={listboxId}
+                role="listbox"
+                aria-label="Search suggestions"
+                className="absolute z-[70] bottom-[calc(100%+0.45rem)] max-h-60 w-full overflow-y-auto rounded-2xl border py-1 shadow-xl"
+                style={{
+                  background: "var(--card-bg)",
+                  borderColor: "var(--sidebar-border)",
+                  boxShadow: "var(--card-shadow)",
+                }}
+              >
+                {suggestions.slice(0, 8).map((s, i) => {
+                  const highlighted = activeSuggestionIndex === i;
+                  return (
+                    <li key={`${s}-${i}`} role="presentation">
+                      <div
+                        id={`shop-search-opt-${i}`}
+                        role="option"
+                        tabIndex={-1}
+                        aria-selected={highlighted}
+                        className="w-full text-left px-4 py-2.5 text-sm cursor-pointer hover:opacity-90"
+                        style={{
+                          color: "var(--foreground)",
+                          ...(highlighted
+                            ? {
+                                background: "var(--sidebar-bg)",
+                                outline: "2px solid var(--ring)",
+                                outlineOffset: -2,
+                              }
+                            : {}),
+                        }}
+                        onMouseEnter={() => setActiveSuggestionIndex(i)}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          suggestionPickRef.current = true;
+                          applySuggestionAndSearch(s);
+                        }}
+                      >
+                        {s}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="md:hidden flex gap-2 items-stretch w-full">
+        <div className="flex-1 min-h-[48px]">
+          <SortList
+            options={sortOptions}
+            value={sort}
+            onChange={setSort}
+            placeholder="Sort"
+            className="w-full min-h-[48px]"
+          />
+        </div>
+        {mobileFilterSlot ? (
+          <div className="flex items-stretch">{mobileFilterSlot}</div>
+        ) : null}
+      </div>
+
+      <div className="hidden md:flex flex-col sm:flex-row gap-3 sm:items-center sm:gap-4">
+        <div
           className="relative flex-1 w-full min-w-0"
           onBlur={handleComboboxBlur}
         >
-          <label htmlFor="shop-search-input" className="sr-only">
+          <label htmlFor="shop-search-input-desktop" className="sr-only">
             Search products by name
           </label>
           <Search
@@ -156,7 +298,7 @@ export function ShopSearchBar({
             aria-hidden
           />
           <input
-            id="shop-search-input"
+            id="shop-search-input-desktop"
             type="search"
             role="combobox"
             aria-autocomplete="list"
@@ -255,7 +397,7 @@ export function ShopSearchBar({
             />
           </div>
           {mobileFilterSlot ? (
-            <div className="flex items-stretch md:hidden">{mobileFilterSlot}</div>
+            <div className="hidden md:flex items-stretch">{mobileFilterSlot}</div>
           ) : null}
         </div>
       </div>

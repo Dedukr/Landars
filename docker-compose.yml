@@ -73,6 +73,7 @@ services:
       - ./backend/db:/backend/db
     environment:
       - PYTHONUNBUFFERED=1
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1,backend,frontend-marketplace,nginx}
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -130,6 +131,7 @@ services:
       - ./backend/db:/backend/db
     environment:
       - PYTHONUNBUFFERED=1
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1,backend,frontend-marketplace,nginx}
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}

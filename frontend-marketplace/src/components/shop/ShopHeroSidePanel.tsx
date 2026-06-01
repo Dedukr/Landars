@@ -65,7 +65,10 @@ export function ShopHeroSidePanel() {
               >
                 Browse, refine, fill your basket
               </p>
-              <p className="text-sm leading-relaxed" style={{ color: "var(--muted-foreground)" }}>
+              <p
+                className="hidden sm:block text-sm leading-relaxed"
+                style={{ color: "var(--muted-foreground)" }}
+              >
                 Narrow the list with search and filters, reorder it with sorting, then add products from each card or
                 the product detail page.
               </p>
@@ -73,7 +76,7 @@ export function ShopHeroSidePanel() {
           </div>
 
           {/* Decorative food-forward icons */}
-          <div className="relative mt-8 flex justify-end gap-2 sm:gap-3 pr-1 opacity-85">
+          <div className="relative mt-6 sm:mt-8 hidden sm:flex justify-between sm:justify-end gap-2 sm:gap-3 pr-0 sm:pr-1 opacity-85">
             {[
               { Icon: Leaf, rot: "-6deg" },
               { Icon: Search, rot: "4deg" },
