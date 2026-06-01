@@ -9,7 +9,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { WishlistProvider } from "@/contexts/WishlistContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import CartMergeNotification from "@/components/CartMergeNotification";
-import { Toaster } from "sonner";
+import { Toaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
   title: {
