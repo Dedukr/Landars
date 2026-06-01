@@ -1,30 +1,41 @@
-import { TrendingUp } from "lucide-react";
+import type { ReactNode } from "react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "./card";
+import { cn } from "@/lib/utils";
 
 type AdminMetricCardProps = {
-  label: string;
+  title: string;
   value: string | number;
+  description?: string;
+  icon?: ReactNode;
   trend?: string;
+  className?: string;
 };
 
-export function AdminMetricCard({ label, value, trend }: AdminMetricCardProps) {
+export function AdminMetricCard({
+  title,
+  value,
+  description,
+  icon,
+  trend,
+  className,
+}: AdminMetricCardProps) {
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
-          {label}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="text-2xl font-semibold">{value}</p>
-        {trend ? (
-          <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-            <TrendingUp className="size-3.5" />
-            {trend}
-          </p>
+    <div className={cn("rounded-xl border bg-card p-5 shadow-sm", className)}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm text-muted-foreground">{title}</p>
+          <p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p>
+        </div>
+        {icon ? (
+          <div className="rounded-lg bg-muted p-2 text-muted-foreground">{icon}</div>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+      {description || trend ? (
+        <div className="mt-3 text-xs text-muted-foreground">
+          {trend ? <span>{trend}</span> : null}
+          {description ? <span>{description}</span> : null}
+        </div>
+      ) : null}
+    </div>
   );
 }

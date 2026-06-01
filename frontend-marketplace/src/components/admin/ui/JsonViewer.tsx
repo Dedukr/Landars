@@ -1,11 +1,11 @@
 type JsonViewerProps = {
-  value: unknown;
+  data: unknown;
 };
 
-export function JsonViewer({ value }: JsonViewerProps) {
+export function JsonViewer({ data }: JsonViewerProps) {
   return (
-    <pre className="max-h-80 overflow-auto rounded-md border bg-muted/40 p-3 text-xs">
-      {JSON.stringify(value, null, 2)}
+    <pre className="max-h-96 overflow-auto rounded-lg bg-muted p-4 text-xs">
+      {JSON.stringify(data, null, 2)}
     </pre>
   );
 }

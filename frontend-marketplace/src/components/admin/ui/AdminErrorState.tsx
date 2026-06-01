@@ -1,27 +1,30 @@
-import type { ReactNode } from "react";
 import { AlertTriangle } from "lucide-react";
+
+import { Button } from "./button";
 
 type AdminErrorStateProps = {
   title?: string;
-  message: string;
-  action?: ReactNode;
+  description?: string;
+  onRetry?: () => void;
 };
 
 export function AdminErrorState({
   title = "Something went wrong",
-  message,
-  action,
+  description = "The data could not be loaded.",
+  onRetry,
 }: AdminErrorStateProps) {
   return (
-    <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6">
-      <div className="flex items-start gap-3">
-        <AlertTriangle className="mt-0.5 size-5 text-destructive" />
-        <div>
-          <h3 className="font-semibold text-destructive">{title}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">{message}</p>
-          {action ? <div className="mt-4">{action}</div> : null}
-        </div>
+    <div className="flex min-h-[280px] flex-col items-center justify-center rounded-xl border bg-card p-8 text-center">
+      <div className="mb-4 rounded-full bg-destructive/10 p-3 text-destructive">
+        <AlertTriangle className="h-6 w-6" />
       </div>
+      <h2 className="text-base font-semibold">{title}</h2>
+      <p className="mt-2 max-w-md text-sm text-muted-foreground">{description}</p>
+      {onRetry ? (
+        <Button className="mt-5" onClick={onRetry}>
+          Try again
+        </Button>
+      ) : null}
     </div>
   );
 }

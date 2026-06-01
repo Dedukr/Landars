@@ -1,3 +1,5 @@
+"use client";
+
 import type { ReactNode } from "react";
 
 import {
@@ -24,7 +26,7 @@ export function DangerActionDialog({
   trigger,
   title,
   description,
-  confirmLabel = "Proceed",
+  confirmLabel = "Confirm dangerous action",
   onConfirm,
 }: DangerActionDialogProps) {
   return (
@@ -32,7 +34,7 @@ export function DangerActionDialog({
       <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle className="text-destructive">{title}</AlertDialogTitle>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

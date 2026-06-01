@@ -35,24 +35,24 @@ export default function DashboardPage() {
         description="Overview of LandarsFood operations."
       />
 
-      {isLoading ? <AdminLoadingState rows={4} /> : null}
+      {isLoading ? <AdminLoadingState /> : null}
 
       {!isLoading && error ? (
         <AdminErrorState
           title="Could not load dashboard summary"
-          message={error}
+          description={error}
         />
       ) : null}
 
       {!isLoading && !error ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <AdminMetricCard label="Total orders" value={data?.total_orders ?? 0} />
+          <AdminMetricCard title="Total orders" value={data?.total_orders ?? 0} />
           <AdminMetricCard
-            label="Pending orders"
+            title="Pending orders"
             value={data?.pending_orders ?? 0}
           />
-          <AdminMetricCard label="Products" value={data?.total_products ?? 0} />
-          <AdminMetricCard label="Customers" value={data?.total_customers ?? 0} />
+          <AdminMetricCard title="Products" value={data?.total_products ?? 0} />
+          <AdminMetricCard title="Customers" value={data?.total_customers ?? 0} />
         </div>
       ) : null}
     </div>

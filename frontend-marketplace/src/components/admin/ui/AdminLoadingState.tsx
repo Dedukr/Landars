@@ -1,18 +1,15 @@
 import { Skeleton } from "./skeleton";
 
-type AdminLoadingStateProps = {
-  rows?: number;
-};
-
-export function AdminLoadingState({ rows = 5 }: AdminLoadingStateProps) {
+export function AdminLoadingState() {
   return (
-    <div className="space-y-3">
-      <Skeleton className="h-8 w-40" />
-      <div className="space-y-2">
-        {Array.from({ length: rows }).map((_, index) => (
-          <Skeleton key={index} className="h-10 w-full" />
-        ))}
+    <div className="space-y-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Skeleton className="h-28 rounded-xl" />
+        <Skeleton className="h-28 rounded-xl" />
+        <Skeleton className="h-28 rounded-xl" />
+        <Skeleton className="h-28 rounded-xl" />
       </div>
+      <Skeleton className="h-96 rounded-xl" />
     </div>
   );
 }

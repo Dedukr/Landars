@@ -1,14 +1,25 @@
 type MoneyTextProps = {
-  amount: number | string | null | undefined;
+  value: number | string | null | undefined;
   currency?: string;
 };
 
-export function MoneyText({ amount, currency = "GBP" }: MoneyTextProps) {
-  const value = Number(amount ?? 0);
-  const formatted = new Intl.NumberFormat("en-GB", {
-    style: "currency",
-    currency,
-  }).format(Number.isFinite(value) ? value : 0);
+export function MoneyText({ value, currency = "GBP" }: MoneyTextProps) {
+  if (value === null || value === undefined || value === "") {
+    return <span>-</span>;
+  }
 
-  return <span>{formatted}</span>;
+  const amount = typeof value === "string" ? Number(value) : value;
+
+  if (Number.isNaN(amount)) {
+    return <span>-</span>;
+  }
+
+  return (
+    <span>
+      {new Intl.NumberFormat("en-GB", {
+        style: "currency",
+        currency,
+      }).format(amount)}
+    </span>
+  );
 }

@@ -4,18 +4,26 @@ type AdminStatusBadgeProps = {
   status: string;
 };
 
-const toneMap: Record<string, "default" | "destructive" | "outline" | "secondary"> = {
-  pending: "secondary",
-  paid: "default",
-  issued: "default",
-  delivered: "default",
-  cancelled: "destructive",
-  failed: "destructive",
-};
+function getStatusVariant(status: string) {
+  const normalized = status.toLowerCase();
+
+  if (
+    ["paid", "completed", "delivered", "active", "success"].includes(normalized)
+  ) {
+    return "default";
+  }
+
+  if (["pending", "processing", "draft"].includes(normalized)) {
+    return "secondary";
+  }
+
+  if (["cancelled", "failed", "refunded", "inactive"].includes(normalized)) {
+    return "destructive";
+  }
+
+  return "outline";
+}
 
 export function AdminStatusBadge({ status }: AdminStatusBadgeProps) {
-  const normalized = status.toLowerCase();
-  const variant = toneMap[normalized] ?? "outline";
-
-  return <Badge variant={variant}>{status}</Badge>;
+  return <Badge variant={getStatusVariant(status)}>{status.replace(/_/g, " ")}</Badge>;
 }
