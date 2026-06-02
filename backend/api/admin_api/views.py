@@ -1,34 +1,31 @@
-from account.models import CustomUser
-from api.models import Order, Product
-from reconciliation.models import BankTransaction
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from shipping.models import Shipment
 
 from .permissions import IsAdminStaffUser
-from .serializers import DashboardSummarySerializer
+from .periods import resolve_dashboard_period
+from .serializers import AdminDashboardSerializer, DashboardSummarySerializer
+from .services import build_admin_dashboard, build_admin_dashboard_summary_only
 
 
 class DashboardSummaryAPIView(APIView):
     permission_classes = [IsAdminStaffUser]
 
     def get(self, request):
-        data = {
-            "total_orders": Order.objects.count(),
-            "pending_orders": Order.objects.filter(status="pending").count(),
-            # In current order lifecycle, "delivered" is the closest completed state.
-            "completed_orders": Order.objects.filter(status="delivered").count(),
-            "total_products": Product.objects.count(),
-            "active_products": Product.objects.filter(active=True).count(),
-            "total_customers": CustomUser.objects.filter(is_staff=False).count(),
-            "total_shipments": Shipment.objects.count(),
-            # Reconciliation is considered unresolved while unmatched/suggested.
-            "unreconciled_bank_transactions": BankTransaction.objects.filter(
-                match_status__in=[
-                    BankTransaction.MatchStatus.UNMATCHED,
-                    BankTransaction.MatchStatus.SUGGESTED,
-                ]
-            ).count(),
-        }
+        data = build_admin_dashboard_summary_only()
         serializer = DashboardSummarySerializer(data)
+        return Response(serializer.data)
+
+
+class AdminDashboardAPIView(APIView):
+    """
+    Full admin home dashboard payload (KPIs, charts, recent orders, breakdowns,
+    top products, alerts). Supports ?period=7d|30d|90d|this_month.
+    """
+
+    permission_classes = [IsAdminStaffUser]
+
+    def get(self, request):
+        period = resolve_dashboard_period(request.query_params.get("period"))
+        data = build_admin_dashboard(period)
+        serializer = AdminDashboardSerializer(data)
         return Response(serializer.data)

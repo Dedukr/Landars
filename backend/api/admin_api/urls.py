@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import DashboardSummaryAPIView
+from .views import AdminDashboardAPIView, DashboardSummaryAPIView
 
 app_name = "admin_api"
 
