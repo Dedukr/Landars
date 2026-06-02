@@ -5,10 +5,10 @@ from api.models import Order, OrderItem, Product
 from django.test import TestCase
 from django.utils import timezone
 
+from admin_dashboard.periods import get_period_range
 from admin_dashboard.services import (
     get_alerts,
     get_dashboard_data,
-    get_period_range,
     get_reconciliation_breakdown,
     get_summary_snapshot,
 )

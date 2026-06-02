@@ -6,24 +6,21 @@ from typing import Any
 
 from account.models import CustomUser
 from api.models import Order, OrderItem, Product
-from api.services.product_sales import SOLD_ORDER_STATUSES
 from django.db.models import Count, DecimalField, F, Sum, Value
 from django.db.models.functions import Coalesce, TruncDate
 from django.utils import timezone
 
-VALID_PERIODS = frozenset({"7d", "30d", "90d", "this_month"})
-DEFAULT_PERIOD = "30d"
+from admin_dashboard.periods import get_period_range, normalize_period
+from admin_dashboard.revenue import (
+    REVENUE_ORDER_STATUS,
+    order_total_amount,
+    paid_order_revenue_by_day,
+    paid_orders_in_period,
+    sum_paid_order_revenue,
+)
 
 ORDER_STATUS_CHOICES = [choice[0] for choice in Order._meta.get_field("status").choices]
 COMPLETED_ORDER_STATUSES = ("delivered",)
-PAID_ORDER_STATUSES = SOLD_ORDER_STATUSES
-
-
-def _normalize_period(period: str | None) -> str:
-    key = (period or DEFAULT_PERIOD).strip().lower()
-    if key not in VALID_PERIODS:
-        return DEFAULT_PERIOD
-    return key
 
 
 def _decimal_str(value: Decimal | int | float | None) -> str:
@@ -40,52 +37,22 @@ def _safe_count(qs) -> int:
 
 
 def _orders_between(date_from: datetime, date_to: datetime):
-    return Order.objects.filter(created_at__gte=date_from, created_at__lt=date_to)
-
-
-def get_period_range(period: str) -> tuple[datetime, datetime]:
-    """
-    Return (date_from, date_to) for the requested period.
-    date_from is inclusive; date_to is exclusive (typically timezone.now()).
-    """
-    period_key = _normalize_period(period)
-    date_to = timezone.now()
-
-    if period_key == "7d":
-        date_from = date_to - timedelta(days=7)
-    elif period_key == "90d":
-        date_from = date_to - timedelta(days=90)
-    elif period_key == "this_month":
-        date_from = date_to.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    else:
-        date_from = date_to - timedelta(days=30)
-
-    return date_from, date_to
+    end = timezone.now()
+    if date_to > end:
+        end = date_to
+    return Order.objects.filter(
+        created_at__gte=date_from,
+        created_at__lte=end,
+    )
 
 
 def get_kpis(date_from: datetime, date_to: datetime) -> dict[str, Any]:
     period_orders = _orders_between(date_from, date_to)
     orders_count = _safe_count(period_orders)
 
-    revenue = Decimal("0")
-    try:
-        from billing.models import Invoice
-
-        revenue = (
-            Invoice.objects.filter(
-                created_at__gte=date_from,
-                created_at__lt=date_to,
-            )
-            .exclude(status=Invoice.Status.VOID)
-            .aggregate(total=Sum("total_amount"))["total"]
-            or Decimal("0")
-        )
-    except Exception:
-        revenue = Decimal("0")
-
-    paid_orders_count = _safe_count(
-        period_orders.filter(status__in=PAID_ORDER_STATUSES)
-    )
+    paid_orders = paid_orders_in_period(date_from, date_to)
+    paid_orders_count = _safe_count(paid_orders)
+    revenue = sum_paid_order_revenue(date_from, date_to)
     average_order_value = (
         revenue / paid_orders_count if paid_orders_count else Decimal("0")
     )
@@ -97,7 +64,7 @@ def get_kpis(date_from: datetime, date_to: datetime) -> dict[str, Any]:
                 CustomUser.objects.filter(
                     is_staff=False,
                     date_joined__gte=date_from,
-                    date_joined__lt=date_to,
+                    date_joined__lte=date_to,
                 )
             )
     except Exception:
@@ -120,28 +87,11 @@ def get_kpis(date_from: datetime, date_to: datetime) -> dict[str, Any]:
 
 
 def get_sales_chart(date_from: datetime, date_to: datetime) -> list[dict[str, Any]]:
-    """Daily invoiced revenue (non-void invoices) in the period."""
+    """Daily revenue from paid orders (sum of order totals)."""
     try:
-        from billing.models import Invoice
-
-        rows = (
-            Invoice.objects.filter(
-                created_at__gte=date_from,
-                created_at__lt=date_to,
-            )
-            .exclude(status=Invoice.Status.VOID)
-            .annotate(day=TruncDate("created_at"))
-            .values("day")
-            .annotate(value=Sum("total_amount"))
-            .order_by("day")
-        )
         return [
-            {
-                "date": row["day"].isoformat() if row["day"] else None,
-                "value": _decimal_str(row["value"]),
-            }
-            for row in rows
-            if row["day"]
+            {"date": day.isoformat(), "value": _decimal_str(amount)}
+            for day, amount in paid_order_revenue_by_day(date_from, date_to)
         ]
     except Exception:
         return []
@@ -192,7 +142,7 @@ def get_invoice_status_breakdown(
         return list(
             Invoice.objects.filter(
                 created_at__gte=date_from,
-                created_at__lt=date_to,
+                created_at__lte=date_to,
             )
             .values("status")
             .annotate(count=Count("id"))
@@ -211,7 +161,7 @@ def get_shipment_status_breakdown(
         return list(
             Shipment.objects.filter(
                 created_at__gte=date_from,
-                created_at__lt=date_to,
+                created_at__lte=date_to,
             )
             .values("status")
             .annotate(count=Count("id"))
@@ -230,7 +180,7 @@ def get_reconciliation_breakdown(
         return list(
             BankTransaction.objects.filter(
                 created_at__gte=date_from,
-                created_at__lt=date_to,
+                created_at__lte=date_to,
             )
             .values("match_status")
             .annotate(count=Count("id"))
@@ -251,10 +201,10 @@ def get_top_products(
         )
         rows = (
             OrderItem.objects.filter(
+                order__status=REVENUE_ORDER_STATUS,
                 order__created_at__gte=date_from,
-                order__created_at__lt=date_to,
+                order__created_at__lte=date_to,
             )
-            .exclude(order__status="cancelled")
             .values("product_id")
             .annotate(
                 name=Coalesce(F("item_name"), F("product__name"), Value("Unknown")),
@@ -297,7 +247,7 @@ def get_recent_orders(limit: int = 10) -> list[dict[str, Any]]:
         results = []
         for order in orders:
             try:
-                total = order.total_price
+                total = order_total_amount(order)
             except Exception:
                 total = Decimal("0")
             results.append(
@@ -484,8 +434,8 @@ def get_orders_by_source_breakdown(
 
 
 def get_dashboard_data(period: str) -> dict[str, Any]:
-    period_key = _normalize_period(period)
-    date_from, date_to = get_period_range(period_key)
+    period_key = normalize_period(period)
+    date_from, date_to = get_period_range(period)
     alerts = get_alerts()
 
     return {

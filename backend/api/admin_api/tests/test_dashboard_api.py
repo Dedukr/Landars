@@ -7,7 +7,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from admin_dashboard.services import get_period_range
+from admin_dashboard.periods import get_period_range
 
 
 class AdminDashboardAPITests(TestCase):
