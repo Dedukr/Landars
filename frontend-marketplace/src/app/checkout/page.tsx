@@ -878,6 +878,12 @@ export default function CheckoutPage() {
 
       setOrderCompleted(true);
 
+      // Show a one-time “thank you” modal on the order details page.
+      // This runs only for website checkout (this page) and is cleared after display.
+      if (typeof window !== "undefined") {
+        window.sessionStorage.setItem("order_just_created_id", String(order.id));
+      }
+
       // Save shipping information if checkbox is checked
       if (shippingForm.saveShippingInfo) {
         try {

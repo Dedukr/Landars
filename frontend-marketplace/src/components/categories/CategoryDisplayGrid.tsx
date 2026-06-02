@@ -160,8 +160,14 @@ export default function CategoryDisplayGrid({
 
   if (isMobile) {
     return (
-      <div className={cn("overflow-x-auto pb-2", config.mobileScrollPad, className)}>
-        <div className="flex gap-1.5 w-max lg:w-auto">
+      <div
+        className={cn(
+          "w-full max-w-full min-w-0 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          config.mobileScrollPad,
+          className
+        )}
+      >
+        <div className="flex gap-1.5 w-max">
           {categories.map((cat) =>
             renderCard(cat, cn("flex-shrink-0", config.mobileCardW))
           )}

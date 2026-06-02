@@ -18,6 +18,7 @@ import { MobileOrderDetailsBar } from "@/components/order/details/MobileOrderDet
 import { OrderDetailsSkeleton } from "@/components/order/details/OrderDetailsSkeleton";
 import { OrderDetailsErrorState } from "@/components/order/details/OrderDetailsErrorState";
 import { OrderDetailsNotFoundState } from "@/components/order/details/OrderDetailsNotFoundState";
+import OrderThankYouModal from "@/components/OrderThankYouModal";
 
 export default function OrderDetailPage() {
   const params = useParams();
@@ -27,6 +28,7 @@ export default function OrderDetailPage() {
   const [order, setOrder] = useState<MarketplaceOrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showThankYou, setShowThankYou] = useState(false);
 
   useEffect(() => {
     if (!user && !token) {
@@ -62,6 +64,18 @@ export default function OrderDetailPage() {
     fetchOrder();
   }, [fetchOrder]);
 
+  // One-time thank-you modal after checkout redirect.
+  useEffect(() => {
+    if (!params.id || typeof window === "undefined") {
+      return;
+    }
+    const justCreatedId = window.sessionStorage.getItem("order_just_created_id");
+    if (justCreatedId && String(params.id) === justCreatedId) {
+      setShowThankYou(true);
+      window.sessionStorage.removeItem("order_just_created_id");
+    }
+  }, [params.id]);
+
   if (loading) {
     return <OrderDetailsSkeleton />;
   }
@@ -81,6 +95,7 @@ export default function OrderDetailPage() {
       className="min-h-screen pb-28 lg:pb-10"
       style={{ background: "var(--background)" }}
     >
+      <OrderThankYouModal open={showThankYou} onClose={() => setShowThankYou(false)} />
       <div className="mx-auto max-w-6xl px-4 pb-10 pt-6 sm:px-6 lg:px-8 lg:pt-8">
         <OrderDetailsHeader order={order} />
 

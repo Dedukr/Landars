@@ -36,8 +36,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className="antialiased flex flex-col min-h-screen">
+    <html lang="en" suppressHydrationWarning className="overflow-x-hidden">
+      <body className="antialiased flex flex-col min-h-screen overflow-x-hidden">
         <ErrorBoundary>
           <ThemeProvider>
             <AuthProvider>

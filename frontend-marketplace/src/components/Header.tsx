@@ -35,7 +35,7 @@ export default function Header() {
     { name: "My Orders", href: "/orders", icon: Package },
     ...(user?.is_staff
       ? [{ name: "Admin Panel", href: "/admin", icon: LayoutDashboard }]
-      : [{ name: "Wishlist", href: "/wishlist" }]),
+      : []),
     { name: "Log Out", action: "logout", icon: LogOut },
   ];
 
@@ -118,7 +118,7 @@ export default function Header() {
         borderBottom: "1px solid var(--sidebar-border)",
       }}
     >
-      <div className="max-w-7xl mx-auto">
+      <div className="w-full lg:max-w-7xl lg:mx-auto">
         {/* Main header row */}
         <div className="flex items-center justify-between px-4 py-3 md:px-6 lg:px-8 gap-4">
           {/* Logo */}
@@ -171,14 +171,14 @@ export default function Header() {
             {/* Theme Toggle */}
             <CompactThemeToggle className="hidden sm:flex" />
 
-            {/* Wishlist */}
+            {/* Wishlist (icon on desktop & mobile header) */}
             <Link
               href="/wishlist"
               className="relative p-2 rounded-lg transition-all duration-200 hover:opacity-80"
               aria-label="Wishlist"
               style={{ color: "var(--foreground)" }}
             >
-              <Heart className="w-5 h-5 md:w-5 md:h-5" />
+              <Heart className="w-5 h-5" />
             </Link>
 
             {/* Cart */}
@@ -375,14 +375,7 @@ export default function Header() {
                   {link.name}
                 </Link>
               ))}
-              <Link
-                href="/wishlist"
-                className="flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 hover:opacity-80"
-                style={{ color: "var(--foreground)" }}
-                onClick={closeMobileMenu}
-              >
-                Wishlist
-              </Link>
+              {/* Wishlist is accessible via the heart icon in the header */}
 
               {/* User section */}
               {user ? (

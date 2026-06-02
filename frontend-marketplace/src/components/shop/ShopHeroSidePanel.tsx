@@ -8,14 +8,14 @@ import { Leaf, Search, ShoppingBag, Sparkles } from "lucide-react";
  */
 export function ShopHeroSidePanel() {
   return (
-    <div className="relative w-full lg:max-w-[min(100%,420px)] xl:max-w-[440px] mx-auto lg:mx-0 lg:ml-auto">
-      {/* Ambient */}
+    <div className="relative w-full overflow-hidden lg:max-w-[min(100%,420px)] xl:max-w-[440px] mx-auto lg:mx-0 lg:ml-auto">
+      {/* Ambient — kept inside bounds so mobile layout does not widen the page */}
       <div
-        className="pointer-events-none absolute -bottom-16 -left-16 h-72 w-72 rounded-full opacity-[0.15] blur-3xl"
+        className="pointer-events-none absolute -bottom-12 -left-12 h-56 w-56 rounded-full opacity-[0.15] blur-3xl"
         style={{ background: "var(--primary)" }}
       />
       <div
-        className="pointer-events-none absolute -right-8 top-12 h-48 w-48 rounded-full opacity-25 blur-2xl"
+        className="pointer-events-none absolute right-0 top-12 h-40 w-40 rounded-full opacity-25 blur-2xl"
         style={{ background: "var(--accent)" }}
       />
 
