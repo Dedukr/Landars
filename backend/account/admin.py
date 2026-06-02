@@ -41,12 +41,12 @@ class OrderInline(admin.TabularInline):  # or StackedInline if you want vertical
 class CustomUserAdmin(UserAdmin):
     form = CustomUserForm
     add_form = CustomUserCreationForm
-    list_display = ("name", "is_staff", "is_active")
+    list_display = ("name", "email", "phone_whatsapp", "is_active", "is_staff")
     list_filter = (
         "is_staff",
         "is_active",
     )
-    ordering = ("name",)
+    ordering = ("email",)
     search_fields = ("name", "email", "profile__phone")
 
     class Media:
@@ -62,14 +62,14 @@ class CustomUserAdmin(UserAdmin):
                 "classes": ("wide",),
                 "fields": (
                     "name",
+                    "email",
+                    "password",
                     "phone",
                     "address_line",
                     "address_line2",
                     "city",
                     "postal_code",
                     "notes",
-                    "email",
-                    "password",
                 ),
             },
         ),
@@ -120,13 +120,33 @@ class CustomUserAdmin(UserAdmin):
     )
 
     def get_queryset(self, request):
-        qs = super().get_queryset(request)
+        qs = super().get_queryset(request).select_related("profile")
         # Only show root user to superusers
         if request.user.is_superuser:
             return qs
         return qs.exclude(
             is_superuser=True
         )  # or exclude(id=1), or name="root" if that's root
+
+    @admin.display(description="Phone")
+    def phone_whatsapp(self, obj):
+        phone = None
+        profile = getattr(obj, "profile", None)
+        if profile:
+            phone = (profile.phone or "").strip()
+        if not phone:
+            return "-"
+
+        # WhatsApp expects an international number without '+' or formatting.
+        digits = "".join(ch for ch in phone if ch.isdigit())
+        if not digits:
+            return phone
+
+        return format_html(
+            '<a href="https://wa.me/{}" target="_blank" rel="noreferrer">{}</a>',
+            digits,
+            phone,
+        )
 
     def get_search_results(self, request, queryset, search_term):
         queryset, use_distinct = super().get_search_results(
@@ -146,12 +166,17 @@ class CustomUserAdmin(UserAdmin):
         """
         Override save_model to handle Profile and Address creation.
         """
-        # Handle optional password
-        password = form.cleaned_data.get("password", None)
-        if password:
-            obj.set_password(password)  # Hash and set the provided password
-        else:
-            obj.set_unusable_password()  # Set an unusable password if none is provided
+        # IMPORTANT:
+        # - On the change form, Django's `UserChangeForm` provides a hashed password value.
+        #   Re-hashing it here would break logins. Password changes must go through the
+        #   dedicated "change password" admin view.
+        # - On the add form, we accept a raw password and hash it once.
+        if not change:
+            password = form.cleaned_data.get("password", None)
+            if password:
+                obj.set_password(password)
+            else:
+                obj.set_unusable_password()
 
         # Save the user first
         super().save_model(request, obj, form, change)

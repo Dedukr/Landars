@@ -29,6 +29,25 @@ class Command(BaseCommand):
                 self.style.WARNING("DRY RUN MODE - No changes will be made")
             )
 
+        # First, ensure no users have a missing/blank email (email will be required).
+        missing_email_qs = User.objects.filter(email__isnull=True) | User.objects.filter(
+            email=""
+        )
+        missing_count = missing_email_qs.count()
+        if missing_count:
+            self.stdout.write(
+                self.style.WARNING(f"Found {missing_count} users with missing email")
+            )
+            for user in missing_email_qs:
+                new_email = f"missing+{user.id}@example.invalid"
+                self.stdout.write(
+                    f"  Assigning placeholder email to user {user.id}: {new_email}"
+                )
+                if not dry_run:
+                    user.email = new_email
+                    user.is_active = False
+                    user.save(update_fields=["email", "is_active"])
+
         # Find duplicate emails (case-insensitive)
         email_groups = defaultdict(list)
 
@@ -64,10 +83,13 @@ class Command(BaseCommand):
                     )
 
                     if not dry_run:
-                        # Set email to None to avoid constraint issues
-                        user.email = None
-                        user.save()
-                        self.stdout.write(f"  Removed email from user: {user.name}")
+                        # Email must remain non-null/unique; assign a unique placeholder.
+                        user.email = f"dedup+{user.id}@example.invalid"
+                        user.is_active = False
+                        user.save(update_fields=["email", "is_active"])
+                        self.stdout.write(
+                            f"  Reassigned email + deactivated user: {user.name}"
+                        )
 
         if not duplicates_found:
             self.stdout.write(self.style.SUCCESS("No duplicate emails found!"))

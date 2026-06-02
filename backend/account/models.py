@@ -16,18 +16,21 @@ class CustomUserManager(BaseUserManager):
         if not name:
             raise ValueError("Name must be set")
 
-        # Normalize email if provided
-        if email:
-            normalized_email = self.normalize_email(email)
-            # Also lowercase the local part for consistency
-            if "@" in normalized_email:
-                local_part, domain = normalized_email.split("@", 1)
-                email = f"{local_part.lower()}@{domain}"
-            else:
-                email = normalized_email
-            # Check for email uniqueness
-            if self.filter(email=email).exists():
-                raise ValueError("A user with this email already exists")
+        if not email:
+            raise ValueError("Email must be set")
+
+        # Normalize email
+        normalized_email = self.normalize_email(email)
+        # Also lowercase the local part for consistency
+        if "@" in normalized_email:
+            local_part, domain = normalized_email.split("@", 1)
+            email = f"{local_part.lower()}@{domain}"
+        else:
+            email = normalized_email
+
+        # Check for email uniqueness (user-friendly error; DB also enforces)
+        if self.filter(email=email).exists():
+            raise ValueError("A user with this email already exists")
 
         user = self.model(name=name, email=email, **extra_fields)
         if password:
@@ -45,7 +48,10 @@ class CustomUserManager(BaseUserManager):
 
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
-    name = models.CharField(max_length=255, unique=True)
+    # Full name is a display field and is NOT unique.
+    name = models.CharField(max_length=255)
+    # Email is the unique login identifier.
+    # Keep DB nullable for legacy rows, but application logic enforces email for all new/updated users.
     email = models.EmailField(null=True, blank=True, unique=True)
 
     is_active = models.BooleanField(default=True)
@@ -58,25 +64,28 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     REQUIRED_FIELDS = ["name"]  # when creating superuser from CLI
 
     def __str__(self):
-        # return self.profile.name if hasattr(self, "profile") else self.email
-        return self.name
+        # Use name for human-friendly admin labels/autocomplete.
+        return self.name or (self.email or "")
 
     def clean(self):
         """Validate the model before saving"""
         super().clean()
-        if self.email:
-            # Normalize email before validation (lowercase domain part only)
-            normalized_email = self.__class__.objects.normalize_email(self.email)
-            # Also lowercase the local part for consistency
-            if "@" in normalized_email:
-                local_part, domain = normalized_email.split("@", 1)
-                self.email = f"{local_part.lower()}@{domain}"
-            else:
-                self.email = normalized_email
-            # Use the custom validator
-            from .validators import validate_unique_email
+        if not self.email:
+            # Legacy rows may have NULL email; application-level flows must enforce email.
+            return
+        # Normalize email before validation (lowercase domain part only)
+        normalized_email = self.__class__.objects.normalize_email(self.email)
+        # Also lowercase the local part for consistency
+        if "@" in normalized_email:
+            local_part, domain = normalized_email.split("@", 1)
+            self.email = f"{local_part.lower()}@{domain}"
+        else:
+            self.email = normalized_email
 
-            validate_unique_email(self.email, exclude_user_id=self.pk)
+        # Use the custom validator
+        from .validators import validate_unique_email
+
+        validate_unique_email(self.email, exclude_user_id=self.pk)
 
     def save(self, *args, **kwargs):
         # Skip validation if only updating specific fields like last_login

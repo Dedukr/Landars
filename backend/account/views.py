@@ -130,12 +130,6 @@ def register(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if CustomUser.objects.filter(name=name).exists():
-            return Response(
-                {"error": "User with this name already exists"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         # Create new user (initially unverified)
         try:
             user = CustomUser.objects.create_user(
@@ -459,16 +453,15 @@ def update_profile(request):
         if "name" in data:
             name = data.get("name", "").strip()
             if name and name != user.name:
-                # Check if name is already taken by another user
-                if CustomUser.objects.filter(name=name).exclude(id=user.id).exists():
-                    return Response(
-                        {"error": "A user with this name already exists"},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
                 user.name = name
 
         if "email" in data:
             email = data.get("email", "").strip().lower()
+            if not email:
+                return Response(
+                    {"error": "Email is required"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             if email and email != user.email:
                 # Validate email format
                 if "@" not in email or "." not in email.split("@")[-1]:

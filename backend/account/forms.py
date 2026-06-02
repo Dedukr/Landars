@@ -17,15 +17,15 @@ class CustomUserForm(UserChangeForm):
 
     class Meta:
         model = CustomUser
-        fields = ("email", "password", "is_staff")
+        fields = ("name", "email", "password", "is_staff")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         if self.instance.pk:
+            self.fields["name"].initial = self.instance.name
             profile = getattr(self.instance, "profile", None)
             if profile:
-                # self.fields["name"].initial = profile.name
                 self.fields["phone"].initial = profile.phone
                 self.fields["notes"].initial = profile.notes
                 address = profile.address
@@ -44,7 +44,10 @@ class CustomUserForm(UserChangeForm):
     def save(self, commit=True):
         user = super().save(commit)
         profile, _ = Profile.objects.get_or_create(user=user)
-        profile.name = self.cleaned_data.get("name")
+        # Name lives on CustomUser (Profile has no name field).
+        user.name = self.cleaned_data.get("name") or user.name
+        if commit:
+            user.save(update_fields=["name"])
         profile.phone = self.cleaned_data.get("phone")
 
         address = profile.address or Address()
@@ -80,7 +83,7 @@ class CustomUserCreationForm(forms.ModelForm):
 
     class Meta:
         model = CustomUser
-        fields = ("name",)
+        fields = ("name", "email")
 
         # def save(self, commit=True):
         #     user = super().save(commit=False)

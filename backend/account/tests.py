@@ -52,8 +52,8 @@ class CustomUserModelTest(TestCase):
 
     def test_user_without_email(self):
         """Test creating user without email"""
-        user = User.objects.create_user(name="No Email User", password="testpass123")
-        self.assertIsNone(user.email)
+        with self.assertRaises(ValueError):
+            User.objects.create_user(name="No Email User", password="testpass123")
 
     def test_duplicate_email_raises_error(self):
         """Test that duplicate emails raise an error"""
