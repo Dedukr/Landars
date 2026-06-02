@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -38,18 +39,18 @@ export function AdminBreadcrumbs() {
           const isLast = index === items.length - 1;
 
           return (
-            <BreadcrumbItem key={item.href}>
-              {isLast ? (
-                <BreadcrumbPage>{item.label}</BreadcrumbPage>
-              ) : (
-                <>
+            <Fragment key={item.href}>
+              <BreadcrumbItem>
+                {isLast ? (
+                  <BreadcrumbPage>{item.label}</BreadcrumbPage>
+                ) : (
                   <BreadcrumbLink render={<Link href={item.href} />}>
                     {item.label}
                   </BreadcrumbLink>
-                  <BreadcrumbSeparator />
-                </>
-              )}
-            </BreadcrumbItem>
+                )}
+              </BreadcrumbItem>
+              {!isLast ? <BreadcrumbSeparator /> : null}
+            </Fragment>
           );
         })}
       </BreadcrumbList>
