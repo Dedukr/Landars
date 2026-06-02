@@ -7,8 +7,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from api.admin_api.periods import resolve_dashboard_period
-from api.admin_api.services import build_admin_dashboard
+from admin_dashboard.services import get_period_range
 
 
 class AdminDashboardAPITests(TestCase):
@@ -100,15 +99,15 @@ class AdminDashboardAPITests(TestCase):
 
 class DashboardPeriodTests(TestCase):
     def test_resolve_this_month_starts_on_first_day(self):
-        period = resolve_dashboard_period("this_month")
-        self.assertEqual(period.key, "this_month")
-        self.assertEqual(period.start.day, 1)
+        date_from, _ = get_period_range("this_month")
+        self.assertEqual(date_from.day, 1)
 
 
 class DashboardServiceTests(TestCase):
-    def test_build_admin_dashboard_returns_safe_empty_sections(self):
-        period = resolve_dashboard_period("7d")
-        data = build_admin_dashboard(period)
+    def test_get_dashboard_data_returns_safe_empty_sections(self):
+        from admin_dashboard.services import get_dashboard_data
+
+        data = get_dashboard_data("7d")
         self.assertEqual(data["period"], "7d")
         self.assertIsInstance(data["recent_orders"], list)
         self.assertIsInstance(data["top_products"], list)

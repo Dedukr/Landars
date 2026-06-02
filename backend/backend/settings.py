@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     "shipping",
     "reconciliation",
     "notifications",
+    "admin_dashboard",
 ]
 
 MIDDLEWARE = [
