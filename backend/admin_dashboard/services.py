@@ -46,6 +46,172 @@ def _orders_between(date_from: datetime, date_to: datetime):
     )
 
 
+def _today_start() -> datetime:
+    """Midnight of today in the active timezone, as an aware datetime."""
+    return timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _month_start() -> datetime:
+    """First second of the current calendar month (local tz)."""
+    return timezone.localtime().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+# ---------------------------------------------------------------------------
+# KPI helpers — each returns a plain Python value safe to serialise.
+# ---------------------------------------------------------------------------
+
+def _get_today_revenue() -> str:
+    """
+    6.1  Today revenue — sum of total_price for paid orders created today.
+
+    ``Order.total_price`` is a Python property (not a DB column) so we use the
+    same prefetch-and-iterate pattern as ``sum_paid_order_revenue``.
+    """
+    start = _today_start()
+    orders = (
+        Order.objects.filter(status=REVENUE_ORDER_STATUS, created_at__gte=start)
+        .prefetch_related("items", "items__product")
+    )
+    total = Decimal("0")
+    for order in orders:
+        total += order_total_amount(order)
+    return _decimal_str(total)
+
+
+def _get_today_orders() -> int:
+    """
+    6.2  Today orders — all orders created today.
+
+    The Order model has no draft/cart status so no exclusion is needed.
+    Count covers all real orders regardless of status (pending, paid, issued …).
+    """
+    return _safe_count(Order.objects.filter(created_at__gte=_today_start()))
+
+
+def _get_unmatched_transactions() -> int:
+    """
+    6.6  Unmatched bank transactions — global, not period-limited.
+
+    Uses ``BankTransaction.MatchStatus.UNMATCHED`` (value ``"unmatched"``).
+    Returns 0 if the reconciliation app is unavailable.
+    """
+    try:
+        from reconciliation.models import BankTransaction
+
+        return _safe_count(
+            BankTransaction.objects.filter(
+                match_status=BankTransaction.MatchStatus.UNMATCHED
+            )
+        )
+    except Exception:
+        return 0
+
+
+def _get_failed_shipments() -> int:
+    """
+    6.7  Failed shipments — global.
+
+    Covers FAILED_RETRYABLE, FAILED_FINAL and LABEL_DOWNLOAD_FAILED.
+    Returns 0 if the shipping app is unavailable.
+    """
+    try:
+        from shipping.models import Shipment
+
+        return _safe_count(
+            Shipment.objects.filter(
+                status__in=[
+                    Shipment.Status.FAILED_RETRYABLE,
+                    Shipment.Status.FAILED_FINAL,
+                    Shipment.Status.LABEL_DOWNLOAD_FAILED,
+                ]
+            )
+        )
+    except Exception:
+        return 0
+
+
+def _get_failed_notifications() -> int:
+    """
+    6.8  Failed Telegram notifications in the last 7 days.
+
+    Uses ``NotificationLog.Status.FAILED`` (value ``"failed"``).
+    Returns 0 if the notifications app is unavailable.
+    """
+    try:
+        from notifications.models import NotificationLog
+
+        cutoff = timezone.now() - timedelta(days=7)
+        return _safe_count(
+            NotificationLog.objects.filter(
+                status=NotificationLog.Status.FAILED,
+                created_at__gte=cutoff,
+            )
+        )
+    except Exception:
+        return 0
+
+
+def _get_invoices_this_month() -> int:
+    """
+    6.9  Invoices with status ISSUED created in the current calendar month.
+
+    Uses current month, not the selected dashboard period.
+    Returns 0 if the billing app is unavailable.
+    """
+    try:
+        from billing.models import Invoice
+
+        return _safe_count(
+            Invoice.objects.filter(
+                status=Invoice.Status.ISSUED,
+                created_at__gte=_month_start(),
+            )
+        )
+    except Exception:
+        return 0
+
+
+def _get_credit_notes_this_month() -> int:
+    """
+    6.10  Credit notes created in the current calendar month.
+
+    Returns 0 if the CreditNote model is unavailable.
+    """
+    try:
+        from billing.models import CreditNote
+
+        return _safe_count(CreditNote.objects.filter(created_at__gte=_month_start()))
+    except Exception:
+        return 0
+
+
+def _get_top_product_sold_quantity(date_from: datetime, date_to: datetime) -> int:
+    """
+    6.11  Quantity of the top-selling product in the selected period (paid orders).
+
+    Returns 0 when no paid order items exist in the period.
+    """
+    try:
+        from django.db.models import Sum as _Sum
+
+        row = (
+            OrderItem.objects.filter(
+                order__status=REVENUE_ORDER_STATUS,
+                order__created_at__gte=date_from,
+                order__created_at__lte=timezone.now(),
+            )
+            .values("product_id")
+            .annotate(sold_quantity=_Sum("quantity"))
+            .order_by("-sold_quantity")
+            .first()
+        )
+        if row and row["sold_quantity"] is not None:
+            return int(row["sold_quantity"])
+        return 0
+    except Exception:
+        return 0
+
+
 def get_kpis(date_from: datetime, date_to: datetime) -> dict[str, Any]:
     period_orders = _orders_between(date_from, date_to)
     orders_count = _safe_count(period_orders)
@@ -71,11 +237,13 @@ def get_kpis(date_from: datetime, date_to: datetime) -> dict[str, Any]:
         new_customers = 0
 
     return {
+        # --- Period KPIs ---
         "revenue": _decimal_str(revenue),
         "orders_count": orders_count,
         "paid_orders_count": paid_orders_count,
         "new_customers": new_customers,
         "average_order_value": _decimal_str(average_order_value),
+        # 6.3  Pending orders — global (need action regardless of period)
         "pending_orders": _safe_count(Order.objects.filter(status="pending")),
         "completed_orders": _safe_count(
             Order.objects.filter(status__in=COMPLETED_ORDER_STATUSES)
@@ -83,6 +251,17 @@ def get_kpis(date_from: datetime, date_to: datetime) -> dict[str, Any]:
         "total_products": _safe_count(Product.objects.all()),
         "active_products": _safe_count(Product.objects.filter(active=True)),
         "total_customers": _safe_count(CustomUser.objects.filter(is_staff=False)),
+        # --- Today KPIs (6.1, 6.2) ---
+        "today_revenue": _get_today_revenue(),
+        "today_orders": _get_today_orders(),
+        # --- Operations KPIs (6.6 – 6.10) ---
+        "unmatched_transactions": _get_unmatched_transactions(),
+        "failed_shipments": _get_failed_shipments(),
+        "failed_notifications": _get_failed_notifications(),
+        "invoices_issued_this_month": _get_invoices_this_month(),
+        "credit_notes_this_month": _get_credit_notes_this_month(),
+        # --- Product KPI (6.11) ---
+        "top_product_sold_quantity": _get_top_product_sold_quantity(date_from, date_to),
     }
 
 

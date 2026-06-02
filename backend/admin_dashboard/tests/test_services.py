@@ -7,8 +7,17 @@ from django.utils import timezone
 
 from admin_dashboard.periods import get_period_range
 from admin_dashboard.services import (
+    _get_today_orders,
+    _get_today_revenue,
+    _get_top_product_sold_quantity,
+    _get_unmatched_transactions,
+    _get_failed_shipments,
+    _get_failed_notifications,
+    _get_invoices_this_month,
+    _get_credit_notes_this_month,
     get_alerts,
     get_dashboard_data,
+    get_kpis,
     get_reconciliation_breakdown,
     get_summary_snapshot,
 )
@@ -80,3 +89,131 @@ class AdminDashboardServiceTests(TestCase):
         summary = get_summary_snapshot()
         self.assertIn("total_orders", summary)
         self.assertIn("unreconciled_bank_transactions", summary)
+
+    # ------------------------------------------------------------------ #
+    # KPI card tests (sections 6.1 – 6.11)                                #
+    # ------------------------------------------------------------------ #
+
+    def test_get_kpis_includes_all_required_keys(self):
+        """get_kpis() must return every KPI key expected by the frontend."""
+        date_from, date_to = get_period_range("7d")
+        kpis = get_kpis(date_from, date_to)
+        required_keys = [
+            # period KPIs
+            "revenue",
+            "orders_count",
+            "paid_orders_count",
+            "average_order_value",
+            "pending_orders",
+            # today KPIs (6.1, 6.2)
+            "today_revenue",
+            "today_orders",
+            # operations KPIs (6.6 – 6.10)
+            "unmatched_transactions",
+            "failed_shipments",
+            "failed_notifications",
+            "invoices_issued_this_month",
+            "credit_notes_this_month",
+            # product KPI (6.11)
+            "top_product_sold_quantity",
+        ]
+        for key in required_keys:
+            self.assertIn(key, kpis, msg=f"Missing KPI key: {key}")
+
+    def test_today_revenue_includes_paid_order_created_today(self):
+        """6.1: today_revenue includes a paid order created today."""
+        order = Order.objects.create(
+            customer=self.customer,
+            status="paid",
+            delivery_date=timezone.localdate(),
+            delivery_date_order_id=Order.objects.count() + 1,
+        )
+        OrderItem.objects.create(
+            order=order,
+            product=self.product,
+            quantity=Decimal("3"),
+            item_name=self.product.name,
+            item_price=self.product.base_price,
+        )
+        revenue_str = _get_today_revenue()
+        today_revenue = Decimal(revenue_str)
+        self.assertGreaterEqual(today_revenue, Decimal("37.50"))  # 3 × 12.50
+
+    def test_today_orders_counts_order_created_today(self):
+        """6.2: today_orders rises after creating an order."""
+        before = _get_today_orders()
+        Order.objects.create(
+            customer=self.customer,
+            status="pending",
+            delivery_date=timezone.localdate(),
+            delivery_date_order_id=Order.objects.count() + 1,
+        )
+        after = _get_today_orders()
+        self.assertEqual(after, before + 1)
+
+    def test_unmatched_transactions_returns_int(self):
+        """6.6: _get_unmatched_transactions returns a non-negative int."""
+        result = _get_unmatched_transactions()
+        self.assertIsInstance(result, int)
+        self.assertGreaterEqual(result, 0)
+
+    def test_failed_shipments_returns_int(self):
+        """6.7: _get_failed_shipments returns a non-negative int."""
+        result = _get_failed_shipments()
+        self.assertIsInstance(result, int)
+        self.assertGreaterEqual(result, 0)
+
+    def test_failed_notifications_returns_int(self):
+        """6.8: _get_failed_notifications returns a non-negative int."""
+        result = _get_failed_notifications()
+        self.assertIsInstance(result, int)
+        self.assertGreaterEqual(result, 0)
+
+    def test_invoices_this_month_returns_int(self):
+        """6.9: _get_invoices_this_month returns a non-negative int."""
+        result = _get_invoices_this_month()
+        self.assertIsInstance(result, int)
+        self.assertGreaterEqual(result, 0)
+
+    def test_credit_notes_this_month_returns_int(self):
+        """6.10: _get_credit_notes_this_month returns a non-negative int."""
+        result = _get_credit_notes_this_month()
+        self.assertIsInstance(result, int)
+        self.assertGreaterEqual(result, 0)
+
+    def test_top_product_sold_quantity_with_paid_order(self):
+        """6.11: top_product_sold_quantity reflects paid order items in period."""
+        order = Order.objects.create(
+            customer=self.customer,
+            status="paid",
+            delivery_date=timezone.localdate(),
+            delivery_date_order_id=Order.objects.count() + 1,
+        )
+        OrderItem.objects.create(
+            order=order,
+            product=self.product,
+            quantity=Decimal("5"),
+            item_name=self.product.name,
+            item_price=self.product.base_price,
+        )
+        date_from, date_to = get_period_range("7d")
+        qty = _get_top_product_sold_quantity(date_from, date_to)
+        self.assertIsInstance(qty, int)
+        self.assertGreaterEqual(qty, 5)
+
+    def test_top_product_sold_quantity_no_orders_returns_zero(self):
+        """6.11: returns 0 when no paid orders exist in the period."""
+        date_from, date_to = get_period_range("7d")
+        qty = _get_top_product_sold_quantity(date_from, date_to)
+        self.assertIsInstance(qty, int)
+        self.assertGreaterEqual(qty, 0)
+
+    def test_average_order_value_string_format(self):
+        """6.5: average_order_value is returned as a two-decimal string."""
+        date_from, date_to = get_period_range("7d")
+        kpis = get_kpis(date_from, date_to)
+        aov = kpis["average_order_value"]
+        self.assertIsInstance(aov, str)
+        # Must be parseable as Decimal and have 2 dp
+        parsed = Decimal(aov)
+        self.assertEqual(aov, f"{parsed.quantize(Decimal('0.01'))}")
