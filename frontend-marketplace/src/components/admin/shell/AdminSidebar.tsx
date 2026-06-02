@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/admin/ui/button";
 import { cn } from "@/lib/utils";
 import { adminNavGroups } from "@/components/admin/navigation/admin-nav-items";
+import { filterAdminNavGroups } from "@/components/admin/navigation/filter-admin-nav-items";
 import { useAuth } from "@/contexts/AuthContext";
 
 type AdminSidebarProps = {
@@ -24,16 +25,10 @@ export function AdminSidebar({
 }: AdminSidebarProps) {
   const { user } = useAuth();
   const pathname = usePathname();
-  const effectiveSuperuser = isSuperuser ?? Boolean(user?.is_superuser);
-
-  const groups = adminNavGroups
-    .map((group) => ({
-      ...group,
-      items: group.items.filter(
-        (item) => item.permission !== "superuser" || effectiveSuperuser
-      ),
-    }))
-    .filter((group) => group.items.length > 0);
+  const groups = filterAdminNavGroups(adminNavGroups, {
+    is_staff: Boolean(user?.is_staff),
+    is_superuser: isSuperuser ?? Boolean(user?.is_superuser),
+  });
 
   return (
     <aside
@@ -78,9 +73,7 @@ export function AdminSidebar({
               {group.items.map((item) => {
                 const Icon = item.icon;
                 const isActive =
-                  pathname === item.href ||
-                  (item.href !== "/dashboard" &&
-                    pathname.startsWith(`${item.href}/`));
+                  pathname === item.href || pathname.startsWith(`${item.href}/`);
 
                 return (
                   <Link
@@ -101,7 +94,7 @@ export function AdminSidebar({
                     {!collapsed ? (
                       <>
                         <span className="flex-1">{item.label}</span>
-                        {item.badge ? (
+                        {item.badge !== undefined ? (
                           <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                             {item.badge}
                           </span>

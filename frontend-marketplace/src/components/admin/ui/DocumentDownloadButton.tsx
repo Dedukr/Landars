@@ -1,6 +1,8 @@
 import { Download } from "lucide-react";
 
-import { Button } from "./button";
+import { cn } from "@/lib/utils";
+
+import { Button, buttonVariants } from "./button";
 
 type DocumentDownloadButtonProps = {
   href: string;
@@ -23,11 +25,14 @@ export function DocumentDownloadButton({
   }
 
   return (
-    <Button variant="outline" size="sm" asChild>
-      <a href={href} target="_blank" rel="noreferrer">
-        <Download className="mr-2 h-4 w-4" />
-        {label}
-      </a>
-    </Button>
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+    >
+      <Download className="mr-2 h-4 w-4" />
+      {label}
+    </a>
   );
 }

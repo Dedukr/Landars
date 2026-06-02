@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 import { adminNavGroups } from "@/components/admin/navigation/admin-nav-items";
+import { filterAdminNavGroups } from "@/components/admin/navigation/filter-admin-nav-items";
 import { useAuth } from "@/contexts/AuthContext";
 import { Sheet, SheetContent } from "@/components/admin/ui/sheet";
 
@@ -20,14 +21,10 @@ export function AdminMobileSidebar({
   const { user } = useAuth();
   const pathname = usePathname();
 
-  const groups = adminNavGroups
-    .map((group) => ({
-      ...group,
-      items: group.items.filter(
-        (item) => item.permission !== "superuser" || Boolean(user?.is_superuser)
-      ),
-    }))
-    .filter((group) => group.items.length > 0);
+  const groups = filterAdminNavGroups(adminNavGroups, {
+    is_staff: Boolean(user?.is_staff),
+    is_superuser: Boolean(user?.is_superuser),
+  });
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -48,9 +45,7 @@ export function AdminMobileSidebar({
                 {group.items.map((item) => {
                   const Icon = item.icon;
                   const isActive =
-                    pathname === item.href ||
-                    (item.href !== "/dashboard" &&
-                      pathname.startsWith(`${item.href}/`));
+                    pathname === item.href || pathname.startsWith(`${item.href}/`);
 
                   return (
                     <Link
@@ -67,7 +62,7 @@ export function AdminMobileSidebar({
                       <Icon className="h-4 w-4" />
                       <span className="flex-1">{item.label}</span>
 
-                      {item.badge ? (
+                      {item.badge !== undefined ? (
                         <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                           {item.badge}
                         </span>
