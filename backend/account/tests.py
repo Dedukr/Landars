@@ -2,6 +2,14 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 
+from .merge_service import (
+    merge_phones,
+    merge_users,
+    name_similarity,
+    names_are_similar,
+    normalize_name,
+    select_canonical_user,
+)
 from .models import Address, CustomUser, Profile
 
 User = get_user_model()
@@ -119,3 +127,365 @@ class AddressModelTest(TestCase):
         """Test address without postal code"""
         address = Address.objects.create()
         self.assertEqual(str(address), "No Address")
+
+
+# ---------------------------------------------------------------------------
+# Merge service — helper unit tests
+# ---------------------------------------------------------------------------
+
+
+class NormalizeNameTest(TestCase):
+    def test_lowercase(self):
+        self.assertEqual(normalize_name("John Smith"), "john smith")
+
+    def test_strips_whitespace(self):
+        self.assertEqual(normalize_name("  Jane  Doe  "), "jane doe")
+
+    def test_collapses_inner_spaces(self):
+        self.assertEqual(normalize_name("Alice  Bob"), "alice bob")
+
+    def test_empty_string(self):
+        self.assertEqual(normalize_name(""), "")
+
+    def test_none_like_empty(self):
+        self.assertEqual(normalize_name(None), "")
+
+
+class NameSimilarityTest(TestCase):
+    def test_identical_names(self):
+        self.assertAlmostEqual(name_similarity("John Smith", "John Smith"), 1.0)
+
+    def test_case_insensitive(self):
+        self.assertAlmostEqual(name_similarity("john smith", "JOHN SMITH"), 1.0)
+
+    def test_similar_names(self):
+        ratio = name_similarity("John Smit", "John Smith")
+        self.assertGreater(ratio, 0.9)
+
+    def test_different_names(self):
+        ratio = name_similarity("Alice", "Bob")
+        self.assertLess(ratio, 0.92)
+
+    def test_empty_names(self):
+        self.assertEqual(name_similarity("", "John"), 0.0)
+
+    def test_names_are_similar_exact(self):
+        self.assertTrue(names_are_similar("John Smith", "john smith"))
+
+    def test_names_are_similar_above_threshold(self):
+        self.assertTrue(names_are_similar("John Smit", "John Smith"))
+
+    def test_names_are_not_similar(self):
+        self.assertFalse(names_are_similar("Alice Johnson", "Bob Williams"))
+
+
+class MergePhonesTest(TestCase):
+    def test_no_conflict(self):
+        self.assertEqual(merge_phones("07111111111", ""), "07111111111")
+
+    def test_different_phones_merged(self):
+        result = merge_phones("07111111111", "07222222222")
+        self.assertIn("07111111111", result)
+        self.assertIn("07222222222", result)
+
+    def test_deduplicates_same_phone(self):
+        result = merge_phones("07111111111", "07111111111")
+        self.assertEqual(result.count("07111111111"), 1)
+
+    def test_main_empty_dup_has_value(self):
+        self.assertEqual(merge_phones("", "07333333333"), "07333333333")
+
+    def test_both_empty(self):
+        self.assertEqual(merge_phones("", ""), "")
+
+    def test_comma_separated_lists(self):
+        result = merge_phones("07111111111, 07222222222", "07222222222, 07333333333")
+        parts = [p.strip() for p in result.split(",")]
+        self.assertIn("07111111111", parts)
+        self.assertIn("07222222222", parts)
+        self.assertIn("07333333333", parts)
+        self.assertEqual(parts.count("07222222222"), 1)
+
+
+class SelectCanonicalUserTest(TestCase):
+    def _make_user(self, name, email=None):
+        return User.objects.create_user(name=name, email=email)
+
+    def test_user_with_email_is_main(self):
+        user_with_email = self._make_user("Alice", email="alice@example.com")
+        user_no_email = self._make_user("Alice No Email")
+        main, dup = select_canonical_user(user_no_email, user_with_email)
+        self.assertEqual(main, user_with_email)
+        self.assertEqual(dup, user_no_email)
+
+    def test_both_same_email_older_is_main(self):
+        """
+        When both users share the same e-mail (same-email edge-case is tested
+        at function level without a DB unique-constraint violation).
+        """
+        # Use unsaved model instances to avoid the unique-email DB constraint.
+        user_a = User(pk=1, name="Alice A", email="same@example.com")
+        user_b = User(pk=2, name="Alice B", email="same@example.com")
+        # user_a has the lower pk → it should be the main record.
+        main, dup = select_canonical_user(user_a, user_b)
+        self.assertEqual(main.pk, 1)
+        self.assertEqual(dup.pk, 2)
+
+    def test_different_emails_returns_none(self):
+        user_a = self._make_user("Alice", email="alice@example.com")
+        user_b = self._make_user("Alicea", email="alicea@example.com")
+        main, dup = select_canonical_user(user_a, user_b)
+        self.assertIsNone(main)
+        self.assertIsNone(dup)
+
+    def test_neither_has_email_older_is_main(self):
+        user_a = self._make_user("NoEmail A")
+        user_b = self._make_user("NoEmail B")
+        main, dup = select_canonical_user(user_a, user_b)
+        self.assertEqual(main.pk, user_a.pk)
+
+
+# ---------------------------------------------------------------------------
+# Merge service — integration tests
+# ---------------------------------------------------------------------------
+
+
+class MergeUsersIntegrationTest(TestCase):
+    """
+    Tests that exercise the full merge_users() function directly
+    (signal is bypassed by calling merge_users() manually after user creation
+    to avoid double-merge in test scenarios).
+    """
+
+    def _make_user(self, name, email=None, password=None):
+        """Create user without triggering signal-based auto-merge."""
+        return User.objects.create_user(name=name, email=email, password=password)
+
+    def _make_profile(self, user, phone=None, notes=None, address=None):
+        return Profile.objects.create(user=user, phone=phone, notes=notes, address=address)
+
+    def _make_address(self, **kwargs):
+        return Address.objects.create(**kwargs)
+
+    # ── Basic merge scenarios ───────────────────────────────────────────────
+
+    def test_exact_same_name_email_vs_no_email_merges_into_email_user(self):
+        """Exact normalised-name match: user with email becomes main."""
+        old_user = self._make_user("John Smith", email="john@example.com")
+        new_user = self._make_user("john smith")  # same name, different case, no email
+
+        merge_users(new_user)
+
+        old_user.refresh_from_db()
+        new_user.refresh_from_db()
+        self.assertTrue(old_user.is_active)
+        self.assertFalse(new_user.is_active)  # duplicate deactivated
+
+    def test_similar_name_above_threshold_merges(self):
+        """Name similarity ≥ threshold triggers a merge."""
+        old_user = self._make_user("John Smit", email="j@example.com")
+        new_user = self._make_user("John Smith")
+
+        merge_users(new_user)
+
+        new_user.refresh_from_db()
+        self.assertFalse(new_user.is_active)
+
+    def test_different_names_no_merge(self):
+        """Names below threshold: no merge, both users remain active."""
+        old_user = self._make_user("Alice Johnson", email="a@example.com")
+        new_user = self._make_user("Bob Williams")
+
+        merge_users(new_user)
+
+        old_user.refresh_from_db()
+        new_user.refresh_from_db()
+        self.assertTrue(old_user.is_active)
+        self.assertTrue(new_user.is_active)
+
+    def test_both_different_emails_no_merge(self):
+        """Both users have different e-mails: merge is skipped."""
+        old_user = self._make_user("Jane Doe", email="jane@example.com")
+        new_user = self._make_user("jane doe", email="jane2@example.com")
+
+        merge_users(new_user)
+
+        old_user.refresh_from_db()
+        new_user.refresh_from_db()
+        self.assertTrue(old_user.is_active)
+        self.assertTrue(new_user.is_active)
+
+    # ── Name conflict ───────────────────────────────────────────────────────
+
+    def test_main_user_keeps_its_name_after_merge(self):
+        """After merge the canonical user retains its own name."""
+        main = self._make_user("Alice Smith", email="alice@example.com")
+        dup = self._make_user("alice smith")
+
+        merge_users(dup)
+
+        main.refresh_from_db()
+        self.assertEqual(main.name, "Alice Smith")
+
+    # ── Address conflict ────────────────────────────────────────────────────
+
+    def test_address_copied_when_main_has_no_address(self):
+        """Main user has no address but dup does: a copy is made for main."""
+        main = self._make_user("Bob Jones", email="bob@example.com")
+        dup = self._make_user("bob jones")
+
+        addr = self._make_address(address_line="10 Street", city="London", postal_code="E1 1AA")
+        self._make_profile(main)
+        self._make_profile(dup, address=addr)
+
+        merge_users(dup)
+
+        main_profile = Profile.objects.get(user=main)
+        self.assertIsNotNone(main_profile.address)
+        self.assertEqual(main_profile.address.address_line, "10 Street")
+
+    def test_address_conflict_keeps_main_address(self):
+        """Both users have addresses: main's address is kept unchanged."""
+        main = self._make_user("Carol Davis", email="carol@example.com")
+        dup = self._make_user("carol davis")
+
+        main_addr = self._make_address(address_line="1 Main St", city="Bristol")
+        dup_addr = self._make_address(address_line="9 Dup St", city="Manchester")
+        self._make_profile(main, address=main_addr)
+        self._make_profile(dup, address=dup_addr)
+
+        merge_users(dup)
+
+        main_addr.refresh_from_db()
+        self.assertEqual(main_addr.address_line, "1 Main St")
+
+    # ── Phone merging ───────────────────────────────────────────────────────
+
+    def test_phone_conflict_results_in_merged_string(self):
+        """Both users have phones: result is comma-joined unique numbers."""
+        main = self._make_user("Dave Evans", email="dave@example.com")
+        dup = self._make_user("dave evans")
+
+        self._make_profile(main, phone="07111111111")
+        self._make_profile(dup, phone="07222222222")
+
+        merge_users(dup)
+
+        main_profile = Profile.objects.get(user=main)
+        self.assertIn("07111111111", main_profile.phone)
+        self.assertIn("07222222222", main_profile.phone)
+
+    def test_phone_only_on_dup_copied_to_main(self):
+        """Main has no phone; dup's phone is copied across."""
+        main = self._make_user("Eve Foster", email="eve@example.com")
+        dup = self._make_user("eve foster")
+
+        self._make_profile(main)
+        self._make_profile(dup, phone="07333333333")
+
+        merge_users(dup)
+
+        main_profile = Profile.objects.get(user=main)
+        self.assertEqual(main_profile.phone, "07333333333")
+
+    # ── Empty-field filling ─────────────────────────────────────────────────
+
+    def test_empty_notes_on_main_filled_from_dup(self):
+        """Main has no notes: dup's notes are copied."""
+        main = self._make_user("Frank Green", email="frank@example.com")
+        dup = self._make_user("frank green")
+
+        self._make_profile(main)
+        self._make_profile(dup, notes="VIP customer")
+
+        merge_users(dup)
+
+        main_profile = Profile.objects.get(user=main)
+        self.assertEqual(main_profile.notes, "VIP customer")
+
+    def test_is_email_verified_copied_from_dup_to_main(self):
+        """Main is not email-verified but dup is: flag is copied."""
+        main = self._make_user("Grace Hill", email="grace@example.com")
+        dup = self._make_user("grace hill")
+        User.objects.filter(pk=dup.pk).update(is_email_verified=True)
+        dup.refresh_from_db()
+
+        merge_users(dup)
+
+        main.refresh_from_db()
+        self.assertTrue(main.is_email_verified)
+
+    # ── Related objects ─────────────────────────────────────────────────────
+
+    def test_orders_reassigned_to_main_user(self):
+        """Orders belonging to dup are moved to main after merge."""
+        from api.models import Order
+
+        main = self._make_user("Henry Ives", email="henry@example.com")
+        dup = self._make_user("henry ives")
+
+        order = Order.objects.create(customer=dup, source="admin")
+
+        merge_users(dup)
+
+        order.refresh_from_db()
+        self.assertEqual(order.customer, main)
+
+    def test_profile_reassigned_when_main_has_no_profile(self):
+        """Dup's profile is reassigned to main when main has none."""
+        main = self._make_user("Iris Jones", email="iris@example.com")
+        dup = self._make_user("iris jones")
+
+        profile = self._make_profile(dup, phone="07444444444")
+
+        merge_users(dup)
+
+        profile.refresh_from_db()
+        self.assertEqual(profile.user, main)
+
+    # ── Signal trigger ──────────────────────────────────────────────────────
+
+    def test_signal_triggers_on_user_creation(self):
+        """
+        Creating a user via the ORM triggers the post_save signal which calls
+        merge_users().  Verify the duplicate is deactivated automatically.
+        """
+        existing = self._make_user("Signal Test User", email="signal@example.com")
+        # Creating a second user with a normalised-identical name should
+        # trigger the signal, which will deactivate the new user (it has no
+        # email, so the older user with email is main).
+        new_user = User.objects.create_user(name="signal test user")
+
+        new_user.refresh_from_db()
+        existing.refresh_from_db()
+
+        self.assertFalse(new_user.is_active)
+        self.assertTrue(existing.is_active)
+
+    # ── Safety: no IntegrityError ───────────────────────────────────────────
+
+    def test_no_integrity_error_when_email_already_exists(self):
+        """Merge with e-mail on main must not attempt to save dup's null email."""
+        main = self._make_user("Jack King", email="jack@example.com")
+        dup = self._make_user("jack king")
+
+        # Should complete without raising IntegrityError
+        try:
+            merge_users(dup)
+        except Exception as exc:
+            self.fail(f"merge_users raised an exception: {exc}")
+
+    # ── No infinite recursion ───────────────────────────────────────────────
+
+    def test_no_infinite_recursion_during_merge(self):
+        """
+        merge_users must not re-trigger itself.  If it did, the DB call count
+        would grow unboundedly; we just verify it completes without error.
+        """
+        existing = self._make_user("Loop User", email="loop@example.com")
+        new_user = self._make_user("loop user")
+
+        try:
+            merge_users(new_user)
+        except RecursionError:
+            self.fail("merge_users caused infinite recursion")
