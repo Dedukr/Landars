@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { adminA11y } from "@/lib/admin-a11y";
 import { cn } from "@/lib/utils";
 
 import type { AdminNavItem as AdminNavItemConfig } from "./admin-nav-items";
@@ -27,12 +28,14 @@ export function AdminNavItem({
     <Link
       href={item.href}
       onClick={onNavigate}
+      aria-current={isActive ? "page" : undefined}
       className={cn(
+        adminA11y.focusRingOffset,
         "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
         collapsed ? "justify-center" : "",
         isActive
           ? "bg-primary text-primary-foreground"
-          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground",
       )}
       aria-label={collapsed ? item.label : undefined}
       title={collapsed ? item.label : undefined}

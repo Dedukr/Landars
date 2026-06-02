@@ -28,6 +28,7 @@ export function AdminSidebar({
 
   return (
     <aside
+      aria-label="Admin navigation"
       className={cn(
         "hidden border-r bg-card transition-all duration-200 lg:flex lg:flex-col",
         collapsed ? "lg:w-20" : "lg:w-72",
@@ -45,18 +46,20 @@ export function AdminSidebar({
         <Button
           variant="ghost"
           size="icon"
+          type="button"
           onClick={() => onCollapsedChange(!collapsed)}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!collapsed}
         >
           {collapsed ? (
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRight className="h-4 w-4" aria-hidden="true" />
           ) : (
-            <ChevronLeft className="h-4 w-4" />
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
           )}
         </Button>
       </div>
 
-      <nav className="flex-1 space-y-6 overflow-y-auto p-4">
+      <nav aria-label="Admin sections" className="flex-1 space-y-6 overflow-y-auto p-4">
         {groups.map((group) => (
           <AdminNavGroup key={group.label} group={group} collapsed={collapsed} />
         ))}

@@ -19,6 +19,7 @@ type DangerActionDialogProps = {
   title: string;
   description: string;
   confirmLabel?: string;
+  cancelLabel?: string;
   onConfirm: () => void;
 };
 
@@ -26,7 +27,8 @@ export function DangerActionDialog({
   trigger,
   title,
   description,
-  confirmLabel = "Confirm dangerous action",
+  confirmLabel = "Delete",
+  cancelLabel = "Cancel",
   onConfirm,
 }: DangerActionDialogProps) {
   return (
@@ -38,10 +40,11 @@ export function DangerActionDialog({
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogCancel type="button">{cancelLabel}</AlertDialogCancel>
           <AlertDialogAction
+            type="button"
             onClick={onConfirm}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:border-destructive/40 focus-visible:ring-destructive/20"
           >
             {confirmLabel}
           </AlertDialogAction>

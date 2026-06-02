@@ -2,6 +2,7 @@
 
 import { ReactNode, useState } from "react";
 
+import { adminA11y } from "@/lib/admin-a11y";
 import { adminDesign } from "@/lib/admin-design";
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/admin/ui/tooltip";
@@ -21,6 +22,9 @@ export function AdminShell({ children }: AdminShellProps) {
   return (
     <TooltipProvider>
       <div className="min-h-screen bg-background">
+        <a href="#admin-main-content" className={adminA11y.skipLink}>
+          Skip to main content
+        </a>
         <AdminMobileSidebar
           open={isMobileSidebarOpen}
           onOpenChange={setIsMobileSidebarOpen}
@@ -34,13 +38,18 @@ export function AdminShell({ children }: AdminShellProps) {
 
           <div className="flex min-w-0 flex-1 flex-col">
             <AdminTopbar
+              isMobileMenuOpen={isMobileSidebarOpen}
+              isDesktopSidebarCollapsed={isDesktopSidebarCollapsed}
               onMobileMenuClick={() => setIsMobileSidebarOpen(true)}
               onDesktopSidebarToggle={() =>
                 setIsDesktopSidebarCollapsed((value) => !value)
               }
             />
 
-            <main className={cn("flex-1", adminDesign.pagePadding)}>
+            <main
+              id="admin-main-content"
+              className={cn("flex-1", adminDesign.pagePadding)}
+            >
               <div className={adminDesign.pageSection}>{children}</div>
             </main>
           </div>
