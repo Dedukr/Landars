@@ -1,9 +1,8 @@
+import type { CurrentUser } from "@/lib/api/auth";
+
 import type { AdminNavGroup } from "./admin-nav-items";
 
-type User = {
-  is_staff: boolean;
-  is_superuser: boolean;
-};
+type User = Pick<CurrentUser, "is_staff" | "is_superuser">;
 
 export function filterAdminNavGroups(
   groups: AdminNavGroup[],

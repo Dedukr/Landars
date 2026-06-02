@@ -297,6 +297,7 @@ def login_view(request):
                     "name": user.name,
                     "email": user.email,
                     "is_staff": user.is_staff,
+                    "is_superuser": user.is_superuser,
                 },
             },
             status=status.HTTP_200_OK,

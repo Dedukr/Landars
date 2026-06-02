@@ -15,6 +15,8 @@ interface AuthResponse {
     id: number;
     name: string;
     email: string;
+    is_staff?: boolean;
+    is_superuser?: boolean;
   };
   email_verification_required?: boolean;
   message?: string;
