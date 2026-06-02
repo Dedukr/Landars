@@ -133,7 +133,11 @@ def register(request):
         # Create new user (initially unverified)
         try:
             user = CustomUser.objects.create_user(
-                name=name, email=email, password=password, is_email_verified=False
+                name=name,
+                email=email,
+                password=password,
+                is_email_verified=False,
+                created_source=CustomUser.CREATED_SOURCE_WEBSITE,
             )
         except ValueError as e:
             if "email already exists" in str(e):

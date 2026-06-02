@@ -177,6 +177,9 @@ class CustomUserAdmin(UserAdmin):
                 obj.set_password(password)
             else:
                 obj.set_unusable_password()
+            # Mark source so merge prefers website-created users.
+            if hasattr(obj, "CREATED_SOURCE_ADMIN"):
+                obj.created_source = obj.CREATED_SOURCE_ADMIN
 
         # Save the user first
         super().save_model(request, obj, form, change)
@@ -184,18 +187,29 @@ class CustomUserAdmin(UserAdmin):
         # Handle Profile and Address creation
         if not change:  # Only create Profile and Address for new users
             if not obj.is_staff:
-                address = Address.objects.create(
-                    address_line=form.cleaned_data.get("address_line", ""),
-                    address_line2=form.cleaned_data.get("address_line2", ""),
-                    city=form.cleaned_data.get("city", ""),
-                    postal_code=form.cleaned_data.get("postal_code", ""),
-                )
-                Profile.objects.create(
-                    user=obj,
-                    phone=form.cleaned_data.get("phone", ""),
-                    address=address,
-                    notes=form.cleaned_data.get("notes", ""),
-                )
+                # The user-merge signal may have reassigned an existing Profile
+                # to this newly-created user. Keep this creation path idempotent.
+                profile, created_profile = Profile.objects.get_or_create(user=obj)
+
+                if created_profile or profile.address is None:
+                    address = Address.objects.create(
+                        address_line=form.cleaned_data.get("address_line", ""),
+                        address_line2=form.cleaned_data.get("address_line2", ""),
+                        city=form.cleaned_data.get("city", ""),
+                        postal_code=form.cleaned_data.get("postal_code", ""),
+                    )
+                    profile.address = address
+
+                # Only fill blanks; don't overwrite values potentially merged in.
+                phone = (form.cleaned_data.get("phone") or "").strip()
+                if phone and not (profile.phone or "").strip():
+                    profile.phone = phone
+
+                notes = (form.cleaned_data.get("notes") or "").strip()
+                if notes and not (profile.notes or "").strip():
+                    profile.notes = notes
+
+                profile.save()
 
     def response_add(self, request, obj, post_url_continue=None):
         """

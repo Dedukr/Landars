@@ -13,13 +13,14 @@ Merge rules summary
 * Empty fields on main are filled from the duplicate.
 * Conflicting fields stay with main (exception: phones are concatenated).
 * Related objects are reassigned from duplicate → main where safe.
-* The duplicate user is deactivated (is_active=False) after the merge.
+* The duplicate user is deleted after the merge (fallback: deactivated if delete fails).
 """
 
 import logging
 from difflib import SequenceMatcher
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
+from django.db.models.deletion import ProtectedError
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,19 @@ def select_canonical_user(user_a, user_b):
     Returns ``(main_user, duplicate_user)`` or ``(None, None)`` when the
     merge should be skipped.
     """
+    # Source priority: prefer website-created users over admin-created users.
+    a_source = getattr(user_a, "created_source", None)
+    b_source = getattr(user_b, "created_source", None)
+    if a_source and b_source and a_source != b_source:
+        if a_source == getattr(user_a, "CREATED_SOURCE_WEBSITE", "website") and b_source == getattr(
+            user_b, "CREATED_SOURCE_ADMIN", "admin"
+        ):
+            return user_a, user_b
+        if b_source == getattr(user_b, "CREATED_SOURCE_WEBSITE", "website") and a_source == getattr(
+            user_a, "CREATED_SOURCE_ADMIN", "admin"
+        ):
+            return user_b, user_a
+
     a_has_email = bool(user_a.email)
     b_has_email = bool(user_b.email)
 
@@ -502,6 +516,32 @@ def _deactivate_duplicate(dup_user):
     )
 
 
+def _delete_or_deactivate_duplicate(dup_user):
+    """
+    Prefer deleting the duplicate user after a merge.
+
+    If deletion fails due to protected relations or DB constraints, fall back
+    to deactivating the duplicate user (reversible).
+    """
+    try:
+        dup_pk = dup_user.pk
+        dup_name = dup_user.name
+        dup_user.delete()
+        logger.info(
+            "Merge: deleted duplicate user '%s' (pk=%s) after merge",
+            dup_name,
+            dup_pk,
+        )
+    except (ProtectedError, IntegrityError) as exc:
+        logger.warning(
+            "Merge: could not delete duplicate user '%s' (pk=%s) — falling back to deactivation: %s",
+            dup_user.name,
+            dup_user.pk,
+            exc,
+        )
+        _deactivate_duplicate(dup_user)
+
+
 # ---------------------------------------------------------------------------
 # Single-pair merge
 # ---------------------------------------------------------------------------
@@ -547,7 +587,7 @@ def _attempt_merge(new_user, candidate):
         _merge_user_fields(main_user, dup_user)
         _merge_profiles(main_user, dup_user)
         _reassign_all_related(main_user, dup_user)
-        _deactivate_duplicate(dup_user)
+        _delete_or_deactivate_duplicate(dup_user)
 
     logger.info(
         "Merge: completed — '%s' (pk=%s) merged into '%s' (pk=%s)",

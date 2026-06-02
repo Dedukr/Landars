@@ -209,7 +209,21 @@ class MergePhonesTest(TestCase):
 
 class SelectCanonicalUserTest(TestCase):
     def _make_user(self, name, email=None):
-        return User.objects.create_user(name=name, email=email)
+        if email:
+            return User.objects.create_user(name=name, email=email)
+        # Create a user without email without using the manager (manager enforces email)
+        from django.db.models.signals import post_save
+
+        from account.signals import trigger_user_merge_on_create
+
+        post_save.disconnect(trigger_user_merge_on_create, sender=User)
+        try:
+            user = User(name=name, email=None)
+            user.set_unusable_password()
+            user.save()
+            return user
+        finally:
+            post_save.connect(trigger_user_merge_on_create, sender=User)
 
     def test_user_with_email_is_main(self):
         user_with_email = self._make_user("Alice", email="alice@example.com")
@@ -217,6 +231,13 @@ class SelectCanonicalUserTest(TestCase):
         main, dup = select_canonical_user(user_no_email, user_with_email)
         self.assertEqual(main, user_with_email)
         self.assertEqual(dup, user_no_email)
+
+    def test_website_user_preferred_over_admin(self):
+        website = User(pk=1, name="Same", email="same@example.com", created_source="website")
+        admin = User(pk=2, name="Same", email="same@example.com", created_source="admin")
+        main, dup = select_canonical_user(admin, website)
+        self.assertEqual(main.pk, 1)
+        self.assertEqual(dup.pk, 2)
 
     def test_both_same_email_older_is_main(self):
         """
@@ -258,8 +279,24 @@ class MergeUsersIntegrationTest(TestCase):
     """
 
     def _make_user(self, name, email=None, password=None):
-        """Create user without triggering signal-based auto-merge."""
-        return User.objects.create_user(name=name, email=email, password=password)
+        """Create a user; allow email=None (manager enforces email, model allows null)."""
+        from django.db.models.signals import post_save
+
+        from account.signals import trigger_user_merge_on_create
+
+        post_save.disconnect(trigger_user_merge_on_create, sender=User)
+        try:
+            if email:
+                return User.objects.create_user(name=name, email=email, password=password)
+            user = User(name=name, email=None)
+            if password:
+                user.set_password(password)
+            else:
+                user.set_unusable_password()
+            user.save()
+            return user
+        finally:
+            post_save.connect(trigger_user_merge_on_create, sender=User)
 
     def _make_profile(self, user, phone=None, notes=None, address=None):
         return Profile.objects.create(user=user, phone=phone, notes=notes, address=address)
@@ -277,9 +314,8 @@ class MergeUsersIntegrationTest(TestCase):
         merge_users(new_user)
 
         old_user.refresh_from_db()
-        new_user.refresh_from_db()
         self.assertTrue(old_user.is_active)
-        self.assertFalse(new_user.is_active)  # duplicate deactivated
+        self.assertFalse(User.objects.filter(pk=new_user.pk).exists())  # duplicate deleted
 
     def test_similar_name_above_threshold_merges(self):
         """Name similarity ≥ threshold triggers a merge."""
@@ -288,8 +324,7 @@ class MergeUsersIntegrationTest(TestCase):
 
         merge_users(new_user)
 
-        new_user.refresh_from_db()
-        self.assertFalse(new_user.is_active)
+        self.assertFalse(User.objects.filter(pk=new_user.pk).exists())
 
     def test_different_names_no_merge(self):
         """Names below threshold: no merge, both users remain active."""
@@ -326,6 +361,7 @@ class MergeUsersIntegrationTest(TestCase):
 
         main.refresh_from_db()
         self.assertEqual(main.name, "Alice Smith")
+        self.assertFalse(User.objects.filter(pk=dup.pk).exists())
 
     # ── Address conflict ────────────────────────────────────────────────────
 
@@ -374,6 +410,7 @@ class MergeUsersIntegrationTest(TestCase):
         main_profile = Profile.objects.get(user=main)
         self.assertIn("07111111111", main_profile.phone)
         self.assertIn("07222222222", main_profile.phone)
+        self.assertFalse(User.objects.filter(pk=dup.pk).exists())
 
     def test_phone_only_on_dup_copied_to_main(self):
         """Main has no phone; dup's phone is copied across."""
@@ -387,6 +424,7 @@ class MergeUsersIntegrationTest(TestCase):
 
         main_profile = Profile.objects.get(user=main)
         self.assertEqual(main_profile.phone, "07333333333")
+        self.assertFalse(User.objects.filter(pk=dup.pk).exists())
 
     # ── Empty-field filling ─────────────────────────────────────────────────
 
@@ -402,6 +440,7 @@ class MergeUsersIntegrationTest(TestCase):
 
         main_profile = Profile.objects.get(user=main)
         self.assertEqual(main_profile.notes, "VIP customer")
+        self.assertFalse(User.objects.filter(pk=dup.pk).exists())
 
     def test_is_email_verified_copied_from_dup_to_main(self):
         """Main is not email-verified but dup is: flag is copied."""
@@ -414,6 +453,7 @@ class MergeUsersIntegrationTest(TestCase):
 
         main.refresh_from_db()
         self.assertTrue(main.is_email_verified)
+        self.assertFalse(User.objects.filter(pk=dup.pk).exists())
 
     # ── Related objects ─────────────────────────────────────────────────────
 
@@ -430,6 +470,7 @@ class MergeUsersIntegrationTest(TestCase):
 
         order.refresh_from_db()
         self.assertEqual(order.customer, main)
+        self.assertFalse(User.objects.filter(pk=dup.pk).exists())
 
     def test_profile_reassigned_when_main_has_no_profile(self):
         """Dup's profile is reassigned to main when main has none."""
@@ -442,6 +483,7 @@ class MergeUsersIntegrationTest(TestCase):
 
         profile.refresh_from_db()
         self.assertEqual(profile.user, main)
+        self.assertFalse(User.objects.filter(pk=dup.pk).exists())
 
     # ── Signal trigger ──────────────────────────────────────────────────────
 
@@ -454,12 +496,14 @@ class MergeUsersIntegrationTest(TestCase):
         # Creating a second user with a normalised-identical name should
         # trigger the signal, which will deactivate the new user (it has no
         # email, so the older user with email is main).
-        new_user = User.objects.create_user(name="signal test user")
+        # Manager enforces email; create a no-email user via model save to exercise signal.
+        new_user = User(name="signal test user", email=None)
+        new_user.set_unusable_password()
+        new_user.save()
 
-        new_user.refresh_from_db()
         existing.refresh_from_db()
 
-        self.assertFalse(new_user.is_active)
+        self.assertFalse(User.objects.filter(pk=new_user.pk).exists())
         self.assertTrue(existing.is_active)
 
     # ── Safety: no IntegrityError ───────────────────────────────────────────

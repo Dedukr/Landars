@@ -57,6 +57,23 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     is_email_verified = models.BooleanField(default=False)
+
+    CREATED_SOURCE_WEBSITE = "website"
+    CREATED_SOURCE_ADMIN = "admin"
+    CREATED_SOURCE_SYSTEM = "system"
+    CREATED_SOURCE_UNKNOWN = "unknown"
+    CREATED_SOURCE_CHOICES = (
+        (CREATED_SOURCE_WEBSITE, "Website"),
+        (CREATED_SOURCE_ADMIN, "Admin"),
+        (CREATED_SOURCE_SYSTEM, "System"),
+        (CREATED_SOURCE_UNKNOWN, "Unknown"),
+    )
+    created_source = models.CharField(
+        max_length=20,
+        choices=CREATED_SOURCE_CHOICES,
+        default=CREATED_SOURCE_UNKNOWN,
+        db_index=True,
+    )
     objects = CustomUserManager()
 
     USERNAME_FIELD = "email"  # field used to log in
