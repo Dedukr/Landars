@@ -2,6 +2,8 @@
 
 import { ReactNode, useState } from "react";
 
+import { adminDesign } from "@/lib/admin-design";
+import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/admin/ui/tooltip";
 import { AdminMobileSidebar } from "./AdminMobileSidebar";
 import { AdminSidebar } from "./AdminSidebar";
@@ -38,7 +40,9 @@ export function AdminShell({ children }: AdminShellProps) {
               }
             />
 
-            <main className="flex-1 px-4 py-4 sm:px-6 lg:px-8">{children}</main>
+            <main className={cn("flex-1", adminDesign.pagePadding)}>
+              <div className={adminDesign.pageSection}>{children}</div>
+            </main>
           </div>
         </div>
       </div>

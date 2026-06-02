@@ -1,6 +1,8 @@
 import { AdminNavItem } from "./AdminNavItem";
 import type { AdminNavGroup as AdminNavGroupType } from "./admin-nav-items";
 
+import { adminDesign } from "@/lib/admin-design";
+
 type AdminNavGroupProps = {
   group: AdminNavGroupType;
   collapsed?: boolean;
@@ -15,7 +17,7 @@ export function AdminNavGroup({
   return (
     <div>
       {!collapsed ? (
-        <p className="mb-2 px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <p className={`mb-2 px-2 ${adminDesign.smallLabel}`}>
           {group.label}
         </p>
       ) : null}

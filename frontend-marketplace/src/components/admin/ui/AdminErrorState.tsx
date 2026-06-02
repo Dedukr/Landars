@@ -1,5 +1,7 @@
 import { AlertTriangle } from "lucide-react";
 
+import { adminDesign } from "@/lib/admin-design";
+import { cn } from "@/lib/utils";
 import { Button } from "./button";
 
 type AdminErrorStateProps = {
@@ -14,12 +16,17 @@ export function AdminErrorState({
   onRetry,
 }: AdminErrorStateProps) {
   return (
-    <div className="flex min-h-[280px] flex-col items-center justify-center rounded-xl border bg-card p-8 text-center">
+    <div
+      className={cn(
+        "flex min-h-[280px] flex-col items-center justify-center p-8 text-center",
+        adminDesign.card,
+      )}
+    >
       <div className="mb-4 rounded-full bg-destructive/10 p-3 text-destructive">
         <AlertTriangle className="h-6 w-6" />
       </div>
-      <h2 className="text-base font-semibold">{title}</h2>
-      <p className="mt-2 max-w-md text-sm text-muted-foreground">{description}</p>
+      <h2 className={adminDesign.cardTitle}>{title}</h2>
+      <p className={`mt-2 max-w-md ${adminDesign.description}`}>{description}</p>
       {onRetry ? (
         <Button className="mt-5" onClick={onRetry}>
           Try again

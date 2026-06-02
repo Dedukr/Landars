@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { adminDesign } from "@/lib/admin-design";
 import { cn } from "@/lib/utils";
 
 type AdminCardProps = {
@@ -16,12 +17,12 @@ export function AdminCard({
   className,
 }: AdminCardProps) {
   return (
-    <section className={cn("rounded-xl border bg-card p-5 shadow-sm", className)}>
+    <section className={cn(adminDesign.card, className)}>
       {title || description ? (
         <div className="mb-4">
-          {title ? <h2 className="text-base font-semibold">{title}</h2> : null}
+          {title ? <h2 className={adminDesign.cardTitle}>{title}</h2> : null}
           {description ? (
-            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+            <p className={`mt-1 ${adminDesign.description}`}>{description}</p>
           ) : null}
         </div>
       ) : null}

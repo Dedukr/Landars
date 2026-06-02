@@ -36,19 +36,19 @@ export default function DashboardPage() {
 
   if (isLoading) {
     return (
-      <div>
+      <>
         <AdminPageHeader
           title="Dashboard"
           description="Overview of LandarsFood operations."
         />
         <AdminLoadingState />
-      </div>
+      </>
     );
   }
 
   if (error) {
     return (
-      <div>
+      <>
         <AdminPageHeader
           title="Dashboard"
           description="Overview of LandarsFood operations."
@@ -58,7 +58,7 @@ export default function DashboardPage() {
           description={error}
           onRetry={() => setReloadKey((value) => value + 1)}
         />
-      </div>
+      </>
     );
   }
 
@@ -99,7 +99,7 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="mt-6 grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-2">
         <AdminCard
           title="Recent activity"
           description="Operational activity will appear here."
