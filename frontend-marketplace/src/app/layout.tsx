@@ -16,8 +16,8 @@ export const metadata: Metadata = {
     default: "Landar's Food — Authentic Eastern European Foods",
     template: "%s | Landar's Food",
   },
-  description:
-    "Shop authentic Eastern European foods delivered across the UK. Freshly sourced sausages, dairy, pastries and more from Landar's Food.",
+  description: "Ukrainian, Slavic, European cuisine.\
+  Homemade semi-prepared products, ready meals, sausages and meat products, fresh bakery items, and desserts.",
   icons: {
     icon: "/landars_food_logo.svg",
   },
