@@ -49,7 +49,7 @@ class CustomUserManager(BaseUserManager):
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
     # Full name is a display field and is NOT unique.
-    name = models.CharField(max_length=255)
+    name = models.CharField(max_length=255, db_index=True)
     # Email is the unique login identifier.
     # Keep DB nullable for legacy rows, but application logic enforces email for all new/updated users.
     email = models.EmailField(null=True, blank=True, unique=True)
