@@ -64,8 +64,11 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     # No host ports — only nginx (and other services) reach Django on the Docker network.
+    # Port 8001 is exposed to host for local frontend dev (npm run dev).
     expose:
       - "8000"
+    ports:
+      - "8001:8000"
     env_file:
       - .env
     volumes:

@@ -9,7 +9,8 @@
  * - Type safety with TypeScript
  */
 
-import { CartItem } from "@/contexts/CartContext";
+import type { CartItem } from "@/contexts/CartContext";
+export type { CartItem };
 
 export interface CartMergeResult {
   mergedCart: CartItem[];

@@ -1,62 +1,85 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Package, ShoppingCart, Truck, Users } from "lucide-react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
-import { AdminCard } from "@/components/admin/ui/AdminCard";
+import { DashboardAlerts } from "@/components/admin/dashboard/DashboardAlerts";
+import { DashboardKPIGrid } from "@/components/admin/dashboard/DashboardKPIGrid";
+import { DashboardPeriodSelector } from "@/components/admin/dashboard/DashboardPeriodSelector";
+import { DashboardRecentOrders } from "@/components/admin/dashboard/DashboardRecentOrders";
+import { DashboardSalesChart } from "@/components/admin/dashboard/DashboardSalesChart";
+import { DashboardStatusBreakdowns } from "@/components/admin/dashboard/DashboardStatusBreakdowns";
+import { DashboardTopProducts } from "@/components/admin/dashboard/DashboardTopProducts";
 import { AdminErrorState } from "@/components/admin/ui/AdminErrorState";
 import { AdminLoadingState } from "@/components/admin/ui/AdminLoadingState";
-import { AdminMetricCard } from "@/components/admin/ui/AdminMetricCard";
-import { DashboardSummary, getDashboardSummary } from "@/lib/api/dashboard";
+import {
+  DashboardData,
+  DashboardPeriod,
+  getDashboardData,
+} from "@/lib/api/dashboard";
 
-export default function DashboardPage() {
-  const [data, setData] = useState<DashboardSummary | null>(null);
+function isValidPeriod(value: string | null): value is DashboardPeriod {
+  return ["7d", "30d", "90d", "this_month"].includes(value ?? "");
+}
+
+function DashboardContent() {
+  const searchParams = useSearchParams();
+  const rawPeriod = searchParams.get("period");
+  const period: DashboardPeriod = isValidPeriod(rawPeriod) ? rawPeriod : "30d";
+
+  const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    async function loadSummary() {
+    let cancelled = false;
+
+    async function load() {
       setIsLoading(true);
       setError(null);
-
       try {
-        const summary = await getDashboardSummary();
-        setData(summary);
+        const result = await getDashboardData(period);
+        if (!cancelled) setData(result);
       } catch {
-        setError("Could not load dashboard summary.");
+        if (!cancelled) setError("Could not load dashboard data.");
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     }
 
-    loadSummary();
-  }, [reloadKey]);
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [period, reloadKey]);
+
+  const header = (
+    <AdminPageHeader
+      title="Dashboard"
+      description="Overview of LandarsFood operations."
+      actions={<DashboardPeriodSelector value={period} />}
+    />
+  );
 
   if (isLoading) {
     return (
       <>
-        <AdminPageHeader
-          title="Dashboard"
-          description="Overview of LandarsFood operations."
-        />
+        {header}
         <AdminLoadingState />
       </>
     );
   }
 
-  if (error) {
+  if (error || !data) {
     return (
       <>
-        <AdminPageHeader
-          title="Dashboard"
-          description="Overview of LandarsFood operations."
-        />
+        {header}
         <AdminErrorState
-          title="Could not load dashboard summary"
-          description={error}
-          onRetry={() => setReloadKey((value) => value + 1)}
+          title="Could not load dashboard"
+          description={error ?? "Unknown error."}
+          onRetry={() => setReloadKey((k) => k + 1)}
         />
       </>
     );
@@ -64,60 +87,40 @@ export default function DashboardPage() {
 
   return (
     <>
-      <AdminPageHeader
-        title="Dashboard"
-        description="Overview of LandarsFood operations."
+      {header}
+
+      {/* KPI cards */}
+      <DashboardKPIGrid kpis={data.kpis} period={period} />
+
+      {/* Sales chart + Alerts */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <DashboardSalesChart data={data.sales_chart} />
+        </div>
+        <DashboardAlerts alerts={data.alerts} />
+      </div>
+
+      {/* Status breakdowns */}
+      <DashboardStatusBreakdowns
+        orderBreakdown={data.order_status_breakdown}
+        invoiceBreakdown={data.invoice_status_breakdown}
+        shipmentBreakdown={data.shipment_status_breakdown}
+        reconciliationBreakdown={data.reconciliation_breakdown}
       />
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <AdminMetricCard
-          title="Orders"
-          value={data?.total_orders ?? "-"}
-          description="Total orders"
-          icon={<ShoppingCart className="h-5 w-5" />}
-        />
-
-        <AdminMetricCard
-          title="Products"
-          value={data?.total_products ?? "-"}
-          description="Products in catalogue"
-          icon={<Package className="h-5 w-5" />}
-        />
-
-        <AdminMetricCard
-          title="Customers"
-          value={data?.total_customers ?? "-"}
-          description="Registered customers"
-          icon={<Users className="h-5 w-5" />}
-        />
-
-        <AdminMetricCard
-          title="Shipments"
-          value={data?.total_shipments ?? "-"}
-          description="Created shipments"
-          icon={<Truck className="h-5 w-5" />}
-        />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <AdminCard
-          title="Recent activity"
-          description="Operational activity will appear here."
-        >
-          <p className="text-sm text-muted-foreground">
-            Activity feed will be connected later.
-          </p>
-        </AdminCard>
-
-        <AdminCard
-          title="Admin notes"
-          description="Important system information."
-        >
-          <p className="text-sm text-muted-foreground">
-            Dashboard foundation is ready.
-          </p>
-        </AdminCard>
+      {/* Top products + Recent orders */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <DashboardTopProducts products={data.top_products} />
+        <DashboardRecentOrders orders={data.recent_orders} />
       </div>
     </>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<AdminLoadingState />}>
+      <DashboardContent />
+    </Suspense>
   );
 }
