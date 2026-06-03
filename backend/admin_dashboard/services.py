@@ -76,20 +76,13 @@ def _month_start() -> datetime:
 
 def _get_today_revenue() -> str:
     """
-    6.1  Today revenue — sum of total_price for paid orders created today.
+    6.1  Today revenue — DB-aggregated revenue for paid orders created today.
 
-    ``Order.total_price`` is a Python property (not a DB column) so we use the
-    same prefetch-and-iterate pattern as ``sum_paid_order_revenue``.
+    Delegates to ``sum_paid_order_revenue`` (section 19) which uses
+    ``Sum(quantity × item_price)`` + delivery adjustments via the ORM.
     """
     start = _today_start()
-    orders = (
-        Order.objects.filter(status=REVENUE_ORDER_STATUS, created_at__gte=start)
-        .prefetch_related("items", "items__product")
-    )
-    total = Decimal("0")
-    for order in orders:
-        total += order_total_amount(order)
-    return money(total)
+    return money(sum_paid_order_revenue(start, timezone.now()))
 
 
 def _get_today_orders() -> int:
@@ -227,6 +220,17 @@ def _get_top_product_sold_quantity(date_from: datetime, date_to: datetime) -> in
 
 
 def get_kpis(date_from: datetime, date_to: datetime) -> dict[str, Any]:
+    """
+    All KPI card values for the selected period.
+
+    Performance (section 19):
+    - Counts use DB ``COUNT()`` via ``_safe_count(qs)``.
+    - Revenue uses ``sum_paid_order_revenue()`` → DB ``Sum(quantity×item_price)``.
+    - ``average_order_value`` is Python arithmetic on the already-computed
+      revenue and count (no additional query).
+    - All per-app helpers (_get_* functions) use DB aggregation; they return 0
+      on ImportError so unavailable apps degrade gracefully.
+    """
     period_orders = _orders_between(date_from, date_to)
     orders_count = _safe_count(period_orders)
 
@@ -286,9 +290,9 @@ def get_sales_chart(date_from: datetime, date_to: datetime) -> list[dict[str, An
 
     Each entry: ``{"date": "YYYY-MM-DD", "revenue": "120.00", "orders": 5}``
 
-    ``Order.total_price`` is a Python property so revenue is accumulated via a
-    Python loop (see ``paid_order_daily_stats``). The order count comes from the
-    same loop to avoid a second query.
+    Revenue and order count are DB-aggregated via ``paid_order_daily_stats``
+    (``TruncDate`` + ``Sum`` + ``Count`` on ``OrderItem``) — no Python loops
+    over order objects.
 
     Gap-filling ensures a continuous date series so frontend charts never need
     to special-case missing days.
