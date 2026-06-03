@@ -2,13 +2,13 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import { DashboardPeriod, PERIOD_OPTIONS } from "@/lib/api/dashboard";
+import { DashboardPeriod, PERIOD_OPTIONS } from "./dashboard.types";
 
 type Props = {
   value: DashboardPeriod;
 };
 
-export function DashboardPeriodSelector({ value }: Props) {
+export function DashboardDateRangeSelector({ value }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();

@@ -3,7 +3,8 @@ import Link from "next/link";
 import { AdminCard } from "@/components/admin/ui/AdminCard";
 import { AdminStatusBadge } from "@/components/admin/ui/AdminStatusBadge";
 import { MoneyText } from "@/components/admin/ui/MoneyText";
-import { RecentOrder } from "@/lib/api/dashboard";
+
+import { RecentOrder } from "./dashboard.types";
 
 type Props = {
   orders: RecentOrder[];
@@ -19,7 +20,7 @@ function formatDateTime(iso: string | null): string {
   });
 }
 
-export function DashboardRecentOrders({ orders }: Props) {
+export function RecentOrdersWidget({ orders }: Props) {
   return (
     <AdminCard title="Recent orders" description="Latest 10 orders">
       {orders.length === 0 ? (

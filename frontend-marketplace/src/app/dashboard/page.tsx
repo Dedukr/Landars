@@ -4,23 +4,23 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
-import { DashboardAlerts } from "@/components/admin/dashboard/DashboardAlerts";
-import { DashboardKPIGrid } from "@/components/admin/dashboard/DashboardKPIGrid";
-import { DashboardPeriodSelector } from "@/components/admin/dashboard/DashboardPeriodSelector";
-import { DashboardRecentOrders } from "@/components/admin/dashboard/DashboardRecentOrders";
+import { DashboardChartsGrid } from "@/components/admin/dashboard/DashboardChartsGrid";
+import { DashboardDateRangeSelector } from "@/components/admin/dashboard/DashboardDateRangeSelector";
+import { DashboardError } from "@/components/admin/dashboard/DashboardError";
+import { DashboardKpiGrid } from "@/components/admin/dashboard/DashboardKpiGrid";
+import { DashboardLoading } from "@/components/admin/dashboard/DashboardLoading";
 import { DashboardTopProducts } from "@/components/admin/dashboard/DashboardTopProducts";
+import { InvoiceStatusDonut } from "@/components/admin/dashboard/InvoiceStatusDonut";
+import { OperationalAlertsWidget } from "@/components/admin/dashboard/OperationalAlertsWidget";
+import { OrderStatusDonut } from "@/components/admin/dashboard/OrderStatusDonut";
 import { OrdersBarChart } from "@/components/admin/dashboard/OrdersBarChart";
+import { RecentOrdersWidget } from "@/components/admin/dashboard/RecentOrdersWidget";
+import { ReconciliationStatusDonut } from "@/components/admin/dashboard/ReconciliationStatusDonut";
 import { SalesAreaChart } from "@/components/admin/dashboard/SalesAreaChart";
-import { StatusDonutChart } from "@/components/admin/dashboard/StatusDonutChart";
+import { ShipmentStatusBar } from "@/components/admin/dashboard/ShipmentStatusBar";
 import { TopProductsBarChart } from "@/components/admin/dashboard/TopProductsBarChart";
-import { AdminCard } from "@/components/admin/ui/AdminCard";
-import { AdminErrorState } from "@/components/admin/ui/AdminErrorState";
-import { AdminLoadingState } from "@/components/admin/ui/AdminLoadingState";
-import {
-  DashboardData,
-  DashboardPeriod,
-  getDashboardData,
-} from "@/lib/api/dashboard";
+import { getDashboardData } from "@/lib/api/adminDashboard";
+import type { DashboardData, DashboardPeriod } from "@/lib/api/adminDashboard";
 
 function isValidPeriod(value: string | null): value is DashboardPeriod {
   return ["7d", "30d", "90d", "this_month"].includes(value ?? "");
@@ -58,19 +58,18 @@ function DashboardContent() {
     <AdminPageHeader
       title="Dashboard"
       description="Overview of sales, orders, payments, shipments, and operational issues."
-      actions={<DashboardPeriodSelector value={period} />}
+      actions={<DashboardDateRangeSelector value={period} />}
     />
   );
 
-  if (isLoading) return <>{header}<AdminLoadingState /></>;
+  if (isLoading) return <>{header}<DashboardLoading /></>;
 
   if (error || !data) {
     return (
       <>
         {header}
-        <AdminErrorState
-          title="Could not load dashboard"
-          description={error ?? "Unknown error."}
+        <DashboardError
+          message={error ?? "Unknown error."}
           onRetry={() => setReloadKey((k) => k + 1)}
         />
       </>
@@ -81,61 +80,34 @@ function DashboardContent() {
     <>
       {header}
 
-      {/* KPI grid */}
-      <DashboardKPIGrid kpis={data.kpis} period={period} />
+      <DashboardKpiGrid kpis={data.kpis} period={period} />
 
-      {/* Row 1 — Revenue + Orders charts */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      {/* Row 1 — Revenue area chart + Orders bar chart */}
+      <DashboardChartsGrid cols={2}>
         <SalesAreaChart data={data.sales_chart} />
         <OrdersBarChart data={data.sales_chart} />
-      </div>
+      </DashboardChartsGrid>
 
-      {/* Row 2 — Status donut charts (order status is the main one for v1) */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <StatusDonutChart
-          title="Orders by status"
-          description="Order status breakdown"
-          data={data.order_status_breakdown}
-        />
-        <StatusDonutChart
-          title="Invoices by status"
-          description="Invoice status breakdown"
-          data={data.invoice_status_breakdown}
-          emptyMessage="No invoices this period."
-        />
-        <StatusDonutChart
-          title="Reconciliation"
-          description="Bank transaction match status"
-          data={data.reconciliation_breakdown}
-          emptyMessage="No bank transactions this period."
-        />
-      </div>
+      {/* Row 2 — Status donuts */}
+      <DashboardChartsGrid cols={3}>
+        <OrderStatusDonut data={data.order_status_breakdown} />
+        <InvoiceStatusDonut data={data.invoice_status_breakdown} />
+        <ReconciliationStatusDonut data={data.reconciliation_breakdown} />
+      </DashboardChartsGrid>
 
-      {/* Row 3 — Top products chart + Shipment status */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      {/* Row 3 — Top products bar chart + Shipment status */}
+      <DashboardChartsGrid cols={2}>
         <TopProductsBarChart products={data.top_products} />
-        {data.shipment_status_breakdown.length > 0 ? (
-          <StatusDonutChart
-            title="Shipments by status"
-            description="Shipment status breakdown"
-            data={data.shipment_status_breakdown}
-          />
-        ) : (
-          <AdminCard title="Shipments by status" description="Shipment status breakdown">
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              No shipments this period.
-            </p>
-          </AdminCard>
-        )}
-      </div>
+        <ShipmentStatusBar data={data.shipment_status_breakdown} />
+      </DashboardChartsGrid>
 
-      {/* Row 4 — Recent orders + Alerts */}
-      <div className="grid gap-4 xl:grid-cols-2">
-        <DashboardRecentOrders orders={data.recent_orders} />
-        <DashboardAlerts alerts={data.alerts} />
-      </div>
+      {/* Row 4 — Recent orders + Operational alerts */}
+      <DashboardChartsGrid cols={2}>
+        <RecentOrdersWidget orders={data.recent_orders} />
+        <OperationalAlertsWidget alerts={data.alerts} />
+      </DashboardChartsGrid>
 
-      {/* Top products table (detail view below charts) */}
+      {/* Top products detail table */}
       <DashboardTopProducts products={data.top_products} />
     </>
   );
@@ -143,7 +115,7 @@ function DashboardContent() {
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={<AdminLoadingState />}>
+    <Suspense fallback={<DashboardLoading />}>
       <DashboardContent />
     </Suspense>
   );

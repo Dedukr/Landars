@@ -2,10 +2,11 @@ import { AlertTriangle, Bell, Truck } from "lucide-react";
 
 import { AdminCard } from "@/components/admin/ui/AdminCard";
 import { MoneyText } from "@/components/admin/ui/MoneyText";
-import { DashboardAlerts as AlertsData } from "@/lib/api/dashboard";
+
+import { DashboardAlerts } from "./dashboard.types";
 
 type Props = {
-  alerts: AlertsData;
+  alerts: DashboardAlerts;
 };
 
 function formatDate(iso: string | null): string {
@@ -16,7 +17,7 @@ function formatDate(iso: string | null): string {
   });
 }
 
-export function DashboardAlerts({ alerts }: Props) {
+export function OperationalAlertsWidget({ alerts }: Props) {
   const totalAlerts =
     alerts.failed_shipments.length +
     alerts.unmatched_transactions.length +
