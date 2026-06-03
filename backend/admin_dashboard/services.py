@@ -305,6 +305,13 @@ def get_sales_chart(date_from: datetime, date_to: datetime) -> list[dict[str, An
 def get_order_status_breakdown(
     date_from: datetime, date_to: datetime
 ) -> list[dict[str, Any]]:
+    """
+    8.  All orders in the selected period grouped by status.
+
+    Every status defined on the Order model is always present in the output
+    (zero-filled for statuses with no orders). This lets the frontend render a
+    complete breakdown without having to handle missing keys.
+    """
     try:
         counts = {
             row["status"]: row["count"]
@@ -323,13 +330,21 @@ def get_order_status_breakdown(
 def get_invoice_status_breakdown(
     date_from: datetime, date_to: datetime
 ) -> list[dict[str, Any]]:
+    """
+    9.  Invoices in the selected period grouped by status.
+
+    Returns ``[]`` if the billing app or Invoice model is unavailable.
+    """
     try:
         from billing.models import Invoice
 
+        end = timezone.now()
+        if date_to > end:
+            end = date_to
         return list(
             Invoice.objects.filter(
                 created_at__gte=date_from,
-                created_at__lte=date_to,
+                created_at__lte=end,
             )
             .values("status")
             .annotate(count=Count("id"))
@@ -342,13 +357,21 @@ def get_invoice_status_breakdown(
 def get_shipment_status_breakdown(
     date_from: datetime, date_to: datetime
 ) -> list[dict[str, Any]]:
+    """
+    10. Shipments in the selected period grouped by status.
+
+    Returns ``[]`` if the shipping app or Shipment model is unavailable.
+    """
     try:
         from shipping.models import Shipment
 
+        end = timezone.now()
+        if date_to > end:
+            end = date_to
         return list(
             Shipment.objects.filter(
                 created_at__gte=date_from,
-                created_at__lte=date_to,
+                created_at__lte=end,
             )
             .values("status")
             .annotate(count=Count("id"))
@@ -361,18 +384,31 @@ def get_shipment_status_breakdown(
 def get_reconciliation_breakdown(
     date_from: datetime, date_to: datetime
 ) -> list[dict[str, Any]]:
+    """
+    11. BankTransactions in the selected period grouped by match status.
+
+    The DB column is ``match_status``; the output key is normalised to
+    ``status`` so all breakdown responses share the same shape.
+
+    Returns ``[]`` if the reconciliation app or BankTransaction model is
+    unavailable.
+    """
     try:
         from reconciliation.models import BankTransaction
 
-        return list(
+        end = timezone.now()
+        if date_to > end:
+            end = date_to
+        rows = (
             BankTransaction.objects.filter(
                 created_at__gte=date_from,
-                created_at__lte=date_to,
+                created_at__lte=end,
             )
             .values("match_status")
             .annotate(count=Count("id"))
             .order_by("-count")
         )
+        return [{"status": row["match_status"], "count": row["count"]} for row in rows]
     except Exception:
         return []
 
@@ -635,11 +671,11 @@ def get_dashboard_data(period: str) -> dict[str, Any]:
         },
         "recent_orders": get_recent_orders(),
         "breakdowns": {
-            "orders_by_status": get_order_status_breakdown(date_from, date_to),
+            "order_status_breakdown": get_order_status_breakdown(date_from, date_to),
             "orders_by_source": get_orders_by_source_breakdown(date_from, date_to),
-            "invoices_by_status": get_invoice_status_breakdown(date_from, date_to),
-            "shipments_by_status": get_shipment_status_breakdown(date_from, date_to),
-            "reconciliation_by_status": get_reconciliation_breakdown(date_from, date_to),
+            "invoice_status_breakdown": get_invoice_status_breakdown(date_from, date_to),
+            "shipment_status_breakdown": get_shipment_status_breakdown(date_from, date_to),
+            "reconciliation_breakdown": get_reconciliation_breakdown(date_from, date_to),
         },
         "top_products": get_top_products(date_from, date_to),
         "alerts": alerts["items"],

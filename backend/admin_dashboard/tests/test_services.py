@@ -17,9 +17,12 @@ from admin_dashboard.services import (
     _get_unmatched_transactions,
     get_alerts,
     get_dashboard_data,
+    get_invoice_status_breakdown,
     get_kpis,
+    get_order_status_breakdown,
     get_reconciliation_breakdown,
     get_sales_chart,
+    get_shipment_status_breakdown,
     get_summary_snapshot,
 )
 
@@ -55,9 +58,74 @@ class AdminDashboardServiceTests(TestCase):
         self.assertIsInstance(alerts["items"], list)
         self.assertIn("pending_orders", alerts)
 
+    # ------------------------------------------------------------------ #
+    # Breakdown tests (sections 8 – 11)                                    #
+    # ------------------------------------------------------------------ #
+
+    def test_order_status_breakdown_contains_all_statuses(self):
+        """8: every defined Order status appears in the breakdown (zero-filled)."""
+        date_from, date_to = get_period_range("7d")
+        rows = get_order_status_breakdown(date_from, date_to)
+        self.assertIsInstance(rows, list)
+        self.assertGreater(len(rows), 0)
+        for row in rows:
+            self.assertIn("status", row)
+            self.assertIn("count", row)
+            self.assertIsInstance(row["count"], int)
+
+    def test_order_status_breakdown_counts_paid_order(self):
+        """8: a paid order increments the 'paid' bucket."""
+        Order.objects.create(
+            customer=self.customer,
+            status="paid",
+            delivery_date=timezone.localdate(),
+            delivery_date_order_id=Order.objects.count() + 1,
+        )
+        date_from, date_to = get_period_range("7d")
+        rows = get_order_status_breakdown(date_from, date_to)
+        paid_row = next((r for r in rows if r["status"] == "paid"), None)
+        self.assertIsNotNone(paid_row)
+        self.assertGreaterEqual(paid_row["count"], 1)
+
+    def test_invoice_status_breakdown_returns_list(self):
+        """9: returns a list (empty is fine when no invoices exist in period)."""
+        date_from, date_to = get_period_range("7d")
+        rows = get_invoice_status_breakdown(date_from, date_to)
+        self.assertIsInstance(rows, list)
+        for row in rows:
+            self.assertIn("status", row)
+            self.assertIn("count", row)
+
+    def test_shipment_status_breakdown_returns_list(self):
+        """10: returns a list (empty is fine when no shipments exist in period)."""
+        date_from, date_to = get_period_range("7d")
+        rows = get_shipment_status_breakdown(date_from, date_to)
+        self.assertIsInstance(rows, list)
+        for row in rows:
+            self.assertIn("status", row)
+            self.assertIn("count", row)
+
     def test_get_reconciliation_breakdown_returns_list(self):
+        """11: returns a list; each entry uses key 'status' (not 'match_status')."""
         rows = get_reconciliation_breakdown(*get_period_range("7d"))
         self.assertIsInstance(rows, list)
+        for row in rows:
+            self.assertIn("status", row)
+            self.assertNotIn("match_status", row)
+
+    def test_breakdown_keys_in_dashboard_payload(self):
+        """8-11: get_dashboard_data uses the canonical breakdown key names."""
+        data = get_dashboard_data("7d")
+        breakdowns = data["breakdowns"]
+        self.assertIn("order_status_breakdown", breakdowns)
+        self.assertIn("invoice_status_breakdown", breakdowns)
+        self.assertIn("shipment_status_breakdown", breakdowns)
+        self.assertIn("reconciliation_breakdown", breakdowns)
+        # Old key names must not be present
+        self.assertNotIn("orders_by_status", breakdowns)
+        self.assertNotIn("invoices_by_status", breakdowns)
+        self.assertNotIn("shipments_by_status", breakdowns)
+        self.assertNotIn("reconciliation_by_status", breakdowns)
 
     def test_get_dashboard_data_composes_sections(self):
         Order.objects.create(
@@ -81,7 +149,7 @@ class AdminDashboardServiceTests(TestCase):
         self.assertIn("charts", data)
         self.assertIn("sales_chart", data["charts"])
         self.assertIn("breakdowns", data)
-        self.assertIn("reconciliation_by_status", data["breakdowns"])
+        self.assertIn("reconciliation_breakdown", data["breakdowns"])
         self.assertGreaterEqual(data["kpis"]["orders_count"], 1)
         self.assertIsInstance(data["alerts"], list)
 
