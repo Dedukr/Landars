@@ -56,8 +56,13 @@ class AdminDashboardAPITests(TestCase):
         self.assertIn("top_products", response.data)
         self.assertIn("alerts", response.data)
         self.assertIn("summary", response.data)
-        self.assertIn("revenue_by_day", response.data["charts"])
-        self.assertIn("orders_by_day", response.data["charts"])
+        self.assertIn("sales_chart", response.data["charts"])
+        # Each entry must have date, revenue, orders
+        if response.data["charts"]["sales_chart"]:
+            entry = response.data["charts"]["sales_chart"][0]
+            self.assertIn("date", entry)
+            self.assertIn("revenue", entry)
+            self.assertIn("orders", entry)
 
     def test_invalid_period_defaults_to_30d(self):
         self.client.force_authenticate(user=self.staff)

@@ -7,18 +7,19 @@ from django.utils import timezone
 
 from admin_dashboard.periods import get_period_range
 from admin_dashboard.services import (
+    _get_credit_notes_this_month,
+    _get_failed_notifications,
+    _get_failed_shipments,
+    _get_invoices_this_month,
     _get_today_orders,
     _get_today_revenue,
     _get_top_product_sold_quantity,
     _get_unmatched_transactions,
-    _get_failed_shipments,
-    _get_failed_notifications,
-    _get_invoices_this_month,
-    _get_credit_notes_this_month,
     get_alerts,
     get_dashboard_data,
     get_kpis,
     get_reconciliation_breakdown,
+    get_sales_chart,
     get_summary_snapshot,
 )
 
@@ -78,8 +79,7 @@ class AdminDashboardServiceTests(TestCase):
         self.assertEqual(data["period"], "7d")
         self.assertIn("kpis", data)
         self.assertIn("charts", data)
-        self.assertIn("revenue_by_day", data["charts"])
-        self.assertIn("orders_by_day", data["charts"])
+        self.assertIn("sales_chart", data["charts"])
         self.assertIn("breakdowns", data)
         self.assertIn("reconciliation_by_status", data["breakdowns"])
         self.assertGreaterEqual(data["kpis"]["orders_count"], 1)
@@ -217,3 +217,62 @@ class AdminDashboardServiceTests(TestCase):
         # Must be parseable as Decimal and have 2 dp
         parsed = Decimal(aov)
         self.assertEqual(aov, f"{parsed.quantize(Decimal('0.01'))}")
+
+    # ------------------------------------------------------------------ #
+    # Sales chart tests (section 7)                                        #
+    # ------------------------------------------------------------------ #
+
+    def test_sales_chart_entry_has_required_keys(self):
+        """7: each entry has date, revenue, orders."""
+        date_from, date_to = get_period_range("7d")
+        chart = get_sales_chart(date_from, date_to)
+        self.assertIsInstance(chart, list)
+        # 7-day window → always 7 or 8 entries (gap-filled)
+        self.assertGreaterEqual(len(chart), 7)
+        for entry in chart:
+            self.assertIn("date", entry)
+            self.assertIn("revenue", entry)
+            self.assertIn("orders", entry)
+
+    def test_sales_chart_gaps_filled_with_zeros(self):
+        """7: days with no paid orders appear as revenue=0.00, orders=0."""
+        date_from, date_to = get_period_range("7d")
+        chart = get_sales_chart(date_from, date_to)
+        zero_days = [e for e in chart if e["orders"] == 0]
+        # In an empty DB all days are zero-filled
+        self.assertGreater(len(zero_days), 0)
+        for entry in zero_days:
+            self.assertEqual(entry["revenue"], "0.00")
+            self.assertEqual(entry["orders"], 0)
+
+    def test_sales_chart_includes_paid_order_on_its_day(self):
+        """7: a paid order's revenue and count appear on the correct date."""
+        order = Order.objects.create(
+            customer=self.customer,
+            status="paid",
+            delivery_date=timezone.localdate(),
+            delivery_date_order_id=Order.objects.count() + 1,
+        )
+        OrderItem.objects.create(
+            order=order,
+            product=self.product,
+            quantity=Decimal("4"),
+            item_name=self.product.name,
+            item_price=self.product.base_price,
+        )
+        date_from, date_to = get_period_range("7d")
+        chart = get_sales_chart(date_from, date_to)
+        today_str = timezone.localdate().isoformat()
+        today_entry = next((e for e in chart if e["date"] == today_str), None)
+        self.assertIsNotNone(today_entry, "Today's date must appear in 7d chart")
+        self.assertGreaterEqual(Decimal(today_entry["revenue"]), Decimal("50.00"))
+        self.assertGreaterEqual(today_entry["orders"], 1)
+
+    def test_sales_chart_revenue_is_two_decimal_string(self):
+        """7: revenue field is always a two-decimal string."""
+        date_from, date_to = get_period_range("7d")
+        for entry in get_sales_chart(date_from, date_to):
+            rev = entry["revenue"]
+            self.assertIsInstance(rev, str)
+            parsed = Decimal(rev)
+            self.assertEqual(rev, f"{parsed.quantize(Decimal('0.01'))}")

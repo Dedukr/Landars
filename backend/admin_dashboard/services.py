@@ -7,14 +7,14 @@ from typing import Any
 from account.models import CustomUser
 from api.models import Order, OrderItem, Product
 from django.db.models import Count, DecimalField, F, Sum, Value
-from django.db.models.functions import Coalesce, TruncDate
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from admin_dashboard.periods import get_period_range, normalize_period
 from admin_dashboard.revenue import (
     REVENUE_ORDER_STATUS,
     order_total_amount,
-    paid_order_revenue_by_day,
+    paid_order_daily_stats,
     paid_orders_in_period,
     sum_paid_order_revenue,
 )
@@ -266,30 +266,38 @@ def get_kpis(date_from: datetime, date_to: datetime) -> dict[str, Any]:
 
 
 def get_sales_chart(date_from: datetime, date_to: datetime) -> list[dict[str, Any]]:
-    """Daily revenue from paid orders (sum of order totals)."""
-    try:
-        return [
-            {"date": day.isoformat(), "value": _decimal_str(amount)}
-            for day, amount in paid_order_revenue_by_day(date_from, date_to)
-        ]
-    except Exception:
-        return []
+    """
+    Daily revenue and order count for the selected period, gaps filled with zeros.
 
+    Each entry: ``{"date": "YYYY-MM-DD", "revenue": "120.00", "orders": 5}``
 
-def _get_orders_chart(date_from: datetime, date_to: datetime) -> list[dict[str, Any]]:
+    ``Order.total_price`` is a Python property so revenue is accumulated via a
+    Python loop (see ``paid_order_daily_stats``). The order count comes from the
+    same loop to avoid a second query.
+
+    Gap-filling ensures a continuous date series so frontend charts never need
+    to special-case missing days.
+    """
     try:
-        rows = (
-            _orders_between(date_from, date_to)
-            .annotate(day=TruncDate("created_at"))
-            .values("day")
-            .annotate(value=Count("id"))
-            .order_by("day")
-        )
-        return [
-            {"date": row["day"].isoformat(), "value": row["value"] or 0}
-            for row in rows
-            if row["day"]
-        ]
+        stats: dict[date, dict[str, Any]] = {
+            day: {"revenue": rev, "orders": cnt}
+            for day, rev, cnt in paid_order_daily_stats(date_from, date_to)
+        }
+        start = date_from.date()
+        end = date_to.date()
+        result: list[dict[str, Any]] = []
+        current = start
+        while current <= end:
+            entry = stats.get(current, {"revenue": Decimal("0"), "orders": 0})
+            result.append(
+                {
+                    "date": current.isoformat(),
+                    "revenue": _decimal_str(entry["revenue"]),
+                    "orders": entry["orders"],
+                }
+            )
+            current += timedelta(days=1)
+        return result
     except Exception:
         return []
 
@@ -623,8 +631,7 @@ def get_dashboard_data(period: str) -> dict[str, Any]:
         "period_end": date_to.isoformat(),
         "kpis": get_kpis(date_from, date_to),
         "charts": {
-            "revenue_by_day": get_sales_chart(date_from, date_to),
-            "orders_by_day": _get_orders_chart(date_from, date_to),
+            "sales_chart": get_sales_chart(date_from, date_to),
         },
         "recent_orders": get_recent_orders(),
         "breakdowns": {

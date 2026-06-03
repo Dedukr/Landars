@@ -59,11 +59,19 @@ def sum_paid_order_revenue(date_from: datetime, date_to: datetime) -> Decimal:
     return total
 
 
-def paid_order_revenue_by_day(
+def paid_order_daily_stats(
     date_from: datetime, date_to: datetime,
-) -> list[tuple[date, Decimal]]:
-    """Return sorted (day, revenue) pairs from paid orders in the period."""
-    by_day: dict[date, Decimal] = defaultdict(lambda: Decimal("0"))
+) -> list[tuple[date, Decimal, int]]:
+    """
+    Return sorted ``(day, revenue, order_count)`` triples for paid orders in
+    the period.
+
+    ``Order.total_price`` is a Python property so revenue must be accumulated
+    via a Python loop (not a DB ``Sum``). The order count is tracked in the
+    same loop to avoid a second query.
+    """
+    # Each entry: [cumulative_revenue, order_count]
+    by_day: dict[date, list] = defaultdict(lambda: [Decimal("0"), 0])
     orders = paid_orders_in_period(date_from, date_to).prefetch_related(
         "items",
         "items__product",
@@ -72,5 +80,6 @@ def paid_order_revenue_by_day(
         if not order.created_at:
             continue
         day = order.created_at.date()
-        by_day[day] += order_total_amount(order)
-    return sorted(by_day.items())
+        by_day[day][0] += order_total_amount(order)
+        by_day[day][1] += 1
+    return [(d, v[0], v[1]) for d, v in sorted(by_day.items())]
