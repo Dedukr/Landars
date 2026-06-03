@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
@@ -19,40 +19,23 @@ import { ReconciliationStatusDonut } from "@/components/admin/dashboard/Reconcil
 import { SalesAreaChart } from "@/components/admin/dashboard/SalesAreaChart";
 import { ShipmentStatusBar } from "@/components/admin/dashboard/ShipmentStatusBar";
 import { TopProductsBarChart } from "@/components/admin/dashboard/TopProductsBarChart";
-import { getDashboardData } from "@/lib/api/adminDashboard";
-import type { DashboardData, DashboardPeriod } from "@/lib/api/adminDashboard";
+import { useDashboard } from "@/hooks/useDashboard";
+import type { DashboardPeriod } from "@/lib/admin/dashboard";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function isValidPeriod(value: string | null): value is DashboardPeriod {
   return ["7d", "30d", "90d", "this_month"].includes(value ?? "");
 }
+
+// ─── Inner component (needs useSearchParams → wrapped in Suspense) ────────────
 
 function DashboardContent() {
   const searchParams = useSearchParams();
   const rawPeriod = searchParams.get("period");
   const period: DashboardPeriod = isValidPeriod(rawPeriod) ? rawPeriod : "30d";
 
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const result = await getDashboardData(period);
-        if (!cancelled) setData(result);
-      } catch {
-        if (!cancelled) setError("Could not load dashboard data.");
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, [period, reloadKey]);
+  const { data, isLoading, error, refetch } = useDashboard(period);
 
   const header = (
     <AdminPageHeader
@@ -68,10 +51,7 @@ function DashboardContent() {
     return (
       <>
         {header}
-        <DashboardError
-          message={error ?? "Unknown error."}
-          onRetry={() => setReloadKey((k) => k + 1)}
-        />
+        <DashboardError message={error ?? "Unknown error."} onRetry={refetch} />
       </>
     );
   }
@@ -82,36 +62,38 @@ function DashboardContent() {
 
       <DashboardKpiGrid kpis={data.kpis} period={period} />
 
-      {/* Row 1 — Revenue area chart + Orders bar chart */}
+      {/* Row 1 — Revenue area chart  +  Orders bar chart */}
       <DashboardChartsGrid cols={2}>
         <SalesAreaChart data={data.sales_chart} />
         <OrdersBarChart data={data.sales_chart} />
       </DashboardChartsGrid>
 
-      {/* Row 2 — Status donuts */}
+      {/* Row 2 — Status donut charts */}
       <DashboardChartsGrid cols={3}>
         <OrderStatusDonut data={data.order_status_breakdown} />
         <InvoiceStatusDonut data={data.invoice_status_breakdown} />
         <ReconciliationStatusDonut data={data.reconciliation_breakdown} />
       </DashboardChartsGrid>
 
-      {/* Row 3 — Top products bar chart + Shipment status */}
+      {/* Row 3 — Top products  +  Shipment status */}
       <DashboardChartsGrid cols={2}>
         <TopProductsBarChart products={data.top_products} />
         <ShipmentStatusBar data={data.shipment_status_breakdown} />
       </DashboardChartsGrid>
 
-      {/* Row 4 — Recent orders + Operational alerts */}
+      {/* Row 4 — Recent orders  +  Operational alerts */}
       <DashboardChartsGrid cols={2}>
         <RecentOrdersWidget orders={data.recent_orders} />
         <OperationalAlertsWidget alerts={data.alerts} />
       </DashboardChartsGrid>
 
-      {/* Top products detail table */}
+      {/* Detail table */}
       <DashboardTopProducts products={data.top_products} />
     </>
   );
 }
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   return (
