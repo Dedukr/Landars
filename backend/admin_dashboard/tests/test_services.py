@@ -222,18 +222,23 @@ class AdminDashboardServiceTests(TestCase):
         self.assertLessEqual(len(rows), 5)
 
     def test_breakdown_keys_in_dashboard_payload(self):
-        """8-11: get_dashboard_data uses the canonical breakdown key names."""
+        """8-11/17: breakdown lists are flat top-level keys in the payload."""
         data = get_dashboard_data("7d")
-        breakdowns = data["breakdowns"]
-        self.assertIn("order_status_breakdown", breakdowns)
-        self.assertIn("invoice_status_breakdown", breakdowns)
-        self.assertIn("shipment_status_breakdown", breakdowns)
-        self.assertIn("reconciliation_breakdown", breakdowns)
-        # Old key names must not be present
-        self.assertNotIn("orders_by_status", breakdowns)
-        self.assertNotIn("invoices_by_status", breakdowns)
-        self.assertNotIn("shipments_by_status", breakdowns)
-        self.assertNotIn("reconciliation_by_status", breakdowns)
+        # Flat top-level keys (section 17)
+        for key in (
+            "order_status_breakdown",
+            "invoice_status_breakdown",
+            "shipment_status_breakdown",
+            "reconciliation_breakdown",
+        ):
+            self.assertIn(key, data, msg=f"Missing top-level key: {key}")
+            self.assertIsInstance(data[key], list)
+        # Old nested wrapper must not exist
+        self.assertNotIn("breakdowns", data)
+        # Old key names must not appear at top level
+        for old_key in ("orders_by_status", "invoices_by_status",
+                        "shipments_by_status", "reconciliation_by_status"):
+            self.assertNotIn(old_key, data)
 
     def test_get_dashboard_data_composes_sections(self):
         Order.objects.create(
@@ -254,12 +259,15 @@ class AdminDashboardServiceTests(TestCase):
         data = get_dashboard_data("7d")
         self.assertEqual(data["period"], "7d")
         self.assertIn("kpis", data)
-        self.assertIn("charts", data)
-        self.assertIn("sales_chart", data["charts"])
-        self.assertIn("breakdowns", data)
-        self.assertIn("reconciliation_breakdown", data["breakdowns"])
+        # 17: sales_chart is a flat top-level key (not nested under charts)
+        self.assertIn("sales_chart", data)
+        self.assertNotIn("charts", data)
+        # 17: breakdown lists are flat top-level keys (not nested under breakdowns)
+        self.assertIn("order_status_breakdown", data)
+        self.assertIn("reconciliation_breakdown", data)
+        self.assertNotIn("breakdowns", data)
         self.assertGreaterEqual(data["kpis"]["orders_count"], 1)
-        # 14: alerts is now a dict of record lists, not a flat list
+        # 14: alerts is a dict of record lists
         self.assertIsInstance(data["alerts"], dict)
         self.assertIn("failed_shipments", data["alerts"])
         self.assertIn("unmatched_transactions", data["alerts"])
@@ -282,7 +290,7 @@ class AdminDashboardServiceTests(TestCase):
             # period KPIs
             "revenue",
             "orders_count",
-            "paid_orders_count",
+            "paid_orders",
             "average_order_value",
             "pending_orders",
             # today KPIs (6.1, 6.2)

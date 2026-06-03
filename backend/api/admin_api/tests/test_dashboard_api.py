@@ -49,17 +49,18 @@ class AdminDashboardAPITests(TestCase):
         response = self.client.get(self.url, {"period": "30d"})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["period"], "30d")
-        self.assertIn("kpis", response.data)
-        self.assertIn("charts", response.data)
-        self.assertIn("recent_orders", response.data)
-        self.assertIn("breakdowns", response.data)
-        self.assertIn("top_products", response.data)
-        self.assertIn("alerts", response.data)
-        self.assertIn("summary", response.data)
-        self.assertIn("sales_chart", response.data["charts"])
-        # Each entry must have date, revenue, orders
-        if response.data["charts"]["sales_chart"]:
-            entry = response.data["charts"]["sales_chart"][0]
+        # 17: all required top-level keys present
+        for key in ("kpis", "sales_chart", "order_status_breakdown",
+                    "invoice_status_breakdown", "shipment_status_breakdown",
+                    "reconciliation_breakdown", "top_products", "recent_orders",
+                    "alerts", "summary"):
+            self.assertIn(key, response.data, msg=f"Missing top-level key: {key}")
+        # 17: old nested wrappers must not appear
+        self.assertNotIn("charts", response.data)
+        self.assertNotIn("breakdowns", response.data)
+        # sales_chart entries have the correct shape
+        if response.data["sales_chart"]:
+            entry = response.data["sales_chart"][0]
             self.assertIn("date", entry)
             self.assertIn("revenue", entry)
             self.assertIn("orders", entry)
@@ -122,8 +123,11 @@ class DashboardServiceTests(TestCase):
         self.assertEqual(data["period"], "7d")
         self.assertIsInstance(data["recent_orders"], list)
         self.assertIsInstance(data["top_products"], list)
-        # 14: alerts is now a dict of record lists grouped by type
+        # 14/17: alerts is a dict of record lists; sales_chart is top-level
         self.assertIsInstance(data["alerts"], dict)
         for key in ("failed_shipments", "unmatched_transactions", "failed_notifications"):
             self.assertIn(key, data["alerts"])
             self.assertIsInstance(data["alerts"][key], list)
+        self.assertIn("sales_chart", data)
+        self.assertNotIn("charts", data)
+        self.assertNotIn("breakdowns", data)

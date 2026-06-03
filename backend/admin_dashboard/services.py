@@ -240,7 +240,8 @@ def get_kpis(date_from: datetime, date_to: datetime) -> dict[str, Any]:
         # --- Period KPIs ---
         "revenue": _decimal_str(revenue),
         "orders_count": orders_count,
-        "paid_orders_count": paid_orders_count,
+        # spec key: paid_orders (was paid_orders_count)
+        "paid_orders": paid_orders_count,
         "new_customers": new_customers,
         "average_order_value": _decimal_str(average_order_value),
         # 6.3  Pending orders — global (need action regardless of period)
@@ -835,24 +836,26 @@ def get_dashboard_data(period: str) -> dict[str, Any]:
     date_from, date_to = get_period_range(period)
 
     return {
+        # Period metadata (informative, not in the spec minimum but useful)
         "period": period_key,
         "period_start": date_from.isoformat(),
         "period_end": date_to.isoformat(),
+        # KPI cards
         "kpis": get_kpis(date_from, date_to),
-        "charts": {
-            "sales_chart": get_sales_chart(date_from, date_to),
-        },
+        # Sales chart — flat top-level key per spec (section 17)
+        "sales_chart": get_sales_chart(date_from, date_to),
+        # Recent orders list
         "recent_orders": get_recent_orders(),
-        "breakdowns": {
-            "order_status_breakdown": get_order_status_breakdown(date_from, date_to),
-            "orders_by_source": get_orders_by_source_breakdown(date_from, date_to),
-            "invoice_status_breakdown": get_invoice_status_breakdown(date_from, date_to),
-            "shipment_status_breakdown": get_shipment_status_breakdown(date_from, date_to),
-            "reconciliation_breakdown": get_reconciliation_breakdown(date_from, date_to),
-        },
+        # Breakdown lists — flat top-level keys per spec (section 17)
+        "order_status_breakdown": get_order_status_breakdown(date_from, date_to),
+        "orders_by_source": get_orders_by_source_breakdown(date_from, date_to),
+        "invoice_status_breakdown": get_invoice_status_breakdown(date_from, date_to),
+        "shipment_status_breakdown": get_shipment_status_breakdown(date_from, date_to),
+        "reconciliation_breakdown": get_reconciliation_breakdown(date_from, date_to),
+        # Top products
         "top_products": get_top_products(date_from, date_to),
-        # 14. Actual alert records grouped by type (see get_alert_records).
-        # KPI counts for alert badges live in kpis (failed_shipments, etc.).
+        # Alert records grouped by type (section 14)
         "alerts": get_alert_records(),
+        # Legacy summary (used by /api/dashboard/summary/ shim)
         "summary": get_summary_snapshot(),
     }

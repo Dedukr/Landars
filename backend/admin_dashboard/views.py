@@ -38,19 +38,23 @@ class AdminDashboardView(APIView):
     ────────────
     period  7d | 30d | 90d | this_month   (default: 30d)
 
-    Response shape
-    ──────────────
+    Response shape (section 17 — flat, always safe)
+    ────────────────────────────────────────────────
     {
         "period": "30d",
         "period_start": "<iso8601>",
         "period_end":   "<iso8601>",
-        "kpis":         { … },
-        "charts":       { "sales_chart": [ … ] },
-        "recent_orders": [ … ],
-        "breakdowns":   { … },
-        "top_products": [ … ],
-        "alerts":       { "failed_shipments": [], … },
-        "summary":      { … }
+        "kpis":                     { today_revenue, today_orders, paid_orders, … },
+        "sales_chart":              [ {date, revenue, orders}, … ],
+        "order_status_breakdown":   [ {status, count}, … ],
+        "orders_by_source":         [ {source, count}, … ],
+        "invoice_status_breakdown": [ {status, count}, … ],
+        "shipment_status_breakdown":[ {status, count}, … ],
+        "reconciliation_breakdown": [ {status, count}, … ],
+        "top_products":             [ {id, name, sold_quantity, …}, … ],
+        "recent_orders":            [ {id, reference, customer_name, …}, … ],
+        "alerts":                   { failed_shipments: [], … },
+        "summary":                  { total_orders, … }
     }
     """
 
