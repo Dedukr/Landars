@@ -19,7 +19,7 @@ from .views import (
 
 urlpatterns = [
     path("dashboard/", include("api.admin_api.urls")),
-    path("admin/", include("api.admin_api.admin_urls")),
+    # /api/admin/dashboard/ is now served by admin_dashboard.urls (backend/urls.py)
     # Product endpoints
     path("products/", ProductList.as_view(), name="product-list"),
     path("products/<int:product_id>/", ProductDetail.as_view(), name="product-detail"),
