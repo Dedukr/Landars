@@ -135,7 +135,7 @@ export type DashboardData = {
   alerts: DashboardAlerts;
 };
 
-// ─── API helper ───────────────────────────────────────────────────────────────
+// ─── API helpers ──────────────────────────────────────────────────────────────
 
 export async function getDashboardData(
   period: DashboardPeriod = "30d"
@@ -144,6 +144,12 @@ export async function getDashboardData(
     `/api/admin/dashboard/?period=${period}`
   );
 }
+
+/**
+ * Spec Section 7 canonical name — delegates to getDashboardData.
+ * Prefer this name in new code; getDashboardData is kept for compatibility.
+ */
+export const fetchAdminDashboard = getDashboardData;
 
 // ─── Backward-compat aliases (old PascalCase / Entry names) ──────────────────
 
