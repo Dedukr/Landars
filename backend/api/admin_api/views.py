@@ -1,26 +1,11 @@
-from rest_framework.response import Response
-from rest_framework.views import APIView
+"""
+Thin routing shim — re-exports views from the canonical admin_dashboard app.
 
-from admin_dashboard.services import get_dashboard_data, get_summary_snapshot
+Keeping views in ``admin_dashboard.views`` makes the dashboard app self-
+contained. This file exists only to satisfy DRF URL conf conventions.
+"""
 
-from .permissions import IsAdminStaffUser
+from admin_dashboard.views import AdminDashboardView as AdminDashboardAPIView
+from admin_dashboard.views import DashboardSummaryView as DashboardSummaryAPIView
 
-
-class DashboardSummaryAPIView(APIView):
-    permission_classes = [IsAdminStaffUser]
-
-    def get(self, request):
-        return Response(get_summary_snapshot())
-
-
-class AdminDashboardAPIView(APIView):
-    """
-    Full admin home dashboard payload.
-    Supports ?period=7d|30d|90d|this_month.
-    """
-
-    permission_classes = [IsAdminStaffUser]
-
-    def get(self, request):
-        period = request.query_params.get("period", "30d")
-        return Response(get_dashboard_data(period))
+__all__ = ["AdminDashboardAPIView", "DashboardSummaryAPIView"]
