@@ -122,4 +122,8 @@ class DashboardServiceTests(TestCase):
         self.assertEqual(data["period"], "7d")
         self.assertIsInstance(data["recent_orders"], list)
         self.assertIsInstance(data["top_products"], list)
-        self.assertIsInstance(data["alerts"], list)
+        # 14: alerts is now a dict of record lists grouped by type
+        self.assertIsInstance(data["alerts"], dict)
+        for key in ("failed_shipments", "unmatched_transactions", "failed_notifications"):
+            self.assertIn(key, data["alerts"])
+            self.assertIsInstance(data["alerts"][key], list)

@@ -15,6 +15,7 @@ from admin_dashboard.services import (
     _get_today_revenue,
     _get_top_product_sold_quantity,
     _get_unmatched_transactions,
+    get_alert_records,
     get_alerts,
     get_dashboard_data,
     get_invoice_status_breakdown,
@@ -258,7 +259,11 @@ class AdminDashboardServiceTests(TestCase):
         self.assertIn("breakdowns", data)
         self.assertIn("reconciliation_breakdown", data["breakdowns"])
         self.assertGreaterEqual(data["kpis"]["orders_count"], 1)
-        self.assertIsInstance(data["alerts"], list)
+        # 14: alerts is now a dict of record lists, not a flat list
+        self.assertIsInstance(data["alerts"], dict)
+        self.assertIn("failed_shipments", data["alerts"])
+        self.assertIn("unmatched_transactions", data["alerts"])
+        self.assertIn("failed_notifications", data["alerts"])
 
     def test_get_summary_snapshot_matches_legacy_shape(self):
         summary = get_summary_snapshot()
@@ -547,3 +552,114 @@ class AdminDashboardServiceTests(TestCase):
             )
         self.assertLessEqual(len(get_recent_orders()), 10)
         self.assertLessEqual(len(get_recent_orders(limit=3)), 3)
+
+    # ------------------------------------------------------------------ #
+    # Alert records tests (section 14)                                     #
+    # ------------------------------------------------------------------ #
+
+    def test_get_alert_records_returns_dict_with_three_keys(self):
+        """14: get_alert_records returns a dict with the three expected keys."""
+        records = get_alert_records()
+        self.assertIsInstance(records, dict)
+        self.assertIn("failed_shipments", records)
+        self.assertIn("unmatched_transactions", records)
+        self.assertIn("failed_notifications", records)
+
+    def test_get_alert_records_values_are_lists(self):
+        """14: each value in the alerts dict is a list."""
+        records = get_alert_records()
+        for key, value in records.items():
+            self.assertIsInstance(value, list, msg=f"alerts['{key}'] must be a list")
+
+    def test_failed_shipments_alert_row_shape(self):
+        """14.1: failed shipment records have the required keys."""
+        try:
+            from shipping.models import Shipment
+
+            order = Order.objects.create(
+                customer=self.customer,
+                status="paid",
+                delivery_date=timezone.localdate(),
+                delivery_date_order_id=Order.objects.count() + 1,
+            )
+            Shipment.objects.create(
+                order=order,
+                status=Shipment.Status.FAILED_FINAL,
+                last_error="Label creation failed",
+            )
+            records = get_alert_records()
+            rows = records["failed_shipments"]
+            self.assertGreater(len(rows), 0)
+            row = rows[0]
+            for key in ("id", "order_id", "status", "message", "created_at"):
+                self.assertIn(key, row, msg=f"Missing key: {key}")
+        except ImportError:
+            self.skipTest("shipping app not available")
+
+    def test_unmatched_transactions_alert_row_shape(self):
+        """14.2: unmatched transaction records have the required keys."""
+        try:
+            from reconciliation.models import BankTransaction, StatementBatch
+
+            batch = StatementBatch.objects.create(
+                filename="test.pdf",
+                file_hash="abc123",
+            )
+            BankTransaction.objects.create(
+                batch=batch,
+                statement_date="01 Jun",
+                amount="50.00",
+                payer_name="J Smith",
+                raw_line="01 Jun J Smith 50.00",
+                match_status=BankTransaction.MatchStatus.UNMATCHED,
+            )
+            records = get_alert_records()
+            rows = records["unmatched_transactions"]
+            self.assertGreater(len(rows), 0)
+            row = rows[0]
+            for key in ("id", "amount", "reference", "created_at"):
+                self.assertIn(key, row, msg=f"Missing key: {key}")
+        except ImportError:
+            self.skipTest("reconciliation app not available")
+
+    def test_failed_notifications_alert_row_shape(self):
+        """14.3: failed notification records have the required keys."""
+        try:
+            from notifications.models import NotificationLog
+
+            order = Order.objects.create(
+                customer=self.customer,
+                status="paid",
+                delivery_date=timezone.localdate(),
+                delivery_date_order_id=Order.objects.count() + 1,
+            )
+            NotificationLog.objects.create(
+                order=order,
+                channel=NotificationLog.Channel.TELEGRAM,
+                event=NotificationLog.Event.NEW_FRONTEND_ORDER,
+                status=NotificationLog.Status.FAILED,
+                error_message="Timeout",
+            )
+            records = get_alert_records()
+            rows = records["failed_notifications"]
+            self.assertGreater(len(rows), 0)
+            row = rows[0]
+            for key in ("id", "order_id", "event", "error", "created_at"):
+                self.assertIn(key, row, msg=f"Missing key: {key}")
+        except ImportError:
+            self.skipTest("notifications app not available")
+
+    def test_alert_records_respect_limit(self):
+        """14: records are capped at the specified limit per type."""
+        records = get_alert_records(limit=2)
+        for key, rows in records.items():
+            self.assertLessEqual(
+                len(rows), 2, msg=f"alerts['{key}'] exceeds limit of 2"
+            )
+
+    def test_dashboard_alerts_is_dict(self):
+        """14: get_dashboard_data['alerts'] is a dict, not a flat list."""
+        data = get_dashboard_data("7d")
+        self.assertIsInstance(data["alerts"], dict)
+        for key in ("failed_shipments", "unmatched_transactions", "failed_notifications"):
+            self.assertIn(key, data["alerts"])

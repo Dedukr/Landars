@@ -697,6 +697,100 @@ def get_alerts() -> dict[str, Any]:
     }
 
 
+def get_alert_records(limit: int = 5) -> dict[str, list[dict[str, Any]]]:
+    """
+    14.  Alert records — actual problem objects for the dashboard alert panel.
+
+    Returns a dict with three keys, each containing up to ``limit`` records.
+    Any app that is unavailable (ImportError or DoesNotExist) falls back to [].
+
+    14.1 failed_shipments  — Shipments in a failed status.
+         Fields: id, order_id, status, message (last_error), created_at.
+
+    14.2 unmatched_transactions — BankTransactions with match_status UNMATCHED.
+         Fields: id, amount, reference (payer_name), statement_date, created_at.
+
+    14.3 failed_notifications  — NotificationLogs with status FAILED, last 7 d.
+         Fields: id, order_id, event, error (error_message), created_at.
+    """
+    # 14.1 ─ Failed shipments
+    failed_shipments: list[dict[str, Any]] = []
+    try:
+        from shipping.models import Shipment
+
+        qs = Shipment.objects.filter(
+            status__in=[
+                Shipment.Status.FAILED_RETRYABLE,
+                Shipment.Status.FAILED_FINAL,
+                Shipment.Status.LABEL_DOWNLOAD_FAILED,
+            ]
+        ).order_by("-created_at")[:limit]
+        for s in qs:
+            failed_shipments.append(
+                {
+                    "id": s.pk,
+                    "order_id": s.order_id,
+                    "status": s.status,
+                    "message": s.last_error or "",
+                    "created_at": s.created_at.isoformat() if s.created_at else None,
+                }
+            )
+    except Exception:
+        pass
+
+    # 14.2 ─ Unmatched bank transactions
+    unmatched_transactions: list[dict[str, Any]] = []
+    try:
+        from reconciliation.models import BankTransaction
+
+        qs = BankTransaction.objects.filter(
+            match_status=BankTransaction.MatchStatus.UNMATCHED
+        ).order_by("-created_at")[:limit]
+        for tx in qs:
+            unmatched_transactions.append(
+                {
+                    "id": tx.pk,
+                    "amount": _decimal_str(tx.amount),
+                    # payer_name is the most human-readable reference on this model;
+                    # the raw statement line is in tx.raw_line if more detail is needed.
+                    "reference": tx.payer_name or "",
+                    "statement_date": tx.statement_date or "",
+                    "created_at": tx.created_at.isoformat() if tx.created_at else None,
+                }
+            )
+    except Exception:
+        pass
+
+    # 14.3 ─ Failed Telegram notifications (last 7 days)
+    failed_notifications: list[dict[str, Any]] = []
+    try:
+        from notifications.models import NotificationLog
+
+        cutoff = timezone.now() - timedelta(days=7)
+        qs = NotificationLog.objects.filter(
+            status=NotificationLog.Status.FAILED,
+            created_at__gte=cutoff,
+        ).order_by("-created_at")[:limit]
+        for n in qs:
+            failed_notifications.append(
+                {
+                    "id": n.pk,
+                    "order_id": n.order_id,
+                    "event": n.event,
+                    "error": n.error_message or "",
+                    "created_at": n.created_at.isoformat() if n.created_at else None,
+                }
+            )
+    except Exception:
+        pass
+
+    return {
+        "failed_shipments": failed_shipments,
+        "unmatched_transactions": unmatched_transactions,
+        "failed_notifications": failed_notifications,
+    }
+
+
 def get_summary_snapshot() -> dict[str, Any]:
     """Legacy-compatible totals for /api/dashboard/summary/."""
     alerts = get_alerts()
@@ -739,7 +833,6 @@ def get_orders_by_source_breakdown(
 def get_dashboard_data(period: str) -> dict[str, Any]:
     period_key = normalize_period(period)
     date_from, date_to = get_period_range(period)
-    alerts = get_alerts()
 
     return {
         "period": period_key,
@@ -758,6 +851,8 @@ def get_dashboard_data(period: str) -> dict[str, Any]:
             "reconciliation_breakdown": get_reconciliation_breakdown(date_from, date_to),
         },
         "top_products": get_top_products(date_from, date_to),
-        "alerts": alerts["items"],
+        # 14. Actual alert records grouped by type (see get_alert_records).
+        # KPI counts for alert badges live in kpis (failed_shipments, etc.).
+        "alerts": get_alert_records(),
         "summary": get_summary_snapshot(),
     }
