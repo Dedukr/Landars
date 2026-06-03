@@ -1,20 +1,27 @@
 /**
- * Dashboard type definitions — re-exported from lib/api/adminDashboard for
- * co-location with the dashboard components.  Import from here inside the
- * dashboard folder; import from @/lib/api/adminDashboard everywhere else.
+ * Dashboard type definitions — co-located with components for easy import
+ * within the dashboard folder.  The canonical source is lib/api/adminDashboard.
+ *
+ * Import from here inside dashboard components; import from
+ * @/lib/api/adminDashboard everywhere else.
  */
 export type {
-  AlertNotification,
-  AlertShipment,
-  AlertTransaction,
+  DashboardAlertItem,
   DashboardAlerts,
   DashboardData,
-  DashboardKPIs,
+  DashboardKpis,
   DashboardPeriod,
   RecentOrder,
+  SalesChartPoint,
+  StatusBreakdownItem,
+  TopProduct,
+  // backward-compat aliases
+  DashboardKPIs,
   SalesChartEntry,
   StatusBreakdownEntry,
-  TopProduct,
+  AlertShipment,
+  AlertTransaction,
+  AlertNotification,
 } from "@/lib/api/adminDashboard";
 
 export { PERIOD_OPTIONS } from "@/lib/api/adminDashboard";

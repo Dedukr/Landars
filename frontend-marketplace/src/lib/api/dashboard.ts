@@ -21,6 +21,12 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
 // Re-exported here for backward compatibility with existing imports.
 
 export type {
+  // New canonical names (spec Section 6)
+  DashboardKpis,
+  SalesChartPoint,
+  StatusBreakdownItem,
+  DashboardAlertItem,
+  // Aliases kept for backward compat
   AlertNotification,
   AlertShipment,
   AlertTransaction,

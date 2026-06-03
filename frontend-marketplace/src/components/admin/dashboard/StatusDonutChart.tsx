@@ -3,7 +3,7 @@
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import { AdminCard } from "@/components/admin/ui/AdminCard";
-import { StatusBreakdownEntry } from "@/lib/api/dashboard";
+import { StatusBreakdownItem } from "./dashboard.types";
 
 // Colour palette — maps known status values to intentional colours.
 // Unknown statuses cycle through the FALLBACK_PALETTE.
@@ -87,7 +87,7 @@ function ChartLegend({ payload }: LegendProps) {
 type Props = {
   title: string;
   description?: string;
-  data: StatusBreakdownEntry[];
+  data: StatusBreakdownItem[];
   emptyMessage?: string;
 };
 

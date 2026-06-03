@@ -11,7 +11,7 @@ import {
 } from "recharts";
 
 import { AdminCard } from "@/components/admin/ui/AdminCard";
-import { TopProduct } from "@/lib/api/dashboard";
+import { TopProduct } from "./dashboard.types";
 
 type Props = {
   products: TopProduct[];
@@ -25,9 +25,10 @@ function truncate(name: string, max = 22): string {
 // Stepped palette from dark to light — avoids CSS var() which SVG fill doesn't resolve
 const BAR_COLORS = ["#1a1a1a", "#404040", "#666666", "#8c8c8c", "#b3b3b3"];
 
+type TooltipPayload = { fullName: string; qty: number; revenue: string };
 type TooltipProps = {
   active?: boolean;
-  payload?: { payload: { fullName: string; qty: number; revenue: string } }[];
+  payload?: { payload: TooltipPayload }[];
 };
 
 function ChartTooltip({ active, payload }: TooltipProps) {
@@ -46,8 +47,8 @@ export function TopProductsBarChart({ products }: Props) {
   const chartData = products.map((p) => ({
     name: truncate(p.name),
     fullName: p.name,
-    qty: parseFloat(p.sold_quantity),
-    revenue: p.revenue,
+    qty: p.sold_quantity,
+    revenue: p.revenue ?? "0.00",
   }));
 
   return (

@@ -13,10 +13,10 @@ import {
 } from "lucide-react";
 
 import { DashboardKpiCard } from "./DashboardKpiCard";
-import { DashboardKPIs, DashboardPeriod, PERIOD_OPTIONS } from "./dashboard.types";
+import { DashboardKpis, DashboardPeriod, PERIOD_OPTIONS } from "./dashboard.types";
 
 type Props = {
-  kpis: DashboardKPIs;
+  kpis: DashboardKpis;
   period: DashboardPeriod;
 };
 
@@ -114,7 +114,7 @@ export function DashboardKpiGrid({ kpis, period }: Props) {
           />
           <DashboardKpiCard
             title="Invoices issued"
-            value={kpis.invoices_issued_this_month}
+            value={kpis.invoices_issued_this_month ?? 0}
             description="This month"
             icon={<FileText className="h-4 w-4" />}
           />
@@ -144,7 +144,7 @@ export function DashboardKpiGrid({ kpis, period }: Props) {
           />
           <DashboardKpiCard
             title="Top product sold"
-            value={kpis.top_product_sold_quantity}
+            value={kpis.top_product_sold_quantity ?? 0}
             description={`Units · ${label}`}
             icon={<AlertTriangle className="h-4 w-4" />}
           />

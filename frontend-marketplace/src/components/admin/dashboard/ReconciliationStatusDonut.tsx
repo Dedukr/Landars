@@ -1,8 +1,8 @@
 import { StatusDonutChart } from "./StatusDonutChart";
-import { StatusBreakdownEntry } from "./dashboard.types";
+import { StatusBreakdownItem } from "./dashboard.types";
 
 type Props = {
-  data: StatusBreakdownEntry[];
+  data: StatusBreakdownItem[];
 };
 
 export function ReconciliationStatusDonut({ data }: Props) {

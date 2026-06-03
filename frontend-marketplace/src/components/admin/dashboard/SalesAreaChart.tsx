@@ -11,10 +11,10 @@ import {
 } from "recharts";
 
 import { AdminCard } from "@/components/admin/ui/AdminCard";
-import { SalesChartEntry } from "@/lib/api/dashboard";
+import { SalesChartPoint } from "./dashboard.types";
 
 type Props = {
-  data: SalesChartEntry[];
+  data: SalesChartPoint[];
 };
 
 function fmt(dateStr: string): string {

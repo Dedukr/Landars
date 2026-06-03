@@ -1,6 +1,6 @@
 import { AdminCard } from "@/components/admin/ui/AdminCard";
 import { MoneyText } from "@/components/admin/ui/MoneyText";
-import { TopProduct } from "@/lib/api/dashboard";
+import { TopProduct } from "./dashboard.types";
 
 type Props = {
   products: TopProduct[];
@@ -39,7 +39,11 @@ export function DashboardTopProducts({ products }: Props) {
                     {product.sold_orders_count}
                   </td>
                   <td className="py-2 text-right tabular-nums">
-                    <MoneyText value={product.revenue} />
+                    {product.revenue != null ? (
+                      <MoneyText value={product.revenue} />
+                    ) : (
+                      "—"
+                    )}
                   </td>
                 </tr>
               ))}
