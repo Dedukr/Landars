@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -9,6 +10,8 @@ from api.models import Order, OrderItem, Product
 from django.db.models import Count, DecimalField, F, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 from admin_dashboard.periods import get_period_range, normalize_period
 from admin_dashboard.revenue import (
@@ -100,17 +103,20 @@ def _get_unmatched_transactions() -> int:
     6.6  Unmatched bank transactions — global, not period-limited.
 
     Uses ``BankTransaction.MatchStatus.UNMATCHED`` (value ``"unmatched"``).
-    Returns 0 if the reconciliation app is unavailable.
+    Returns 0 if the reconciliation app is unavailable (Option B, section 20).
     """
     try:
         from reconciliation.models import BankTransaction
-
+    except ImportError:
+        return 0  # app not installed — expected, no log needed
+    try:
         return _safe_count(
             BankTransaction.objects.filter(
                 match_status=BankTransaction.MatchStatus.UNMATCHED
             )
         )
     except Exception:
+        logger.warning("_get_unmatched_transactions query failed", exc_info=True)
         return 0
 
 
@@ -119,11 +125,13 @@ def _get_failed_shipments() -> int:
     6.7  Failed shipments — global.
 
     Covers FAILED_RETRYABLE, FAILED_FINAL and LABEL_DOWNLOAD_FAILED.
-    Returns 0 if the shipping app is unavailable.
+    Returns 0 if the shipping app is unavailable (Option B, section 20).
     """
     try:
         from shipping.models import Shipment
-
+    except ImportError:
+        return 0
+    try:
         return _safe_count(
             Shipment.objects.filter(
                 status__in=[
@@ -134,6 +142,7 @@ def _get_failed_shipments() -> int:
             )
         )
     except Exception:
+        logger.warning("_get_failed_shipments query failed", exc_info=True)
         return 0
 
 
@@ -142,11 +151,13 @@ def _get_failed_notifications() -> int:
     6.8  Failed Telegram notifications in the last 7 days.
 
     Uses ``NotificationLog.Status.FAILED`` (value ``"failed"``).
-    Returns 0 if the notifications app is unavailable.
+    Returns 0 if the notifications app is unavailable (Option B, section 20).
     """
     try:
         from notifications.models import NotificationLog
-
+    except ImportError:
+        return 0
+    try:
         cutoff = timezone.now() - timedelta(days=7)
         return _safe_count(
             NotificationLog.objects.filter(
@@ -155,6 +166,7 @@ def _get_failed_notifications() -> int:
             )
         )
     except Exception:
+        logger.warning("_get_failed_notifications query failed", exc_info=True)
         return 0
 
 
@@ -163,11 +175,13 @@ def _get_invoices_this_month() -> int:
     6.9  Invoices with status ISSUED created in the current calendar month.
 
     Uses current month, not the selected dashboard period.
-    Returns 0 if the billing app is unavailable.
+    Returns 0 if the billing app is unavailable (Option B, section 20).
     """
     try:
         from billing.models import Invoice
-
+    except ImportError:
+        return 0
+    try:
         return _safe_count(
             Invoice.objects.filter(
                 status=Invoice.Status.ISSUED,
@@ -175,6 +189,7 @@ def _get_invoices_this_month() -> int:
             )
         )
     except Exception:
+        logger.warning("_get_invoices_this_month query failed", exc_info=True)
         return 0
 
 
@@ -182,13 +197,16 @@ def _get_credit_notes_this_month() -> int:
     """
     6.10  Credit notes created in the current calendar month.
 
-    Returns 0 if the CreditNote model is unavailable.
+    Returns 0 if the CreditNote model is unavailable (Option B, section 20).
     """
     try:
         from billing.models import CreditNote
-
+    except ImportError:
+        return 0
+    try:
         return _safe_count(CreditNote.objects.filter(created_at__gte=_month_start()))
     except Exception:
+        logger.warning("_get_credit_notes_this_month query failed", exc_info=True)
         return 0
 
 
@@ -352,11 +370,14 @@ def get_invoice_status_breakdown(
     """
     9.  Invoices in the selected period grouped by status.
 
-    Returns ``[]`` if the billing app or Invoice model is unavailable.
+    Returns ``[]`` if the billing app or Invoice model is unavailable (Option B,
+    section 20).
     """
     try:
         from billing.models import Invoice
-
+    except ImportError:
+        return []
+    try:
         end = timezone.now()
         if date_to > end:
             end = date_to
@@ -370,6 +391,7 @@ def get_invoice_status_breakdown(
             .order_by("-count")
         )
     except Exception:
+        logger.warning("get_invoice_status_breakdown query failed", exc_info=True)
         return []
 
 
@@ -379,11 +401,14 @@ def get_shipment_status_breakdown(
     """
     10. Shipments in the selected period grouped by status.
 
-    Returns ``[]`` if the shipping app or Shipment model is unavailable.
+    Returns ``[]`` if the shipping app or Shipment model is unavailable (Option B,
+    section 20).
     """
     try:
         from shipping.models import Shipment
-
+    except ImportError:
+        return []
+    try:
         end = timezone.now()
         if date_to > end:
             end = date_to
@@ -397,6 +422,7 @@ def get_shipment_status_breakdown(
             .order_by("-count")
         )
     except Exception:
+        logger.warning("get_shipment_status_breakdown query failed", exc_info=True)
         return []
 
 
@@ -410,11 +436,13 @@ def get_reconciliation_breakdown(
     ``status`` so all breakdown responses share the same shape.
 
     Returns ``[]`` if the reconciliation app or BankTransaction model is
-    unavailable.
+    unavailable (Option B, section 20).
     """
     try:
         from reconciliation.models import BankTransaction
-
+    except ImportError:
+        return []
+    try:
         end = timezone.now()
         if date_to > end:
             end = date_to
@@ -429,6 +457,7 @@ def get_reconciliation_breakdown(
         )
         return [{"status": row["match_status"], "count": row["count"]} for row in rows]
     except Exception:
+        logger.warning("get_reconciliation_breakdown query failed", exc_info=True)
         return []
 
 
@@ -563,6 +592,7 @@ def get_recent_orders(limit: int = 10) -> list[dict[str, Any]]:
     try:
         orders = (
             Order.objects.select_related("customer", "customer__profile")
+            .prefetch_related("items", "items__product")
             .exclude(status__in=_EPHEMERAL_ORDER_STATUSES)
             .order_by("-created_at")[:limit]
         )
@@ -611,99 +641,107 @@ def get_alerts() -> dict[str, Any]:
     unreconciled_bank_transactions = 0
     try:
         from reconciliation.models import BankTransaction
-
-        unreconciled_bank_transactions = _safe_count(
-            BankTransaction.objects.filter(
-                match_status__in=[
-                    BankTransaction.MatchStatus.UNMATCHED,
-                    BankTransaction.MatchStatus.SUGGESTED,
-                ]
+        try:
+            unreconciled_bank_transactions = _safe_count(
+                BankTransaction.objects.filter(
+                    match_status__in=[
+                        BankTransaction.MatchStatus.UNMATCHED,
+                        BankTransaction.MatchStatus.SUGGESTED,
+                    ]
+                )
             )
-        )
-        if unreconciled_bank_transactions:
-            items.append(
-                {
-                    "type": "unreconciled_bank_transactions",
-                    "severity": "warning",
-                    "count": unreconciled_bank_transactions,
-                    "message": (
-                        f"{unreconciled_bank_transactions} bank transaction(s) "
-                        "need reconciliation."
-                    ),
-                }
-            )
-    except Exception:
+            if unreconciled_bank_transactions:
+                items.append(
+                    {
+                        "type": "unreconciled_bank_transactions",
+                        "severity": "warning",
+                        "count": unreconciled_bank_transactions,
+                        "message": (
+                            f"{unreconciled_bank_transactions} bank transaction(s) "
+                            "need reconciliation."
+                        ),
+                    }
+                )
+        except Exception:
+            logger.warning("get_alerts: unreconciled_bank_transactions query failed", exc_info=True)
+    except ImportError:
         pass
 
     unpaid_invoices = 0
     try:
         from billing.models import Invoice
-
-        unpaid_invoices = _safe_count(
-            Invoice.objects.filter(
-                status__in=[Invoice.Status.ISSUED, Invoice.Status.PART_PAID],
+        try:
+            unpaid_invoices = _safe_count(
+                Invoice.objects.filter(
+                    status__in=[Invoice.Status.ISSUED, Invoice.Status.PART_PAID],
+                )
             )
-        )
-        if unpaid_invoices:
-            items.append(
-                {
-                    "type": "unpaid_invoices",
-                    "severity": "warning",
-                    "count": unpaid_invoices,
-                    "message": f"{unpaid_invoices} invoice(s) with outstanding balance.",
-                }
-            )
-    except Exception:
+            if unpaid_invoices:
+                items.append(
+                    {
+                        "type": "unpaid_invoices",
+                        "severity": "warning",
+                        "count": unpaid_invoices,
+                        "message": f"{unpaid_invoices} invoice(s) with outstanding balance.",
+                    }
+                )
+        except Exception:
+            logger.warning("get_alerts: unpaid_invoices query failed", exc_info=True)
+    except ImportError:
         pass
 
     failed_shipments = 0
     try:
         from shipping.models import Shipment
-
-        failed_shipments = _safe_count(
-            Shipment.objects.filter(
-                status__in=[
-                    Shipment.Status.FAILED_RETRYABLE,
-                    Shipment.Status.FAILED_FINAL,
-                    Shipment.Status.LABEL_DOWNLOAD_FAILED,
-                ]
+        try:
+            failed_shipments = _safe_count(
+                Shipment.objects.filter(
+                    status__in=[
+                        Shipment.Status.FAILED_RETRYABLE,
+                        Shipment.Status.FAILED_FINAL,
+                        Shipment.Status.LABEL_DOWNLOAD_FAILED,
+                    ]
+                )
             )
-        )
-        if failed_shipments:
-            items.append(
-                {
-                    "type": "failed_shipments",
-                    "severity": "error",
-                    "count": failed_shipments,
-                    "message": f"{failed_shipments} shipment(s) require attention.",
-                }
-            )
-    except Exception:
+            if failed_shipments:
+                items.append(
+                    {
+                        "type": "failed_shipments",
+                        "severity": "error",
+                        "count": failed_shipments,
+                        "message": f"{failed_shipments} shipment(s) require attention.",
+                    }
+                )
+        except Exception:
+            logger.warning("get_alerts: failed_shipments query failed", exc_info=True)
+    except ImportError:
         pass
 
     failed_notifications = 0
     try:
         from notifications.models import NotificationLog
-
-        failed_notifications = _safe_count(
-            NotificationLog.objects.filter(
-                status=NotificationLog.Status.FAILED,
-                created_at__gte=timezone.now() - timedelta(days=7),
+        try:
+            failed_notifications = _safe_count(
+                NotificationLog.objects.filter(
+                    status=NotificationLog.Status.FAILED,
+                    created_at__gte=timezone.now() - timedelta(days=7),
+                )
             )
-        )
-        if failed_notifications:
-            items.append(
-                {
-                    "type": "failed_notifications",
-                    "severity": "error",
-                    "count": failed_notifications,
-                    "message": (
-                        f"{failed_notifications} Telegram notification(s) failed "
-                        "in the last 7 days."
-                    ),
-                }
-            )
-    except Exception:
+            if failed_notifications:
+                items.append(
+                    {
+                        "type": "failed_notifications",
+                        "severity": "error",
+                        "count": failed_notifications,
+                        "message": (
+                            f"{failed_notifications} Telegram notification(s) failed "
+                            "in the last 7 days."
+                        ),
+                    }
+                )
+        except Exception:
+            logger.warning("get_alerts: failed_notifications query failed", exc_info=True)
+    except ImportError:
         pass
 
     return {
@@ -736,72 +774,78 @@ def get_alert_records(limit: int = 5) -> dict[str, list[dict[str, Any]]]:
     failed_shipments: list[dict[str, Any]] = []
     try:
         from shipping.models import Shipment
-
-        qs = Shipment.objects.filter(
-            status__in=[
-                Shipment.Status.FAILED_RETRYABLE,
-                Shipment.Status.FAILED_FINAL,
-                Shipment.Status.LABEL_DOWNLOAD_FAILED,
-            ]
-        ).order_by("-created_at")[:limit]
-        for s in qs:
-            failed_shipments.append(
-                {
-                    "id": s.pk,
-                    "order_id": s.order_id,
-                    "status": s.status,
-                    "message": s.last_error or "",
-                    "created_at": s.created_at.isoformat() if s.created_at else None,
-                }
-            )
-    except Exception:
-        pass
+        try:
+            qs = Shipment.objects.filter(
+                status__in=[
+                    Shipment.Status.FAILED_RETRYABLE,
+                    Shipment.Status.FAILED_FINAL,
+                    Shipment.Status.LABEL_DOWNLOAD_FAILED,
+                ]
+            ).order_by("-created_at")[:limit]
+            for s in qs:
+                failed_shipments.append(
+                    {
+                        "id": s.pk,
+                        "order_id": s.order_id,
+                        "status": s.status,
+                        "message": s.last_error or "",
+                        "created_at": s.created_at.isoformat() if s.created_at else None,
+                    }
+                )
+        except Exception:
+            logger.warning("get_alert_records: failed_shipments query failed", exc_info=True)
+    except ImportError:
+        pass  # shipping app not installed — expected
 
     # 14.2 ─ Unmatched bank transactions
     unmatched_transactions: list[dict[str, Any]] = []
     try:
         from reconciliation.models import BankTransaction
-
-        qs = BankTransaction.objects.filter(
-            match_status=BankTransaction.MatchStatus.UNMATCHED
-        ).order_by("-created_at")[:limit]
-        for tx in qs:
-            unmatched_transactions.append(
-                {
-                    "id": tx.pk,
-                    "amount": money(tx.amount),
-                    # payer_name is the most human-readable reference on this model;
-                    # the raw statement line is in tx.raw_line if more detail is needed.
-                    "reference": tx.payer_name or "",
-                    "statement_date": tx.statement_date or "",
-                    "created_at": tx.created_at.isoformat() if tx.created_at else None,
-                }
-            )
-    except Exception:
-        pass
+        try:
+            qs = BankTransaction.objects.filter(
+                match_status=BankTransaction.MatchStatus.UNMATCHED
+            ).order_by("-created_at")[:limit]
+            for tx in qs:
+                unmatched_transactions.append(
+                    {
+                        "id": tx.pk,
+                        "amount": money(tx.amount),
+                        # payer_name is the most human-readable reference on this model;
+                        # the raw statement line is in tx.raw_line if more detail is needed.
+                        "reference": tx.payer_name or "",
+                        "statement_date": tx.statement_date or "",
+                        "created_at": tx.created_at.isoformat() if tx.created_at else None,
+                    }
+                )
+        except Exception:
+            logger.warning("get_alert_records: unmatched_transactions query failed", exc_info=True)
+    except ImportError:
+        pass  # reconciliation app not installed — expected
 
     # 14.3 ─ Failed Telegram notifications (last 7 days)
     failed_notifications: list[dict[str, Any]] = []
     try:
         from notifications.models import NotificationLog
-
-        cutoff = timezone.now() - timedelta(days=7)
-        qs = NotificationLog.objects.filter(
-            status=NotificationLog.Status.FAILED,
-            created_at__gte=cutoff,
-        ).order_by("-created_at")[:limit]
-        for n in qs:
-            failed_notifications.append(
-                {
-                    "id": n.pk,
-                    "order_id": n.order_id,
-                    "event": n.event,
-                    "error": n.error_message or "",
-                    "created_at": n.created_at.isoformat() if n.created_at else None,
-                }
-            )
-    except Exception:
-        pass
+        try:
+            cutoff = timezone.now() - timedelta(days=7)
+            qs = NotificationLog.objects.filter(
+                status=NotificationLog.Status.FAILED,
+                created_at__gte=cutoff,
+            ).order_by("-created_at")[:limit]
+            for n in qs:
+                failed_notifications.append(
+                    {
+                        "id": n.pk,
+                        "order_id": n.order_id,
+                        "event": n.event,
+                        "error": n.error_message or "",
+                        "created_at": n.created_at.isoformat() if n.created_at else None,
+                    }
+                )
+        except Exception:
+            logger.warning("get_alert_records: failed_notifications query failed", exc_info=True)
+    except ImportError:
+        pass  # notifications app not installed — expected
 
     return {
         "failed_shipments": failed_shipments,
