@@ -23,10 +23,24 @@ ORDER_STATUS_CHOICES = [choice[0] for choice in Order._meta.get_field("status").
 COMPLETED_ORDER_STATUSES = ("delivered",)
 
 
-def _decimal_str(value: Decimal | int | float | None) -> str:
+def money(value: Decimal | int | float | None) -> str:
+    """
+    Format a numeric value as a two-decimal money string (section 18).
+
+    Uses Python's format spec ``:.2f`` which applies ROUND_HALF_EVEN on
+    ``Decimal`` objects — the same as ``quantize(Decimal('0.01'))``.
+    Returns ``"0.00"`` for ``None`` so the frontend never receives null.
+
+    Examples::
+
+        money(Decimal("10"))      → "10.00"
+        money(Decimal("9.999"))   → "10.00"
+        money(0)                  → "0.00"
+        money(None)               → "0.00"
+    """
     if value is None:
         return "0.00"
-    return f"{Decimal(str(value)).quantize(Decimal('0.01'))}"
+    return f"{value:.2f}"
 
 
 def _safe_count(qs) -> int:
@@ -75,7 +89,7 @@ def _get_today_revenue() -> str:
     total = Decimal("0")
     for order in orders:
         total += order_total_amount(order)
-    return _decimal_str(total)
+    return money(total)
 
 
 def _get_today_orders() -> int:
@@ -238,12 +252,12 @@ def get_kpis(date_from: datetime, date_to: datetime) -> dict[str, Any]:
 
     return {
         # --- Period KPIs ---
-        "revenue": _decimal_str(revenue),
+        "revenue": money(revenue),
         "orders_count": orders_count,
         # spec key: paid_orders (was paid_orders_count)
         "paid_orders": paid_orders_count,
         "new_customers": new_customers,
-        "average_order_value": _decimal_str(average_order_value),
+        "average_order_value": money(average_order_value),
         # 6.3  Pending orders — global (need action regardless of period)
         "pending_orders": _safe_count(Order.objects.filter(status="pending")),
         "completed_orders": _safe_count(
@@ -293,7 +307,7 @@ def get_sales_chart(date_from: datetime, date_to: datetime) -> list[dict[str, An
             result.append(
                 {
                     "date": current.isoformat(),
-                    "revenue": _decimal_str(entry["revenue"]),
+                    "revenue": money(entry["revenue"]),
                     "orders": entry["orders"],
                 }
             )
@@ -465,9 +479,9 @@ def get_top_products(
             {
                 "id": row["product_id"],
                 "name": row["name"],
-                "sold_quantity": _decimal_str(row["sold_quantity"]),
+                "sold_quantity": money(row["sold_quantity"]),
                 "sold_orders_count": row["sold_orders_count"],
-                "revenue": _decimal_str(row["revenue"]),
+                "revenue": money(row["revenue"]),
             }
             for row in rows
         ]
@@ -562,7 +576,7 @@ def get_recent_orders(limit: int = 10) -> list[dict[str, Any]]:
                     "status": order.status,
                     "payment_status": order.payment_status,
                     "source": order.source,
-                    "total": _decimal_str(total),
+                    "total": money(total),
                     "created_at": order.created_at.isoformat()
                     if order.created_at
                     else None,
@@ -751,7 +765,7 @@ def get_alert_records(limit: int = 5) -> dict[str, list[dict[str, Any]]]:
             unmatched_transactions.append(
                 {
                     "id": tx.pk,
-                    "amount": _decimal_str(tx.amount),
+                    "amount": money(tx.amount),
                     # payer_name is the most human-readable reference on this model;
                     # the raw statement line is in tx.raw_line if more detail is needed.
                     "reference": tx.payer_name or "",
