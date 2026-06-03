@@ -21,6 +21,7 @@ from admin_dashboard.services import (
     get_kpis,
     get_order_status_breakdown,
     get_reconciliation_breakdown,
+    get_recent_orders,
     get_sales_chart,
     get_shipment_status_breakdown,
     get_summary_snapshot,
@@ -450,3 +451,99 @@ class AdminDashboardServiceTests(TestCase):
             self.assertIsInstance(rev, str)
             parsed = Decimal(rev)
             self.assertEqual(rev, f"{parsed.quantize(Decimal('0.01'))}")
+
+    # ------------------------------------------------------------------ #
+    # Recent orders tests (section 13)                                     #
+    # ------------------------------------------------------------------ #
+
+    def test_recent_orders_returns_list(self):
+        """13: get_recent_orders always returns a list."""
+        self.assertIsInstance(get_recent_orders(), list)
+
+    def test_recent_orders_row_has_required_keys(self):
+        """13: each row contains the spec-defined keys."""
+        Order.objects.create(
+            customer=self.customer,
+            status="paid",
+            delivery_date=timezone.localdate(),
+            delivery_date_order_id=Order.objects.count() + 1,
+        )
+        rows = get_recent_orders()
+        self.assertGreater(len(rows), 0)
+        row = rows[0]
+        for key in ("id", "reference", "customer_name", "status", "total", "created_at"):
+            self.assertIn(key, row, msg=f"Missing key: {key}")
+
+    def test_recent_orders_reference_format(self):
+        """13: reference is formatted as #<zero-padded pk>."""
+        order = Order.objects.create(
+            customer=self.customer,
+            status="pending",
+            delivery_date=timezone.localdate(),
+            delivery_date_order_id=Order.objects.count() + 1,
+        )
+        rows = get_recent_orders()
+        row = next((r for r in rows if r["id"] == order.pk), None)
+        self.assertIsNotNone(row)
+        self.assertEqual(row["reference"], f"#{order.pk:06d}")
+
+    def test_recent_orders_customer_name_uses_name_field(self):
+        """13: customer_name resolves to CustomUser.name."""
+        order = Order.objects.create(
+            customer=self.customer,
+            status="paid",
+            delivery_date=timezone.localdate(),
+            delivery_date_order_id=Order.objects.count() + 1,
+        )
+        rows = get_recent_orders()
+        row = next((r for r in rows if r["id"] == order.pk), None)
+        self.assertIsNotNone(row)
+        self.assertEqual(row["customer_name"], self.customer.name)
+
+    def test_recent_orders_null_customer_returns_guest(self):
+        """13: orders with no customer FK show 'Guest'."""
+        order = Order.objects.create(
+            customer=None,
+            status="pending",
+            delivery_date=timezone.localdate(),
+            delivery_date_order_id=Order.objects.count() + 1,
+        )
+        rows = get_recent_orders()
+        row = next((r for r in rows if r["id"] == order.pk), None)
+        self.assertIsNotNone(row)
+        self.assertEqual(row["customer_name"], "Guest")
+
+    def test_recent_orders_total_is_decimal_string(self):
+        """13: total is a two-decimal string."""
+        order = Order.objects.create(
+            customer=self.customer,
+            status="paid",
+            delivery_date=timezone.localdate(),
+            delivery_date_order_id=Order.objects.count() + 1,
+        )
+        OrderItem.objects.create(
+            order=order,
+            product=self.product,
+            quantity=Decimal("2"),
+            item_name=self.product.name,
+            item_price=self.product.base_price,
+        )
+        rows = get_recent_orders()
+        row = next((r for r in rows if r["id"] == order.pk), None)
+        self.assertIsNotNone(row)
+        total = row["total"]
+        self.assertIsInstance(total, str)
+        parsed = Decimal(total)
+        self.assertEqual(total, f"{parsed.quantize(Decimal('0.01'))}")
+
+    def test_recent_orders_limit(self):
+        """13: default limit is 10; custom limit is respected."""
+        for i in range(12):
+            Order.objects.create(
+                customer=self.customer,
+                status="pending",
+                delivery_date=timezone.localdate(),
+                delivery_date_order_id=Order.objects.count() + 1,
+            )
+        self.assertLessEqual(len(get_recent_orders()), 10)
+        self.assertLessEqual(len(get_recent_orders(limit=3)), 3)

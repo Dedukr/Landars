@@ -475,20 +475,78 @@ def get_top_products(
 
 
 def _order_reference(order: Order) -> str:
-    if order.delivery_date_order_id:
-        return str(order.delivery_date_order_id)
-    return str(order.pk)
+    """
+    Human-readable order reference.
+
+    The Order model has no dedicated formatted reference field. We use the
+    global PK zero-padded to 6 digits (e.g. ``#000123``) so the reference is
+    globally unique and frontend-friendly. If the project later adds an
+    ``order_number`` or ``reference`` field this function should be updated.
+    """
+    return f"#{order.pk:06d}"
 
 
 def _customer_display_name(order: Order) -> str:
-    if order.customer_id and order.customer:
-        return order.customer.name or order.customer.email or "Unknown customer"
-    return "Guest"
+    """
+    13.  Customer name resolution priority:
+
+    1. ``order.customer_name`` snapshot — does not exist on this model yet;
+       kept as a forward-compatible hook.
+    2. ``order.customer.profile.name``  — Profile.name is currently commented
+       out; guarded by hasattr so it works if the field is added later.
+    3. ``order.customer.name``          — primary name field on CustomUser.
+    4. ``order.customer.email``         — email fallback.
+    5. "Guest"                          — customer FK is null.
+    """
+    # 1. Snapshot field (not yet on model — forward-compatible check)
+    snapshot = getattr(order, "customer_name", None)
+    if snapshot:
+        return snapshot
+
+    customer = order.customer if order.customer_id else None
+    if not customer:
+        return "Guest"
+
+    # 2. Profile name (field is currently commented out; safe guard)
+    try:
+        profile = customer.profile  # related_name="profile"
+        profile_name = getattr(profile, "name", None)
+        if profile_name:
+            return profile_name
+    except Exception:
+        pass
+
+    # 3. Primary name field on CustomUser
+    if customer.name:
+        return customer.name
+
+    # 4. Email fallback
+    if customer.email:
+        return customer.email
+
+    return "Unknown customer"
+
+
+# Statuses that represent ephemeral/incomplete orders (not real orders).
+# The Order model currently has no draft/cart status, but the exclusion is
+# kept forward-compatibly so adding them later does not affect recent-orders.
+_EPHEMERAL_ORDER_STATUSES = ["draft", "cart"]
 
 
 def get_recent_orders(limit: int = 10) -> list[dict[str, Any]]:
+    """
+    13.  Latest ``limit`` real orders, newest first.
+
+    Uses ``select_related`` to avoid N+1 queries for customer and profile.
+    Excludes ephemeral statuses (draft, cart) — currently none exist on the
+    model, but the exclusion is forward-compatible.
+    """
     try:
-        orders = Order.objects.select_related("customer").order_by("-created_at")[:limit]
+        orders = (
+            Order.objects.select_related("customer", "customer__profile")
+            .exclude(status__in=_EPHEMERAL_ORDER_STATUSES)
+            .order_by("-created_at")[:limit]
+        )
         results = []
         for order in orders:
             try:
