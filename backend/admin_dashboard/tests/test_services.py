@@ -24,6 +24,7 @@ from admin_dashboard.services import (
     get_sales_chart,
     get_shipment_status_breakdown,
     get_summary_snapshot,
+    get_top_products,
 )
 
 
@@ -112,6 +113,111 @@ class AdminDashboardServiceTests(TestCase):
         for row in rows:
             self.assertIn("status", row)
             self.assertNotIn("match_status", row)
+
+    # ------------------------------------------------------------------ #
+    # Top products tests (section 12)                                      #
+    # ------------------------------------------------------------------ #
+
+    def test_top_products_returns_list(self):
+        """12: get_top_products always returns a list."""
+        date_from, date_to = get_period_range("7d")
+        result = get_top_products(date_from, date_to)
+        self.assertIsInstance(result, list)
+
+    def test_top_products_row_has_required_keys(self):
+        """12: each top-product row contains the spec-defined keys."""
+        order = Order.objects.create(
+            customer=self.customer,
+            status="paid",
+            delivery_date=timezone.localdate(),
+            delivery_date_order_id=Order.objects.count() + 1,
+        )
+        OrderItem.objects.create(
+            order=order,
+            product=self.product,
+            quantity=Decimal("3"),
+            item_name=self.product.name,
+            item_price=self.product.base_price,
+        )
+        date_from, date_to = get_period_range("7d")
+        rows = get_top_products(date_from, date_to)
+        self.assertGreater(len(rows), 0)
+        row = rows[0]
+        self.assertIn("id", row)
+        self.assertIn("name", row)
+        self.assertIn("sold_quantity", row)
+        self.assertIn("sold_orders_count", row)
+        self.assertIn("revenue", row)
+        # Old key names must not leak through
+        self.assertNotIn("product_id", row)
+        self.assertNotIn("quantity_sold", row)
+
+    def test_top_products_counts_and_orders_are_correct(self):
+        """12: sold_quantity and sold_orders_count reflect actual data."""
+        for i in range(2):
+            order = Order.objects.create(
+                customer=self.customer,
+                status="paid",
+                delivery_date=timezone.localdate(),
+                delivery_date_order_id=Order.objects.count() + 1,
+            )
+            OrderItem.objects.create(
+                order=order,
+                product=self.product,
+                quantity=Decimal("4"),
+                item_name=self.product.name,
+                item_price=self.product.base_price,
+            )
+        date_from, date_to = get_period_range("7d")
+        rows = get_top_products(date_from, date_to)
+        product_row = next((r for r in rows if r["id"] == self.product.pk), None)
+        self.assertIsNotNone(product_row)
+        self.assertEqual(Decimal(product_row["sold_quantity"]), Decimal("8"))
+        self.assertEqual(product_row["sold_orders_count"], 2)
+
+    def test_top_products_excludes_non_paid_orders(self):
+        """12: only paid orders contribute to top products."""
+        for status in ("pending", "cancelled"):
+            order = Order.objects.create(
+                customer=self.customer,
+                status=status,
+                delivery_date=timezone.localdate(),
+                delivery_date_order_id=Order.objects.count() + 1,
+            )
+            OrderItem.objects.create(
+                order=order,
+                product=self.product,
+                quantity=Decimal("99"),
+                item_name=self.product.name,
+                item_price=self.product.base_price,
+            )
+        date_from, date_to = get_period_range("7d")
+        rows = get_top_products(date_from, date_to)
+        self.assertFalse(any(r["id"] == self.product.pk for r in rows))
+
+    def test_top_products_default_limit_is_five(self):
+        """12: default limit is 5 for the dashboard home card."""
+        products = [
+            Product.objects.create(name=f"P{i}", base_price=Decimal("5.00"))
+            for i in range(7)
+        ]
+        for idx, product in enumerate(products):
+            order = Order.objects.create(
+                customer=self.customer,
+                status="paid",
+                delivery_date=timezone.localdate(),
+                delivery_date_order_id=Order.objects.count() + 1,
+            )
+            OrderItem.objects.create(
+                order=order,
+                product=product,
+                quantity=Decimal(str(idx + 1)),
+                item_name=product.name,
+                item_price=product.base_price,
+            )
+        date_from, date_to = get_period_range("7d")
+        rows = get_top_products(date_from, date_to)
+        self.assertLessEqual(len(rows), 5)
 
     def test_breakdown_keys_in_dashboard_payload(self):
         """8-11: get_dashboard_data uses the canonical breakdown key names."""

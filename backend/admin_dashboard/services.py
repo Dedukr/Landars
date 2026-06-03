@@ -414,9 +414,29 @@ def get_reconciliation_breakdown(
 
 
 def get_top_products(
-    date_from: datetime, date_to: datetime, limit: int = 10
+    date_from: datetime, date_to: datetime, limit: int = 5
 ) -> list[dict[str, Any]]:
+    """
+    12. Top products by sold quantity in the selected period (paid orders only).
+
+    Default limit is 5 for the dashboard home card.
+
+    Output per row:
+        ``id``               — product PK
+        ``name``             — product name (snapshot from ``item_name``,
+                               falls back to ``product__name``)
+        ``sold_quantity``    — total units sold (Decimal stored as string)
+        ``sold_orders_count``— distinct orders containing this product
+        ``revenue``          — line-item revenue (quantity × price, string)
+
+    ``Product.name`` is the confirmed field name (checked on ``api.Product``).
+    The ``item_name`` snapshot is preferred so historical orders keep the
+    name that was current at purchase time.
+    """
     try:
+        end = timezone.now()
+        if date_to > end:
+            end = date_to
         line_total = F("quantity") * Coalesce(
             F("item_price"),
             F("product__base_price"),
@@ -426,24 +446,26 @@ def get_top_products(
             OrderItem.objects.filter(
                 order__status=REVENUE_ORDER_STATUS,
                 order__created_at__gte=date_from,
-                order__created_at__lte=date_to,
+                order__created_at__lte=end,
             )
             .values("product_id")
             .annotate(
                 name=Coalesce(F("item_name"), F("product__name"), Value("Unknown")),
-                quantity_sold=Sum("quantity"),
+                sold_quantity=Sum("quantity"),
+                sold_orders_count=Count("order", distinct=True),
                 revenue=Sum(
                     line_total,
                     output_field=DecimalField(max_digits=12, decimal_places=2),
                 ),
             )
-            .order_by("-quantity_sold")[:limit]
+            .order_by("-sold_quantity")[:limit]
         )
         return [
             {
-                "product_id": row["product_id"],
+                "id": row["product_id"],
                 "name": row["name"],
-                "quantity_sold": _decimal_str(row["quantity_sold"]),
+                "sold_quantity": _decimal_str(row["sold_quantity"]),
+                "sold_orders_count": row["sold_orders_count"],
                 "revenue": _decimal_str(row["revenue"]),
             }
             for row in rows

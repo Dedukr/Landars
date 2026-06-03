@@ -91,9 +91,15 @@ class AdminDashboardAPITests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertGreaterEqual(response.data["kpis"]["orders_count"], 1)
         self.assertGreaterEqual(len(response.data["recent_orders"]), 1)
-        self.assertTrue(
-            any(row["product_id"] == self.product.pk for row in response.data["top_products"])
-        )
+        top = response.data["top_products"]
+        self.assertTrue(any(row["id"] == self.product.pk for row in top))
+        if top:
+            row = top[0]
+            self.assertIn("id", row)
+            self.assertIn("name", row)
+            self.assertIn("sold_quantity", row)
+            self.assertIn("sold_orders_count", row)
+            self.assertIn("revenue", row)
 
     def test_legacy_summary_endpoint_still_works(self):
         self.client.force_authenticate(user=self.staff)
