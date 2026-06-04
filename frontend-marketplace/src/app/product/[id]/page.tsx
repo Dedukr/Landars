@@ -9,7 +9,7 @@ import { useWishlist } from "@/contexts/WishlistContext";
 import { useCartItems } from "@/hooks/useCartItems";
 import { useWishlistItems } from "@/hooks/useWishlistItems";
 import { useAuth } from "@/contexts/AuthContext";
-import SignInPopup from "@/components/SignInPopup";
+import SignInPopup, { type SignInPopupVariant } from "@/components/SignInPopup";
 import ProductRecommendations from "@/components/ProductRecommendations";
 import ProductReviewBlock from "@/components/ProductReviewBlock";
 import { scopeProductsQueryString } from "@/utils/catalogScope";
@@ -58,7 +58,8 @@ export default function ProductPage() {
   const [products, setProducts] = useState<ProductDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadState, setLoadState] = useState<LoadState>({ kind: "idle" });
-  const [showSignInPopup, setShowSignInPopup] = useState(false);
+  const [signInPopupVariant, setSignInPopupVariant] =
+    useState<SignInPopupVariant | null>(null);
   const [quantity, setQuantity] = useState(1);
 
   const { filteredProducts: cartItems } = useCartItems(products);
@@ -166,7 +167,7 @@ export default function ProductPage() {
 
   const handleWishlistClick = () => {
     if (!user) {
-      setShowSignInPopup(true);
+      setSignInPopupVariant("wishlist");
       return;
     }
     if (!product) return;
@@ -177,6 +178,10 @@ export default function ProductPage() {
   const handleAddToCart = () => {
     if (!product) return;
     if (stockUnavailable(product)) return;
+    if (!user) {
+      setSignInPopupVariant("cart");
+      return;
+    }
     addToCart(product.id, quantity);
   };
 
@@ -482,7 +487,11 @@ export default function ProductPage() {
         onRemoveFromBasket={() => removeFromCart(product.id)}
       />
 
-      <SignInPopup isOpen={showSignInPopup} onClose={() => setShowSignInPopup(false)} />
+      <SignInPopup
+        isOpen={signInPopupVariant !== null}
+        variant={signInPopupVariant ?? "wishlist"}
+        onClose={() => setSignInPopupVariant(null)}
+      />
     </div>
   );
 }

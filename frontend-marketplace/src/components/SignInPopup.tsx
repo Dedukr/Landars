@@ -1,18 +1,47 @@
 "use client";
+
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Heart, ShoppingCart } from "lucide-react";
 import { getAuthUrl } from "@/utils/authHelpers";
+
+export type SignInPopupVariant = "wishlist" | "cart";
 
 interface SignInPopupProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Defaults to wishlist (heart + favorites copy). */
+  variant?: SignInPopupVariant;
 }
 
-const SignInPopup: React.FC<SignInPopupProps> = ({ isOpen, onClose }) => {
+const COPY: Record<
+  SignInPopupVariant,
+  { title: string; description: string; Icon: typeof Heart }
+> = {
+  wishlist: {
+    title: "Sign in to save favorites",
+    description:
+      "Create an account or sign in to add items to your wishlist and keep track of your favorite products.",
+    Icon: Heart,
+  },
+  cart: {
+    title: "Sign in to add to your basket",
+    description:
+      "Create an account or sign in to add items to your basket and checkout when you are ready.",
+    Icon: ShoppingCart,
+  },
+};
+
+const SignInPopup: React.FC<SignInPopupProps> = ({
+  isOpen,
+  onClose,
+  variant = "wishlist",
+}) => {
   const pathname = usePathname();
   const signInUrl = getAuthUrl({ mode: "signin", next: pathname });
   const signUpUrl = getAuthUrl({ mode: "signup", next: pathname });
+  const { title, description, Icon } = COPY[variant];
 
   if (!isOpen) return null;
 
@@ -41,9 +70,7 @@ const SignInPopup: React.FC<SignInPopupProps> = ({ isOpen, onClose }) => {
           border: "1px solid var(--sidebar-border)",
         }}
       >
-        {/* Content */}
         <div className="text-center">
-          {/* Heart icon */}
           <div className="mb-6 flex justify-center">
             <div
               className="p-4 rounded-full"
@@ -52,18 +79,12 @@ const SignInPopup: React.FC<SignInPopupProps> = ({ isOpen, onClose }) => {
                 border: "1px solid var(--sidebar-border)",
               }}
             >
-              <svg
-                width="36"
-                height="36"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="var(--accent)"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-              </svg>
+              <Icon
+                className="h-9 w-9"
+                strokeWidth={2}
+                style={{ color: "var(--accent)" }}
+                aria-hidden
+              />
             </div>
           </div>
 
@@ -71,7 +92,7 @@ const SignInPopup: React.FC<SignInPopupProps> = ({ isOpen, onClose }) => {
             className="text-2xl font-bold mb-3"
             style={{ color: "var(--foreground)" }}
           >
-            Sign in to save favorites
+            {title}
           </h2>
 
           <p
@@ -81,11 +102,9 @@ const SignInPopup: React.FC<SignInPopupProps> = ({ isOpen, onClose }) => {
               opacity: 0.8,
             }}
           >
-            Create an account or sign in to add items to your wishlist and keep
-            track of your favorite products.
+            {description}
           </p>
 
-          {/* Action buttons */}
           <div className="space-y-3">
             <Link
               href={signInUrl}
@@ -129,22 +148,6 @@ const SignInPopup: React.FC<SignInPopupProps> = ({ isOpen, onClose }) => {
               Create Account
             </Link>
           </div>
-
-          <button
-            onClick={onClose}
-            className="mt-8 text-base underline hover:no-underline transition-all duration-200"
-            style={{
-              background: "none",
-              border: "none",
-              padding: "0",
-              margin: "0",
-              color: "var(--foreground)",
-              opacity: 0.7,
-              cursor: "pointer",
-            }}
-          >
-            Maybe later
-          </button>
         </div>
       </div>
     </div>

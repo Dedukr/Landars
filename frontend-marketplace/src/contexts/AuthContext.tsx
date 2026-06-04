@@ -8,6 +8,7 @@ import React, {
   useCallback,
 } from "react";
 import { httpClient } from "@/utils/httpClient";
+import { clearCartStorage } from "@/utils/cartStorage";
 import { clearWishlistStorage } from "@/utils/wishlistStorage";
 
 interface User {
@@ -147,10 +148,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error("Logout error:", error);
     } finally {
       clearWishlistStorage();
+      clearCartStorage();
       localStorage.removeItem("authToken");
       localStorage.removeItem("refreshToken");
       localStorage.removeItem("user");
-      localStorage.removeItem("cart");
 
       // Clear wishlist hearts before auth state drops (WishlistContext listens sync)
       window.dispatchEvent(new CustomEvent("user:logout"));

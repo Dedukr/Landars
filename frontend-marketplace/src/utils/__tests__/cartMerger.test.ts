@@ -126,7 +126,7 @@ describe("CartMerger", () => {
       ).toBe(5);
     });
 
-    it("should handle smart merging with similar quantities", async () => {
+    it("should handle smart merging with similar quantities (keep higher, not sum)", async () => {
       cartMerger.setStrategy(MergeStrategy.SMART);
 
       const localCart: CartItem[] = [{ productId: 1, quantity: 2 }];
@@ -136,10 +136,10 @@ describe("CartMerger", () => {
       const result = await cartMerger.mergeCarts(localCart, backendCart);
 
       expect(result.conflicts).toHaveLength(1);
-      // Smart merging: ratio is 3/2 = 1.5 (not > 2), so it sums quantities
+      // Default KEEP_HIGHER: guest + server mirror must not sum to 5
       expect(
         result.mergedCart.find((item) => item.productId === 1)?.quantity
-      ).toBe(5); // 2 + 3 = 5
+      ).toBe(3);
     });
   });
 
@@ -183,10 +183,23 @@ describe("CartMerger", () => {
       const result = await cartMerger.mergeCarts(localCart, backendCart);
 
       expect(result.conflicts).toHaveLength(1);
-      // Smart merging: ratio is 1000/500 = 2 (not > 2), so it sums quantities
       expect(
         result.mergedCart.find((item) => item.productId === 1)?.quantity
-      ).toBe(1500); // 1000 + 500 = 1500
+      ).toBe(1000);
+    });
+
+    it("should sum quantities when SUM_QUANTITIES resolution is set", async () => {
+      cartMerger.setStrategy(MergeStrategy.SMART);
+      cartMerger.setConflictResolution(ConflictResolution.SUM_QUANTITIES);
+
+      const localCart: CartItem[] = [{ productId: 1, quantity: 2 }];
+      const backendCart: CartItem[] = [{ productId: 1, quantity: 3 }];
+
+      const result = await cartMerger.mergeCarts(localCart, backendCart);
+
+      expect(
+        result.mergedCart.find((item) => item.productId === 1)?.quantity
+      ).toBe(5);
     });
   });
 

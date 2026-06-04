@@ -7,7 +7,7 @@ import React, {
 import { useCart } from "@/contexts/CartContext";
 import { useWishlist } from "@/contexts/WishlistContext";
 import { useAuth } from "@/contexts/AuthContext";
-import SignInPopup from "./SignInPopup";
+import SignInPopup, { type SignInPopupVariant } from "./SignInPopup";
 import { Button } from "@/components/ui/Button";
 import { useInView } from "react-intersection-observer";
 import { scopeProductsQueryString } from "@/utils/catalogScope";
@@ -97,7 +97,8 @@ const ProductGrid: React.FC<ProductGridProps> = ({
   const [visibleProductsCount, setVisibleProductsCount] = useState(50);
 
   const { user } = useAuth();
-  const [showSignInPopup, setShowSignInPopup] = useState(false);
+  const [signInPopupVariant, setSignInPopupVariant] =
+    useState<SignInPopupVariant | null>(null);
 
   const buildCachedKey = useCallback(
     (offset: number) => buildQuery(filters, sort, search, offset),
@@ -310,7 +311,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({
 
     const handleWishlistToggle = React.useCallback(() => {
       if (!loggedInUser) {
-        setShowSignInPopup(true);
+        setSignInPopupVariant("wishlist");
         return;
       }
       if (inWishlist) removeFromWishlist(product.id);
@@ -321,18 +322,23 @@ const ProductGrid: React.FC<ProductGridProps> = ({
       (e?: React.MouseEvent) => {
         e?.preventDefault?.();
         e?.stopPropagation?.();
+        if (!loggedInUser) {
+          setSignInPopupVariant("cart");
+          return;
+        }
         addToCart(product.id, 1);
       },
-      [addToCart, product.id]
+      [loggedInUser, addToCart, product.id]
     );
 
     const handleRemoveFromCart = React.useCallback(
       (e?: React.MouseEvent) => {
         e?.preventDefault?.();
         e?.stopPropagation?.();
+        if (!loggedInUser) return;
         removeFromCart(product.id);
       },
-      [removeFromCart, product.id]
+      [loggedInUser, removeFromCart, product.id]
     );
 
     return (
@@ -469,8 +475,9 @@ const ProductGrid: React.FC<ProductGridProps> = ({
       )}
 
       <SignInPopup
-        isOpen={showSignInPopup}
-        onClose={() => setShowSignInPopup(false)}
+        isOpen={signInPopupVariant !== null}
+        variant={signInPopupVariant ?? "wishlist"}
+        onClose={() => setSignInPopupVariant(null)}
       />
     </section>
   );

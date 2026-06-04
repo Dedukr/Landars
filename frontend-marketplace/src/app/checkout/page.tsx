@@ -147,6 +147,7 @@ export default function CheckoutPage() {
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const placingOrderRef = useRef(false);
   const [orderCompleted, setOrderCompleted] = useState(false);
   const [, setProfileData] = useState<ProfileData | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -169,10 +170,6 @@ export default function CheckoutPage() {
     useState<ShipmentQuoteOption | null>(null);
 
   // Redirect if cart is empty (but not if we're showing order review).
-  // Use `cartData` (the backend snapshot fetched only after CartContext
-  // finishes the guest→user merge) as the source of truth so we don't
-  // bounce a freshly-signed-in user out of checkout while their guest
-  // cart is still being merged into the backend cart.
   useEffect(() => {
     if (
       cartData !== null &&
@@ -224,20 +221,14 @@ export default function CheckoutPage() {
     }
   }, [user, shippingForm.notes]);
 
-  // Fetch cart data when component mounts and user is available.
-  // Wait for CartContext to finish loading/merging the guest cart so the
-  // GET /api/cart/ call returns the merged cart and not a stale snapshot.
-  // When cartIsLoading transitions back to false (merge complete), this
-  // effect re-runs and refetches the up-to-date cart data.
+  // Refetch cart metadata when CartContext finishes loading from the API.
   useEffect(() => {
     if (user && !cartIsLoading) {
       fetchCartData();
     }
   }, [user, cartIsLoading, fetchCartData]);
 
-  // While the cart context is loading/merging, drop any previously fetched
-  // cartData so the UI shows the loading spinner (rather than a stale order
-  // summary) until the merge completes and fresh data is fetched.
+  // While the cart context is loading, drop stale cartData so the UI shows a spinner.
   const wasCartLoadingRef = useRef(false);
   useEffect(() => {
     if (cartIsLoading && !wasCartLoadingRef.current) {
@@ -823,11 +814,15 @@ export default function CheckoutPage() {
 
   // Handle place order without payment
   const handlePlaceOrder = async () => {
-    // Validate shipping form first
+    if (placingOrderRef.current || submitting) {
+      return;
+    }
+
     if (!validateShippingForm()) {
       return;
     }
 
+    placingOrderRef.current = true;
     setSubmitting(true);
     try {
       // Create order without payment intent
@@ -916,14 +911,13 @@ export default function CheckoutPage() {
       });
     } finally {
       setSubmitting(false);
+      placingOrderRef.current = false;
     }
   };
 
   // No outer form submit; payment handled by StripePaymentForm
 
-  // Show spinner while: profile is loading, the guest→user cart merge is
-  // running in CartContext, or cartData hasn't been fetched yet. This
-  // prevents flashing an empty/stale order summary right after sign-in.
+  // Show spinner while profile/cart is loading or cartData has not been fetched yet.
   if (loading || cartIsLoading || !cartData) {
     return (
       <div
@@ -936,9 +930,7 @@ export default function CheckoutPage() {
   }
 
   // Don't redirect if we're showing the review step with order details.
-  // Use `cartData` (only set after the cart merge completes) as the source
-  // of truth so we don't bail out before a freshly-merged guest cart is
-  // visible in the backend snapshot.
+  // Use backend cart snapshot as source of truth for empty-cart redirect.
   if (
     cartData !== null &&
     cartData.items.length === 0 &&

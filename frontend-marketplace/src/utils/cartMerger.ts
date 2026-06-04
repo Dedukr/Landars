@@ -201,22 +201,26 @@ export class CartMerger {
     backendItem: CartItem,
     maxQuantity?: number
   ): number {
-    // If quantities are equal, keep as is
     if (localItem.quantity === backendItem.quantity) {
       return localItem.quantity;
     }
 
-    // If one quantity is significantly larger, prefer it
+    // Guest localStorage often mirrors the same lines already on the server cart.
+    // Summing would double quantities (e.g. 2 local + 2 backend → 4). Only sum when
+    // explicitly configured; default KEEP_HIGHER keeps the larger side.
+    if (this.conflictResolution !== ConflictResolution.SUM_QUANTITIES) {
+      const higher = Math.max(localItem.quantity, backendItem.quantity);
+      return maxQuantity ? Math.min(higher, maxQuantity) : higher;
+    }
+
     const ratio =
       Math.max(localItem.quantity, backendItem.quantity) /
       Math.min(localItem.quantity, backendItem.quantity);
 
     if (ratio > 2) {
-      // Significant difference - keep the larger quantity
       return Math.max(localItem.quantity, backendItem.quantity);
     }
 
-    // Similar quantities - sum them but respect limits
     const sumQuantity = localItem.quantity + backendItem.quantity;
     return maxQuantity ? Math.min(sumQuantity, maxQuantity) : sumQuantity;
   }

@@ -7,6 +7,7 @@ import { ChevronRight, Package, ShoppingBag } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { useWishlist } from "@/contexts/WishlistContext";
 import { useAuth } from "@/contexts/AuthContext";
+import SignInPopup from "@/components/SignInPopup";
 import { scopeProductsQueryString } from "@/utils/catalogScope";
 import { Button } from "@/components/ui/Button";
 import { collectProductImageUrls } from "@/components/product/collectProductImageUrls";
@@ -69,6 +70,7 @@ const ProductRecommendations: React.FC<ProductRecommendationsProps> = ({
   const { addToCart } = useCart();
   const { addToWishlist, removeFromWishlist, isInWishlist } = useWishlist();
   const { user } = useAuth();
+  const [showCartSignInPopup, setShowCartSignInPopup] = useState(false);
   const lastFetchParams = useRef<string>("");
   const hasFetchedRef = useRef<boolean>(false);
   const initialExcludeIdsRef = useRef<string>("");
@@ -181,9 +183,13 @@ const ProductRecommendations: React.FC<ProductRecommendationsProps> = ({
 
   const handleAddToCart = useCallback(
     (productId: number) => {
+      if (!user) {
+        setShowCartSignInPopup(true);
+        return;
+      }
       addToCart(productId, 1);
     },
-    [addToCart]
+    [user, addToCart]
   );
 
   const handleWishlistClick = useCallback(
@@ -233,6 +239,7 @@ const ProductRecommendations: React.FC<ProductRecommendationsProps> = ({
   }
 
   return (
+    <>
     <section
       className={["rounded-2xl border p-5 sm:p-8", className].filter(Boolean).join(" ")}
       style={{
@@ -347,6 +354,12 @@ const ProductRecommendations: React.FC<ProductRecommendationsProps> = ({
         })}
       </div>
     </section>
+    <SignInPopup
+      isOpen={showCartSignInPopup}
+      variant="cart"
+      onClose={() => setShowCartSignInPopup(false)}
+    />
+    </>
   );
 };
 

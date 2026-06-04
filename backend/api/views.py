@@ -688,9 +688,9 @@ class OrderListView(APIView):
             schedule_new_frontend_order_telegram_alert,
         )
 
-        # Get user's cart
-        cart = Cart.objects.get(user=request.user)
-        cart_items = cart.items.all()
+        # Lock cart so concurrent checkout requests cannot read the same lines twice.
+        cart = Cart.objects.select_for_update().get(user=request.user)
+        cart_items = list(cart.items.select_related("product").all())
 
         if not cart_items.exists():
             return Response(
@@ -1169,14 +1169,24 @@ class CartView(APIView):
         # Get or create cart for user
         cart, created = Cart.objects.get_or_create(user=request.user)
 
-        # Get or create cart item
+        # When syncing a merged cart, frontend sends replace=true to SET quantity
+        # instead of adding (POST would otherwise double quantities on races/retries).
+        replace_quantity = request.data.get("replace") in (
+            True,
+            "true",
+            "1",
+            1,
+        )
+
         cart_item, item_created = CartItem.objects.get_or_create(
             cart=cart, product=product, defaults={"quantity": quantity}
         )
 
         if not item_created:
-            # Update quantity if item already exists
-            cart_item.quantity += quantity
+            if replace_quantity:
+                cart_item.quantity = quantity
+            else:
+                cart_item.quantity += quantity
             cart_item.save()
 
         # Recalculate delivery fee based on updated cart contents
