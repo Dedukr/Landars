@@ -1,6 +1,13 @@
 "use client";
 
-import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import {
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+} from "recharts";
 
 import { AdminCard } from "@/components/admin/ui/AdminCard";
 import { StatusBreakdownItem } from "./dashboard.types";
@@ -39,12 +46,22 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 const FALLBACK_PALETTE = [
-  "#6366f1", "#ec4899", "#14b8a6", "#f59e0b", "#84cc16",
-  "#0ea5e9", "#a855f7", "#f43f5e", "#22d3ee", "#fb923c",
+  "#6366f1",
+  "#ec4899",
+  "#14b8a6",
+  "#f59e0b",
+  "#84cc16",
+  "#0ea5e9",
+  "#a855f7",
+  "#f43f5e",
+  "#22d3ee",
+  "#fb923c",
 ];
 
 function getColor(status: string, index: number): string {
-  return STATUS_COLOR[status] ?? FALLBACK_PALETTE[index % FALLBACK_PALETTE.length];
+  return (
+    STATUS_COLOR[status] ?? FALLBACK_PALETTE[index % FALLBACK_PALETTE.length]
+  );
 }
 
 type TooltipProps = {
@@ -72,7 +89,10 @@ function ChartLegend({ payload }: LegendProps) {
   return (
     <ul className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1">
       {payload.map((entry) => (
-        <li key={entry.value} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <li
+          key={entry.value}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground"
+        >
           <span
             className="inline-block h-2 w-2 shrink-0 rounded-full"
             style={{ backgroundColor: entry.color }}
@@ -91,11 +111,20 @@ type Props = {
   emptyMessage?: string;
 };
 
-export function StatusDonutChart({ title, description, data, emptyMessage }: Props) {
+export function StatusDonutChart({
+  title,
+  description,
+  data,
+  emptyMessage,
+}: Props) {
   const total = data.reduce((s, e) => s + e.count, 0);
   const chartData = data
     .filter((e) => e.count > 0)
-    .map((e, i) => ({ name: e.status, value: e.count, fill: getColor(e.status, i) }));
+    .map((e, i) => ({
+      name: e.status,
+      value: e.count,
+      fill: getColor(e.status, i),
+    }));
 
   return (
     <AdminCard title={title} description={description}>

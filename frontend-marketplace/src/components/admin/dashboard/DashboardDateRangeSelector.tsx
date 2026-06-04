@@ -1,36 +1,48 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Button } from "@/components/admin/ui/button";
+import { cn } from "@/lib/utils";
 
 import { DashboardPeriod, PERIOD_OPTIONS } from "./dashboard.types";
 
+/** Period labels and values — matches Phase 4 spec Section 9. */
+export const options = PERIOD_OPTIONS;
+
 type Props = {
   value: DashboardPeriod;
+  onChange: (period: DashboardPeriod) => void;
 };
 
-export function DashboardDateRangeSelector({ value }: Props) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-
-  function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("period", e.target.value);
-    router.push(`${pathname}?${params.toString()}`);
-  }
-
+/**
+ * Dashboard period selector (7d / 30d / 90d / this_month).
+ * Parent is responsible for updating URL and refetching data via onChange.
+ */
+export function DashboardDateRangeSelector({ value, onChange }: Props) {
   return (
-    <select
-      value={value}
-      onChange={handleChange}
-      className="h-9 rounded-lg border bg-background px-3 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
+    <div
+      role="group"
       aria-label="Select dashboard period"
+      className={cn(
+        "inline-flex flex-wrap gap-0.5 rounded-lg border bg-background p-0.5 shadow-sm"
+      )}
     >
-      {PERIOD_OPTIONS.map((opt) => (
-        <option key={opt.value} value={opt.value}>
-          {opt.label}
-        </option>
-      ))}
-    </select>
+      {options.map((opt) => {
+        const selected = value === opt.value;
+        return (
+          <Button
+            key={opt.value}
+            type="button"
+            variant={selected ? "default" : "ghost"}
+            size="sm"
+            aria-pressed={selected}
+            onClick={() => {
+              if (!selected) onChange(opt.value);
+            }}
+          >
+            {opt.label}
+          </Button>
+        );
+      })}
+    </div>
   );
 }

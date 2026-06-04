@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useCallback } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
 import { DashboardChartsGrid } from "@/components/admin/dashboard/DashboardChartsGrid";
@@ -31,21 +31,40 @@ function isValidPeriod(value: string | null): value is DashboardPeriod {
 // ─── Inner component (needs useSearchParams → wrapped in Suspense) ────────────
 
 function DashboardContent() {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const rawPeriod = searchParams.get("period");
   const period: DashboardPeriod = isValidPeriod(rawPeriod) ? rawPeriod : "30d";
 
   const { data, isLoading, error, refetch } = useDashboard(period);
 
+  const handlePeriodChange = useCallback(
+    (next: DashboardPeriod) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("period", next);
+      router.push(`${pathname}?${params.toString()}`);
+    },
+    [router, pathname, searchParams]
+  );
+
   const header = (
     <AdminPageHeader
       title="Dashboard"
       description="Overview of sales, orders, payments, shipments, and operational issues."
-      actions={<DashboardDateRangeSelector value={period} />}
+      actions={
+        <DashboardDateRangeSelector value={period} onChange={handlePeriodChange} />
+      }
     />
   );
 
-  if (isLoading) return <>{header}<DashboardLoading /></>;
+  if (isLoading)
+    return (
+      <>
+        {header}
+        <DashboardLoading />
+      </>
+    );
 
   if (error || !data) {
     return (

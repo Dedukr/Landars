@@ -47,7 +47,10 @@ export function SalesAreaChart({ data }: Props) {
   }));
 
   return (
-    <AdminCard title="Revenue over time" description="Daily revenue (paid orders)">
+    <AdminCard
+      title="Revenue over time"
+      description="Daily revenue (paid orders)"
+    >
       {chartData.length === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">
           No revenue data for the selected period.
@@ -60,9 +63,23 @@ export function SalesAreaChart({ data }: Props) {
               margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
             >
               <defs>
-                <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="10%" stopColor="hsl(var(--primary))" stopOpacity={0.25} />
-                  <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                <linearGradient
+                  id="revenueGradient"
+                  x1="0"
+                  y1="0"
+                  x2="0"
+                  y2="1"
+                >
+                  <stop
+                    offset="10%"
+                    stopColor="hsl(var(--primary))"
+                    stopOpacity={0.25}
+                  />
+                  <stop
+                    offset="95%"
+                    stopColor="hsl(var(--primary))"
+                    stopOpacity={0}
+                  />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" />

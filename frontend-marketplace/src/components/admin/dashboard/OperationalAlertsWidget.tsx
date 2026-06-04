@@ -18,10 +18,19 @@ type AlertSectionProps = {
   renderItem: (item: DashboardAlertItem) => ReactNode;
 };
 
-function AlertSection({ icon, label, colorClass, items, rowClass, renderItem }: AlertSectionProps) {
+function AlertSection({
+  icon,
+  label,
+  colorClass,
+  items,
+  rowClass,
+  renderItem,
+}: AlertSectionProps) {
   return (
     <section>
-      <div className={`mb-1.5 flex items-center gap-1.5 text-xs font-medium ${colorClass}`}>
+      <div
+        className={`mb-1.5 flex items-center gap-1.5 text-xs font-medium ${colorClass}`}
+      >
         {icon}
         {label}
       </div>
@@ -90,7 +99,9 @@ export function OperationalAlertsWidget({ alerts }: Props) {
                       </span>
                     )}
                     {s.message && (
-                      <p className="truncate text-xs text-muted-foreground">{s.message}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {s.message}
+                      </p>
                     )}
                   </div>
                   <span className="shrink-0 text-xs text-muted-foreground">
@@ -111,9 +122,13 @@ export function OperationalAlertsWidget({ alerts }: Props) {
               renderItem={(tx) => (
                 <>
                   <div className="min-w-0">
-                    <p className="truncate font-medium">{tx.reference || "—"}</p>
+                    <p className="truncate font-medium">
+                      {tx.reference || "—"}
+                    </p>
                     {tx.statement_date && (
-                      <span className="text-xs text-muted-foreground">{tx.statement_date}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {tx.statement_date}
+                      </span>
                     )}
                   </div>
                   {tx.amount != null && <MoneyText value={tx.amount} />}
@@ -134,7 +149,9 @@ export function OperationalAlertsWidget({ alerts }: Props) {
                   <div className="min-w-0">
                     {n.event && <span className="font-medium">{n.event}</span>}
                     {n.error && (
-                      <p className="truncate text-xs text-muted-foreground">{n.error}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {n.error}
+                      </p>
                     )}
                   </div>
                   <span className="shrink-0 text-xs text-muted-foreground">

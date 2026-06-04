@@ -56,7 +56,11 @@ export function OrdersBarChart({ data }: Props) {
               data={chartData}
               margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
             >
-              <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
+              <CartesianGrid
+                strokeDasharray="3 3"
+                className="stroke-border"
+                vertical={false}
+              />
               <XAxis
                 dataKey="date"
                 tickFormatter={fmt}
@@ -72,7 +76,10 @@ export function OrdersBarChart({ data }: Props) {
                 axisLine={false}
                 width={28}
               />
-              <Tooltip content={<ChartTooltip />} cursor={{ fill: "hsl(var(--muted))" }} />
+              <Tooltip
+                content={<ChartTooltip />}
+                cursor={{ fill: "hsl(var(--muted))" }}
+              />
               <Bar
                 dataKey="orders"
                 fill="hsl(var(--muted-foreground) / 0.5)"
