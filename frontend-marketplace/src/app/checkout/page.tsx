@@ -155,7 +155,6 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const placingOrderRef = useRef(false);
   const [orderCompleted, setOrderCompleted] = useState(false);
-  const [profileData, setProfileData] = useState<ProfileData | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   // const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [checkoutStep] = useState<1 | 2 | 3>(2); // 1=Cart, 2=Shipping & Payment, 3=Review
@@ -174,8 +173,6 @@ export default function CheckoutPage() {
   } = useShipmentQuoteOptions();
   const [selectedShipmentQuote, setSelectedShipmentQuote] =
     useState<ShipmentQuoteOption | null>(null);
-  /** Post-delivery quotes are loaded once per checkout visit, not on option/address edits. */
-  const shipmentQuotesFetchedRef = useRef(false);
 
   // Redirect if cart is empty (but not if we're showing order review).
   useEffect(() => {
@@ -268,24 +265,9 @@ export default function CheckoutPage() {
               updates.recalculate_delivery = true;
               needsUpdate = true;
             }
-          } else {
-            // For post delivery, use API price from shipping options
-            // If shipping options are available, use the first one's price
-            // Otherwise, keep the existing fee
-            if (shipmentQuoteOptions.length > 0) {
-              const apiPrice = parseFloat(shipmentQuoteOptions[0].price);
-              const currentDeliveryFee = cartData.delivery_fee
-                ? parseFloat(cartData.delivery_fee)
-                : 0;
-
-              // Update if fee doesn't match API price
-              if (Math.abs(currentDeliveryFee - apiPrice) > 0.01) {
-                updates.delivery_fee = apiPrice.toString();
-                needsUpdate = true;
-              }
-            }
-            // If no shipping options available yet, don't update (will be set when options load)
           }
+          // Post-delivery fee is synced when quotes load or the customer picks a method —
+          // not here, so choosing an option does not trigger another quote fetch.
 
           // Ensure notes are saved (if they exist in shipping form but not in cart)
           if (shippingForm.notes && shippingForm.notes !== cartData.notes) {
@@ -312,7 +294,6 @@ export default function CheckoutPage() {
     cart.length,
     shippingForm.notes,
     fetchCartData,
-    shipmentQuoteOptions,
   ]);
 
   // All values come from cart model - single source of truth
@@ -480,7 +461,6 @@ export default function CheckoutPage() {
     try {
       setLoading(true);
       const data = await httpClient.get<ProfileData>("/api/auth/profile/");
-      setProfileData(data);
 
       // Pre-populate form with existing data
       setShippingForm({
@@ -535,59 +515,87 @@ export default function CheckoutPage() {
     return () => clearTimeout(timeoutId);
   }, [shippingForm.notes, user, cartData, updateCartNotes]);
 
-  // Fetch post-delivery courier quotes once when checkout opens (profile + cart ready).
+  const shipmentAddressKey = useMemo(
+    () =>
+      [
+        shippingForm.address_line.trim(),
+        shippingForm.address_line2.trim(),
+        shippingForm.city.trim(),
+        shippingForm.postal_code.trim(),
+      ].join("|"),
+    [
+      shippingForm.address_line,
+      shippingForm.address_line2,
+      shippingForm.city,
+      shippingForm.postal_code,
+    ]
+  );
+
+  const shipmentCartKey = useMemo(
+    () =>
+      cart
+        .map((item) => `${item.productId}:${item.quantity}`)
+        .sort()
+        .join(","),
+    [cart]
+  );
+
+  const shipmentCartItemsRef = useRef<
+    Array<{ product: number; quantity: string }>
+  >([]);
+
   useEffect(() => {
-    const isHomeDelivery = cartData?.is_home_delivery ?? true;
+    shipmentCartItemsRef.current = cart.map((item) => ({
+      product: item.productId,
+      quantity: String(item.quantity),
+    }));
+  }, [cart]);
 
-    if (isHomeDelivery) {
-      if (shipmentQuotesFetchedRef.current) {
-        clearShipmentQuotes();
-        setSelectedShipmentQuote(null);
-        shipmentQuotesFetchedRef.current = false;
-      }
+  // Fetch post-delivery quotes when address or cart lines change (not on option pick).
+  useEffect(() => {
+    if (cartIsHomeDelivery) {
+      clearShipmentQuotes();
+      setSelectedShipmentQuote(null);
       return;
     }
 
-    if (
-      loading ||
-      cartIsLoading ||
-      !profileData ||
-      !cartData ||
-      cartData.items.length === 0 ||
-      shipmentQuotesFetchedRef.current
-    ) {
+    if (loading || cartIsLoading || shipmentCartItemsRef.current.length === 0) {
       return;
     }
 
-    const addressLine = profileData.address?.address_line?.trim() || "";
-    const city = profileData.address?.city?.trim() || "";
-    const postalCode = profileData.address?.postal_code?.trim() || "";
+    const [addressLine, addressLine2, city, postalCode] =
+      shipmentAddressKey.split("|");
 
     if (!addressLine || !city || !postalCode) {
+      clearShipmentQuotes();
+      setSelectedShipmentQuote(null);
       return;
     }
 
-    shipmentQuotesFetchedRef.current = true;
+    const timeoutId = setTimeout(() => {
+      setSelectedShipmentQuote(null);
+      void fetchShipmentQuotes(
+        {
+          country: "GB",
+          postal_code: postalCode,
+          city,
+          address_line: addressLine,
+          address_line2: addressLine2,
+        },
+        shipmentCartItemsRef.current.map((item) => ({
+          product_id: item.product,
+          quantity: item.quantity,
+        }))
+      );
+    }, 600);
 
-    void fetchShipmentQuotes(
-      {
-        country: "GB",
-        postal_code: postalCode,
-        city,
-        address_line: addressLine,
-      },
-      cartData.items.map((item) => ({
-        product_id: item.product,
-        quantity: item.quantity,
-      }))
-    );
+    return () => clearTimeout(timeoutId);
   }, [
     loading,
     cartIsLoading,
-    profileData,
-    cartData,
-    cartData?.is_home_delivery,
-    cartData?.items?.length,
+    cartIsHomeDelivery,
+    shipmentAddressKey,
+    shipmentCartKey,
     fetchShipmentQuotes,
     clearShipmentQuotes,
   ]);
@@ -617,7 +625,7 @@ export default function CheckoutPage() {
     [shipmentQuoteOptions, cartIsHomeDelivery, user]
   );
 
-  // Sync cart delivery_fee when the backend returns exactly one courier option
+  // Auto-select and sync fee when the API returns exactly one courier option (after address fetch).
   useEffect(() => {
     if (cartIsHomeDelivery || !user) {
       return;
@@ -629,13 +637,22 @@ export default function CheckoutPage() {
     if (selectedShipmentQuote?.id === only.id) {
       return;
     }
-    void handleSelectShipmentQuote(only.id);
+    setSelectedShipmentQuote(only);
+    void httpClient
+      .put("/api/cart/", { delivery_fee: only.price })
+      .then(() => {
+        setCartData((prev) =>
+          prev ? { ...prev, delivery_fee: only.price } : prev
+        );
+      })
+      .catch((error) => {
+        console.error("Failed to update delivery fee:", error);
+      });
   }, [
     cartIsHomeDelivery,
     user,
     shipmentQuoteOptions,
     selectedShipmentQuote?.id,
-    handleSelectShipmentQuote,
   ]);
 
   // Create payment intent when component mounts - using cart total

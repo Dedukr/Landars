@@ -8,6 +8,8 @@ import { useCartOptimized } from "@/hooks/useCartOptimized";
 import { useCartItems } from "@/hooks/useCartItems";
 import { useDeliveryFee } from "@/hooks/useDeliveryFee";
 import { useCartCalculations } from "@/hooks/useCartCalculations";
+import { normalizeListResponse } from "@/components/shop/normalizeListResponse";
+import type { ShopCategoryRecord } from "@/components/shop/ShopFilterPanelContent";
 import { fetchCategoryGroups } from "@/lib/fetchCategoryGroups";
 import { findPostDeliveryCategoryGroup } from "@/lib/categoryGroups";
 import type { ApiCategoryGroup } from "@/lib/prepareHomeDisplayCategories";
@@ -63,11 +65,22 @@ export default function CartSignedIn() {
   const [cartData, setCartData] = useState<CartData | null>(null);
   const [postDeliveryGroup, setPostDeliveryGroup] =
     useState<ApiCategoryGroup | null>(null);
+  const [categoryRecords, setCategoryRecords] = useState<ShopCategoryRecord[]>(
+    []
+  );
 
   useEffect(() => {
-    fetchCategoryGroups().then((groups) => {
+    void (async () => {
+      const [groups, categoriesRes] = await Promise.all([
+        fetchCategoryGroups(),
+        fetch("/api/categories/"),
+      ]);
       setPostDeliveryGroup(findPostDeliveryCategoryGroup(groups));
-    });
+      if (categoriesRes.ok) {
+        const data = await categoriesRes.json();
+        setCategoryRecords(normalizeListResponse<ShopCategoryRecord>(data));
+      }
+    })();
   }, []);
 
   const fetchCartData = useCallback(async () => {
@@ -110,6 +123,8 @@ export default function CartSignedIn() {
     subtotal,
     discount,
     postDeliveryGroup,
+    categoryRecords,
+    isHomeDeliveryFromCart: cartData?.is_home_delivery,
   });
 
   const total = subtotal - discount;

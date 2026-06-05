@@ -7,6 +7,7 @@
  * Post-delivery eligibility uses CategoryGroup #1 (``POST_DELIVERY_CATEGORY_GROUP_ID``).
  */
 
+import type { ShopCategoryRecord } from "@/components/shop/ShopFilterPanelContent";
 import {
   allProductsMatchCategoryGroup,
   categoryGroupNameSet,
@@ -55,7 +56,8 @@ function estimatedParcelWeightKg(products: CartProduct[]): number {
  */
 export function calculateDeliveryFee(
   products: CartProduct[],
-  postDeliveryGroup?: ApiCategoryGroup | null
+  postDeliveryGroup?: ApiCategoryGroup | null,
+  categoryRecords?: ShopCategoryRecord[]
 ): DeliveryFeeCalculation {
   const totalWeight = estimatedParcelWeightKg(products);
 
@@ -72,7 +74,7 @@ export function calculateDeliveryFee(
   let overweight = false;
 
   const nameSet = postDeliveryGroup
-    ? categoryGroupNameSet(postDeliveryGroup)
+    ? categoryGroupNameSet(postDeliveryGroup, categoryRecords)
     : new Set<string>();
 
   const allPostDelivery =

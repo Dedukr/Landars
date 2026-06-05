@@ -102,7 +102,8 @@ export function expandCategoryIdsForFilter(
   return ids;
 }
 
-function categoryNamesForFilterIds(
+/** Names of categories matching ``filterIds``, including all descendant subcategories. */
+export function categoryNamesForFilterIds(
   filterIds: number[],
   records: ShopCategoryRecord[]
 ): Set<string> {

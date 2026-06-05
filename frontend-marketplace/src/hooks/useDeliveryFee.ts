@@ -1,5 +1,6 @@
 "use client";
 import { useMemo } from "react";
+import type { ShopCategoryRecord } from "@/components/shop/ShopFilterPanelContent";
 import type { ApiCategoryGroup } from "@/lib/prepareHomeDisplayCategories";
 import {
   calculateDeliveryFee,
@@ -14,6 +15,9 @@ interface UseDeliveryFeeProps {
   subtotal: number;
   discount?: number;
   postDeliveryGroup?: ApiCategoryGroup | null;
+  categoryRecords?: ShopCategoryRecord[];
+  /** When set, overrides client-side post/home detection (from ``GET /api/cart/``). */
+  isHomeDeliveryFromCart?: boolean;
 }
 
 interface UseDeliveryFeeReturn {
@@ -27,6 +31,8 @@ export function useDeliveryFee({
   subtotal,
   discount = 0,
   postDeliveryGroup = null,
+  categoryRecords,
+  isHomeDeliveryFromCart,
 }: UseDeliveryFeeProps): UseDeliveryFeeReturn {
   const deliveryCalculation = useMemo(() => {
     if (products.length === 0) {
@@ -41,8 +47,23 @@ export function useDeliveryFee({
       };
     }
 
-    return calculateDeliveryFee(products, postDeliveryGroup);
-  }, [products, postDeliveryGroup]);
+    const calculated = calculateDeliveryFee(
+      products,
+      postDeliveryGroup,
+      categoryRecords
+    );
+
+    if (isHomeDeliveryFromCart === undefined) {
+      return calculated;
+    }
+
+    const isHomeDelivery = isHomeDeliveryFromCart;
+    return {
+      ...calculated,
+      isHomeDelivery,
+      hasSausages: !isHomeDelivery,
+    };
+  }, [products, postDeliveryGroup, categoryRecords, isHomeDeliveryFromCart]);
 
   const deliveryBreakdown = useMemo(() => {
     return getDeliveryFeeBreakdown(deliveryCalculation);

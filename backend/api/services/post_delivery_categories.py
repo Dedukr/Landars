@@ -43,12 +43,13 @@ def get_post_delivery_category_ids() -> frozenset[int]:
     gid = post_delivery_category_group_id()
     cache_key = _CACHE_KEY.format(group_id=gid)
     cached = cache.get(cache_key)
-    if cached is not None:
+    # Ignore cached empty lists — they often come from an earlier empty group (e.g. after
+    # a DB restore) and M2M signals may not have fired when categories were added later.
+    if cached:
         return frozenset(cached)
 
     group = get_post_delivery_category_group()
     if not group:
-        cache.set(cache_key, [], 3600)
         return frozenset()
 
     from api.services.category_groups import expand_category_ids_for_product_filter
@@ -61,7 +62,8 @@ def get_post_delivery_category_ids() -> frozenset[int]:
         logger.exception("Failed to load post-delivery categories for group %s", gid)
         expanded = []
 
-    cache.set(cache_key, expanded, 3600)
+    if expanded:
+        cache.set(cache_key, expanded, 3600)
     return frozenset(expanded)
 
 

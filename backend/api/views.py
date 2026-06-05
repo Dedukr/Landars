@@ -1091,6 +1091,9 @@ class CartView(APIView):
 
         # Get or create cart for user
         cart, created = Cart.objects.get_or_create(user=request.user)
+        if cart.items.exists():
+            self._calculate_delivery_type_and_fee(cart)
+            cart.save(update_fields=["is_home_delivery", "delivery_fee", "updated_at"])
         serializer = CartSerializer(cart)
         return Response(serializer.data)
 

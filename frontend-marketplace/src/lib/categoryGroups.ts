@@ -1,5 +1,7 @@
+import type { ShopCategoryRecord } from "@/components/shop/ShopFilterPanelContent";
 import type { ApiCategoryGroup } from "@/lib/prepareHomeDisplayCategories";
 import { fetchCategoryGroups } from "@/lib/fetchCategoryGroups";
+import { categoryNamesForFilterIds } from "@/lib/shopCatalogClient";
 
 /** Matches backend ``POST_DELIVERY_CATEGORY_GROUP_ID`` (default 1). */
 export const POST_DELIVERY_CATEGORY_GROUP_ID = 1;
@@ -17,7 +19,17 @@ export async function getPostDeliveryCategoryGroup(): Promise<ApiCategoryGroup |
   return findPostDeliveryCategoryGroup(groups);
 }
 
-export function categoryGroupNameSet(group: ApiCategoryGroup): Set<string> {
+export function categoryGroupNameSet(
+  group: ApiCategoryGroup,
+  categoryRecords?: ShopCategoryRecord[]
+): Set<string> {
+  const ids = group.category_ids ?? [];
+  if (categoryRecords?.length && ids.length) {
+    const expanded = categoryNamesForFilterIds(ids, categoryRecords);
+    return new Set(
+      [...expanded].map((n) => n.trim().toLowerCase()).filter(Boolean)
+    );
+  }
   return new Set(
     (group.category_names ?? []).map((n) => n.trim().toLowerCase()).filter(Boolean)
   );

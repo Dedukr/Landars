@@ -26,6 +26,7 @@ export interface ShipmentQuoteAddress {
   postal_code: string;
   city?: string;
   address_line?: string;
+  address_line2?: string;
 }
 
 export interface ShipmentQuoteCartItem {
@@ -60,6 +61,7 @@ export function useShipmentQuoteOptions() {
             postal_code: address.postal_code,
             city: address.city || "",
             address_line: address.address_line || "",
+            address_line2: address.address_line2 || "",
           },
           items: items.map((item) => ({
             product_id: item.product_id || item.product,
