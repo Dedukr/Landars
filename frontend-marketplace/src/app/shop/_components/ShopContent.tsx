@@ -38,6 +38,7 @@ import {
   type ApiCategory,
 } from "@/lib/prepareHomeDisplayCategories";
 import type { PostDeliveryCategoryGroup } from "@/lib/postDeliveryCategoryGroup";
+import { prefetchCategoryImages } from "@/lib/shopCatalogClient";
 
 export default function ShopContent() {
   const searchParams = useSearchParams();
@@ -172,6 +173,12 @@ export default function ShopContent() {
     }
     loadCategories();
   }, []);
+
+  useEffect(() => {
+    if (categories.length > 0) {
+      prefetchCategoryImages(categories);
+    }
+  }, [categories]);
 
   useEffect(() => {
     let cancelled = false;
@@ -388,6 +395,7 @@ export default function ShopContent() {
                 filters={filters}
                 sort={sort}
                 search={search}
+                categories={categories}
               />
             </div>
           </div>

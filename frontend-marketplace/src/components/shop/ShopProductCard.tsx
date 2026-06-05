@@ -1,9 +1,9 @@
 "use client";
 
-import React from "react";
-import Image from "next/image";
+import React, { memo } from "react";
 import Link from "next/link";
-import { Heart, Package } from "lucide-react";
+import { Heart } from "lucide-react";
+import ShopProductImage from "@/components/shop/ShopProductImage";
 import { Button } from "@/components/ui/Button";
 import { AddToCartButton } from "@/components/ui/AddToCartButton";
 
@@ -47,7 +47,7 @@ interface ShopProductCardProps {
   onRemoveFromCart: (e?: React.MouseEvent) => void;
 }
 
-export function ShopProductCard({
+function ShopProductCard({
   product,
   user,
   cartItemQuantity,
@@ -123,26 +123,7 @@ export function ShopProductCard({
         className="relative block shrink-0 aspect-[4/3] w-full outline-none bg-[var(--sidebar-bg)]"
         aria-label={`View ${product.name}`}
       >
-        {mainImage ? (
-          <Image
-            src={mainImage}
-            alt={product.name}
-            fill
-            className="object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 50vw, 24vw"
-            loading="lazy"
-          />
-        ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 sm:gap-2 p-3 sm:p-4 text-center">
-            <Package className="w-7 h-7 sm:w-10 sm:h-10 opacity-35" aria-hidden />
-            <span
-              className="text-[10px] sm:text-xs font-medium"
-              style={{ color: "var(--muted-foreground)" }}
-            >
-              Photo coming soon
-            </span>
-          </div>
-        )}
+        <ShopProductImage src={mainImage} alt={product.name} />
         <div className="absolute inset-x-0 bottom-0 hidden sm:flex flex-wrap gap-1.5 px-3 pb-3 pt-6 bg-gradient-to-t from-black/50 to-transparent opacity-95 pointer-events-none">
           {categoryLabel && (
             <span
@@ -250,3 +231,6 @@ export function ShopProductCard({
     </article>
   );
 }
+
+export { ShopProductCard };
+export default memo(ShopProductCard);
