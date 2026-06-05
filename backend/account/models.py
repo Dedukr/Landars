@@ -10,10 +10,29 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
+from .name_utils import display_name_from_parts, split_legacy_name
+
 
 class CustomUserManager(BaseUserManager):
-    def create_user(self, name, email=None, password=None, **extra_fields):
-        if not name:
+    def create_user(
+        self,
+        name=None,
+        email=None,
+        password=None,
+        *,
+        first_name=None,
+        surname=None,
+        **extra_fields,
+    ):
+        if first_name or surname:
+            first_name = (first_name or "").strip() or None
+            surname = (surname or "").strip() or None
+        elif name:
+            first_name, surname = split_legacy_name((name or "").strip())
+        else:
+            raise ValueError("Name must be set")
+
+        if not first_name:
             raise ValueError("Name must be set")
 
         if not email:
@@ -40,16 +59,27 @@ class CustomUserManager(BaseUserManager):
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, name, email=None, password=None, **extra_fields):
+    def create_superuser(
+        self, name=None, email=None, password=None, *, first_name=None, surname=None, **extra_fields
+    ):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
 
-        return self.create_user(name, email=email, password=password, **extra_fields)
+        return self.create_user(
+            name=name,
+            email=email,
+            password=password,
+            first_name=first_name,
+            surname=surname,
+            **extra_fields,
+        )
 
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
-    # Full name is a display field and is NOT unique.
-    name = models.CharField(max_length=255, db_index=True)
+    first_name = models.CharField(max_length=128, blank=True, null=True)
+    surname = models.CharField(max_length=128, blank=True, null=True)
+    # Legacy combined display name; kept in sync from first_name + surname when set.
+    name = models.CharField(max_length=255, db_index=True, blank=True, null=True)
     # Email is the unique login identifier.
     # Keep DB nullable for legacy rows, but application logic enforces email for all new/updated users.
     email = models.EmailField(null=True, blank=True, unique=True)
@@ -81,8 +111,16 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     REQUIRED_FIELDS = ["name"]  # when creating superuser from CLI
 
     def __str__(self):
-        # Use name for human-friendly admin labels/autocomplete.
-        return self.name or (self.email or "")
+        return self.get_display_name() or (self.email or "")
+
+    def get_display_name(self) -> str:
+        return display_name_from_parts(
+            self.first_name, self.surname, fallback_name=self.name
+        )
+
+    def sync_computed_name(self) -> None:
+        """Keep legacy ``name`` aligned with first_name + surname."""
+        self.name = self.get_display_name() or None
 
     def clean(self):
         """Validate the model before saving"""
@@ -114,6 +152,14 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         else:
             # Run full validation (email normalization happens in clean())
             self.full_clean()
+            if not update_fields or "name" in update_fields or {
+                "first_name",
+                "surname",
+            } & set(update_fields):
+                self.sync_computed_name()
+                if update_fields is not None:
+                    update_fields = set(update_fields) | {"name"}
+                    kwargs["update_fields"] = list(update_fields)
             super().save(*args, **kwargs)
 
 

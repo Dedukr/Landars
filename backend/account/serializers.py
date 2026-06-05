@@ -127,6 +127,8 @@ class CustomUserSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
+            "first_name",
+            "surname",
             "email",
             "is_active",
             "profile",

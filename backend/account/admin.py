@@ -41,13 +41,19 @@ class OrderInline(admin.TabularInline):  # or StackedInline if you want vertical
 class CustomUserAdmin(UserAdmin):
     form = CustomUserForm
     add_form = CustomUserCreationForm
-    list_display = ("name", "email", "phone_whatsapp", "is_active", "is_staff")
+    list_display = (
+        "full_name",
+        "email",
+        "phone_whatsapp",
+        "is_active",
+        "is_staff",
+    )
     list_filter = (
         "is_staff",
         "is_active",
     )
     ordering = ("email",)
-    search_fields = ("name", "email", "profile__phone")
+    search_fields = ("first_name", "surname", "name", "email", "profile__phone")
 
     class Media:
         js = ("admin/js/prevent_double_submit.js",)
@@ -61,7 +67,8 @@ class CustomUserAdmin(UserAdmin):
             {
                 "classes": ("wide",),
                 "fields": (
-                    "name",
+                    "first_name",
+                    "surname",
                     "email",
                     "password",
                     "phone",
@@ -127,6 +134,10 @@ class CustomUserAdmin(UserAdmin):
         return qs.exclude(
             is_superuser=True
         )  # or exclude(id=1), or name="root" if that's root
+
+    @admin.display(description="Name", ordering="name")
+    def full_name(self, obj):
+        return obj.get_display_name() or "-"
 
     @admin.display(description="Phone")
     def phone_whatsapp(self, obj):

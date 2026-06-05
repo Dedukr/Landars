@@ -2,6 +2,9 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 
+from .name_utils import split_legacy_name
+from .order_phone import require_customer_phone
+from .phone_utils import is_valid_phone
 from .merge_service import (
     merge_phones,
     merge_users,
@@ -13,6 +16,37 @@ from .merge_service import (
 from .models import Address, CustomUser, Profile
 
 User = get_user_model()
+
+
+class PhoneValidationTest(TestCase):
+    def test_is_valid_phone(self):
+        self.assertTrue(is_valid_phone("+44 7700 900123"))
+        self.assertFalse(is_valid_phone("123"))
+        self.assertFalse(is_valid_phone(""))
+
+    def test_require_customer_phone_blocks_empty(self):
+        user = User.objects.create_user(
+            name="No Phone",
+            email="nophone@example.com",
+            password="pass",
+        )
+        Profile.objects.create(user=user, phone="")
+        response = require_customer_phone(user)
+        self.assertIsNotNone(response)
+        self.assertEqual(response.status_code, 400)
+
+
+class SplitLegacyNameTest(TestCase):
+    def test_two_words_split(self):
+        self.assertEqual(split_legacy_name("Alice Smith"), ("Alice", "Smith"))
+
+    def test_single_word_goes_to_first_name(self):
+        self.assertEqual(split_legacy_name("Madonna"), ("Madonna", None))
+
+    def test_three_words_stay_in_first_name(self):
+        self.assertEqual(
+            split_legacy_name("Mary Jane Watson"), ("Mary Jane Watson", None)
+        )
 
 
 class CustomUserModelTest(TestCase):
@@ -29,7 +63,9 @@ class CustomUserModelTest(TestCase):
     def test_create_user(self):
         """Test creating a regular user"""
         user = User.objects.create_user(**self.user_data)
-        self.assertEqual(user.name, "Test User")
+        self.assertEqual(user.first_name, "Test")
+        self.assertEqual(user.surname, "User")
+        self.assertEqual(user.get_display_name(), "Test User")
         self.assertEqual(user.email, "test@example.com")
         self.assertTrue(user.check_password("testpass123"))
         self.assertTrue(user.is_active)

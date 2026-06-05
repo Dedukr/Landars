@@ -202,6 +202,12 @@ class OrderCreationTelegramIntegrationTests(TestCase):
         )
         self.client.force_authenticate(user=self.user)
 
+    def test_order_creation_requires_phone(self):
+        Profile.objects.filter(user=self.user).update(phone="")
+        response = self.client.post("/api/orders/", {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("phone", response.data["error"].lower())
+
     @patch("notifications.services.telegram.requests.post")
     def test_frontend_order_creation_schedules_telegram_alert(self, mock_post):
         mock_post.return_value = MagicMock(

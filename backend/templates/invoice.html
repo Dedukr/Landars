@@ -645,7 +645,16 @@
                         <strong>Bill to</strong>
                     </div>
                     <div class="break-word">
+                        {% if invoice.customer_snapshot.first_name or invoice.customer_snapshot.surname %}
+                        {% if invoice.customer_snapshot.first_name %}
+                        <div>{{ invoice.customer_snapshot.first_name }}</div>
+                        {% endif %}
+                        {% if invoice.customer_snapshot.surname %}
+                        <div>{{ invoice.customer_snapshot.surname }}</div>
+                        {% endif %}
+                        {% else %}
                         {{ invoice.customer_snapshot.name }}
+                        {% endif %}
                     </div>
                 </div>
                 <div class="">

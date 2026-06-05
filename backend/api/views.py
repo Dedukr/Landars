@@ -697,6 +697,14 @@ class OrderListView(APIView):
                 {"error": "Cart is empty"}, status=status.HTTP_400_BAD_REQUEST
             )
 
+        from account.order_phone import require_customer_phone
+
+        phone_error = require_customer_phone(
+            request.user, request.data.get("phone")
+        )
+        if phone_error is not None:
+            return phone_error
+
         # Create order using values from cart (ensure consistency)
         # Prioritize cart values as the single source of truth - all cart fields are saved to order
         # Convert discount and delivery_fee to Decimal to avoid type errors

@@ -26,6 +26,8 @@ from .email_utils import (
     send_password_reset_email,
 )
 from .email_validators import validate_email_comprehensive, validate_email_field
+from .name_utils import split_legacy_name
+from .user_payload import user_payload
 from .models import (
     Address,
     CustomUser,
@@ -82,15 +84,24 @@ def register(request):
         data = request.data
         email = data.get("email", "").strip().lower()
         password = data.get("password", "")
-        name = data.get("name", "").strip()
+        first_name = data.get("first_name", "").strip()
+        surname = data.get("surname", "").strip()
+        legacy_name = data.get("name", "").strip()
+
+        if not first_name and not surname and legacy_name:
+            first_name, surname = split_legacy_name(legacy_name)
+            first_name = first_name or ""
+            surname = surname or ""
 
         # Input validation
-        if not email or not password or not name:
+        if not email or not password or not first_name or not surname:
             logger.warning(
                 f"Registration attempt with missing fields from IP: {request.META.get('REMOTE_ADDR')}"
             )
             return Response(
-                {"error": "Email, password, and name are required"},
+                {
+                    "error": "Email, password, first name, and surname are required",
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -133,9 +144,10 @@ def register(request):
         # Create new user (initially unverified)
         try:
             user = CustomUser.objects.create_user(
-                name=name,
                 email=email,
                 password=password,
+                first_name=first_name,
+                surname=surname,
                 is_email_verified=False,
                 created_source=CustomUser.CREATED_SOURCE_WEBSITE,
             )
@@ -171,7 +183,9 @@ def register(request):
             f"{frontend_url}/verify-email?token={verification_token.token}"
         )
         send_email_verification_email(
-            to_email=email, user_name=name, verification_url=verification_url
+            to_email=email,
+            user_name=user.get_display_name(),
+            verification_url=verification_url,
         )
         # Set email_sent_at timestamp after successfully sending the email
         # This ensures cooldown starts when email is sent, not when button is pressed
@@ -187,7 +201,7 @@ def register(request):
             {
                 "message": "User created successfully. Please check your email to verify your account.",
                 "email_verification_required": True,
-                "user": {"id": user.id, "name": user.name, "email": user.email},
+                "user": user_payload(user),
             },
             status=status.HTTP_201_CREATED,
         )
@@ -268,7 +282,7 @@ def login_view(request):
                 {
                     "message": "Please verify your email address before logging in",
                     "email_verification_required": True,
-                    "user": {"id": user.id, "name": user.name, "email": user.email},
+                    "user": user_payload(user),
                 },
                 status=status.HTTP_200_OK,
             )
@@ -290,12 +304,7 @@ def login_view(request):
                 "message": "Login successful",
                 "access": str(refresh.access_token),
                 "refresh": str(refresh),
-                "user": {
-                    "id": user.id,
-                    "name": user.name,
-                    "email": user.email,
-                    "is_staff": user.is_staff,
-                },
+                "user": user_payload(user, include_staff=True),
             },
             status=status.HTTP_200_OK,
         )
@@ -350,11 +359,8 @@ def user_profile(request):
         user = request.user
         profile_data = {
             "user": {
-                "id": user.id,
-                "name": user.name,
-                "email": user.email,
+                **user_payload(user, include_staff=True),
                 "last_login": user.last_login,
-                "is_staff": user.is_staff,
             }
         }
 
@@ -454,10 +460,36 @@ def update_profile(request):
         data = request.data
 
         # Update user basic information
-        if "name" in data:
-            name = data.get("name", "").strip()
-            if name and name != user.name:
-                user.name = name
+        if any(k in data for k in ("first_name", "surname", "name")):
+            first_name = (
+                data.get("first_name", "").strip()
+                if "first_name" in data
+                else (user.first_name or "").strip()
+            )
+            surname = (
+                data.get("surname", "").strip()
+                if "surname" in data
+                else (user.surname or "").strip()
+            )
+            if "name" in data and not ("first_name" in data or "surname" in data):
+                legacy = data.get("name", "").strip()
+                if legacy:
+                    first_name, surname = split_legacy_name(legacy)
+                    first_name = first_name or ""
+                    surname = surname or ""
+            if not first_name:
+                return Response(
+                    {"error": "First name is required"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not surname:
+                return Response(
+                    {"error": "Surname is required"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            user.first_name = first_name
+            user.surname = surname
+            user.sync_computed_name()
 
         if "email" in data:
             email = data.get("email", "").strip().lower()
@@ -520,11 +552,8 @@ def update_profile(request):
         # Return updated profile data
         profile_data = {
             "user": {
-                "id": user.id,
-                "name": user.name,
-                "email": user.email,
+                **user_payload(user, include_staff=True),
                 "last_login": user.last_login,
-                "is_staff": user.is_staff,
             },
             "profile": {
                 "phone": profile.phone,
@@ -668,7 +697,7 @@ def request_password_reset(request):
             try:
                 # Centralized SMTP utility handles connection reuse and templating
                 send_password_reset_email(
-                    to_email=user.email, user_name=user.name, reset_url=reset_url
+                    to_email=user.email, user_name=user.get_display_name(), reset_url=reset_url
                 )
                 logger.info(f"Password reset email sent to: {email}")
             except Exception as e:
@@ -767,7 +796,7 @@ def confirm_password_reset(request):
             login_url = f"{request.scheme}://{frontend_host}/auth"
             send_password_reset_confirmation_email(
                 to_email=reset_token.user.email,
-                user_name=reset_token.user.name,
+                user_name=reset_token.user.get_display_name(),
                 login_url=login_url,
             )
             logger.info(
@@ -827,10 +856,7 @@ def validate_password_reset_token(request):
         return Response(
             {
                 "valid": True,
-                "user": {
-                    "name": reset_token.user.name,
-                    "email": reset_token.user.email,
-                },
+                "user": user_payload(reset_token.user),
             },
             status=status.HTTP_200_OK,
         )
@@ -1070,7 +1096,7 @@ def verify_email(request):
         home_url = url_base  # Use URL_BASE directly as home_url
 
         send_email_verification_confirmation_email(
-            to_email=user.email, user_name=user.name, home_url=home_url
+            to_email=user.email, user_name=user.get_display_name(), home_url=home_url
         )
 
         # Log successful verification
@@ -1081,7 +1107,7 @@ def verify_email(request):
         return Response(
             {
                 "message": "Email verified successfully",
-                "user": {"id": user.id, "name": user.name, "email": user.email},
+                "user": user_payload(user),
             },
             status=status.HTTP_200_OK,
         )
@@ -1224,7 +1250,7 @@ def resend_verification_email(request):
                 # Centralized SMTP utility handles connection reuse and templating
                 send_email_verification_email(
                     to_email=user.email,
-                    user_name=user.name,
+                    user_name=user.get_display_name(),
                     verification_url=verification_url,
                 )
                 # Set email_sent_at timestamp after successfully sending the email
@@ -1330,7 +1356,7 @@ def check_verification_status(request):
         return Response(
             {
                 "valid": True,
-                "user": {"id": user.id, "name": user.name, "email": user.email},
+                "user": user_payload(user),
                 "is_verified": user.is_email_verified,
             },
             status=status.HTTP_200_OK,

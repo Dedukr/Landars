@@ -653,7 +653,16 @@
                         <strong>Credit to</strong>
                     </div>
                     <div class="break-word">
+                        {% if credit_note.customer_snapshot.first_name or credit_note.customer_snapshot.surname %}
+                        {% if credit_note.customer_snapshot.first_name %}
+                        <div>{{ credit_note.customer_snapshot.first_name }}</div>
+                        {% endif %}
+                        {% if credit_note.customer_snapshot.surname %}
+                        <div>{{ credit_note.customer_snapshot.surname }}</div>
+                        {% endif %}
+                        {% else %}
                         {{ credit_note.customer_snapshot.name }}
+                        {% endif %}
                     </div>
                 </div>
                 <div class="">

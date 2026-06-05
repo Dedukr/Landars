@@ -7,7 +7,8 @@ from .models import Address, CustomUser, Profile
 
 
 class CustomUserForm(UserChangeForm):
-    name = forms.CharField(required=False)
+    first_name = forms.CharField(label="First name", required=False)
+    surname = forms.CharField(label="Surname", required=False)
     phone = forms.CharField(required=False)
     address_line = forms.CharField(label="Address Line", required=False)
     address_line2 = forms.CharField(label="Address Line 2", required=False)
@@ -17,13 +18,14 @@ class CustomUserForm(UserChangeForm):
 
     class Meta:
         model = CustomUser
-        fields = ("name", "email", "password", "is_staff")
+        fields = ("first_name", "surname", "email", "password", "is_staff")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         if self.instance.pk:
-            self.fields["name"].initial = self.instance.name
+            self.fields["first_name"].initial = self.instance.first_name
+            self.fields["surname"].initial = self.instance.surname
             profile = getattr(self.instance, "profile", None)
             if profile:
                 self.fields["phone"].initial = profile.phone
@@ -44,10 +46,11 @@ class CustomUserForm(UserChangeForm):
     def save(self, commit=True):
         user = super().save(commit)
         profile, _ = Profile.objects.get_or_create(user=user)
-        # Name lives on CustomUser (Profile has no name field).
-        user.name = self.cleaned_data.get("name") or user.name
+        user.first_name = self.cleaned_data.get("first_name") or user.first_name
+        user.surname = self.cleaned_data.get("surname") or user.surname
+        user.sync_computed_name()
         if commit:
-            user.save(update_fields=["name"])
+            user.save(update_fields=["first_name", "surname", "name"])
         profile.phone = self.cleaned_data.get("phone")
 
         address = profile.address or Address()
@@ -83,7 +86,7 @@ class CustomUserCreationForm(forms.ModelForm):
 
     class Meta:
         model = CustomUser
-        fields = ("name", "email")
+        fields = ("first_name", "surname", "email")
 
         # def save(self, commit=True):
         #     user = super().save(commit=False)

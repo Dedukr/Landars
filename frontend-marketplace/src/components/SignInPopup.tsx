@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Heart, ShoppingCart } from "lucide-react";
+import { Heart, ShoppingCart, X } from "lucide-react";
 import { getAuthUrl } from "@/utils/authHelpers";
 
 export type SignInPopupVariant = "wishlist" | "cart";
@@ -69,7 +69,23 @@ const SignInPopup: React.FC<SignInPopupProps> = ({
           padding: "2rem",
           border: "1px solid var(--sidebar-border)",
         }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sign-in-popup-title"
       >
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute top-4 right-4 inline-flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:opacity-80"
+          style={{
+            color: "var(--muted-foreground)",
+            background: "var(--sidebar-bg)",
+            border: "1px solid var(--sidebar-border)",
+          }}
+          aria-label="Close"
+        >
+          <X className="h-5 w-5" aria-hidden />
+        </button>
         <div className="text-center">
           <div className="mb-6 flex justify-center">
             <div
@@ -89,6 +105,7 @@ const SignInPopup: React.FC<SignInPopupProps> = ({
           </div>
 
           <h2
+            id="sign-in-popup-title"
             className="text-2xl font-bold mb-3"
             style={{ color: "var(--foreground)" }}
           >

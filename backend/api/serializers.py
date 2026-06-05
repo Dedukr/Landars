@@ -350,7 +350,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
 class OrderSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, required=True)
-    customer_name = serializers.CharField(source="customer.name", read_only=True)
+    customer_name = serializers.SerializerMethodField()
     total_price = serializers.SerializerMethodField()
     total_items = serializers.SerializerMethodField()
     total_weight = serializers.SerializerMethodField()
@@ -437,6 +437,11 @@ class OrderSerializer(serializers.ModelSerializer):
     def validate(self, data):
         """Basic validation only; duplicate-prevention removed."""
         return data
+
+    def get_customer_name(self, obj):
+        if obj.customer:
+            return obj.customer.get_display_name()
+        return None
 
     def get_total_price(self, obj):
         return obj.total_price
@@ -735,6 +740,8 @@ class OrderSerializer(serializers.ModelSerializer):
     sum_price = serializers.SerializerMethodField()
     total_items = serializers.SerializerMethodField()
     customer_name = serializers.SerializerMethodField()
+    customer_first_name = serializers.SerializerMethodField()
+    customer_surname = serializers.SerializerMethodField()
     customer_phone = serializers.SerializerMethodField()
     customer_address = serializers.SerializerMethodField()
     invoice_link = serializers.SerializerMethodField()
@@ -763,6 +770,8 @@ class OrderSerializer(serializers.ModelSerializer):
             "id",
             "customer",
             "customer_name",
+            "customer_first_name",
+            "customer_surname",
             "customer_phone",
             "customer_address",
             "address",
@@ -820,7 +829,17 @@ class OrderSerializer(serializers.ModelSerializer):
 
     def get_customer_name(self, obj):
         if obj.customer:
-            return obj.customer.name
+            return obj.customer.get_display_name()
+        return None
+
+    def get_customer_first_name(self, obj):
+        if obj.customer:
+            return obj.customer.first_name
+        return None
+
+    def get_customer_surname(self, obj):
+        if obj.customer:
+            return obj.customer.surname
         return None
 
     def get_customer_phone(self, obj):

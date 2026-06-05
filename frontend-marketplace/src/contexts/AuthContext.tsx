@@ -10,10 +10,13 @@ import React, {
 import { httpClient } from "@/utils/httpClient";
 import { clearCartStorage } from "@/utils/cartStorage";
 import { clearWishlistStorage } from "@/utils/wishlistStorage";
+import { formatUserDisplayName } from "@/lib/userName";
 
 interface User {
   id: number;
   name: string;
+  first_name?: string | null;
+  surname?: string | null;
   email: string;
   is_staff?: boolean;
 }
@@ -71,7 +74,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (data.user) {
           return {
             id: data.user.id,
-            name: data.user.name,
+            name: formatUserDisplayName(data.user),
+            first_name: data.user.first_name ?? null,
+            surname: data.user.surname ?? null,
             email: data.user.email,
             is_staff: data.user.is_staff || false,
           };
@@ -252,12 +257,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * Logs in a user with provided tokens and user data
    */
   const login = useCallback((tokens: AuthTokens, newUser: User) => {
+    const normalized: User = {
+      ...newUser,
+      name: formatUserDisplayName(newUser),
+    };
     setToken(tokens.access);
     setRefreshTokenValue(tokens.refresh);
-    setUser(newUser);
+    setUser(normalized);
     localStorage.setItem("authToken", tokens.access);
     localStorage.setItem("refreshToken", tokens.refresh);
-    localStorage.setItem("user", JSON.stringify(newUser));
+    localStorage.setItem("user", JSON.stringify(normalized));
   }, []);
 
   const contextValue: AuthContextType = {

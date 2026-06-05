@@ -6,6 +6,8 @@
 export interface OrderDetailCustomer {
   id: number;
   name: string;
+  first_name?: string | null;
+  surname?: string | null;
   email: string;
 }
 
@@ -38,6 +40,8 @@ export interface MarketplaceOrderDetail {
   customer?: OrderDetailCustomer;
   /** Flattened fields from some serializers */
   customer_name?: string | null;
+  customer_first_name?: string | null;
+  customer_surname?: string | null;
   /** From serializer when profile phone is available */
   customer_phone?: string | null;
   customer_address?: string | null;

@@ -10,11 +10,14 @@ import { Button } from "@/components/ui/Button";
 import NotAuthenticatedState from "@/components/NotAuthenticatedState";
 import AlertMessage from "@/components/AlertMessage";
 import PageHeader from "@/components/PageHeader";
+import { formatUserDisplayName } from "@/lib/userName";
 
 interface ProfileData {
   user: {
     id: number;
     name: string;
+    first_name?: string | null;
+    surname?: string | null;
     email: string;
     last_login: string;
   };
@@ -52,7 +55,8 @@ export default function ProfilePage() {
 
   // Form state
   const [formData, setFormData] = useState({
-    name: "",
+    first_name: "",
+    surname: "",
     phone: "",
     address_line: "",
     address_line2: "",
@@ -75,7 +79,8 @@ export default function ProfilePage() {
 
       // Populate form data
       setFormData({
-        name: data.user.name || "",
+        first_name: data.user.first_name || "",
+        surname: data.user.surname || "",
         phone: data.profile?.phone || "",
         address_line: data.address?.address_line || "",
         address_line2: data.address?.address_line2 || "",
@@ -106,14 +111,20 @@ export default function ProfilePage() {
       setError(null);
 
       // Validate required fields
-      if (!formData.name.trim()) {
-        setError("Full name is required");
+      if (!formData.first_name.trim()) {
+        setError("First name is required");
+        setSaving(false);
+        return;
+      }
+      if (!formData.surname.trim()) {
+        setError("Surname is required");
         setSaving(false);
         return;
       }
 
       const updateData = {
-        name: formData.name.trim(),
+        first_name: formData.first_name.trim(),
+        surname: formData.surname.trim(),
         phone: formData.phone,
         address: {
           address_line: formData.address_line,
@@ -157,7 +168,8 @@ export default function ProfilePage() {
   const handleCancel = () => {
     if (profileData) {
       setFormData({
-        name: profileData.user.name || "",
+        first_name: profileData.user.first_name || "",
+        surname: profileData.user.surname || "",
         phone: profileData.profile?.phone || "",
         address_line: profileData.address?.address_line || "",
         address_line2: profileData.address?.address_line2 || "",
@@ -327,11 +339,15 @@ export default function ProfilePage() {
             {/* User Avatar & Basic Info */}
             <div className="flex items-center space-x-4">
               <div className="w-16 h-16 bg-[var(--primary)] rounded-full flex items-center justify-center text-white text-xl font-bold">
-                {profileData?.user.name?.charAt(0).toUpperCase() || "U"}
+                {(profileData?.user.first_name || profileData?.user.name)
+                  ?.charAt(0)
+                  .toUpperCase() || "U"}
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-[var(--foreground)]">
-                  {profileData?.user.name || "No name set"}
+                  {profileData?.user
+                    ? formatUserDisplayName(profileData.user)
+                    : "No name set"}
                 </h3>
                 <p className="text-[var(--muted-foreground)]">
                   {profileData?.user.email || "No email set"}
@@ -365,25 +381,49 @@ export default function ProfilePage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {isEditing ? (
-              <Input
-                label="Full Name *"
-                name="name"
-                value={formData.name}
-                onChange={handleInputChange}
-                placeholder="Enter your full name"
-                required
-              />
+              <>
+                <Input
+                  label="First name *"
+                  name="first_name"
+                  value={formData.first_name}
+                  onChange={handleInputChange}
+                  placeholder="Enter your first name"
+                  required
+                  autoComplete="given-name"
+                />
+                <Input
+                  label="Surname *"
+                  name="surname"
+                  value={formData.surname}
+                  onChange={handleInputChange}
+                  placeholder="Enter your surname"
+                  required
+                  autoComplete="family-name"
+                />
+              </>
             ) : (
-              <div className="space-y-4">
-                <div className="border-b border-[var(--sidebar-border)] pb-2">
-                  <label className="block text-sm font-medium text-[var(--muted-foreground)] mb-2">
-                    Full Name
-                  </label>
-                  <div className="text-lg font-semibold text-[var(--foreground)]">
-                    {profileData?.user.name || "No name set"}
+              <>
+                <div className="space-y-4">
+                  <div className="border-b border-[var(--sidebar-border)] pb-2">
+                    <label className="block text-sm font-medium text-[var(--muted-foreground)] mb-2">
+                      First name
+                    </label>
+                    <div className="text-lg font-semibold text-[var(--foreground)]">
+                      {profileData?.user.first_name?.trim() || "—"}
+                    </div>
                   </div>
                 </div>
-              </div>
+                <div className="space-y-4">
+                  <div className="border-b border-[var(--sidebar-border)] pb-2">
+                    <label className="block text-sm font-medium text-[var(--muted-foreground)] mb-2">
+                      Surname
+                    </label>
+                    <div className="text-lg font-semibold text-[var(--foreground)]">
+                      {profileData?.user.surname?.trim() || "—"}
+                    </div>
+                  </div>
+                </div>
+              </>
             )}
             {isEditing ? (
               <Input

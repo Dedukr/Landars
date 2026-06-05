@@ -6,14 +6,22 @@ import { ContactLink } from "@/components/ContactLink";
 import { OrderSectionCard } from "./OrderSectionCard";
 
 export function CustomerDetailsCard({ order }: { order: MarketplaceOrderDetail }) {
-  const name =
+  const firstName =
+    order.customer_first_name?.trim() ||
+    order.customer?.first_name?.trim() ||
+    null;
+  const surname =
+    order.customer_surname?.trim() ||
+    order.customer?.surname?.trim() ||
+    null;
+  const legacyName =
     order.customer_name?.trim() ||
     order.customer?.name?.trim() ||
     null;
   const email = order.customer?.email?.trim() || null;
   const phone = order.customer_phone?.trim() || null;
 
-  if (!name && !email && !phone) return null;
+  if (!firstName && !surname && !legacyName && !email && !phone) return null;
 
   return (
     <OrderSectionCard aria-labelledby="customer-details-heading">
@@ -32,12 +40,28 @@ export function CustomerDetailsCard({ order }: { order: MarketplaceOrderDetail }
         </h2>
       </div>
       <dl className="space-y-3 text-sm">
-        {name ? (
+        {firstName ? (
+          <div>
+            <dt className="font-medium" style={{ color: "var(--muted-foreground)" }}>
+              First name
+            </dt>
+            <dd style={{ color: "var(--foreground)" }}>{firstName}</dd>
+          </div>
+        ) : null}
+        {surname ? (
+          <div>
+            <dt className="font-medium" style={{ color: "var(--muted-foreground)" }}>
+              Surname
+            </dt>
+            <dd style={{ color: "var(--foreground)" }}>{surname}</dd>
+          </div>
+        ) : null}
+        {!firstName && !surname && legacyName ? (
           <div>
             <dt className="font-medium" style={{ color: "var(--muted-foreground)" }}>
               Name
             </dt>
-            <dd style={{ color: "var(--foreground)" }}>{name}</dd>
+            <dd style={{ color: "var(--foreground)" }}>{legacyName}</dd>
           </div>
         ) : null}
         {email ? (

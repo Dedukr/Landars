@@ -370,9 +370,18 @@ class Invoice(models.Model):
         # Customer snapshot
         customer = order.customer
         profile = getattr(customer, "profile", None) if customer else None
+        first_name = getattr(customer, "first_name", None) if customer else None
+        surname = getattr(customer, "surname", None) if customer else None
+        display_name = (
+            customer.get_display_name()
+            if customer and hasattr(customer, "get_display_name")
+            else getattr(customer, "name", None)
+        )
         self.customer_snapshot = {
             "id": customer.id if customer else None,
-            "name": getattr(customer, "name", None),
+            "first_name": first_name,
+            "surname": surname,
+            "name": display_name,
             "email": getattr(customer, "email", None),
             "phone": getattr(profile, "phone", None) if profile else None,
         }

@@ -1756,12 +1756,16 @@ class OrderAdmin(admin.ModelAdmin):
         return super().get_ordering(request) or ["-id"]
 
     def customer_name(self, obj):
+        if not obj.customer:
+            return "No Customer"
+        display = obj.customer.get_display_name() or "No Customer"
         request = getattr(self, "request", None)
         if request and request.user.has_perm("account.change_customuser"):
-            if obj.customer:
-                url = reverse("admin:account_customuser_change", args=[obj.customer.id])
-                return format_html('<a href="{}">{}</a>', url, obj.customer.name)
-        return obj.customer.name if obj.customer else "No Customer"
+            url = reverse("admin:account_customuser_change", args=[obj.customer.id])
+            return format_html('<a href="{}">{}</a>', url, display)
+        return display
+
+    customer_name.short_description = "Customer"
 
     def customer_phone(self, obj):
         phone = None

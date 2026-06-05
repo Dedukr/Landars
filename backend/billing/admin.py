@@ -90,7 +90,12 @@ class InvoiceAdmin(admin.ModelAdmin):
             return "-"
         snapshot = obj.customer_snapshot
         lines = []
-        if snapshot.get("name"):
+        if snapshot.get("first_name") or snapshot.get("surname"):
+            if snapshot.get("first_name"):
+                lines.append(f"<strong>{snapshot['first_name']}</strong>")
+            if snapshot.get("surname"):
+                lines.append(f"<strong>{snapshot['surname']}</strong>")
+        elif snapshot.get("name"):
             lines.append(f"<strong>{snapshot['name']}</strong>")
         if snapshot.get("email"):
             lines.append(f"Email: {snapshot['email']}")
@@ -345,7 +350,12 @@ class CreditNoteAdmin(admin.ModelAdmin):
             return "-"
         snapshot = obj.customer_snapshot
         lines = []
-        if snapshot.get("name"):
+        if snapshot.get("first_name") or snapshot.get("surname"):
+            if snapshot.get("first_name"):
+                lines.append(f"<strong>{snapshot['first_name']}</strong>")
+            if snapshot.get("surname"):
+                lines.append(f"<strong>{snapshot['surname']}</strong>")
+        elif snapshot.get("name"):
             lines.append(f"<strong>{snapshot['name']}</strong>")
         if snapshot.get("email"):
             lines.append(f"Email: {snapshot['email']}")

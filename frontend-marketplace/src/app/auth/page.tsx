@@ -14,6 +14,8 @@ interface AuthResponse {
   user: {
     id: number;
     name: string;
+    first_name?: string | null;
+    surname?: string | null;
     email: string;
   };
   email_verification_required?: boolean;
@@ -24,7 +26,8 @@ function AuthForm() {
   const [isSignUp, setIsSignUp] = useState(false);
   const searchParams = useSearchParams();
   const [formData, setFormData] = useState({
-    name: "",
+    first_name: "",
+    surname: "",
     email: "",
     password: "",
     confirmPassword: "",
@@ -176,11 +179,18 @@ function AuthForm() {
         return;
       }
 
+      if (!formData.first_name.trim() || !formData.surname.trim()) {
+        setError("First name and surname are required");
+        setLoading(false);
+        return;
+      }
+
       try {
         const data = await httpClient.post<AuthResponse>(
           "/api/auth/register/",
           {
-            name: formData.name,
+            first_name: formData.first_name.trim(),
+            surname: formData.surname.trim(),
             email: formData.email,
             password: formData.password,
           }
@@ -420,7 +430,8 @@ function AuthForm() {
     // Preserve email when switching from sign-in to sign-up
     const preservedEmail = newMode ? formData.email : "";
     setFormData({
-      name: "",
+      first_name: "",
+      surname: "",
       email: preservedEmail,
       password: "",
       confirmPassword: "",
@@ -475,26 +486,48 @@ function AuthForm() {
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div className="space-y-4">
             {isSignUp && (
-              <div>
-                <label
-                  htmlFor="name"
-                  className="block text-sm font-medium"
-                  style={{ color: "var(--foreground)" }}
-                >
-                  Full Name
-                </label>
-                <input
-                  id="name"
-                  name="name"
-                  type="text"
-                  autoComplete="name"
-                  required={isSignUp}
-                  className="mt-1 appearance-none relative block w-full px-3 py-2 border rounded-md focus:outline-none focus:z-10 sm:text-sm auth-input"
-                  placeholder="Your full name"
-                  value={formData.name}
-                  onChange={handleChange}
-                />
-              </div>
+              <>
+                <div>
+                  <label
+                    htmlFor="first_name"
+                    className="block text-sm font-medium"
+                    style={{ color: "var(--foreground)" }}
+                  >
+                    First name
+                  </label>
+                  <input
+                    id="first_name"
+                    name="first_name"
+                    type="text"
+                    autoComplete="given-name"
+                    required={isSignUp}
+                    className="mt-1 appearance-none relative block w-full px-3 py-2 border rounded-md focus:outline-none focus:z-10 sm:text-sm auth-input"
+                    placeholder="Your first name"
+                    value={formData.first_name}
+                    onChange={handleChange}
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="surname"
+                    className="block text-sm font-medium"
+                    style={{ color: "var(--foreground)" }}
+                  >
+                    Surname
+                  </label>
+                  <input
+                    id="surname"
+                    name="surname"
+                    type="text"
+                    autoComplete="family-name"
+                    required={isSignUp}
+                    className="mt-1 appearance-none relative block w-full px-3 py-2 border rounded-md focus:outline-none focus:z-10 sm:text-sm auth-input"
+                    placeholder="Your surname"
+                    value={formData.surname}
+                    onChange={handleChange}
+                  />
+                </div>
+              </>
             )}
             <div>
               <label
@@ -1220,7 +1253,7 @@ function AuthForm() {
           isOpen={showEmailVerificationPopup}
           onClose={() => setShowEmailVerificationPopup(false)}
           userEmail={verificationEmail}
-          userName={formData.name}
+          userName={`${formData.first_name} ${formData.surname}`.trim()}
         />
       </div>
     </div>

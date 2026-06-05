@@ -41,6 +41,8 @@ interface ProfileData {
   user: {
     id: number;
     name: string;
+    first_name?: string | null;
+    surname?: string | null;
     email: string;
   };
   profile: {
@@ -99,9 +101,13 @@ interface OrderDetails {
   customer?: {
     id: number;
     name: string;
+    first_name?: string | null;
+    surname?: string | null;
     email: string;
   };
   customer_name?: string;
+  customer_first_name?: string;
+  customer_surname?: string;
   customer_phone?: string;
   customer_address?: string;
   notes?: string;
@@ -842,6 +848,7 @@ export default function CheckoutPage() {
         shipping_carrier?: string;
         shipping_service_name?: string;
         shipping_cost?: string;
+        phone: string;
       } = {
         notes: cartData?.notes || shippingForm.notes,
         discount: cartData?.discount || "0",
@@ -849,6 +856,7 @@ export default function CheckoutPage() {
           ? cartData?.delivery_fee || "0"
           : resolvedPostShipmentQuote?.price || cartData?.delivery_fee || "0",
         is_home_delivery: cartData?.is_home_delivery ?? true,
+        phone: shippingForm.phone.trim(),
         address: {
           address_line: shippingForm.address_line,
           address_line2: shippingForm.address_line2,
@@ -864,6 +872,19 @@ export default function CheckoutPage() {
         orderData.shipping_carrier = resolvedPostShipmentQuote.carrier;
         orderData.shipping_service_name = resolvedPostShipmentQuote.name;
         orderData.shipping_cost = resolvedPostShipmentQuote.price;
+      }
+
+      // Phone is required server-side; persist on profile before creating the order.
+      try {
+        await httpClient.put("/api/auth/profile/update/", {
+          phone: shippingForm.phone.trim(),
+        });
+      } catch (profileError) {
+        console.error("Failed to save phone number:", profileError);
+        setErrors({
+          phone: "Could not save your phone number. Please try again.",
+        });
+        return;
       }
 
       const order = await httpClient.post<{ id: number }>(
@@ -906,9 +927,19 @@ export default function CheckoutPage() {
       router.push(`/orders/${order.id}`);
     } catch (error) {
       console.error("Order creation failed:", error);
-      setErrors({
-        submit: "Failed to place order. Please try again.",
-      });
+      const message =
+        error &&
+        typeof error === "object" &&
+        "message" in error &&
+        typeof (error as { message: unknown }).message === "string"
+          ? (error as { message: string }).message
+          : "Failed to place order. Please try again.";
+      const phoneRequired = /phone/i.test(message);
+      setErrors(
+        phoneRequired
+          ? { phone: message, submit: message }
+          : { submit: message }
+      );
     } finally {
       setSubmitting(false);
       placingOrderRef.current = false;
@@ -1001,6 +1032,8 @@ export default function CheckoutPage() {
                   <Input
                     label="Phone Number *"
                     type="tel"
+                    required
+                    autoComplete="tel"
                     value={shippingForm.phone}
                     onChange={(e) =>
                       setShippingForm({
@@ -1577,14 +1610,30 @@ export default function CheckoutPage() {
                         className="text-sm font-medium mb-1"
                         style={{ color: "var(--foreground)", opacity: 0.7 }}
                       >
-                        Name
+                        First name
                       </p>
                       <p
                         className="text-base"
                         style={{ color: "var(--foreground)" }}
                       >
-                        {orderDetails.customer?.name ||
-                          orderDetails.customer_name ||
+                        {orderDetails.customer_first_name ||
+                          orderDetails.customer?.first_name ||
+                          ""}
+                      </p>
+                    </div>
+                    <div>
+                      <p
+                        className="text-sm font-medium mb-1"
+                        style={{ color: "var(--foreground)", opacity: 0.7 }}
+                      >
+                        Surname
+                      </p>
+                      <p
+                        className="text-base"
+                        style={{ color: "var(--foreground)" }}
+                      >
+                        {orderDetails.customer_surname ||
+                          orderDetails.customer?.surname ||
                           ""}
                       </p>
                     </div>
@@ -1664,8 +1713,16 @@ export default function CheckoutPage() {
                       className="text-base"
                       style={{ color: "var(--foreground)" }}
                     >
-                      {orderDetails.customer?.name ||
+                      {[
+                        orderDetails.customer_first_name ||
+                          orderDetails.customer?.first_name,
+                        orderDetails.customer_surname ||
+                          orderDetails.customer?.surname,
+                      ]
+                        .filter(Boolean)
+                        .join(" ") ||
                         orderDetails.customer_name ||
+                        orderDetails.customer?.name ||
                         ""}
                     </p>
                     <p
