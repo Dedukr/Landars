@@ -43,8 +43,8 @@ class CustomUserAdmin(UserAdmin):
     add_form = CustomUserCreationForm
     list_display = (
         "full_name",
-        "email",
         "phone_whatsapp",
+        "email",
         "is_active",
         "is_staff",
     )
