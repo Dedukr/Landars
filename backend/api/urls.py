@@ -5,7 +5,6 @@ from .views import (
     ProductDetail,
     ProductReviewListCreate,
     CategoryGroupList,
-    CategoryGroupPostDelivery,
     CategoryList,
     CompressedImageUploadView,
     PresignedUploadView,
@@ -37,11 +36,6 @@ urlpatterns = [
     ),
     path("categories/", CategoryList.as_view(), name="category-list"),
     path("category-groups/", CategoryGroupList.as_view(), name="category-group-list"),
-    path(
-        "category-groups/post-delivery/",
-        CategoryGroupPostDelivery.as_view(),
-        name="category-group-post-delivery",
-    ),
     path("wishlist/", WishlistView.as_view(), name="wishlist"),
     path("cart/", CartView.as_view(), name="cart"),
     # Order endpoints

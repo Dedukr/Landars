@@ -1,7 +1,5 @@
 """
-Post-delivery eligibility from a :class:`~api.models.CategoryGroup` (default group id 1).
-
-Replaces the legacy single ``POST_SUITABLE_CATEGORY_ID`` parent category check.
+Post-delivery eligibility from CategoryGroup #1 (``POST_DELIVERY_CATEGORY_GROUP_ID``).
 """
 
 from __future__ import annotations
@@ -14,11 +12,23 @@ from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
-_CACHE_KEY = "post_delivery_category_ids:v1:{group_id}"
+_CACHE_KEY = "post_delivery_category_ids:v2:{group_id}"
 
 
 def post_delivery_category_group_id() -> int:
     return int(getattr(settings, "POST_DELIVERY_CATEGORY_GROUP_ID", 1))
+
+
+def get_post_delivery_category_group():
+    """Return the CategoryGroup used for post-delivery rules, or None."""
+    from api.models import CategoryGroup
+
+    gid = post_delivery_category_group_id()
+    return (
+        CategoryGroup.objects.filter(pk=gid)
+        .prefetch_related("categories")
+        .first()
+    )
 
 
 def invalidate_post_delivery_category_cache(group_id: int | None = None) -> None:
@@ -28,7 +38,7 @@ def invalidate_post_delivery_category_cache(group_id: int | None = None) -> None
 
 def get_post_delivery_category_ids() -> frozenset[int]:
     """
-    Category PKs in the configured post-delivery group (empty if group missing).
+    Category PKs for the post-delivery group, expanded to descendant subcategories.
     """
     gid = post_delivery_category_group_id()
     cache_key = _CACHE_KEY.format(group_id=gid)
@@ -36,25 +46,27 @@ def get_post_delivery_category_ids() -> frozenset[int]:
     if cached is not None:
         return frozenset(cached)
 
-    from api.models import CategoryGroup
+    group = get_post_delivery_category_group()
+    if not group:
+        cache.set(cache_key, [], 3600)
+        return frozenset()
+
+    from api.services.category_groups import expand_category_ids_for_product_filter
 
     try:
-        ids = list(
-            CategoryGroup.objects.filter(pk=gid)
-            .values_list("categories__id", flat=True)
-            .distinct()
-        )
-        ids = [i for i in ids if i is not None]
+        direct_ids = list(group.categories.values_list("id", flat=True).distinct())
+        direct_ids = [i for i in direct_ids if i is not None]
+        expanded = expand_category_ids_for_product_filter(direct_ids)
     except Exception:
         logger.exception("Failed to load post-delivery categories for group %s", gid)
-        ids = []
+        expanded = []
 
-    cache.set(cache_key, ids, 3600)
-    return frozenset(ids)
+    cache.set(cache_key, expanded, 3600)
+    return frozenset(expanded)
 
 
 def product_has_post_delivery_category(product) -> bool:
-    """True when the product is assigned at least one category from the post-delivery group."""
+    """True when the product is assigned at least one post-delivery group category."""
     if not product:
         return False
     ids = get_post_delivery_category_ids()

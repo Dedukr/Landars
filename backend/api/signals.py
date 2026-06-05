@@ -91,7 +91,6 @@ def order_schedule_sales_on_status_change(sender, instance, **kwargs):
 @receiver(post_delete, sender=CategoryGroup, dispatch_uid="api.category_group_delete_cache_clear")
 def category_group_invalidate_post_delivery_cache(sender, instance, **kwargs):
     invalidate_post_delivery_category_cache(instance.pk)
-    cache.delete(f"category_group_post_delivery_v1:{instance.pk}")
     cache.delete("category_groups_list_v1")
 
 
@@ -105,5 +104,4 @@ def category_group_categories_changed(sender, instance, action, **kwargs):
         instance, CategoryGroup
     ):
         invalidate_post_delivery_category_cache(instance.pk)
-        cache.delete(f"category_group_post_delivery_v1:{instance.pk}")
         cache.delete("category_groups_list_v1")

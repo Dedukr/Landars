@@ -1,9 +1,4 @@
-import {
-  buildCombinedCategoryShopHref,
-  isPostDeliveryMergedCategoryId,
-  POST_DELIVERY_GROUP_VIRTUAL_KEY,
-} from "@/constants/homeCategoryGroups";
-import type { PostDeliveryCategoryGroup } from "@/lib/postDeliveryCategoryGroup";
+import { buildCombinedCategoryShopHref } from "@/constants/homeCategoryGroups";
 
 export interface ApiCategory {
   id: number;
@@ -42,26 +37,127 @@ export interface ApiCategoryGroup {
 const sortByNameDesc = (a: { name: string }, b: { name: string }) =>
   b.name.localeCompare(a.name, undefined, { sensitivity: "base" });
 
-/** Virtual parent id for post-delivery subcategories in the shop filter tree only. */
-export const SHOP_POST_DELIVERY_FILTER_PARENT_ID = -10001;
+/** Display-only parent id for a category group in the shop filter sidebar. */
+export function shopFilterGroupParentId(groupId: number): number {
+  return -groupId;
+}
 
-/** Shown under post delivery in the shop filter (still hidden from carousel leaves). */
-const SHOP_FILTER_POST_DELIVERY_SUBCATEGORY_NAMES = new Set(
-  ["Meat Snacks", "Pork Fat", "Ready for Grill"].map((n) => n.trim().toLowerCase())
-);
+function normalizeCategoryName(name: string): string {
+  return name.trim().toLowerCase();
+}
 
-/** Hidden from shop sidebar filter — covered by a CategoryGroup carousel tile. */
-const SHOP_FILTER_EXCLUDED_CATEGORY_NAMES = new Set(
-  [
-    "Sausages and Barbecue",
-    "Sausages and Marinated products",
-    "Lard",
-  ].map((n) => n.trim().toLowerCase())
-);
+/** Category ids that are parents (in the API tree) of a grouped category. */
+function ancestorIdsOfGrouped<
+  T extends { id: number; parent?: number | null },
+>(groupedIds: Set<number>, categoryById: Map<number, T>): Set<number> {
+  const ancestors = new Set<number>();
 
-function isShopFilterPanelExcludedCategory(name: string): boolean {
-  const normalized = name.trim().toLowerCase();
-  return SHOP_FILTER_EXCLUDED_CATEGORY_NAMES.has(normalized);
+  for (const groupedId of groupedIds) {
+    let current = categoryById.get(groupedId);
+    while (current?.parent != null) {
+      ancestors.add(current.parent);
+      current = categoryById.get(current.parent);
+    }
+  }
+
+  return ancestors;
+}
+
+/** True when ``catId`` has a descendant not assigned to any category group. */
+function hasUngroupedDescendantInTree<
+  T extends { id: number; parent?: number | null },
+>(
+  catId: number,
+  groupedIds: Set<number>,
+  assignedToGroup: Set<number>,
+  categories: T[]
+): boolean {
+  for (const child of categories) {
+    if (child.parent !== catId) continue;
+    if (!groupedIds.has(child.id) && !assignedToGroup.has(child.id)) {
+      return true;
+    }
+    if (
+      hasUngroupedDescendantInTree(
+        child.id,
+        groupedIds,
+        assignedToGroup,
+        categories
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function resolveFilterParent<
+  T extends { id: number; parent?: number | null },
+>(
+  cat: T,
+  groupedIds: Set<number>,
+  groupedAncestorIds: Set<number>,
+  assignedToGroup: Set<number>,
+  categories: T[],
+  categoryById: Map<number, T>
+): number | null {
+  let parent = cat.parent ?? null;
+
+  while (parent != null) {
+    if (groupedIds.has(parent) || assignedToGroup.has(parent)) {
+      const parentCat = categoryById.get(parent);
+      parent = parentCat?.parent ?? null;
+      continue;
+    }
+    if (
+      groupedAncestorIds.has(parent) &&
+      !hasUngroupedDescendantInTree(
+        parent,
+        groupedIds,
+        assignedToGroup,
+        categories
+      )
+    ) {
+      const parentCat = categoryById.get(parent);
+      parent = parentCat?.parent ?? null;
+      continue;
+    }
+    break;
+  }
+
+  return parent;
+}
+
+/** Drop grouped members superseded by the virtual group parent or a deeper member. */
+function filterGroupMembersForDisplay<
+  T extends { id: number; name: string; parent?: number | null },
+>(
+  members: T[],
+  memberIds: number[],
+  groupName: string,
+  categoryById: Map<number, T>
+): T[] {
+  const memberIdSet = new Set(memberIds);
+  const groupNameNorm = normalizeCategoryName(groupName);
+
+  return members.filter((cat) => {
+    if (normalizeCategoryName(cat.name) === groupNameNorm) {
+      return false;
+    }
+
+    const hasGroupedDescendant = memberIds.some((otherId) => {
+      if (otherId === cat.id) return false;
+      let current = categoryById.get(otherId);
+      while (current?.parent != null) {
+        if (current.parent === cat.id) return true;
+        if (!memberIdSet.has(current.parent)) break;
+        current = categoryById.get(current.parent);
+      }
+      return false;
+    });
+
+    return !hasGroupedDescendant;
+  });
 }
 
 /**
@@ -125,117 +221,87 @@ export function buildShopByCategoryDisplay(
 }
 
 /**
- * Categories for the shop sidebar filter: omit members of any CategoryGroup
- * (they are filtered via the group carousel tile) and parents with no visible children.
- */
-export function filterCategoriesForShopPanel<
-  T extends { id: number; name: string; parent?: number | null },
->(categories: T[], groups: ApiCategoryGroup[]): T[] {
-  const groupedIds = new Set(groups.flatMap((g) => g.category_ids ?? []));
-  const withoutGrouped = categories.filter(
-    (c) => !groupedIds.has(c.id) && !isShopFilterPanelExcludedCategory(c.name)
-  );
-  const visibleIds = new Set(withoutGrouped.map((c) => c.id));
-
-  return withoutGrouped.filter((cat) => {
-    if (cat.parent != null) return true;
-    const childIds = categories
-      .filter((c) => c.parent === cat.id)
-      .map((c) => c.id);
-    if (childIds.length === 0) return true;
-    return childIds.some((id) => visibleIds.has(id));
-  });
-}
-
-/**
- * Shop sidebar filter: nest Meat Snacks / Pork Fat / Ready for Grill under the
- * post-delivery group name. Display-only hierarchy — does not change API parents.
+ * Shop sidebar filter: each CategoryGroup is a virtual parent with its member
+ * categories as children; remaining categories keep their natural tree.
  */
 export function buildShopFilterPanelCategories<
   T extends { id: number; name: string; parent?: number | null },
->(
-  categories: T[],
-  groups: ApiCategoryGroup[],
-  postDeliveryGroup: PostDeliveryCategoryGroup | null
-): T[] {
-  const base = filterCategoriesForShopPanel(categories, groups);
+>(categories: T[], groups: ApiCategoryGroup[]): T[] {
+  const categoryById = new Map(categories.map((c) => [c.id, c]));
+  const groupedIds = new Set(groups.flatMap((g) => g.category_ids ?? []));
+  const groupedAncestorIds = ancestorIdsOfGrouped(groupedIds, categoryById);
+  const assignedToGroup = new Set<number>();
+  const result: T[] = [];
 
-  if (!postDeliveryGroup) {
-    return base;
+  for (const group of groups) {
+    const memberIds = group.category_ids ?? [];
+    if (memberIds.length === 0) continue;
+
+    const members = memberIds
+      .map((id) => categoryById.get(id))
+      .filter((c): c is T => Boolean(c));
+    if (members.length === 0) continue;
+
+    const displayMembers = filterGroupMembersForDisplay(
+      members,
+      memberIds,
+      group.name,
+      categoryById
+    );
+    if (displayMembers.length === 0) continue;
+
+    const virtualParentId = shopFilterGroupParentId(group.id);
+    result.push({
+      id: virtualParentId,
+      name: group.name,
+      parent: null,
+    } as T);
+
+    for (const member of displayMembers) {
+      if (assignedToGroup.has(member.id)) continue;
+      assignedToGroup.add(member.id);
+      result.push({
+        ...member,
+        parent: virtualParentId,
+      });
+    }
   }
 
-  const subcats = categories.filter((c) =>
-    SHOP_FILTER_POST_DELIVERY_SUBCATEGORY_NAMES.has(c.name.trim().toLowerCase())
-  );
-  if (subcats.length === 0) {
-    return base;
+  for (const cat of categories) {
+    if (groupedIds.has(cat.id) || assignedToGroup.has(cat.id)) continue;
+
+    if (
+      groupedAncestorIds.has(cat.id) &&
+      !hasUngroupedDescendantInTree(
+        cat.id,
+        groupedIds,
+        assignedToGroup,
+        categories
+      )
+    ) {
+      continue;
+    }
+
+    result.push({
+      ...cat,
+      parent: resolveFilterParent(
+        cat,
+        groupedIds,
+        groupedAncestorIds,
+        assignedToGroup,
+        categories,
+        categoryById
+      ),
+    });
   }
 
-  const subIds = new Set(subcats.map((c) => c.id));
-  const withoutSubs = base.filter((c) => !subIds.has(c.id));
-
-  const virtualParent = {
-    id: SHOP_POST_DELIVERY_FILTER_PARENT_ID,
-    name: postDeliveryGroup.name,
-    parent: null,
-  } as T;
-
-  const reparentedSubs = subcats.map((c) => ({
-    ...c,
-    parent: SHOP_POST_DELIVERY_FILTER_PARENT_ID,
-  }));
-
-  return [...withoutSubs, virtualParent, ...reparentedSubs];
+  const visibleIds = new Set(result.map((c) => c.id));
+  return result.filter((cat) => {
+    if (cat.parent != null) return true;
+    const hasChild = result.some((c) => c.parent === cat.id);
+    if (!hasChild) return true;
+    return result.some((c) => c.parent === cat.id && visibleIds.has(c.id));
+  });
 }
 
-/**
- * Merge categories from the post-delivery CategoryGroup into one carousel tile.
- */
-export function prepareHomeDisplayCategories(
-  categories: ApiCategory[],
-  postDeliveryGroup?: PostDeliveryCategoryGroup | null
-): HomeDisplayCategory[] {
-  const mergeIds = postDeliveryGroup?.category_ids ?? [];
-  if (mergeIds.length === 0) {
-    return [...categories].sort(sortByNameDesc).map((c) => ({ ...c }));
-  }
-
-  const mergeIdSet = new Set(mergeIds);
-  const mergedSources = categories.filter((c) => mergeIdSet.has(c.id));
-
-  const rest = categories.filter((c) => !mergeIdSet.has(c.id));
-
-  if (mergedSources.length === 0) {
-    return [...rest].sort(sortByNameDesc).map((c) => ({ ...c }));
-  }
-
-  let productsCount: number | undefined;
-  const counts = mergedSources
-    .map((c) => c.products_count)
-    .filter((n): n is number => typeof n === "number");
-  if (counts.length > 0) {
-    productsCount = counts.reduce((sum, n) => sum + n, 0);
-  }
-
-  const imageFromChild =
-    mergedSources
-      .filter((c) => c.image_url)
-      .sort(
-        (a, b) =>
-          (b.top_seller_sold_quantity ?? 0) - (a.top_seller_sold_quantity ?? 0)
-      )[0]?.image_url ?? null;
-
-  const combined: HomeDisplayCategory = {
-    id: -1,
-    name: postDeliveryGroup?.name ?? "Post delivery",
-    parent: null,
-    image_url: imageFromChild ?? null,
-    products_count: productsCount,
-    combinedCategoryIds: [...mergeIds],
-    isCombined: true,
-  };
-
-  return [...rest, combined].sort(sortByNameDesc).map((c) => ({ ...c }));
-}
-
-export { buildCombinedCategoryShopHref, isPostDeliveryMergedCategoryId, POST_DELIVERY_GROUP_VIRTUAL_KEY };
+export { buildCombinedCategoryShopHref };

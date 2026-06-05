@@ -8,7 +8,9 @@ import { useCartOptimized } from "@/hooks/useCartOptimized";
 import { useCartItems } from "@/hooks/useCartItems";
 import { useDeliveryFee } from "@/hooks/useDeliveryFee";
 import { useCartCalculations } from "@/hooks/useCartCalculations";
-import { fetchPostDeliveryCategoryGroup } from "@/lib/postDeliveryCategoryGroup";
+import { fetchCategoryGroups } from "@/lib/fetchCategoryGroups";
+import { findPostDeliveryCategoryGroup } from "@/lib/categoryGroups";
+import type { ApiCategoryGroup } from "@/lib/prepareHomeDisplayCategories";
 import { httpClient } from "@/utils/httpClient";
 
 import CartHero from "@/components/cart/CartHero";
@@ -59,12 +61,13 @@ export default function CartSignedIn() {
   const { addToCart, isLoading: cartIsLoading } = useCart();
   const [savedItems, setSavedItems] = useState<number[]>([]);
   const [cartData, setCartData] = useState<CartData | null>(null);
-  const [postDeliveryGroup, setPostDeliveryGroup] = useState<
-    Awaited<ReturnType<typeof fetchPostDeliveryCategoryGroup>>
-  >(null);
+  const [postDeliveryGroup, setPostDeliveryGroup] =
+    useState<ApiCategoryGroup | null>(null);
 
   useEffect(() => {
-    fetchPostDeliveryCategoryGroup().then(setPostDeliveryGroup);
+    fetchCategoryGroups().then((groups) => {
+      setPostDeliveryGroup(findPostDeliveryCategoryGroup(groups));
+    });
   }, []);
 
   const fetchCartData = useCallback(async () => {

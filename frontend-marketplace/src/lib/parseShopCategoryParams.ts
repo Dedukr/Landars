@@ -19,12 +19,10 @@ export function parseShopCategoryParams(
   return [];
 }
 
-/** True when the shop URL requests post-delivery / category-group scoped products. */
-export function shopUsesPostDeliveryScope(
+/** True when the shop URL filters by a category group. */
+export function shopUsesCategoryGroupScope(
   searchParams: Pick<URLSearchParams, "get">
 ): boolean {
-  const flag = searchParams.get("post_delivery");
-  if (flag === "1" || flag === "true" || flag === "yes") return true;
   return Boolean(searchParams.get("category_group")?.trim());
 }
 

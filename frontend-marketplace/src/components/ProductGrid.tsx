@@ -35,6 +35,7 @@ interface ProductGridProps {
   sort: string;
   search?: string;
   categories: ShopCategoryRecord[];
+  categoriesLoading?: boolean;
   onListingMeta?: (meta: ShopListingMeta) => void;
 }
 
@@ -46,6 +47,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({
   sort,
   search,
   categories,
+  categoriesLoading = false,
   onListingMeta,
 }) => {
   const [catalog, setCatalog] = useState<ShopCatalogProduct[]>([]);
@@ -90,11 +92,14 @@ const ProductGrid: React.FC<ProductGridProps> = ({
     return () => controller.abort();
   }, []);
 
-  const filteredProducts = useMemo(
-    () =>
-      applyShopListingQuery(catalog, filters, sort, search, categories),
-    [catalog, filters, sort, search, categories]
-  );
+  const categoryFilterPending =
+    filters.categories.length > 0 && categoriesLoading;
+  const listLoading = catalogLoading || categoryFilterPending;
+
+  const filteredProducts = useMemo(() => {
+    if (categoryFilterPending) return [];
+    return applyShopListingQuery(catalog, filters, sort, search, categories);
+  }, [catalog, filters, sort, search, categories, categoryFilterPending]);
 
   useEffect(() => {
     setVisibleProductsCount(PAGE_SIZE);
@@ -115,12 +120,12 @@ const ProductGrid: React.FC<ProductGridProps> = ({
   });
 
   useEffect(() => {
-    if (inView && hasMoreProducts && !catalogLoading) {
+    if (inView && hasMoreProducts && !listLoading) {
       setVisibleProductsCount((prev) =>
         Math.min(prev + PAGE_SIZE, filteredProducts.length)
       );
     }
-  }, [inView, hasMoreProducts, catalogLoading, filteredProducts.length]);
+  }, [inView, hasMoreProducts, listLoading, filteredProducts.length]);
 
   const retry = useCallback(() => {
     catalogLoadedRef.current = false;
@@ -148,8 +153,8 @@ const ProductGrid: React.FC<ProductGridProps> = ({
 
   useEffect(() => {
     onListingMeta?.({
-      loading: catalogLoading,
-      error: Boolean(catalogError && !catalogLoading),
+      loading: listLoading,
+      error: Boolean(catalogError && !listLoading),
       totalCount,
       loadedCount: catalog.length,
       displayedCount: visibleProducts.length,
@@ -157,7 +162,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({
     });
   }, [
     onListingMeta,
-    catalogLoading,
+    listLoading,
     catalogError,
     totalCount,
     catalog.length,
@@ -165,9 +170,8 @@ const ProductGrid: React.FC<ProductGridProps> = ({
     hasMoreProducts,
   ]);
 
-  const showBlockingError = Boolean(catalogError && !catalogLoading);
-  const showEmpty =
-    !catalogLoading && !showBlockingError && totalCount === 0;
+  const showBlockingError = Boolean(catalogError && !listLoading);
+  const showEmpty = !listLoading && !showBlockingError && totalCount === 0;
 
   function handleClearFiltersViaEvent() {
     if (typeof window !== "undefined") {
@@ -179,7 +183,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({
     <section aria-label="Product catalogue">
       <div className="mb-6 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between text-sm tabular-nums">
         <p style={{ color: "var(--muted-foreground)" }}>
-          {catalogLoading ? (
+          {listLoading ? (
             <span className="inline-flex items-center gap-2">
               <span
                 className="inline-block size-4 rounded-full animate-spin border-2 shrink-0"
@@ -223,7 +227,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({
 
       {!showBlockingError && (
         <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6">
-          {catalogLoading
+          {listLoading
             ? Array.from({ length: SKELETON_COUNT }).map((_, i) => (
                 <ShopProductCardSkeleton key={i} />
               ))
@@ -238,7 +242,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({
         </div>
       )}
 
-      {hasMoreProducts && !showBlockingError && !catalogLoading && (
+      {hasMoreProducts && !showBlockingError && !listLoading && (
         <div className="flex justify-center py-8">
           <Button
             variant="outline"
@@ -254,7 +258,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({
         </div>
       )}
 
-      {hasMoreProducts && !showBlockingError && !catalogLoading && (
+      {hasMoreProducts && !showBlockingError && !listLoading && (
         <div ref={loadMoreRef} className="flex justify-center py-4">
           <div className="text-sm" style={{ color: "var(--muted-foreground)" }}>
             Scroll to load more

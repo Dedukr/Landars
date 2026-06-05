@@ -30,14 +30,12 @@ import {
   shopCategoryGroupIdFromParams,
   buildShopListingHref,
 } from "@/lib/parseShopCategoryParams";
-import { fetchPostDeliveryCategoryGroup } from "@/lib/postDeliveryCategoryGroup";
 import { fetchCategoryGroups } from "@/lib/fetchCategoryGroups";
 import {
   buildShopByCategoryDisplay,
   buildShopFilterPanelCategories,
   type ApiCategory,
 } from "@/lib/prepareHomeDisplayCategories";
-import type { PostDeliveryCategoryGroup } from "@/lib/postDeliveryCategoryGroup";
 import { prefetchCategoryImages } from "@/lib/shopCatalogClient";
 
 export default function ShopContent() {
@@ -69,12 +67,8 @@ export default function ShopContent() {
   const [categoryGroups, setCategoryGroups] = useState<
     Awaited<ReturnType<typeof fetchCategoryGroups>>
   >([]);
-  const [postDeliveryGroup, setPostDeliveryGroup] =
-    useState<PostDeliveryCategoryGroup | null>(null);
-
   useEffect(() => {
     fetchCategoryGroups().then(setCategoryGroups);
-    fetchPostDeliveryCategoryGroup().then(setPostDeliveryGroup);
   }, []);
 
   const displayCategories = useMemo(() => {
@@ -90,13 +84,8 @@ export default function ShopContent() {
   }, [categories, categoryGroups]);
 
   const filterPanelCategories = useMemo(
-    () =>
-      buildShopFilterPanelCategories(
-        categories,
-        categoryGroups,
-        postDeliveryGroup
-      ),
-    [categories, categoryGroups, postDeliveryGroup]
+    () => buildShopFilterPanelCategories(categories, categoryGroups),
+    [categories, categoryGroups]
   );
 
   /** Apply category (and search) filters when arriving from home carousel or other links. */
@@ -115,14 +104,6 @@ export default function ShopContent() {
           const group = groups.find((g) => g.id === groupId);
           if (group?.category_ids?.length) {
             categoryIds = [...group.category_ids];
-          }
-        } else {
-          const postFlag = params.get("post_delivery");
-          if (postFlag === "1" || postFlag === "true" || postFlag === "yes") {
-            const pd = await fetchPostDeliveryCategoryGroup();
-            if (pd?.category_ids?.length) {
-              categoryIds = [...pd.category_ids];
-            }
           }
         }
       }
@@ -396,6 +377,7 @@ export default function ShopContent() {
                 sort={sort}
                 search={search}
                 categories={categories}
+                categoriesLoading={categoriesLoading}
               />
             </div>
           </div>

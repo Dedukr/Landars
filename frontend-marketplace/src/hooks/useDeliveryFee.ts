@@ -1,6 +1,6 @@
 "use client";
 import { useMemo } from "react";
-import type { PostDeliveryCategoryGroup } from "@/lib/postDeliveryCategoryGroup";
+import type { ApiCategoryGroup } from "@/lib/prepareHomeDisplayCategories";
 import {
   calculateDeliveryFee,
   getDeliveryFeeBreakdown,
@@ -13,7 +13,7 @@ interface UseDeliveryFeeProps {
   products: CartProduct[];
   subtotal: number;
   discount?: number;
-  postDeliveryGroup?: PostDeliveryCategoryGroup | null;
+  postDeliveryGroup?: ApiCategoryGroup | null;
 }
 
 interface UseDeliveryFeeReturn {

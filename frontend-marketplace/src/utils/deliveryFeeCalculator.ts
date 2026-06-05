@@ -4,14 +4,14 @@
  * `POST_DELIVERY_SENDCLOUD_MARKUP_PERCENT` (default 20%) — see
  * `ShippingService.get_delivery_fee_by_weight` / checkout quotes.
  *
- * Post-delivery eligibility uses categories from CategoryGroup #1 (API).
+ * Post-delivery eligibility uses CategoryGroup #1 (``POST_DELIVERY_CATEGORY_GROUP_ID``).
  */
 
 import {
-  allProductsHavePostDeliveryCategory,
-  postDeliveryCategoryNameSet,
-  type PostDeliveryCategoryGroup,
-} from "@/lib/postDeliveryCategoryGroup";
+  allProductsMatchCategoryGroup,
+  categoryGroupNameSet,
+} from "@/lib/categoryGroups";
+import type { ApiCategoryGroup } from "@/lib/prepareHomeDisplayCategories";
 
 export interface CartProduct {
   id: number;
@@ -55,7 +55,7 @@ function estimatedParcelWeightKg(products: CartProduct[]): number {
  */
 export function calculateDeliveryFee(
   products: CartProduct[],
-  postDeliveryGroup?: PostDeliveryCategoryGroup | null
+  postDeliveryGroup?: ApiCategoryGroup | null
 ): DeliveryFeeCalculation {
   const totalWeight = estimatedParcelWeightKg(products);
 
@@ -72,13 +72,13 @@ export function calculateDeliveryFee(
   let overweight = false;
 
   const nameSet = postDeliveryGroup
-    ? postDeliveryCategoryNameSet(postDeliveryGroup)
+    ? categoryGroupNameSet(postDeliveryGroup)
     : new Set<string>();
 
   const allPostDelivery =
     postDeliveryGroup &&
     nameSet.size > 0 &&
-    allProductsHavePostDeliveryCategory(products, nameSet);
+    allProductsMatchCategoryGroup(products, nameSet);
 
   if (allPostDelivery) {
     isHomeDelivery = false;

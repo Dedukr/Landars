@@ -137,14 +137,6 @@ class ProductList(APIView):
         if category and category.isdigit():
             filter_category_ids.append(int(category))
 
-        post_delivery = request.query_params.get("post_delivery")
-        if post_delivery in ("1", "true", "yes"):
-            from api.services.post_delivery_categories import (
-                get_post_delivery_category_ids,
-            )
-
-            filter_category_ids.extend(get_post_delivery_category_ids())
-
         if filter_category_ids:
             expanded = expand_category_ids_for_product_filter(filter_category_ids)
             if expanded:
@@ -441,40 +433,6 @@ class CategoryGroupList(APIView):
         return Response(data)
 
 
-class CategoryGroupPostDelivery(APIView):
-    """Post-delivery category group (``POST_DELIVERY_CATEGORY_GROUP_ID``, default 1)."""
-
-    permission_classes = [AllowAny]
-    throttle_classes = []
-
-    def get(self, request):
-        from api.models import CategoryGroup
-        from api.serializers import CategoryGroupSerializer
-        from api.services.post_delivery_categories import (
-            post_delivery_category_group_id,
-        )
-
-        cache_key = f"category_group_post_delivery_v1:{post_delivery_category_group_id()}"
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return Response(cached)
-
-        group = (
-            CategoryGroup.objects.filter(pk=post_delivery_category_group_id())
-            .prefetch_related("categories")
-            .first()
-        )
-        if not group:
-            return Response(
-                {"error": "Post-delivery category group not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        data = CategoryGroupSerializer(group).data
-        cache.set(cache_key, data, 3600)
-        return Response(data)
-
-
 # class StockUpdateView(APIView):
 #     def patch(self, request, product_id):
 #         """Update stock for a specific product."""
@@ -692,7 +650,7 @@ class OrderListView(APIView):
         cart = Cart.objects.select_for_update().get(user=request.user)
         cart_items = list(cart.items.select_related("product").all())
 
-        if not cart_items.exists():
+        if not cart_items:
             return Response(
                 {"error": "Cart is empty"}, status=status.HTTP_400_BAD_REQUEST
             )

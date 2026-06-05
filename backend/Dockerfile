@@ -40,9 +40,15 @@ RUN set -euo pipefail; \
 # Install Python dependencies
 # `--user` installs entry-point scripts under /root/.local/bin (copied to /opt/py/bin in the runner).
 # Putting that dir on PATH up front silences pip's "not on PATH" warnings during the build.
-ENV PATH=/root/.local/bin:$PATH
+ENV PATH=/root/.local/bin:$PATH \
+    PIP_DEFAULT_TIMEOUT=300 \
+    PIP_RETRIES=10
 COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir --user \
+        --timeout 300 \
+        --retries 10 \
+        -r requirements.txt
 
 # Production stage
 FROM python:3.12-alpine AS runner

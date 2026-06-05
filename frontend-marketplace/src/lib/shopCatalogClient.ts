@@ -66,20 +66,53 @@ export async function fetchAllShopProducts(
   return all;
 }
 
+/** Mirror backend ``expand_category_ids_for_product_filter`` (all descendant subcategories). */
+export function expandCategoryIdsForFilter(
+  filterIds: number[],
+  records: ShopCategoryRecord[]
+): Set<number> {
+  const ids = new Set(
+    filterIds.filter((id) => Number.isFinite(id) && id > 0)
+  );
+  if (!ids.size) return ids;
+
+  const childrenByParent = new Map<number, number[]>();
+  for (const record of records) {
+    if (record.parent != null) {
+      const list = childrenByParent.get(record.parent) ?? [];
+      list.push(record.id);
+      childrenByParent.set(record.parent, list);
+    }
+  }
+
+  let frontier = [...ids];
+  while (frontier.length > 0) {
+    const next: number[] = [];
+    for (const parentId of frontier) {
+      for (const childId of childrenByParent.get(parentId) ?? []) {
+        if (!ids.has(childId)) {
+          ids.add(childId);
+          next.push(childId);
+        }
+      }
+    }
+    frontier = next;
+  }
+
+  return ids;
+}
+
 function categoryNamesForFilterIds(
   filterIds: number[],
   records: ShopCategoryRecord[]
 ): Set<string> {
   if (!filterIds.length) return new Set();
 
-  const idSet = new Set(filterIds);
+  const expandedIds = expandCategoryIdsForFilter(filterIds, records);
   const names = new Set<string>();
 
   for (const record of records) {
-    if (idSet.has(record.id)) {
-      names.add(record.name);
-    }
-    if (record.parent != null && idSet.has(record.parent)) {
+    if (expandedIds.has(record.id)) {
       names.add(record.name);
     }
   }
@@ -159,10 +192,18 @@ export function applyShopListingQuery(
   let result = catalog;
 
   if (filters.categories.length > 0) {
+    if (categoryRecords.length === 0) {
+      return [];
+    }
+
     const allowedNames = categoryNamesForFilterIds(
       filters.categories,
       categoryRecords
     );
+    if (allowedNames.size === 0) {
+      return [];
+    }
+
     result = result.filter((product) =>
       (product.categories ?? []).some((name) => allowedNames.has(name))
     );
