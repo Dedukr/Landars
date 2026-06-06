@@ -106,19 +106,15 @@ class CustomUserAdmin(UserAdmin):
                 ),
                 ("Important fields", {"fields": ("last_login", "is_active")}),
             ]
-        if request.user.is_superuser:
+        if request.user.has_perm("account.change_customuser"):
+            permission_fields = ["is_active", "is_staff", "groups"]
+            if request.user.is_superuser:
+                permission_fields.extend(["is_superuser", "user_permissions"])
+            elif request.user.has_perm("auth.change_permission"):
+                permission_fields.append("user_permissions")
             fieldsets = fieldsets + [
-                (
-                    _("Permissions"),
-                    {
-                        "fields": (
-                            "is_staff",
-                            "is_superuser",
-                            "groups",
-                        )
-                    },
-                ),
-                ("Important fields", {"fields": ("last_login", "is_active")}),
+                (_("Permissions"), {"fields": tuple(permission_fields)}),
+                (_("Important dates"), {"fields": ("last_login",)}),
             ]
         return fieldsets
 
@@ -127,13 +123,7 @@ class CustomUserAdmin(UserAdmin):
     )
 
     def get_queryset(self, request):
-        qs = super().get_queryset(request).select_related("profile")
-        # Only show root user to superusers
-        if request.user.is_superuser:
-            return qs
-        return qs.exclude(
-            is_superuser=True
-        )  # or exclude(id=1), or name="root" if that's root
+        return super().get_queryset(request).select_related("profile")
 
     @admin.display(description="Name", ordering="name")
     def full_name(self, obj):
@@ -167,11 +157,6 @@ class CustomUserAdmin(UserAdmin):
         if request.path.endswith("/autocomplete/"):
             queryset = queryset.filter(is_staff=False)
         return queryset, use_distinct
-
-    def has_change_permission(self, request, obj=None):
-        if obj and obj.is_superuser and not request.user.is_superuser:
-            return False
-        return super().has_change_permission(request, obj)
 
     def save_model(self, request, obj, form, change):
         """

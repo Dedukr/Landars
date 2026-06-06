@@ -25,6 +25,8 @@ import {
 } from "@/hooks/useShipmentQuoteOptions";
 
 interface ShippingFormData {
+  first_name: string;
+  surname: string;
   email: string;
   phone: string;
   address_line: string;
@@ -189,6 +191,8 @@ export default function CheckoutPage() {
 
   // Form states
   const [shippingForm, setShippingForm] = useState<ShippingFormData>({
+    first_name: "",
+    surname: "",
     email: "",
     phone: "",
     address_line: "",
@@ -464,6 +468,8 @@ export default function CheckoutPage() {
 
       // Pre-populate form with existing data
       setShippingForm({
+        first_name: data.user.first_name?.trim() || "",
+        surname: data.user.surname?.trim() || "",
         email: data.user.email || "",
         phone: data.profile?.phone || "",
         address_line: data.address?.address_line || "",
@@ -692,6 +698,14 @@ export default function CheckoutPage() {
     const newErrors: Record<string, string> = {};
 
     // Required field validation
+    if (!shippingForm.first_name.trim()) {
+      newErrors.first_name = "First name is required";
+    }
+
+    if (!shippingForm.surname.trim()) {
+      newErrors.surname = "Surname is required";
+    }
+
     if (!shippingForm.email.trim()) {
       newErrors.email = "Email address is required";
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(shippingForm.email)) {
@@ -881,6 +895,8 @@ export default function CheckoutPage() {
         shipping_carrier?: string;
         shipping_service_name?: string;
         shipping_cost?: string;
+        first_name: string;
+        surname: string;
         phone: string;
       } = {
         notes: cartData?.notes || shippingForm.notes,
@@ -889,6 +905,8 @@ export default function CheckoutPage() {
           ? cartData?.delivery_fee || "0"
           : resolvedPostShipmentQuote?.price || cartData?.delivery_fee || "0",
         is_home_delivery: cartData?.is_home_delivery ?? true,
+        first_name: shippingForm.first_name.trim(),
+        surname: shippingForm.surname.trim(),
         phone: shippingForm.phone.trim(),
         address: {
           address_line: shippingForm.address_line,
@@ -907,15 +925,17 @@ export default function CheckoutPage() {
         orderData.shipping_cost = resolvedPostShipmentQuote.price;
       }
 
-      // Phone is required server-side; persist on profile before creating the order.
+      // Name and phone are required server-side; persist before creating the order.
       try {
         await httpClient.put("/api/auth/profile/update/", {
+          first_name: shippingForm.first_name.trim(),
+          surname: shippingForm.surname.trim(),
           phone: shippingForm.phone.trim(),
         });
       } catch (profileError) {
-        console.error("Failed to save phone number:", profileError);
+        console.error("Failed to save customer details:", profileError);
         setErrors({
-          phone: "Could not save your phone number. Please try again.",
+          submit: "Could not save your details. Please check the form and try again.",
         });
         return;
       }
@@ -937,6 +957,8 @@ export default function CheckoutPage() {
       if (shippingForm.saveShippingInfo) {
         try {
           await httpClient.put("/api/auth/profile/update/", {
+            first_name: shippingForm.first_name.trim(),
+            surname: shippingForm.surname.trim(),
             email: shippingForm.email,
             phone: shippingForm.phone,
             address: {
@@ -968,11 +990,14 @@ export default function CheckoutPage() {
           ? (error as { message: string }).message
           : "Failed to place order. Please try again.";
       const phoneRequired = /phone/i.test(message);
-      setErrors(
-        phoneRequired
-          ? { phone: message, submit: message }
-          : { submit: message }
-      );
+      const firstNameRequired = /first name/i.test(message);
+      const surnameRequired = /surname/i.test(message);
+      setErrors({
+        ...(firstNameRequired ? { first_name: message } : {}),
+        ...(surnameRequired ? { surname: message } : {}),
+        ...(phoneRequired ? { phone: message } : {}),
+        submit: message,
+      });
     } finally {
       setSubmitting(false);
       placingOrderRef.current = false;
@@ -1049,6 +1074,39 @@ export default function CheckoutPage() {
                 </h2>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <Input
+                    label="First name *"
+                    name="first_name"
+                    value={shippingForm.first_name}
+                    onChange={(e) =>
+                      setShippingForm({
+                        ...shippingForm,
+                        first_name: e.target.value,
+                      })
+                    }
+                    error={errors.first_name}
+                    required
+                    autoComplete="given-name"
+                    fullWidth
+                  />
+                  <Input
+                    label="Surname *"
+                    name="surname"
+                    value={shippingForm.surname}
+                    onChange={(e) =>
+                      setShippingForm({
+                        ...shippingForm,
+                        surname: e.target.value,
+                      })
+                    }
+                    error={errors.surname}
+                    required
+                    autoComplete="family-name"
+                    fullWidth
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                   <Input
                     label="Email Address *"
                     type="email"

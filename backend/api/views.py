@@ -655,7 +655,16 @@ class OrderListView(APIView):
                 {"error": "Cart is empty"}, status=status.HTTP_400_BAD_REQUEST
             )
 
+        from account.order_names import require_customer_names
         from account.order_phone import require_customer_phone
+
+        names_error = require_customer_names(
+            request.user,
+            request.data.get("first_name"),
+            request.data.get("surname"),
+        )
+        if names_error is not None:
+            return names_error
 
         phone_error = require_customer_phone(
             request.user, request.data.get("phone")

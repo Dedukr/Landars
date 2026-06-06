@@ -18,10 +18,6 @@ class InvoiceLineItemInline(admin.TabularInline):
     max_num = 0  # Prevent adding new line items
     can_delete = False
 
-    def has_add_permission(self, request, obj=None):
-        """Prevent adding new line items - invoices are immutable."""
-        return False
-
     def get_vat_display(self, obj):
         """Display VAT rate as percentage using InvoiceLineItem's method."""
         return obj.get_vat_display() if obj else "-"
@@ -292,10 +288,6 @@ class CreditNoteLineItemInline(admin.TabularInline):
     extra = 0
     max_num = 0  # Prevent adding new line items
     can_delete = False
-
-    def has_add_permission(self, request, obj=None):
-        """Prevent adding new line items - credit notes are immutable."""
-        return False
 
     def get_vat_display(self, obj):
         """Display VAT rate as percentage using CreditNoteLineItem's method."""

@@ -28,9 +28,6 @@ class StatementBatchAdmin(admin.ModelAdmin):
     readonly_fields = ['uploaded_at', 'file_hash']
     actions = ["run_matching_background", "run_matching_now"]
 
-    def has_add_permission(self, request):
-        return False
-
     @admin.action(description="Run order matching in background (recommended)")
     def run_matching_background(self, request, queryset):
         for batch in queryset:

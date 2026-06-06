@@ -1201,10 +1201,6 @@ class InvoiceInline(admin.TabularInline):
     verbose_name = "Document"
     verbose_name_plural = "Documents"
 
-    def has_add_permission(self, request, obj=None):
-        """Prevent adding invoices through inline."""
-        return False
-
     def get_queryset(self, request):
         """Customize queryset if needed."""
         qs = super().get_queryset(request)
@@ -1557,10 +1553,8 @@ class OrderAdmin(admin.ModelAdmin):
             # Shipping fields are read-only (managed by system)
             "get_shipping_tracking_link",
             "get_shipping_label_link",
+            "delivery_date_order_id",
         ]
-        # Make delivery_date_order_id readonly for non-superusers
-        if not request.user.is_superuser:
-            readonly.append("delivery_date_order_id")
         return readonly  # Admins can edit customer, status, notes
 
     def get_queryset(self, request):

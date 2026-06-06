@@ -3,6 +3,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from .name_utils import split_legacy_name
+from .order_names import require_customer_names
 from .order_phone import require_customer_phone
 from .phone_utils import is_valid_phone
 from .merge_service import (
@@ -16,6 +17,30 @@ from .merge_service import (
 from .models import Address, CustomUser, Profile
 
 User = get_user_model()
+
+
+class CustomerNameOrderTest(TestCase):
+    def test_require_customer_names_blocks_empty(self):
+        user = User.objects.create_user(
+            name="No Names",
+            email="noname@example.com",
+            password="pass",
+        )
+        response = require_customer_names(user)
+        self.assertIsNotNone(response)
+        self.assertEqual(response.status_code, 400)
+
+    def test_require_customer_names_persists_from_request(self):
+        user = User.objects.create_user(
+            name="Legacy",
+            email="legacy@example.com",
+            password="pass",
+        )
+        response = require_customer_names(user, "Alice", "Smith")
+        self.assertIsNone(response)
+        user.refresh_from_db()
+        self.assertEqual(user.first_name, "Alice")
+        self.assertEqual(user.surname, "Smith")
 
 
 class PhoneValidationTest(TestCase):
