@@ -55,29 +55,29 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     const variantStyles = {
       primary: [
-        "bg-[var(--primary)] text-white",
-        "hover:bg-[var(--primary-hover)]",
-        "focus:ring-[var(--primary)]",
+        "bg-[var(--btn-primary)] text-[var(--btn-primary-fg)]",
+        "hover:bg-[var(--btn-primary-hover)]",
+        "focus:ring-[var(--btn-primary)]",
         "shadow-sm hover:shadow-md",
         "active:scale-[0.98]",
       ],
       secondary: [
-        "bg-[var(--accent)] text-white",
-        "hover:bg-[#c8953a]",
-        "focus:ring-[var(--accent)]",
+        "bg-[var(--btn-primary)] text-[var(--btn-primary-fg)]",
+        "hover:bg-[var(--btn-primary-hover)]",
+        "focus:ring-[var(--btn-primary)]",
         "shadow-sm hover:shadow-md",
         "active:scale-[0.98]",
       ],
       outline: [
-        "border-2 border-[var(--primary)] text-[var(--primary)] bg-transparent",
-        "hover:bg-[var(--primary)] hover:text-white",
-        "focus:ring-[var(--primary)]",
+        "border-2 border-[var(--btn-primary)] text-[var(--btn-primary)] bg-transparent",
+        "hover:bg-[var(--btn-primary)] hover:text-[var(--btn-primary-fg)]",
+        "focus:ring-[var(--btn-primary)]",
         "active:scale-[0.98]",
       ],
       ghost: [
-        "text-[var(--primary)] bg-transparent",
-        "hover:bg-[var(--primary)]/10",
-        "focus:ring-[var(--primary)]",
+        "text-[var(--btn-primary)] bg-transparent",
+        "hover:bg-[var(--btn-primary)]/10",
+        "focus:ring-[var(--btn-primary)]",
         "active:scale-[0.98]",
       ],
       destructive: [

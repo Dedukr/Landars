@@ -47,6 +47,30 @@ const GRID_CONFIG: Record<
   },
 };
 
+function CategorySectionShell({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "overflow-hidden rounded-2xl border p-4 sm:p-5 backdrop-blur-md",
+        className
+      )}
+      style={{
+        background: "color-mix(in srgb, var(--sidebar-bg) 82%, transparent)",
+        borderColor: "var(--sidebar-border)",
+        boxShadow: "var(--card-shadow)",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 export interface CategoryDisplayGridProps {
   categories: HomeDisplayCategory[];
   loading?: boolean;
@@ -110,39 +134,42 @@ export default function CategoryDisplayGrid({
 
   if (loading) {
     return (
-      <div
-        className={cn(
-          "grid",
-          size === "compact"
-            ? "grid-cols-4 sm:grid-cols-6 lg:grid-cols-10"
-            : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4",
-          config.gap,
-          className
-        )}
-      >
-        {Array.from({ length: config.itemsPerPage }).map((_, i) => (
-          <div
-            key={i}
-            className={cn(
-              "rounded-2xl animate-pulse",
-              size === "compact" && "min-h-[76px] lg:min-h-[112px]"
-            )}
-            style={{
-              height: size === "compact" ? undefined : config.skeletonH,
-              background: "var(--card-bg)",
-              border: "1px solid var(--sidebar-border)",
-            }}
-          />
-        ))}
-      </div>
+      <CategorySectionShell className={className}>
+        <div
+          className={cn(
+            "grid",
+            size === "compact"
+              ? "grid-cols-4 sm:grid-cols-6 lg:grid-cols-10"
+              : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4",
+            config.gap
+          )}
+        >
+          {Array.from({ length: config.itemsPerPage }).map((_, i) => (
+            <div
+              key={i}
+              className={cn(
+                "rounded-2xl animate-pulse",
+                size === "compact" && "min-h-[76px] lg:min-h-[112px]"
+              )}
+              style={{
+                height: size === "compact" ? undefined : config.skeletonH,
+                background: "var(--card-bg)",
+                border: "1px solid var(--sidebar-border)",
+              }}
+            />
+          ))}
+        </div>
+      </CategorySectionShell>
     );
   }
 
   if (categories.length === 0) {
     return (
-      <p className={cn("text-sm", className)} style={{ color: "var(--muted-foreground)" }}>
-        No categories available right now.
-      </p>
+      <CategorySectionShell className={className}>
+        <p className="text-sm text-center py-4" style={{ color: "var(--muted-foreground)" }}>
+          No categories available right now.
+        </p>
+      </CategorySectionShell>
     );
   }
 
@@ -160,24 +187,26 @@ export default function CategoryDisplayGrid({
 
   if (isMobile) {
     return (
-      <div
-        className={cn(
-          "w-full max-w-full min-w-0 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-          config.mobileScrollPad,
-          className
-        )}
-      >
-        <div className="flex gap-1.5 w-max">
-          {categories.map((cat) =>
-            renderCard(cat, cn("flex-shrink-0", config.mobileCardW))
+      <CategorySectionShell className={className}>
+        <div
+          className={cn(
+            "w-full max-w-full min-w-0 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+            "-mx-4 px-4 sm:-mx-5 sm:px-5"
           )}
+        >
+          <div className="flex gap-1.5 w-max">
+            {categories.map((cat) =>
+              renderCard(cat, cn("flex-shrink-0", config.mobileCardW))
+            )}
+          </div>
         </div>
-      </div>
+      </CategorySectionShell>
     );
   }
 
   return (
-    <div className={cn("relative", className)}>
+    <CategorySectionShell className={className}>
+      <div className="relative">
       {pageCount > 1 ? (
         <>
           <button
@@ -258,6 +287,7 @@ export default function CategoryDisplayGrid({
           ))}
         </div>
       ) : null}
-    </div>
+      </div>
+    </CategorySectionShell>
   );
 }

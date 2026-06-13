@@ -36,7 +36,7 @@ const contactDetails = [
   {
     icon: MapPin,
     title: "Location",
-    value: "United Kingdom",
+    value: "Kent, England, DA10",
     href: null as string | null,
     description: "Serving customers across the UK",
   },

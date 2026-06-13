@@ -243,14 +243,14 @@ export default function ShipmentQuoteOptions({
                         className="w-5 h-5 rounded-full border-2 flex items-center justify-center"
                         style={{
                           borderColor: isSelected
-                            ? "var(--primary)"
+                            ? "var(--btn-primary)"
                             : "var(--sidebar-border)",
                         }}
                       >
                         {isSelected && (
                           <div
                             className="w-3 h-3 rounded-full"
-                            style={{ background: "var(--primary)" }}
+                            style={{ background: "var(--btn-primary)" }}
                           />
                         )}
                       </div>

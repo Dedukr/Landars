@@ -57,8 +57,8 @@ export function ShopCategoryChips({
                 "outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)]"
               )}
               style={{
-                background: selected ? "var(--primary)" : "var(--card-bg)",
-                color: selected ? "white" : "var(--foreground)",
+                background: selected ? "var(--btn-primary)" : "var(--card-bg)",
+                color: selected ? "var(--btn-primary-fg)" : "var(--foreground)",
                 borderColor: selected ? "transparent" : "var(--sidebar-border)",
                 boxShadow: selected ? "var(--card-shadow)" : "none",
               }}

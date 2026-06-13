@@ -44,7 +44,7 @@ export default function MobileCartActionBar({
         <Link
           href="/checkout"
           className="flex items-center gap-1.5 px-5 py-3 rounded-xl font-semibold text-sm whitespace-nowrap transition-all active:scale-[0.97]"
-          style={{ background: "var(--primary)", color: "white" }}
+          style={{ background: "var(--btn-primary)", color: "white" }}
           aria-label={`Review order — total £${total.toFixed(2)}`}
         >
           Review order

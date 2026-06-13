@@ -171,7 +171,7 @@ export default function Footer() {
                   style={{ color: "var(--accent)" }}
                 />
                 <span className="text-sm" style={{ color: "var(--muted-foreground)" }}>
-                  United Kingdom
+                  Kent, England, DA10
                 </span>
               </li>
             </ul>

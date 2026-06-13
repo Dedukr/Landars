@@ -32,7 +32,7 @@ export function MobileOrderDetailsBar() {
         <Link
           href="/shop"
           className="flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-xl text-sm font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
-          style={{ background: "var(--primary)" }}
+          style={{ background: "var(--btn-primary)" }}
         >
           <ShoppingBag className="h-4 w-4 shrink-0" aria-hidden />
           Shop

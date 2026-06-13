@@ -12,14 +12,14 @@ const CheckoutButton = memo<CheckoutButtonProps>(({ totalItems }) => {
       href="/checkout"
       className="block w-full py-3 px-4 rounded-lg font-semibold transition-colors text-center"
       style={{
-        background: "var(--primary)",
+        background: "var(--btn-primary)",
         color: "white",
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.background = "var(--primary-hover)";
+        e.currentTarget.style.background = "var(--btn-primary-hover)";
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.background = "var(--primary)";
+        e.currentTarget.style.background = "var(--btn-primary)";
       }}
     >
       Proceed to Checkout ({totalItems} items)

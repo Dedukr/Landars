@@ -1445,16 +1445,16 @@ export default function CheckoutPage() {
                           onClick={handleApplyCoupon}
                           className="px-4 py-2 rounded-r-md focus:outline-none focus:ring-2"
                           style={{
-                            background: "var(--primary)",
-                            color: "white",
+                            background: "var(--btn-primary)",
+                            color: "var(--btn-primary-fg)",
                           }}
                           onMouseEnter={(e) => {
                             e.currentTarget.style.background =
-                              "var(--primary-hover)";
+                              "var(--btn-primary-hover)";
                           }}
                           onMouseLeave={(e) => {
                             e.currentTarget.style.background =
-                              "var(--primary)";
+                              "var(--btn-primary)";
                           }}
                         >
                           Apply
@@ -1523,20 +1523,20 @@ export default function CheckoutPage() {
                 disabled={submitting}
                 fullWidth
                 style={{
-                  background: "var(--primary)",
-                  color: "white",
+                  background: "var(--btn-primary)",
+                  color: "var(--btn-primary-fg)",
                   padding: "0.75rem 1.5rem",
                   fontSize: "1rem",
                   fontWeight: "600",
                 }}
                 onMouseEnter={(e) => {
                   if (!submitting) {
-                    e.currentTarget.style.background = "var(--primary-hover)";
+                    e.currentTarget.style.background = "var(--btn-primary-hover)";
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!submitting) {
-                    e.currentTarget.style.background = "var(--primary)";
+                    e.currentTarget.style.background = "var(--btn-primary)";
                   }
                 }}
               >

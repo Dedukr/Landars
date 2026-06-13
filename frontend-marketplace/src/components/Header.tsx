@@ -325,7 +325,7 @@ export default function Header() {
                   href={signUpUrl}
                   className="px-4 py-2 text-sm font-semibold rounded-lg transition-all duration-200 hover:opacity-90 shadow-sm"
                   style={{
-                    background: "var(--primary)",
+                    background: "var(--btn-primary)",
                     color: "white",
                   }}
                 >
@@ -450,7 +450,7 @@ export default function Header() {
                     onClick={closeMobileMenu}
                     className="flex items-center justify-center w-full py-2.5 px-4 rounded-lg text-sm font-semibold transition-all duration-200 hover:opacity-90"
                     style={{
-                      background: "var(--primary)",
+                      background: "var(--btn-primary)",
                       color: "white",
                     }}
                   >

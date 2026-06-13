@@ -35,7 +35,7 @@ export default function EmptyCartState() {
       <Link
         href="/shop"
         className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition-all active:scale-[0.98] hover:opacity-90"
-        style={{ background: "var(--primary)", color: "white" }}
+        style={{ background: "var(--btn-primary)", color: "white" }}
       >
         Go to shop
         <ArrowRight className="w-4 h-4" aria-hidden="true" />

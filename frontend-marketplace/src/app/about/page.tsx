@@ -348,7 +348,7 @@ export default function AboutPage() {
               href="/"
               className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm shadow-md transition-all duration-200 hover:opacity-90"
               style={{
-                background: "var(--primary)",
+                background: "var(--btn-primary)",
                 color: "white",
               }}
             >

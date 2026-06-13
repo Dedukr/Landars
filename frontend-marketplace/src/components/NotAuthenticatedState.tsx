@@ -46,7 +46,7 @@ export default function NotAuthenticatedState({
           <Link
             href={signInHref}
             className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 hover:opacity-90 shadow-sm"
-            style={{ background: "var(--primary)", color: "white" }}
+            style={{ background: "var(--btn-primary)", color: "white" }}
           >
             Sign In
           </Link>

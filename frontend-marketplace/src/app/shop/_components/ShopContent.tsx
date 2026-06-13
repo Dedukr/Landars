@@ -3,8 +3,6 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import ProductGrid from "@/components/ProductGrid";
-import { ShopPageHeader } from "@/components/shop/ShopPageHeader";
-import { ShopHeroSidePanel } from "@/components/shop/ShopHeroSidePanel";
 import CategoryDisplayGrid from "@/components/categories/CategoryDisplayGrid";
 import { ShopSearchBar } from "@/components/shop/ShopSearchBar";
 import {
@@ -24,7 +22,6 @@ import {
   SHOP_PRICE_MAX_UNLIMITED,
 } from "@/types/shop-filters";
 import { normalizeListResponse } from "@/components/shop/normalizeListResponse";
-import { scopeProductsQueryString } from "@/utils/catalogScope";
 import {
   parseShopCategoryParams,
   shopCategoryGroupIdFromParams,
@@ -57,10 +54,6 @@ export default function ShopContent() {
 
   const [categories, setCategories] = useState<ShopCategoryRecord[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
-
-  const [productCount, setProductCount] = useState<number | null>(null);
-  const [categoryCount, setCategoryCount] = useState<number | null>(null);
-  const [statsLoading, setStatsLoading] = useState(true);
 
   const previousSearchRef = useRef(search);
 
@@ -162,56 +155,6 @@ export default function ShopContent() {
   }, [categories]);
 
   useEffect(() => {
-    let cancelled = false;
-    async function loadStats() {
-      setStatsLoading(true);
-      try {
-        const qs = scopeProductsQueryString(
-          new URLSearchParams({ limit: "1", offset: "0" }).toString()
-        );
-        const [pres, cres] = await Promise.all([
-          fetch(`/api/products/?${qs}`),
-          fetch("/api/categories/"),
-        ]);
-        if (cancelled) return;
-        let pCount: number | null = null;
-        if (pres.ok) {
-          const pdata = await pres.json();
-          if (pdata && typeof pdata.count === "number") pCount = pdata.count;
-        }
-        let cLen: number | null = null;
-        if (cres.ok) {
-          const cdata = await cres.json();
-          const list = normalizeListResponse<ShopCategoryRecord>(cdata);
-          const apiList: ApiCategory[] = list.map((c) => ({
-            id: c.id,
-            name: c.name,
-            parent: c.parent ?? null,
-            image_url: c.image_url ?? null,
-            products_count: c.products_count ?? null,
-            top_seller_sold_quantity: c.top_seller_sold_quantity ?? null,
-          }));
-          const groups = await fetchCategoryGroups();
-          cLen = buildShopByCategoryDisplay(apiList, groups).length;
-        }
-        setProductCount(pCount);
-        setCategoryCount(cLen);
-      } catch {
-        if (!cancelled) {
-          setProductCount(null);
-          setCategoryCount(null);
-        }
-      } finally {
-        if (!cancelled) setStatsLoading(false);
-      }
-    }
-    loadStats();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
     function handleGlobalSearch(e: CustomEvent<string>) {
       if (e.detail !== undefined) setSearch(e.detail);
     }
@@ -304,37 +247,15 @@ export default function ShopContent() {
       </ShopMobileFilterDrawer>
 
       <div className="px-3 sm:px-5 lg:px-10 pt-4 sm:pt-6 lg:content-offset-md">
-        <div className="md:hidden mb-4">
-          <ShopHeroSidePanel />
-        </div>
-        <div className="hidden md:block">
-          <ShopPageHeader
-            productCount={productCount}
-            categoryCount={categoryCount}
-            statsLoading={statsLoading}
-          />
-        </div>
-
         <div
-          className="mt-4 rounded-2xl border px-4 py-5 sm:px-6 sm:py-6 shadow-sm mb-8"
+          className="rounded-2xl border px-4 py-5 sm:px-6 sm:py-6 shadow-sm mb-8"
           style={{
             background: "var(--card-bg)",
             borderColor: "var(--sidebar-border)",
             boxShadow: "var(--card-shadow)",
           }}
         >
-          <ShopSearchBar
-            search={search}
-            setSearch={setSearch}
-            sort={sort}
-            setSort={setSort}
-            sortOptions={SHOP_SORT_OPTIONS}
-            mobileFilterSlot={
-              <ShopMobileFiltersTrigger onClick={() => setFilterDrawerOpen(true)} />
-            }
-          />
-
-          <div className="mt-4 mb-6">
+          <div className="mb-6">
             <CategoryDisplayGrid
               categories={displayCategories}
               loading={categoriesLoading}
@@ -346,7 +267,18 @@ export default function ShopContent() {
             />
           </div>
 
-          <div className="flex flex-col md:flex-row md:items-start gap-8 lg:gap-10">
+          <ShopSearchBar
+            search={search}
+            setSearch={setSearch}
+            sort={sort}
+            setSort={setSort}
+            sortOptions={SHOP_SORT_OPTIONS}
+            mobileFilterSlot={
+              <ShopMobileFiltersTrigger onClick={() => setFilterDrawerOpen(true)} />
+            }
+          />
+
+          <div className="mt-4 flex flex-col md:flex-row md:items-start gap-8 lg:gap-10">
             <ShopDesktopFilterAside
               filters={filters}
               setFilters={setFilters}

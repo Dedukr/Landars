@@ -112,7 +112,7 @@ export default function ThemeToggle({
         {/* Hover effect overlay */}
         <div
           className="absolute inset-0 rounded-full opacity-0 group-hover:opacity-10 transition-opacity duration-200"
-          style={{ background: "var(--primary)" }}
+          style={{ background: "var(--btn-primary)" }}
         />
       </button>
     </div>

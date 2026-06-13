@@ -305,8 +305,8 @@ export default function ProductReviewBlock({ productId }: ProductReviewBlockProp
                   disabled={submitting}
                   className="px-5 py-2.5 rounded-lg font-medium text-sm disabled:opacity-50"
                   style={{
-                    background: "var(--primary)",
-                    color: "white",
+                    background: "var(--btn-primary)",
+                    color: "var(--btn-primary-fg)",
                   }}
                 >
                   {submitting ? "Submitting…" : "Submit review"}
@@ -321,8 +321,8 @@ export default function ProductReviewBlock({ productId }: ProductReviewBlockProp
                   href={signInUrl}
                   className="inline-flex justify-center px-5 py-2.5 rounded-lg font-medium text-sm shrink-0"
                   style={{
-                    background: "var(--primary)",
-                    color: "white",
+                    background: "var(--btn-primary)",
+                    color: "var(--btn-primary-fg)",
                   }}
                 >
                   Sign in to review

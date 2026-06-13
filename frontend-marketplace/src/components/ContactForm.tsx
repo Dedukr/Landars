@@ -190,7 +190,7 @@ export default function ContactForm() {
           type="submit"
           disabled={submitting}
           className="w-full inline-flex items-center justify-center gap-2 py-3 px-6 rounded-xl text-sm font-semibold transition-all duration-200 hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed shadow-sm"
-          style={{ background: "var(--primary)", color: "white" }}
+          style={{ background: "var(--btn-primary)", color: "white" }}
         >
           {submitting ? (
             <>

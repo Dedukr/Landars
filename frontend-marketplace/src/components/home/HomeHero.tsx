@@ -63,7 +63,7 @@ export default function HomeHero() {
                 }}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
-                Authentic Eastern European Foods · Delivered Across the UK
+                Ukrainian and Eastern European food · Delivered Across the UK
                 <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
               </div>
 
@@ -113,32 +113,6 @@ export default function HomeHero() {
               >
                 Homemade Food &amp; Catering Delivered Across England
               </p>
-              <div className="flex flex-col gap-1 sm:gap-1.5">
-                <p
-                  className="block w-full text-base sm:text-lg leading-snug"
-                  style={{ color: "var(--muted-foreground)" }}
-                >
-                  Homemade semi-prepared products, ready meals, sausages and meat products, fresh bakery items, and desserts.
-                </p>
-                <p
-                  className="block w-full text-base sm:text-lg leading-snug"
-                  style={{ color: "var(--muted-foreground)" }}
-                >
-                  Catering services for private and corporate events.
-                </p>
-                <p
-                  className="block w-full text-base sm:text-lg leading-snug"
-                  style={{ color: "var(--muted-foreground)" }}
-                >
-                  Own delivery across England.
-                </p>
-                <p
-                  className="block w-full text-base sm:text-lg leading-snug"
-                  style={{ color: "var(--muted-foreground)" }}
-                >
-                  Ukrainian, Slavic, European cuisine
-                </p>
-              </div>
               <div className="flex w-full max-w-2xl flex-col items-center gap-2 pt-1 text-center lg:flex-row lg:items-center lg:justify-between lg:gap-3 lg:text-left">
                 <div className="order-2 min-w-0 w-full max-w-[10rem] sm:max-w-[18rem] lg:order-1 lg:w-auto lg:flex-none lg:max-w-[9.5rem] xl:max-w-[11rem]">
                   <FoodHygieneRating fluid />
@@ -182,7 +156,7 @@ export default function HomeHero() {
                 <button
                   type="submit"
                   className="px-5 py-3 rounded-xl text-sm font-semibold transition-all duration-200 hover:opacity-90 shadow-sm flex-shrink-0"
-                  style={{ background: "var(--primary)", color: "white" }}
+                  style={{ background: "var(--btn-primary)", color: "var(--btn-primary-fg)" }}
                 >
                   Search
                 </button>
@@ -194,7 +168,7 @@ export default function HomeHero() {
               <Link
                 href="/shop"
                 className="inline-flex items-center gap-2 px-5 sm:px-6 py-3 rounded-xl font-semibold text-sm shadow-md transition-all duration-200 hover:opacity-90 hover:shadow-lg active:scale-[0.98]"
-                style={{ background: "var(--primary)", color: "white" }}
+                style={{ background: "var(--btn-primary)", color: "var(--btn-primary-fg)" }}
               >
                 Browse All Products
                 <ChevronRight className="w-4 h-4" />
@@ -218,14 +192,14 @@ export default function HomeHero() {
         </div>
       </div>
 
-      {/* ── Trust bar ─────────────────────────────────────── */}
+      {/* ── Trust bar (tablet/desktop only) ──────────────── */}
       <div
-        className="border-t"
+        className="hidden md:block border-t"
         style={{ borderColor: "var(--sidebar-border)" }}
       >
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div
-            className="grid grid-cols-2 md:grid-cols-4 divide-x divide-y md:divide-y-0"
+            className="grid grid-cols-4 divide-x"
             style={{ borderColor: "var(--sidebar-border)" }}
           >
             {trustItems.map(({ icon: Icon, label }) => (

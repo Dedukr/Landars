@@ -111,9 +111,9 @@ const OrdersFilters = memo(function OrdersFilters({
                 "min-h-[40px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               )}
               style={{
-                background: selected ? "var(--primary)" : "var(--card-bg)",
-                color: selected ? "#fff" : "var(--foreground)",
-                borderColor: selected ? "var(--primary)" : "var(--sidebar-border)",
+                background: selected ? "var(--btn-primary)" : "var(--card-bg)",
+                color: selected ? "var(--btn-primary-fg)" : "var(--foreground)",
+                borderColor: selected ? "var(--btn-primary)" : "var(--sidebar-border)",
               }}
             >
               {chip.label}

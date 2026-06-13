@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 
 const linkOutline =
-  "inline-flex min-h-[48px] w-full items-center justify-center rounded-lg border-2 border-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary)] transition-all hover:bg-[var(--primary)] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-2 focus:ring-offset-[var(--card-bg)] sm:w-auto";
+  "inline-flex min-h-[48px] w-full items-center justify-center rounded-lg border-2 border-[var(--btn-primary)] px-4 py-2 text-sm font-semibold text-[var(--btn-primary)] transition-all hover:bg-[var(--btn-primary)] hover:text-[var(--btn-primary-fg)] focus:outline-none focus:ring-2 focus:ring-[var(--btn-primary)] focus:ring-offset-2 focus:ring-offset-[var(--card-bg)] sm:w-auto";
 
 export function OrderDetailsErrorState({
   message,
@@ -60,7 +60,7 @@ export function OrderDetailsErrorState({
           </Link>
           <Link
             href="/shop"
-            className="inline-flex min-h-[48px] w-full items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-[var(--primary)] transition-colors hover:bg-[var(--primary)]/10 focus:outline-none focus:ring-2 focus:ring-[var(--ring)] focus:ring-offset-2 sm:w-auto"
+            className="inline-flex min-h-[48px] w-full items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-[var(--btn-primary)] transition-colors hover:bg-[var(--btn-primary)]/10 focus:outline-none focus:ring-2 focus:ring-[var(--ring)] focus:ring-offset-2 sm:w-auto"
           >
             Back to shop
           </Link>

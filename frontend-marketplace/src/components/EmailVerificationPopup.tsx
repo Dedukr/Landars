@@ -297,17 +297,17 @@ const EmailVerificationPopup: React.FC<EmailVerificationPopupProps> = ({
               onClick={handleSignInClick}
               className="w-full py-3 px-4 rounded-lg font-semibold transition-colors"
               style={{
-                backgroundColor: "var(--primary)",
-                color: "var(--card-bg)",
-                border: "1px solid var(--primary)",
+                backgroundColor: "var(--btn-primary)",
+                color: "var(--btn-primary-fg)",
+                border: "1px solid var(--btn-primary)",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "var(--primary-hover)";
-                e.currentTarget.style.borderColor = "var(--primary-hover)";
+                e.currentTarget.style.backgroundColor = "var(--btn-primary-hover)";
+                e.currentTarget.style.borderColor = "var(--btn-primary-hover)";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "var(--primary)";
-                e.currentTarget.style.borderColor = "var(--primary)";
+                e.currentTarget.style.backgroundColor = "var(--btn-primary)";
+                e.currentTarget.style.borderColor = "var(--btn-primary)";
               }}
             >
               Go to Sign In
@@ -323,7 +323,7 @@ const EmailVerificationPopup: React.FC<EmailVerificationPopupProps> = ({
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.backgroundColor = "var(--sidebar-bg)";
-                e.currentTarget.style.borderColor = "var(--primary)";
+                e.currentTarget.style.borderColor = "var(--btn-primary)";
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = "transparent";

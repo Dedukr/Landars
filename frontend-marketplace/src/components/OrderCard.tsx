@@ -185,7 +185,7 @@ export default function OrderCard({ order, onReorder }: OrderCardProps) {
             <button
               onClick={onReorder}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 hover:opacity-90"
-              style={{ background: "var(--primary)", color: "white" }}
+              style={{ background: "var(--btn-primary)", color: "white" }}
             >
               <RotateCcw className="w-3.5 h-3.5" />
               Reorder

@@ -200,7 +200,7 @@ const CartSummary = memo<CartSummaryProps>(
             <Link
               href="/checkout"
               className="flex items-center justify-center gap-2 w-full py-3 px-5 rounded-xl font-semibold text-sm transition-all active:scale-[0.98]"
-              style={{ background: "var(--primary)", color: "white" }}
+              style={{ background: "var(--btn-primary)", color: "white" }}
               aria-label={`Review order — ${totalItems} ${totalItems === 1 ? "item" : "items"}`}
             >
               Review order

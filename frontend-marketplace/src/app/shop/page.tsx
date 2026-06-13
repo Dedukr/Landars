@@ -16,13 +16,9 @@ function ShopSkeleton() {
     >
       <div className="content-offset-md space-y-8">
         <div
-          className="h-40 sm:h-44 rounded-2xl animate-pulse"
-          style={{
-            background:
-              "linear-gradient(90deg, var(--sidebar-bg), var(--card-bg), var(--sidebar-bg))",
-          }}
+          className="h-10 w-52 rounded-lg animate-pulse"
+          style={{ background: "var(--sidebar-bg)" }}
         />
-        <div className="h-10 w-52 rounded-lg animate-pulse" style={{ background: "var(--sidebar-bg)" }} />
         <div
           className="h-14 rounded-2xl animate-pulse max-w-3xl"
           style={{ background: "var(--card-bg)", border: "1px solid var(--sidebar-border)" }}

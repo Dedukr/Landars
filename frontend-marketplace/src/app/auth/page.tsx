@@ -474,8 +474,8 @@ function AuthForm() {
               onClick={toggleMode}
               className="px-3 py-1 text-sm font-medium rounded-md transition-colors cursor-pointer hover:opacity-80"
               style={{
-                color: "var(--primary)",
-                border: "1px solid var(--primary)",
+                color: "var(--btn-primary)",
+                border: "1px solid var(--btn-primary)",
                 background: "transparent",
               }}
             >
@@ -898,21 +898,21 @@ function AuthForm() {
               disabled={loading}
               className="w-full py-3 px-4 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               style={{
-                backgroundColor: "var(--primary)",
-                color: "var(--card-bg)",
-                border: "1px solid var(--primary)",
+                backgroundColor: "var(--btn-primary)",
+                color: "var(--btn-primary-fg)",
+                border: "1px solid var(--btn-primary)",
               }}
               onMouseEnter={(e) => {
                 if (!loading) {
                   e.currentTarget.style.backgroundColor =
-                    "var(--primary-hover)";
-                  e.currentTarget.style.borderColor = "var(--primary-hover)";
+                    "var(--btn-primary-hover)";
+                  e.currentTarget.style.borderColor = "var(--btn-primary-hover)";
                 }
               }}
               onMouseLeave={(e) => {
                 if (!loading) {
-                  e.currentTarget.style.backgroundColor = "var(--primary)";
-                  e.currentTarget.style.borderColor = "var(--primary)";
+                  e.currentTarget.style.backgroundColor = "var(--btn-primary)";
+                  e.currentTarget.style.borderColor = "var(--btn-primary)";
                 }
               }}
             >

@@ -382,17 +382,17 @@ function ResetPasswordForm() {
               onClick={() => router.push("/auth")}
               className="w-full py-3 px-4 rounded-lg font-semibold transition-colors"
               style={{
-                backgroundColor: "var(--primary)",
+                backgroundColor: "var(--btn-primary)",
                 color: "var(--card-bg)",
-                border: "1px solid var(--primary)",
+                border: "1px solid var(--btn-primary)",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "var(--primary-hover)";
-                e.currentTarget.style.borderColor = "var(--primary-hover)";
+                e.currentTarget.style.backgroundColor = "var(--btn-primary-hover)";
+                e.currentTarget.style.borderColor = "var(--btn-primary-hover)";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "var(--primary)";
-                e.currentTarget.style.borderColor = "var(--primary)";
+                e.currentTarget.style.backgroundColor = "var(--btn-primary)";
+                e.currentTarget.style.borderColor = "var(--btn-primary)";
               }}
             >
               Go to Login
@@ -450,17 +450,17 @@ function ResetPasswordForm() {
               onClick={() => router.push("/auth?forgotPassword=true")}
               className="w-full py-3 px-4 rounded-lg font-semibold transition-colors"
               style={{
-                backgroundColor: "var(--primary)",
+                backgroundColor: "var(--btn-primary)",
                 color: "var(--card-bg)",
-                border: "1px solid var(--primary)",
+                border: "1px solid var(--btn-primary)",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "var(--primary-hover)";
-                e.currentTarget.style.borderColor = "var(--primary-hover)";
+                e.currentTarget.style.backgroundColor = "var(--btn-primary-hover)";
+                e.currentTarget.style.borderColor = "var(--btn-primary-hover)";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "var(--primary)";
-                e.currentTarget.style.borderColor = "var(--primary)";
+                e.currentTarget.style.backgroundColor = "var(--btn-primary)";
+                e.currentTarget.style.borderColor = "var(--btn-primary)";
               }}
             >
               Request New Reset Link
@@ -683,21 +683,21 @@ function ResetPasswordForm() {
               disabled={loading}
               className="w-full py-3 px-4 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               style={{
-                backgroundColor: "var(--primary)",
+                backgroundColor: "var(--btn-primary)",
                 color: "var(--card-bg)",
-                border: "1px solid var(--primary)",
+                border: "1px solid var(--btn-primary)",
               }}
               onMouseEnter={(e) => {
                 if (!loading) {
                   e.currentTarget.style.backgroundColor =
-                    "var(--primary-hover)";
-                  e.currentTarget.style.borderColor = "var(--primary-hover)";
+                    "var(--btn-primary-hover)";
+                  e.currentTarget.style.borderColor = "var(--btn-primary-hover)";
                 }
               }}
               onMouseLeave={(e) => {
                 if (!loading) {
-                  e.currentTarget.style.backgroundColor = "var(--primary)";
-                  e.currentTarget.style.borderColor = "var(--primary)";
+                  e.currentTarget.style.backgroundColor = "var(--btn-primary)";
+                  e.currentTarget.style.borderColor = "var(--btn-primary)";
                 }
               }}
             >

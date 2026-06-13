@@ -169,11 +169,11 @@ export function OrderDetailsHeader({
                 className={cn(
                   "inline-flex min-h-[48px] w-full shrink-0 items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold shadow-sm transition-all sm:w-auto sm:min-w-[12.5rem]",
                   "hover:brightness-[1.03] active:scale-[0.99]",
-                  "focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-2 focus:ring-offset-[var(--card-bg)]"
+                  "focus:outline-none focus:ring-2 focus:ring-[var(--btn-primary)] focus:ring-offset-2 focus:ring-offset-[var(--card-bg)]"
                 )}
                 style={{
-                  background: "var(--primary)",
-                  color: "#ffffff",
+                  background: "var(--btn-primary)",
+                  color: "var(--btn-primary-fg)",
                 }}
               >
                 <ShoppingBag

@@ -42,10 +42,13 @@
   --card-bg: #ffffff; /* strong contrast on cards */
   --card-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
   --accent: #d9a441; /* brand gold accent */
+  --btn-primary: #a68b5b; /* muted gold — consistent CTA/button color in all themes */
+  --btn-primary-hover: #8f7a4f;
+  --btn-primary-fg: #ffffff;
   --sort-bg: #ffffff; /* white sort background */
   --sort-border-radius: 9999px; /* elliptical sort button */
   --sort-arrow-color: #ffffff; /* white arrow for visibility */
-  --sort-selected-bg: var(--primary); /* default selected option bg (light) */
+  --sort-selected-bg: var(--btn-primary);
   --sort-selected-fg: #ffffff; /* default selected option text (light) */
   /* Sidebar width used for responsive content offset */
   --sidebar-width: 18rem;
@@ -66,10 +69,13 @@
   --card-bg: #ffffff; /* strong contrast on cards */
   --card-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
   --accent: #d9a441; /* brand gold accent */
+  --btn-primary: #a68b5b; /* muted gold — consistent CTA/button color in all themes */
+  --btn-primary-hover: #8f7a4f;
+  --btn-primary-fg: #ffffff;
   --sort-bg: #ffffff; /* white sort background */
   --sort-border-radius: 9999px; /* elliptical sort button */
   --sort-arrow-color: #ffffff; /* white arrow for visibility */
-  --sort-selected-bg: var(--primary);
+  --sort-selected-bg: var(--btn-primary);
   --sort-selected-fg: #ffffff;
   --muted-foreground: #6b7280; /* muted text for secondary content */
   --destructive: #dc2626; /* red for errors */
@@ -94,6 +100,9 @@
   --card-bg: #1a1a1a; /* card background with slight elevation */
   --card-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
   --accent: #a68b5b; /* align accent to primary in dark */
+  --btn-primary: #a68b5b;
+  --btn-primary-hover: #8f7a4f;
+  --btn-primary-fg: #ffffff;
   --sort-bg: #2a2a2a; /* neutral dark sort background */
   --sort-border-radius: 9999px; /* elliptical sort button */
   --sort-arrow-color: #e5e5e5; /* off-white arrow for better visibility */
@@ -117,6 +126,8 @@
   --color-foreground: var(--foreground);
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
+  --color-btn-primary: var(--btn-primary);
+  --color-btn-primary-hover: var(--btn-primary-hover);
   --color-card: var(--card-bg);
   --color-sidebar: var(--sidebar-bg);
   --color-border: var(--sidebar-border);
@@ -148,6 +159,9 @@
     --card-bg: #1a1a1a; /* card background */
     --card-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
     --accent: #a68b5b; /* muted gold accent */
+    --btn-primary: #a68b5b;
+    --btn-primary-hover: #8f7a4f;
+    --btn-primary-fg: #ffffff;
     --sort-bg: #2a2a2a; /* neutral dark sort background */
     --muted-foreground: #a0a0a0; /* muted text */
     --destructive: #dc2626; /* muted red */

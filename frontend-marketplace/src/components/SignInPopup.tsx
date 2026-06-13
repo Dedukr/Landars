@@ -127,18 +127,18 @@ const SignInPopup: React.FC<SignInPopupProps> = ({
               href={signInUrl}
               className="w-full py-3 px-4 font-medium transition-all duration-200 block text-center"
               style={{
-                background: "var(--primary)",
-                color: "#fff",
+                background: "var(--btn-primary)",
+                color: "var(--btn-primary-fg)",
                 borderRadius: "0.75rem",
-                border: "1px solid var(--primary)",
+                border: "1px solid var(--btn-primary)",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = "var(--primary-hover)";
-                e.currentTarget.style.borderColor = "var(--primary-hover)";
+                e.currentTarget.style.background = "var(--btn-primary-hover)";
+                e.currentTarget.style.borderColor = "var(--btn-primary-hover)";
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = "var(--primary)";
-                e.currentTarget.style.borderColor = "var(--primary)";
+                e.currentTarget.style.background = "var(--btn-primary)";
+                e.currentTarget.style.borderColor = "var(--btn-primary)";
               }}
               onClick={onClose}
             >
@@ -150,9 +150,9 @@ const SignInPopup: React.FC<SignInPopupProps> = ({
               className="w-full py-3 px-4 font-medium transition-all duration-200 block text-center"
               style={{
                 background: "transparent",
-                color: "var(--primary)",
+                color: "var(--btn-primary)",
                 borderRadius: "0.75rem",
-                border: "1px solid var(--primary)",
+                border: "1px solid var(--btn-primary)",
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = "var(--sidebar-bg)";
