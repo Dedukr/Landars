@@ -13,11 +13,6 @@ import { ShopMobileFilterDrawer } from "@/components/shop/ShopMobileFilterDrawer
 import { ShopFilterPanelContent } from "@/components/shop/ShopFilterPanelContent";
 import type { ShopCategoryRecord } from "@/components/shop/ShopFilterPanelContent";
 import {
-  SHOP_INITIAL_SORT,
-  SHOP_CATEGORY_SORT,
-  SHOP_SORT_OPTIONS,
-} from "@/components/shop/shop-sort-options";
-import {
   type ShopListingFilters,
   SHOP_PRICE_MAX_UNLIMITED,
 } from "@/types/shop-filters";
@@ -48,7 +43,6 @@ export default function ShopContent() {
     inStock: false,
   });
 
-  const [sort, setSort] = useState(SHOP_INITIAL_SORT);
   const [search, setSearch] = useState(initialSearchFromUrl);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
 
@@ -115,22 +109,6 @@ export default function ShopContent() {
     };
   }, [urlParamsKey]);
 
-  const categoryFilterKey = useMemo(
-    () => [...filters.categories].sort((a, b) => a - b).join(","),
-    [filters.categories]
-  );
-
-  /** Category filters show products grouped A–Z by category (not product name). */
-  useEffect(() => {
-    if (filters.categories.length > 0) {
-      setSort(SHOP_CATEGORY_SORT);
-      return;
-    }
-    setSort((current) =>
-      current === SHOP_CATEGORY_SORT ? SHOP_INITIAL_SORT : current
-    );
-  }, [categoryFilterKey, filters.categories.length]);
-
   useEffect(() => {
     async function loadCategories() {
       setCategoriesLoading(true);
@@ -165,7 +143,6 @@ export default function ShopContent() {
         inStock: false,
       });
       setSearch("");
-      setSort(SHOP_INITIAL_SORT);
       router.replace("/shop/", { scroll: false });
     }
 
@@ -203,8 +180,7 @@ export default function ShopContent() {
     filters.price[0] > 0 ||
     filters.price[1] < SHOP_PRICE_MAX_UNLIMITED ||
     filters.inStock ||
-    search.length > 0 ||
-    sort !== SHOP_INITIAL_SORT;
+    search.length > 0;
 
   const handleCategorySelect = useCallback(
     (categoryIds: number[], categoryGroupId?: number) => {
@@ -228,7 +204,6 @@ export default function ShopContent() {
       inStock: false,
     });
     setSearch("");
-    setSort(SHOP_INITIAL_SORT);
     router.replace("/shop/", { scroll: false });
   }, [router]);
 
@@ -270,9 +245,6 @@ export default function ShopContent() {
           <ShopSearchBar
             search={search}
             setSearch={setSearch}
-            sort={sort}
-            setSort={setSort}
-            sortOptions={SHOP_SORT_OPTIONS}
             mobileFilterSlot={
               <ShopMobileFiltersTrigger onClick={() => setFilterDrawerOpen(true)} />
             }
@@ -306,7 +278,6 @@ export default function ShopContent() {
 
               <ProductGrid
                 filters={filters}
-                sort={sort}
                 search={search}
                 categories={categories}
                 categoriesLoading={categoriesLoading}

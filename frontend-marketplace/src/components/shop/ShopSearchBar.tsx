@@ -2,8 +2,6 @@
 
 import React, { useState, useRef, useId, useCallback } from "react";
 import { Search, X } from "lucide-react";
-import SortList from "@/components/SortList";
-import type { SortOption } from "@/components/SortList";
 import { scopeProductsQueryString } from "@/utils/catalogScope";
 import { cn } from "@/lib/utils";
 
@@ -14,9 +12,6 @@ interface ProductSearchResponse {
 interface ShopSearchBarProps {
   search: string;
   setSearch: (v: string) => void;
-  sort: string;
-  setSort: (v: string) => void;
-  sortOptions: SortOption[];
   mobileFilterSlot?: React.ReactNode;
   children?: React.ReactNode;
   className?: string;
@@ -25,9 +20,6 @@ interface ShopSearchBarProps {
 export function ShopSearchBar({
   search,
   setSearch,
-  sort,
-  setSort,
-  sortOptions,
   mobileFilterSlot,
   children,
   className,
@@ -269,20 +261,9 @@ export function ShopSearchBar({
         </div>
       </div>
 
-      <div className="md:hidden flex gap-2 items-stretch w-full">
-        <div className="flex-1 min-h-[48px]">
-          <SortList
-            options={sortOptions}
-            value={sort}
-            onChange={setSort}
-            placeholder="Sort"
-            className="w-full min-h-[48px]"
-          />
-        </div>
-        {mobileFilterSlot ? (
-          <div className="flex items-stretch">{mobileFilterSlot}</div>
-        ) : null}
-      </div>
+      {mobileFilterSlot ? (
+        <div className="md:hidden flex justify-end">{mobileFilterSlot}</div>
+      ) : null}
 
       <div className="hidden md:flex flex-col sm:flex-row gap-3 sm:items-center sm:gap-4">
         <div
@@ -384,21 +365,6 @@ export function ShopSearchBar({
               })}
             </ul>
           )}
-        </div>
-
-        <div className="flex shrink-0 gap-2 items-stretch sm:items-center w-full sm:w-auto">
-          <div className="flex-1 sm:flex-initial sm:w-[min(100%,14rem)] lg:w-56 min-h-[48px]">
-            <SortList
-              options={sortOptions}
-              value={sort}
-              onChange={setSort}
-              placeholder="Sort"
-              className="w-full min-h-[48px]"
-            />
-          </div>
-          {mobileFilterSlot ? (
-            <div className="hidden md:flex items-stretch">{mobileFilterSlot}</div>
-          ) : null}
         </div>
       </div>
       {children}

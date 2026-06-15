@@ -15,6 +15,10 @@ import ShopProductTile from "@/components/shop/ShopProductTile";
 import { ShopProductCardSkeleton } from "@/components/shop/ShopProductCardSkeleton";
 import { ShopEmptyState, ShopErrorState } from "@/components/shop/ShopListingStates";
 import {
+  SHOP_CATEGORY_SORT,
+  SHOP_INITIAL_SORT,
+} from "@/components/shop/shop-sort-options";
+import {
   applyShopListingQuery,
   fetchAllShopProducts,
   prefetchShopProductImages,
@@ -32,7 +36,6 @@ export type ShopListingMeta = {
 
 interface ProductGridProps {
   filters: ShopListingFilters;
-  sort: string;
   search?: string;
   categories: ShopCategoryRecord[];
   categoriesLoading?: boolean;
@@ -44,12 +47,13 @@ const PAGE_SIZE = 50;
 
 const ProductGrid: React.FC<ProductGridProps> = ({
   filters,
-  sort,
   search,
   categories,
   categoriesLoading = false,
   onListingMeta,
 }) => {
+  const sort =
+    filters.categories.length > 0 ? SHOP_CATEGORY_SORT : SHOP_INITIAL_SORT;
   const [catalog, setCatalog] = useState<ShopCatalogProduct[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState<string | null>(null);
@@ -103,7 +107,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({
 
   useEffect(() => {
     setVisibleProductsCount(PAGE_SIZE);
-  }, [filters, sort, search]);
+  }, [filters, search, sort]);
 
   const visibleProducts = useMemo(
     () => filteredProducts.slice(0, visibleProductsCount),
