@@ -59,11 +59,11 @@ export function ShopMobileFiltersTrigger({ onClick }: ShopMobileFiltersTriggerPr
     <Button
       type="button"
       variant="outline"
-      size="lg"
-      className="shrink-0 flex items-center justify-center px-4 gap-2 min-h-[48px] border-2"
+      size="md"
+      className="shrink-0 flex items-center justify-center px-2.5 gap-1 min-h-[44px] border-2 text-xs font-semibold"
       style={{ borderColor: "var(--sidebar-border)" }}
       onClick={onClick}
-      icon={<SlidersHorizontal className="w-5 h-5" aria-hidden />}
+      icon={<SlidersHorizontal className="w-4 h-4" aria-hidden />}
       iconPosition="left"
       aria-haspopup="dialog"
     >

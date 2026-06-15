@@ -147,11 +147,9 @@ export function ShopSearchBar({
 
   return (
     <div className={cn("flex flex-col gap-4", className)}>
-      <div
-        className="md:hidden"
-      >
+      <div className="md:hidden flex items-stretch gap-2">
         <div
-          className="relative w-full rounded-full border p-1 shadow-2xl backdrop-blur-xl mb-2"
+          className="relative flex-1 min-w-0 rounded-full border p-1 shadow-2xl backdrop-blur-xl"
           style={{
             borderColor: "color-mix(in srgb, var(--accent) 30%, var(--sidebar-border))",
             background:
@@ -259,11 +257,8 @@ export function ShopSearchBar({
             )}
           </div>
         </div>
+        {mobileFilterSlot}
       </div>
-
-      {mobileFilterSlot ? (
-        <div className="md:hidden flex justify-end">{mobileFilterSlot}</div>
-      ) : null}
 
       <div className="hidden md:flex flex-col sm:flex-row gap-3 sm:items-center sm:gap-4">
         <div
