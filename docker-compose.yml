@@ -45,7 +45,7 @@ services:
       - --appendonly
       - "yes"
       - --requirepass
-      - "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}"
+      - "${REDIS_PASSWORD:-}"
       # Block the classic internet-scan hijack (REPLICAOF/SLAVEOF to attacker host).
       - --rename-command
       - REPLICAOF
