@@ -2,76 +2,53 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 
-// Theme types
-export type Theme = "light" | "dark" | "system";
+export type Theme = "light" | "dark";
 
 interface ThemeContextType {
   theme: Theme;
-  resolvedTheme: "light" | "dark";
+  resolvedTheme: Theme;
   setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-// Theme provider component
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("system");
-  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
+function applyTheme(theme: Theme) {
+  const root = document.documentElement;
+  root.classList.remove("light", "dark");
+  root.classList.add(theme);
 
-  // Initialize theme from localStorage or system preference
+  const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+  if (metaThemeColor) {
+    metaThemeColor.setAttribute(
+      "content",
+      theme === "dark" ? "#121212" : "#f5e6cc"
+    );
+  }
+}
+
+function readStoredTheme(): Theme {
+  const savedTheme = localStorage.getItem("theme");
+  if (savedTheme === "dark") return "dark";
+  if (savedTheme === "light") return "light";
+  // Migrate legacy "system" preference to light default
+  if (savedTheme === "system") {
+    localStorage.setItem("theme", "light");
+  }
+  return "light";
+}
+
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setThemeState] = useState<Theme>("light");
+
   useEffect(() => {
-    const savedTheme = localStorage.getItem("theme") as Theme;
-    if (savedTheme && ["light", "dark", "system"].includes(savedTheme)) {
-      setThemeState(savedTheme);
-    }
+    const storedTheme = readStoredTheme();
+    setThemeState(storedTheme);
+    applyTheme(storedTheme);
   }, []);
 
-  // Resolve theme based on current setting and system preference
   useEffect(() => {
-    const resolveTheme = (): "light" | "dark" => {
-      if (theme === "system") {
-        return window.matchMedia("(prefers-color-scheme: dark)").matches
-          ? "dark"
-          : "light";
-      }
-      return theme;
-    };
-
-    const newResolvedTheme = resolveTheme();
-    setResolvedTheme(newResolvedTheme);
-
-    // Apply theme to document
-    const root = document.documentElement;
-    root.classList.remove("light", "dark");
-    root.classList.add(newResolvedTheme);
-
-    // Update meta theme-color for mobile browsers
-    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
-    if (metaThemeColor) {
-      metaThemeColor.setAttribute(
-        "content",
-        newResolvedTheme === "dark" ? "#121212" : "#f5e6cc"
-      );
-    }
-  }, [theme]);
-
-  // Listen for system theme changes when using system theme
-  useEffect(() => {
-    if (theme !== "system") return;
-
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    const handleChange = () => {
-      const newResolvedTheme = mediaQuery.matches ? "dark" : "light";
-      setResolvedTheme(newResolvedTheme);
-
-      const root = document.documentElement;
-      root.classList.remove("light", "dark");
-      root.classList.add(newResolvedTheme);
-    };
-
-    mediaQuery.addEventListener("change", handleChange);
-    return () => mediaQuery.removeEventListener("change", handleChange);
+    applyTheme(theme);
   }, [theme]);
 
   const setTheme = (newTheme: Theme) => {
@@ -80,13 +57,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   };
 
   const toggleTheme = () => {
-    const newTheme = resolvedTheme === "light" ? "dark" : "light";
-    setTheme(newTheme);
+    setTheme(theme === "light" ? "dark" : "light");
   };
 
   const value: ThemeContextType = {
     theme,
-    resolvedTheme,
+    resolvedTheme: theme,
     setTheme,
     toggleTheme,
   };
@@ -96,7 +72,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Custom hook to use theme context
 export function useTheme() {
   const context = useContext(ThemeContext);
   if (context === undefined) {

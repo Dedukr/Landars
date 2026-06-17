@@ -24,8 +24,7 @@ const isDarkMode = () => {
   const htmlElement = document.documentElement;
   return (
     htmlElement.classList.contains("dark") ||
-    htmlElement.getAttribute("data-theme") === "dark" ||
-    window.matchMedia("(prefers-color-scheme: dark)").matches
+    htmlElement.getAttribute("data-theme") === "dark"
   );
 };
 

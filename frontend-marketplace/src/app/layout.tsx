@@ -24,10 +24,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#faf4e8" },
-    { media: "(prefers-color-scheme: dark)", color: "#121212" },
-  ],
+  themeColor: "#faf4e8",
 };
 
 export default function RootLayout({
@@ -36,7 +33,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning className="overflow-x-hidden">
+    <html lang="en" suppressHydrationWarning className="light overflow-x-hidden">
       <body className="antialiased flex flex-col min-h-screen overflow-x-hidden">
         <ErrorBoundary>
           <ThemeProvider>

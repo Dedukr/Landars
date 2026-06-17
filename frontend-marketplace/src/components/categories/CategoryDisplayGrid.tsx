@@ -61,7 +61,7 @@ function CategorySectionShell({
         className
       )}
       style={{
-        background: "color-mix(in srgb, var(--sidebar-bg) 82%, transparent)",
+        // background: "color-mix(in srgb, var(--sidebar-bg) 82%, transparent)",
         borderColor: "var(--sidebar-border)",
         boxShadow: "var(--card-shadow)",
       }}
