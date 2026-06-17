@@ -102,6 +102,19 @@ export default function AboutPage() {
             the UK. We bring the finest traditional foods to your table —
             carefully selected, thoughtfully packed, and delivered with care.
           </p>
+          <div className="mt-4 flex justify-center">
+            <span
+              className="inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold"
+              style={{
+                background: "var(--success-bg)",
+                borderColor: "var(--success-border)",
+                color: "var(--success-text)",
+              }}
+            >
+              <Award className="h-4 w-4 shrink-0" strokeWidth={2.25} aria-hidden />
+              Four years of experience
+            </span>
+          </div>
         </div>
       </section>
 

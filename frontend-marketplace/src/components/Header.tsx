@@ -170,7 +170,7 @@ export default function Header() {
           {/* Right side actions */}
           <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
             {/* Theme Toggle */}
-            <CompactThemeToggle className="hidden sm:flex" />
+            <CompactThemeToggle />
 
             {/* Wishlist (icon on desktop & mobile header) */}
             <Link
@@ -347,20 +347,6 @@ export default function Header() {
             }}
           >
             <div className="px-4 py-4 space-y-1">
-              {/* Theme toggle row */}
-              <div
-                className="flex items-center justify-between px-3 py-2.5 rounded-lg mb-3"
-                style={{ background: "var(--sidebar-bg)" }}
-              >
-                <span
-                  className="text-sm font-medium"
-                  style={{ color: "var(--foreground)" }}
-                >
-                  Theme
-                </span>
-                <CompactThemeToggle />
-              </div>
-
               {/* Nav links */}
               {navLinks.map((link) => (
                 <Link

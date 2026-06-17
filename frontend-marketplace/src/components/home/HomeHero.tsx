@@ -5,7 +5,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { Search, ChevronRight, Truck, Leaf, Star, ShieldCheck, Award } from "lucide-react";
 import HeroProductPreview from "./HeroProductPreview";
-import { FoodHygieneRating } from "@/components/FoodHygieneRating";
 
 const trustItems = [
   { icon: Truck, label: "UK-Wide Delivery" },
@@ -48,28 +47,43 @@ export default function HomeHero() {
 
       {/* ── Main hero content ─────────────────────────────── */}
       <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 md:py-22 lg:py-28">
+        {/* Top heading — mobile: full width, centered, fluid single line */}
+        <div className="mb-5 sm:mb-6 w-full @container lg:hidden">
+          <div
+            className="flex w-full max-w-full items-center justify-center gap-1.5 px-3 py-1.5 rounded-full font-semibold border whitespace-nowrap text-[clamp(0.35rem,2.85cqi,1.875rem)]"
+            style={{
+              background: "var(--success-bg)",
+              borderColor: "var(--success-border)",
+              color: "var(--success-text)",
+            }}
+          >
+            <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-current animate-pulse" />
+            Ukrainian and Eastern European food · Delivered Across the UK
+            <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-current animate-pulse" />
+          </div>
+        </div>
+
         {/* Two-column layout: content left, product cards right (desktop) */}
         <div className="flex items-center justify-between gap-10 xl:gap-16">
           {/* Left column */}
           <div className="flex-1 min-w-0">
-            {/* Badge */}
-            <div className="mb-5 sm:mb-6 flex flex-wrap items-center gap-2">
+            {/* Top heading — desktop: original left-aligned badge row */}
+            <div className="mb-5 sm:mb-6 hidden lg:flex flex-wrap items-center gap-2 min-w-0">
               <div
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold border leading-tight"
                 style={{
                   background: "var(--success-bg)",
                   borderColor: "var(--success-border)",
                   color: "var(--success-text)",
                 }}
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+                <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-current animate-pulse" />
                 Ukrainian and Eastern European food · Delivered Across the UK
-                <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+                <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-current animate-pulse" />
               </div>
 
-              {/* Desktop-only: show experience next to the badge */}
               <span
-                className="hidden lg:inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold"
+                className="inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold"
                 style={{
                   background: "var(--success-bg)",
                   borderColor: "var(--success-border)",
@@ -80,7 +94,6 @@ export default function HomeHero() {
                 Four years of experience
               </span>
             </div>
-
             {/* Headline + logo */}
             <div className="flex items-center justify-between gap-4 sm:gap-6 mb-4 sm:mb-5 min-w-0">
               <h1
@@ -106,29 +119,13 @@ export default function HomeHero() {
             </div>
 
             {/* Subtitle */}
-            <div className="mb-7 sm:mb-8 max-w-2xl flex flex-col gap-3">
+            <div className="mb-7 sm:mb-8 max-w-2xl">
               <p
                 className="block w-full text-base sm:text-lg font-semibold leading-snug"
                 style={{ color: "var(--foreground)" }}
               >
                 Homemade Food &amp; Catering Delivered Across England
               </p>
-              <div className="flex w-full max-w-2xl flex-col items-center gap-2 pt-1 text-center lg:flex-row lg:items-center lg:justify-between lg:gap-3 lg:text-left">
-                <div className="order-2 min-w-0 w-full max-w-[10rem] sm:max-w-[18rem] lg:order-1 lg:w-auto lg:flex-none lg:max-w-[9.5rem] xl:max-w-[11rem]">
-                  <FoodHygieneRating fluid />
-                </div>
-                <span
-                  className="order-1 inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-sm font-bold lg:order-2 lg:hidden"
-                  style={{
-                    background: "var(--success-bg)",
-                    borderColor: "var(--success-border)",
-                    color: "var(--success-text)",
-                  }}
-                >
-                  <Award className="h-4 w-4 shrink-0" strokeWidth={2.25} aria-hidden />
-                  Four years of experience
-                </span>
-              </div>
             </div>
 
             {/* Search bar */}

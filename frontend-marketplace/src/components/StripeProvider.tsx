@@ -45,35 +45,8 @@ export default function StripeProvider({
       attributeFilter: ["class", "data-theme"],
     });
 
-    // Listen to system preference changes as well
-    const mql: MediaQueryList = window.matchMedia(
-      "(prefers-color-scheme: dark)"
-    );
-    const mqlHandler = () => updateKey();
-    const mqlAny = mql as unknown as {
-      addEventListener?: (type: string, listener: () => void) => void;
-      removeEventListener?: (type: string, listener: () => void) => void;
-      addListener?: (listener: () => void) => void; // legacy Safari
-      removeListener?: (listener: () => void) => void; // legacy Safari
-    };
-
-    if (typeof mqlAny.addEventListener === "function") {
-      mqlAny.addEventListener("change", mqlHandler);
-    } else if (typeof mqlAny.addListener === "function") {
-      mqlAny.addListener(mqlHandler);
-    }
-
     return () => {
       observer.disconnect();
-      const mqlAnyCleanup = mql as unknown as {
-        removeEventListener?: (type: string, listener: () => void) => void;
-        removeListener?: (listener: () => void) => void;
-      };
-      if (typeof mqlAnyCleanup.removeEventListener === "function") {
-        mqlAnyCleanup.removeEventListener("change", mqlHandler);
-      } else if (typeof mqlAnyCleanup.removeListener === "function") {
-        mqlAnyCleanup.removeListener(mqlHandler);
-      }
     };
   }, []);
 
