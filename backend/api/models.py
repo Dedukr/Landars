@@ -647,18 +647,33 @@ class Order(models.Model):
 
         # Check if delivery_date has changed for existing orders
         old_delivery_date = None
+        previous_status = None
         needs_reassignment = False
 
         if self.pk:
             try:
                 old_instance = Order.objects.get(pk=self.pk)
                 old_delivery_date = old_instance.delivery_date
+                previous_status = old_instance.status
                 # Check if delivery_date changed
                 if old_delivery_date != self.delivery_date:
                     needs_reassignment = True
             except Order.DoesNotExist:
                 # New order, will be handled below
                 pass
+
+        if (
+            previous_status
+            and previous_status != "ready_to_ship"
+            and self.status == "ready_to_ship"
+        ):
+            from django.core.exceptions import ValidationError
+
+            from api.services.order_ready_to_ship import validate_ready_to_ship
+
+            result = validate_ready_to_ship(self)
+            if not result.ok:
+                raise ValidationError({"status": result.message})
 
         # Auto-assign or reassign delivery_date_order_id
         # Conditions:

@@ -159,6 +159,17 @@ class OrderAdminForm(ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        status = cleaned_data.get("status")
+        if (
+            status == "ready_to_ship"
+            and self.instance.pk
+            and self.instance.status != "ready_to_ship"
+        ):
+            from api.services.order_ready_to_ship import validate_ready_to_ship
+
+            result = validate_ready_to_ship(self.instance)
+            if not result.ok:
+                raise ValidationError({"status": result.message})
         return cleaned_data
 
 
@@ -900,19 +911,47 @@ def mark_orders_cancelled(modeladmin, request, queryset):
 
 @admin.action(description="Mark selected orders as Ready to ship")
 def mark_orders_ready_to_ship(modeladmin, request, queryset):
+    from api.services.order_ready_to_ship import validate_ready_to_ship
     from api.services.product_sales import set_order_status
 
     updated = 0
+    skipped = 0
+    errors = []
+
+    queryset = queryset.prefetch_related("items__product")
+
     for order in queryset:
         if order.status == "ready_to_ship":
+            skipped += 1
+            continue
+        result = validate_ready_to_ship(order)
+        if not result.ok:
+            errors.append(result.message)
             continue
         set_order_status(order, "ready_to_ship")
         updated += 1
-    modeladmin.message_user(
-        request,
-        f"{updated} order(s) marked as ready to ship.",
-        level=messages.SUCCESS,
-    )
+
+    if updated:
+        modeladmin.message_user(
+            request,
+            f"{updated} order(s) marked as ready to ship.",
+            level=messages.SUCCESS,
+        )
+    if skipped:
+        modeladmin.message_user(
+            request,
+            f"{skipped} order(s) already ready to ship — skipped.",
+            level=messages.WARNING,
+        )
+    if errors:
+        error_display = "\n".join(errors[:10])
+        if len(errors) > 10:
+            error_display += f"\n... and {len(errors) - 10} more errors."
+        modeladmin.message_user(
+            request,
+            f"Could not mark {len(errors)} order(s) ready to ship:\n{error_display}",
+            level=messages.ERROR,
+        )
 
 
 @admin.action(description="Create Credit Note")
@@ -2015,11 +2054,23 @@ class OrderAdmin(admin.ModelAdmin):
         status_changed_to_cancelled = (
             change and "status" in form.changed_data and obj.status == "cancelled"
         )
+        status_changed_to_ready_to_ship = (
+            change and "status" in form.changed_data and obj.status == "ready_to_ship"
+        )
         previous_status = None
-        if status_changed_to_cancelled and obj.pk:
+        if (status_changed_to_cancelled or status_changed_to_ready_to_ship) and obj.pk:
             previous_status = (
                 Order.objects.filter(pk=obj.pk).values_list("status", flat=True).first()
             )
+
+        if status_changed_to_ready_to_ship and previous_status != "ready_to_ship":
+            from api.services.order_ready_to_ship import validate_ready_to_ship
+
+            result = validate_ready_to_ship(obj)
+            if not result.ok:
+                obj.status = previous_status
+                self.message_user(request, result.message, level=messages.ERROR)
+                status_changed_to_ready_to_ship = False
 
         if not change:
             obj.source = Order.Source.ADMIN
