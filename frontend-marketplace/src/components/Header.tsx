@@ -23,6 +23,7 @@ import {
 const navLinks = [
   { name: "Home", href: "/" },
   { name: "Shop", href: "/shop" },
+  { name: "Reviews", href: "/reviews" },
   { name: "About Us", href: "/about" },
   { name: "Contact Us", href: "/contact" },
 ];
@@ -35,7 +36,7 @@ export default function Header() {
     { name: "My Profile", href: "/profile", icon: User },
     { name: "My Orders", href: "/orders", icon: Package },
     ...(user?.is_staff
-      ? [{ name: "Admin Panel", href: "/admin", icon: LayoutDashboard }]
+      ? [{ name: "Admin Panel", href: "/admin-panel/reviews", icon: LayoutDashboard }]
       : []),
     { name: "Log Out", action: "logout", icon: LogOut },
   ];

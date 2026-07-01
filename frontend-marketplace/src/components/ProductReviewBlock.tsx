@@ -11,8 +11,14 @@ export interface Review {
   id: number;
   user: number;
   user_name: string;
+  product: number | null;
+  product_name: string | null;
+  review_type: "product" | "shop";
   rating: number;
+  title: string;
   comment: string;
+  is_approved: boolean;
+  is_featured: boolean;
   created_at: string;
   is_verified_purchase?: boolean;
 }

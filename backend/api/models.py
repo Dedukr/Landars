@@ -265,10 +265,23 @@ class Product(models.Model):
 
 
 class ProductReview(models.Model):
-    """User review for a product: rating (1-5) and optional comment."""
+    """
+    Universal review model — works for both products and the general shop/business.
+
+    - Product review: ``product`` FK is set (non-null).
+    - Shop review:    ``product`` FK is null.
+
+    The class is intentionally kept as ``ProductReview`` to preserve the existing
+    database table (``api_productreview``) and all existing data.
+    The ``Review`` alias below lets new code use the cleaner name.
+    """
 
     product = models.ForeignKey(
-        Product, on_delete=models.CASCADE, related_name="reviews"
+        Product,
+        on_delete=models.CASCADE,
+        related_name="reviews",
+        null=True,
+        blank=True,
     )
     user = models.ForeignKey(
         CustomUser, on_delete=models.CASCADE, related_name="product_reviews"
@@ -276,15 +289,43 @@ class ProductReview(models.Model):
     rating = models.PositiveSmallIntegerField(
         validators=[MinValueValidator(1), MaxValueValidator(5)]
     )
+    title = models.CharField(max_length=120, blank=True)
     comment = models.TextField(blank=True)
+    is_approved = models.BooleanField(default=True)
+    is_featured = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name_plural = "Product reviews"
+        verbose_name = "Review"
+        verbose_name_plural = "Reviews"
         ordering = ["-created_at"]
+        constraints = [
+            # Enforce one general shop review per user
+            models.UniqueConstraint(
+                fields=["user"],
+                condition=models.Q(product__isnull=True),
+                name="unique_shop_review_per_user",
+            )
+        ]
+
+    @property
+    def is_product_review(self) -> bool:
+        return self.product_id is not None
+
+    @property
+    def is_shop_review(self) -> bool:
+        return self.product_id is None
 
     def __str__(self):
-        return f"Review by {self.user} for {self.product.name} ({self.rating}★)"
+        if self.product_id:
+            product_name = self.product.name if self.product else f"product #{self.product_id}"
+            return f"Review by {self.user} for {product_name} ({self.rating}★)"
+        return f"Shop review by {self.user} ({self.rating}★)"
+
+
+# Cleaner alias for new code — same underlying model & table
+Review = ProductReview
 
 
 # Stock model

@@ -7,9 +7,10 @@ import TrustBenefitsSection from "@/components/home/TrustBenefitsSection";
 import HomeCTASection from "@/components/home/HomeCTASection";
 
 export const metadata: Metadata = {
-  title: "Landar's Food — Authentic Eastern European Foods, Delivered UK-Wide",
+  title:
+    "Ukrainian, Slavic, European cuisine",
   description:
-    "Discover premium Eastern European sausages, dairy, pastries and pantry staples. Browse our full range and order for UK-wide delivery. Fresh, authentic, family business.",
+    "Homemade semi-prepared products, ready meals, sausages and meat products, fresh bakery items, and desserts.",
 };
 
 export default function HomePage() {

@@ -1,4 +1,5 @@
 import logging
+import random
 import uuid
 from decimal import Decimal
 
@@ -58,6 +59,9 @@ from .serializers import (
     OrderSerializer,
     ProductListSerializer,
     ProductReviewSerializer,
+    ReviewPublicSerializer,
+    ReviewSerializer,
+    ShopReviewCreateSerializer,
     ProductSerializer,
     WishlistItemSerializer,
     WishlistSerializer,
@@ -322,7 +326,7 @@ class ProductDetail(APIView):
 
 
 class ProductReviewListCreate(APIView):
-    """List reviews for a product (GET) or create a review (POST). One review per user per product."""
+    """List approved reviews for a product (GET) or create a product review (POST)."""
 
     def get_permissions(self):
         if self.request.method == "GET":
@@ -341,8 +345,11 @@ class ProductReviewListCreate(APIView):
             return Response(
                 {"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND
             )
-        reviews = product.reviews.all().select_related("user")
-        serializer = ProductReviewSerializer(reviews, many=True)
+        reviews = (
+            product.reviews.filter(is_approved=True)
+            .select_related("user", "product")
+        )
+        serializer = ReviewPublicSerializer(reviews, many=True)
         return Response(serializer.data)
 
     def post(self, request, product_id):
@@ -351,14 +358,275 @@ class ProductReviewListCreate(APIView):
             return Response(
                 {"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND
             )
-        
-        serializer = ProductReviewSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save(product=product, user=request.user)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        # Log validation errors for debugging
-        logger.warning(f"ProductReview validation failed: {serializer.errors}, data: {request.data}")
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # Use ReviewSerializer for input validation (comment is optional for product reviews)
+        write_serializer = ReviewSerializer(data=request.data)
+        if write_serializer.is_valid():
+            review = write_serializer.save(product=product, user=request.user)
+            # Respond with the clean public representation
+            return Response(
+                ReviewPublicSerializer(review).data,
+                status=status.HTTP_201_CREATED,
+            )
+        logger.warning("Review validation failed: %s, data: %s", write_serializer.errors, request.data)
+        return Response(write_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ShopReviewListCreate(APIView):
+    """
+    GET  /api/shop-reviews/  — list approved general shop reviews (public).
+    POST /api/shop-reviews/  — submit a shop review (auth + must have at least one order).
+    """
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
+
+    def get(self, request):
+        reviews = (
+            ProductReview.objects.filter(product__isnull=True, is_approved=True)
+            .select_related("user")
+        )
+        serializer = ReviewPublicSerializer(reviews, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        user = request.user
+
+        if not Order.objects.filter(customer=user).exists():
+            return Response(
+                {"error": "You need to place at least one order before leaving a shop review."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if ProductReview.objects.filter(user=user, product__isnull=True).exists():
+            return Response(
+                {"error": "You have already left a shop review."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        write_serializer = ShopReviewCreateSerializer(data=request.data)
+        if write_serializer.is_valid():
+            review = write_serializer.save(product=None, user=user)
+            return Response(ReviewPublicSerializer(review).data, status=status.HTTP_201_CREATED)
+
+        logger.warning("ShopReview validation failed: %s, data: %s", write_serializer.errors, request.data)
+        return Response(write_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class FeaturedReviewList(APIView):
+    """
+    GET /api/reviews/featured/ — backward-compatible alias for ReviewHighlightsView.
+    Kept so any existing clients do not break; new code should use /api/reviews/highlights/.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = []
+
+    def get(self, request):
+        return ReviewHighlightsView().get(request)
+
+
+class ReviewHighlightsView(APIView):
+    """
+    GET /api/reviews/highlights/
+
+    Returns a curated, conversion-friendly mix of approved reviews.
+
+    Ordering rules (per Phase 11 spec):
+    1. Featured reviews  — always first, sorted by rating ↓ then recency ↓.
+    2. High-rated mix    — remaining slots filled from ≥4★ non-featured reviews.
+       - Shop and product reviews are interleaved so both types always appear.
+       - Pool is randomly sampled for page freshness on every load.
+       - Within the sampled set, sorted by rating ↓ then recency ↓.
+
+    Filters applied to ALL phases:
+    - ``is_approved=True``    — never expose unapproved reviews.
+    - ``comment != ""``       — never expose reviews without a written comment.
+
+    Product-deleted edge-case: the FK is CASCADE, so deleted products remove the
+    review too.  The serializer still guards ``obj.product`` access gracefully.
+
+    Query param: ``limit`` (int, 1–24, default 12).
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = []
+
+    # How many candidates per remaining slot to fetch before sampling
+    _POOL_MULTIPLIER = 3
+
+    def get(self, request):
+        try:
+            limit = max(1, min(24, int(request.query_params.get("limit", 12))))
+        except (ValueError, TypeError):
+            limit = 12
+
+        qs_base = (
+            ProductReview.objects
+            .filter(is_approved=True)
+            .exclude(comment="")           # never surface reviews with empty comments
+            .select_related("user", "product")
+        )
+
+        # ── Phase 1: Featured reviews — always first ──────────────────────
+        featured = list(
+            qs_base.filter(is_featured=True)
+            .order_by("-rating", "-created_at")[:limit]
+        )
+        featured_ids = {r.id for r in featured}
+        remaining_slots = limit - len(featured)
+
+        # ── Phase 2: Interleaved shop + product pool ──────────────────────
+        sampled: list = []
+        if remaining_slots > 0:
+            pool_qs = (
+                qs_base
+                .filter(is_featured=False, rating__gte=4)
+                .exclude(id__in=featured_ids)
+            )
+            fetch_n = remaining_slots * self._POOL_MULTIPLIER
+
+            # Fetch each type separately so interleaving is guaranteed
+            shop_candidates = list(
+                pool_qs.filter(product__isnull=True)
+                .order_by("-rating", "-created_at")[:fetch_n]
+            )
+            product_candidates = list(
+                pool_qs.filter(product__isnull=False)
+                .order_by("-rating", "-created_at")[:fetch_n]
+            )
+
+            # Interleave shop / product so both types are represented
+            interleaved: list = []
+            si = pi = 0
+            while len(interleaved) < fetch_n:
+                advanced = False
+                if si < len(shop_candidates):
+                    interleaved.append(shop_candidates[si]); si += 1; advanced = True
+                if pi < len(product_candidates):
+                    interleaved.append(product_candidates[pi]); pi += 1; advanced = True
+                if not advanced:
+                    break
+
+            # Random sample for freshness; then sort sampled set by quality
+            sampled = random.sample(interleaved, min(remaining_slots, len(interleaved)))
+            sampled.sort(key=lambda r: (-r.rating, -r.created_at.timestamp()))
+
+        # ── Final list: featured block first, curated mix after ───────────
+        combined = featured + sampled
+
+        serializer = ReviewPublicSerializer(combined, many=True)
+        return Response(serializer.data)
+
+
+class ShopReviewView(APIView):
+    """
+    GET  /api/reviews/shop/  — list all approved general shop reviews (public).
+    POST /api/reviews/shop/  — submit a shop review.
+
+    POST rules:
+    - User must be authenticated.
+    - User must have at least one order.
+    - One shop review per user (duplicate is rejected with a friendly message).
+    - ``product`` is always forced to ``None`` — clients cannot override this.
+    - ``comment`` is required (validated by ShopReviewCreateSerializer).
+    - ``rating`` is required.
+
+    Serializer split:
+    - Input  → ShopReviewCreateSerializer  (only rating / title / comment)
+    - Output → ReviewPublicSerializer      (full public-safe representation)
+    """
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
+
+    def get(self, request):
+        reviews = (
+            ProductReview.objects.filter(product__isnull=True, is_approved=True)
+            .select_related("user")
+            .order_by("-created_at")
+        )
+        serializer = ReviewPublicSerializer(reviews, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        user = request.user
+
+        if not Order.objects.filter(customer=user).exists():
+            return Response(
+                {"error": "You need to place at least one order before leaving a shop review."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if ProductReview.objects.filter(user=user, product__isnull=True).exists():
+            return Response(
+                {"error": "You have already left a shop review."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        write_serializer = ShopReviewCreateSerializer(data=request.data)
+        if write_serializer.is_valid():
+            review = write_serializer.save(product=None, user=user)
+            return Response(
+                ReviewPublicSerializer(review).data,
+                status=status.HTTP_201_CREATED,
+            )
+
+        logger.warning("ShopReview validation failed: %s, data: %s", write_serializer.errors, request.data)
+        return Response(write_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ShopReviewMeView(APIView):
+    """
+    GET /api/reviews/shop/me/
+
+    Returns the authenticated user's shop-review eligibility status and, if they
+    have already reviewed, their existing review object.
+
+    Response shape:
+    {
+        "can_review": bool,
+        "has_order": bool,
+        "has_existing_review": bool,
+        "review": <review object or null>
+    }
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        has_order = Order.objects.filter(customer=user).exists()
+        existing = (
+            ProductReview.objects.filter(user=user, product__isnull=True)
+            .select_related("user")
+            .first()
+        )
+        has_existing = existing is not None
+        can_review = has_order and not has_existing
+
+        review_data = None
+        if existing:
+            review_data = {
+                "id": existing.id,
+                "rating": existing.rating,
+                "title": existing.title,
+                "comment": existing.comment,
+                "created_at": existing.created_at,
+            }
+
+        return Response(
+            {
+                "can_review": can_review,
+                "has_order": has_order,
+                "has_existing_review": has_existing,
+                "review": review_data,
+            }
+        )
 
 
 class CategoryList(APIView):

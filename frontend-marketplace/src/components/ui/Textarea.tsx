@@ -23,6 +23,8 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
     ref
   ) => {
     const textareaId = id || `textarea-${Math.random().toString(36).substr(2, 9)}`;
+    const errorId = `${textareaId}-error`;
+    const helperId = `${textareaId}-helper`;
 
     const baseStyles = [
       // Base textarea styles
@@ -53,6 +55,10 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
         )}
         ref={ref}
         id={textareaId}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={
+          error ? errorId : helperText ? helperId : undefined
+        }
         {...props}
       />
     );
@@ -70,10 +76,19 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           )}
           {textareaElement}
           {error && (
-            <p className="text-sm text-[var(--destructive)]">{error}</p>
+            <p
+              id={errorId}
+              className="text-sm text-[var(--destructive)]"
+              role="alert"
+            >
+              {error}
+            </p>
           )}
           {helperText && !error && (
-            <p className="text-sm text-[var(--muted-foreground)]">
+            <p
+              id={helperId}
+              className="text-sm text-[var(--muted-foreground)]"
+            >
               {helperText}
             </p>
           )}

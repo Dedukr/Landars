@@ -107,6 +107,22 @@ export const API_ENDPOINTS = {
     PROCESS: "/checkout/process/",
     VALIDATE: "/checkout/validate/",
   },
+
+  // Reviews (public)
+  REVIEWS: {
+    HIGHLIGHTS: "/reviews/highlights/",
+    SHOP: "/reviews/shop/",
+    SHOP_ME: "/reviews/shop/me/",
+    PRODUCT_REVIEWS: (productId: number) => `/products/${productId}/reviews/`,
+  },
+
+  // Admin API (staff only)
+  ADMIN: {
+    REVIEWS: {
+      LIST: "/admin/reviews/",
+      DETAIL: (id: number) => `/admin/reviews/${id}/`,
+    },
+  },
 } as const;
 
 /**

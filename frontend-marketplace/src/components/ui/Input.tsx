@@ -28,6 +28,8 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
     ref
   ) => {
     const inputId = id || `input-${Math.random().toString(36).substr(2, 9)}`;
+    const errorId = `${inputId}-error`;
+    const helperId = `${inputId}-helper`;
 
     const baseStyles = [
       // Base input styles
@@ -68,6 +70,10 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           )}
           ref={ref}
           id={inputId}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={
+            error ? errorId : helperText ? helperId : undefined
+          }
           {...props}
         />
         {rightIcon && (
@@ -91,10 +97,19 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           )}
           {inputElement}
           {error && (
-            <p className="text-sm text-[var(--destructive)]">{error}</p>
+            <p
+              id={errorId}
+              className="text-sm text-[var(--destructive)]"
+              role="alert"
+            >
+              {error}
+            </p>
           )}
           {helperText && !error && (
-            <p className="text-sm text-[var(--muted-foreground)]">
+            <p
+              id={helperId}
+              className="text-sm text-[var(--muted-foreground)]"
+            >
               {helperText}
             </p>
           )}

@@ -4,6 +4,11 @@ from .views import (
     ProductList,
     ProductDetail,
     ProductReviewListCreate,
+    ShopReviewListCreate,
+    FeaturedReviewList,
+    ReviewHighlightsView,
+    ShopReviewView,
+    ShopReviewMeView,
     CategoryGroupList,
     CategoryList,
     CompressedImageUploadView,
@@ -15,6 +20,7 @@ from .views import (
     OrderItemView,
     UserOrdersView,
 )
+from .admin_views import AdminReviewListView, AdminReviewDetailView
 
 urlpatterns = [
     # Product endpoints
@@ -25,6 +31,13 @@ urlpatterns = [
         ProductReviewListCreate.as_view(),
         name="product-review-list-create",
     ),
+    # Reviews — new canonical endpoints
+    path("reviews/highlights/", ReviewHighlightsView.as_view(), name="review-highlights"),
+    path("reviews/shop/", ShopReviewView.as_view(), name="shop-review"),
+    path("reviews/shop/me/", ShopReviewMeView.as_view(), name="shop-review-me"),
+    # Reviews — legacy aliases (kept for backward compatibility)
+    path("shop-reviews/", ShopReviewListCreate.as_view(), name="shop-review-list-create"),
+    path("reviews/featured/", FeaturedReviewList.as_view(), name="featured-review-list"),
     # Image upload endpoints
     path(
         "images/presigned-upload/",
@@ -47,4 +60,7 @@ urlpatterns = [
         name="order-item",
     ),
     path("users/<int:user_id>/orders/", UserOrdersView.as_view(), name="user-orders"),
+    # Admin API — reviews management (staff only)
+    path("admin/reviews/", AdminReviewListView.as_view(), name="admin-review-list"),
+    path("admin/reviews/<int:review_id>/", AdminReviewDetailView.as_view(), name="admin-review-detail"),
 ]

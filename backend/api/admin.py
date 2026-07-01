@@ -463,36 +463,110 @@ class CartItemAdmin(admin.ModelAdmin):
     get_total_price.short_description = "Total Price"
 
 
+class ReviewTypeFilter(admin.SimpleListFilter):
+    """Filter the review list by type: Product reviews vs General shop reviews."""
+
+    title = "review type"
+    parameter_name = "review_type"
+
+    def lookups(self, request, model_admin):
+        return [
+            ("product", "Product reviews"),
+            ("shop", "Shop reviews"),
+        ]
+
+    def queryset(self, request, queryset):
+        if self.value() == "product":
+            return queryset.filter(product__isnull=False)
+        if self.value() == "shop":
+            return queryset.filter(product__isnull=True)
+        return queryset
+
+
 @admin.register(ProductReview)
-class ProductReviewAdmin(admin.ModelAdmin):
-    list_display = ["product", "user", "rating", "get_rating_display", "comment_preview", "created_at"]
-    list_filter = ["rating", "created_at"]
-    search_fields = ["product__name", "user__name", "user__email", "comment"]
-    readonly_fields = ["created_at"]
+class ReviewAdmin(admin.ModelAdmin):
+    list_display = [
+        "id",
+        "review_type",
+        "user",
+        "product",
+        "rating",
+        "get_rating_display",
+        "title",
+        "comment_preview",
+        "is_approved",
+        "is_featured",
+        "created_at",
+    ]
+    list_display_links = ["id"]
+    list_filter = [
+        ReviewTypeFilter,
+        "rating",
+        "is_approved",
+        "is_featured",
+        "created_at",
+    ]
+    list_editable = ["is_approved", "is_featured"]
+    search_fields = [
+        "user__email",
+        "user__name",
+        "comment",
+        "title",
+        "product__name",
+    ]
+    readonly_fields = ["created_at", "updated_at"]
     autocomplete_fields = ["product", "user"]
     ordering = ["-created_at"]
     date_hierarchy = "created_at"
+    actions = ["mark_approved", "mark_not_approved", "mark_featured", "remove_featured"]
 
     class Media:
         js = ("admin/js/prevent_double_submit.js",)
 
+    # ── List columns ───────────────────────────────────────────────────────
+
+    def review_type(self, obj):
+        return "Product" if obj.product_id else "Shop"
+
+    review_type.short_description = "Type"
+
     def get_rating_display(self, obj):
-        """Display rating as stars."""
         stars = "★" * obj.rating + "☆" * (5 - obj.rating)
         return format_html('<span style="color: #f59e0b;">{}</span>', stars)
-    
-    get_rating_display.short_description = "Rating"
+
+    get_rating_display.short_description = "Stars"
 
     def comment_preview(self, obj):
-        """Show first 50 characters of comment."""
         if not obj.comment:
-            return "-"
-        preview = obj.comment[:50]
-        if len(obj.comment) > 50:
-            preview += "..."
+            return "—"
+        preview = obj.comment[:60]
+        if len(obj.comment) > 60:
+            preview += "…"
         return preview
-    
+
     comment_preview.short_description = "Comment"
+
+    # ── Actions ────────────────────────────────────────────────────────────
+
+    @admin.action(description="✓ Mark selected reviews as approved")
+    def mark_approved(self, request, queryset):
+        updated = queryset.update(is_approved=True)
+        self.message_user(request, f"{updated} review(s) marked as approved.")
+
+    @admin.action(description="✗ Mark selected reviews as not approved")
+    def mark_not_approved(self, request, queryset):
+        updated = queryset.update(is_approved=False)
+        self.message_user(request, f"{updated} review(s) marked as not approved.")
+
+    @admin.action(description="★ Mark selected reviews as featured")
+    def mark_featured(self, request, queryset):
+        updated = queryset.update(is_featured=True)
+        self.message_user(request, f"{updated} review(s) marked as featured.")
+
+    @admin.action(description="☆ Remove featured status from selected reviews")
+    def remove_featured(self, request, queryset):
+        updated = queryset.update(is_featured=False)
+        self.message_user(request, f"{updated} review(s) removed from featured.")
 
 
 class WishlistItemInline(admin.TabularInline):

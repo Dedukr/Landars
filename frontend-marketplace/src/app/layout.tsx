@@ -13,11 +13,12 @@ import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
   title: {
-    default: "Landar's Food — Authentic Eastern European Foods",
+    default:
+      "Ukrainian, Slavic, European cuisine",
     template: "%s | Landar's Food",
   },
-  description: "Ukrainian, Slavic, European cuisine.\
-  Homemade semi-prepared products, ready meals, sausages and meat products, fresh bakery items, and desserts.",
+  description:
+    "Homemade semi-prepared products, ready meals, sausages and meat products, fresh bakery items, and desserts.",
   icons: {
     icon: "/landars_food_logo.svg",
   },

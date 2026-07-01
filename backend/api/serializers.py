@@ -3,6 +3,7 @@ from decimal import Decimal
 from account.serializers import AddressSerializer
 from django.db import transaction
 from django.db.models import Q
+from django.utils.text import slugify
 from rest_framework import serializers
 from shipping.models import Shipment
 
@@ -111,55 +112,280 @@ class ProductImageSerializer(serializers.ModelSerializer):
         return data
 
 
-class ProductReviewSerializer(serializers.ModelSerializer):
+# ── Shared helpers ────────────────────────────────────────────────────────────
+
+def _get_safe_display_name(user) -> str:
+    """
+    Build a privacy-safe public display name from a CustomUser instance.
+
+    Priority:
+      1. ``first_name`` — shown exactly as stored (e.g. "Yuliia", "Ruslan").
+      2. First word of ``name`` (legacy combined field) — avoids exposing surname.
+      3. Fallback: "Verified Customer".
+
+    Intentionally never falls back to email or username so that no PII leaks
+    through public review endpoints.
+    """
+    if not user:
+        return "Verified Customer"
+
+    first = getattr(user, "first_name", None)
+    if first and first.strip():
+        return first.strip()
+
+    legacy = getattr(user, "name", None)
+    if legacy and legacy.strip():
+        return legacy.strip().split()[0]
+
+    return "Verified Customer"
+
+
+def _get_verified_purchase(user, product) -> bool:
+    """Return True if ``user`` has a paid order containing ``product``."""
+    if not user or not product:
+        return False
+    return OrderItem.objects.filter(
+        order__customer=user,
+        order__status__in=SOLD_ORDER_STATUSES,
+    ).filter(
+        Q(product=product) | Q(item_name=product.name)
+    ).exists()
+
+
+# ── Public display serializer ──────────────────────────────────────────────
+
+class ReviewPublicSerializer(serializers.ModelSerializer):
+    """
+    Read-only serializer for displaying reviews on public pages.
+
+    Privacy rules:
+    - ``user_name`` uses first name only (or "Verified Customer") — never email.
+    - The raw ``user`` PK (integer) is excluded.
+    - No ``is_approved`` / ``updated_at`` / internal flags exposed.
+
+    Used by: GET /api/reviews/highlights/, GET /api/reviews/shop/,
+             GET /api/products/{id}/reviews/
+    """
+
     user_name = serializers.SerializerMethodField()
+    product_name = serializers.SerializerMethodField()
+    product_slug = serializers.SerializerMethodField()
+    review_type = serializers.SerializerMethodField()
     is_verified_purchase = serializers.SerializerMethodField()
 
     def get_user_name(self, obj):
-        """
-        Return a human-friendly display name for the reviewer.
+        return _get_safe_display_name(getattr(obj, "user", None))
 
-        Our CustomUser model has a `name` field and may have an `email`,
-        but does not implement `get_full_name`, so we safely fall back
-        through the available attributes.
+    def _accessible_product(self, obj):
         """
-        user = getattr(obj, "user", None)
-        if not user:
-            return "Anonymous"
+        Return the related Product if it exists AND is still publicly accessible
+        (``active=True``).  Returns ``None`` for shop reviews or deactivated products,
+        so callers never expose a broken product link to the public.
+        """
+        if not obj.product_id:
+            return None
+        product = obj.product  # may be None if FK resolution fails (edge case)
+        if product is None:
+            return None
+        # Suppress the link/name when the product is no longer active, but still
+        # show the review with ``review_type="product"`` so the badge is correct.
+        if not getattr(product, "active", True):
+            return None
+        return product
 
-        # Prefer explicit name, then email, then username
-        return (
-            getattr(user, "name", None)
-            or getattr(user, "email", None)
-            or user.get_username()
-            or "Anonymous"
-        )
+    def get_product_name(self, obj):
+        product = self._accessible_product(obj)
+        return product.name if product else None
+
+    def get_product_slug(self, obj):
+        product = self._accessible_product(obj)
+        return slugify(product.name) if product else None
+
+    def get_review_type(self, obj):
+        # Use product_id (not the live FK) so the badge is correct even when the
+        # product is deactivated or the FK resolution returns None.
+        return "product" if obj.product_id else "shop"
 
     def get_is_verified_purchase(self, obj):
-        """
-        Check if the reviewer has purchased this product (has a paid order containing it).
-        """
-        user = getattr(obj, "user", None)
-        product = getattr(obj, "product", None)
-
-        if not user or not product:
-            return False
-
-        # Check both by product FK and by item_name (in case product was deleted)
-        has_purchased = OrderItem.objects.filter(
-            order__customer=user,
-            order__status__in=SOLD_ORDER_STATUSES,
-        ).filter(
-            # Match by product FK or by stored item_name
-            Q(product=product) | Q(item_name=product.name)
-        ).exists()
-
-        return has_purchased
+        return _get_verified_purchase(getattr(obj, "user", None), getattr(obj, "product", None))
 
     class Meta:
         model = ProductReview
-        fields = ["id", "user", "user_name", "rating", "comment", "created_at", "is_verified_purchase"]
-        read_only_fields = ["id", "user", "user_name", "created_at", "is_verified_purchase"]
+        fields = [
+            "id",
+            "rating", "title", "comment",
+            "review_type",
+            "product", "product_name", "product_slug",
+            "user_name",
+            "created_at",
+            "is_featured",
+            "is_verified_purchase",
+        ]
+        read_only_fields = [
+            "id",
+            "rating", "title", "comment",
+            "review_type",
+            "product", "product_name", "product_slug",
+            "user_name",
+            "created_at",
+            "is_featured",
+            "is_verified_purchase",
+        ]
+
+
+# ── Write serializer for shop reviews ─────────────────────────────────────
+
+class ShopReviewCreateSerializer(serializers.ModelSerializer):
+    """
+    Write-only serializer for creating a general shop review.
+
+    Accepted fields (client-supplied):
+    - ``rating``  required  — integer 1–5
+    - ``title``   optional  — up to 120 characters
+    - ``comment`` required  — must not be blank
+
+    The view always calls ``serializer.save(product=None, user=request.user)``
+    so neither ``product`` nor ``user`` can be injected by the client.
+
+    After a successful save the view responds with ``ReviewPublicSerializer``
+    so the client receives the full public representation.
+    """
+
+    def validate_rating(self, value):
+        if value is None:
+            raise serializers.ValidationError("Please select a rating.")
+        return value
+
+    def validate_comment(self, value):
+        if not value or not value.strip():
+            raise serializers.ValidationError("Please write a short review.")
+        return value.strip()
+
+    def validate_title(self, value):
+        return value.strip() if value else value
+
+    class Meta:
+        model = ProductReview
+        fields = ["rating", "title", "comment"]
+
+
+# ── Admin serializer (for future API-based admin views) ────────────────────
+
+class ReviewAdminSerializer(serializers.ModelSerializer):
+    """
+    Full-access serializer for staff/admin API views.
+
+    Exposes fields that must NEVER appear in public endpoints:
+    - ``user`` PK and ``user_email`` for identifying the reviewer
+    - ``is_approved`` and ``is_featured`` as writable for moderation
+    - ``updated_at`` for audit trail
+
+    Not currently wired to any URL — ready for use when an API-based
+    admin panel is built under api/admin_api/.
+    """
+
+    user_display = serializers.SerializerMethodField()
+    user_email = serializers.SerializerMethodField()
+    product_name = serializers.SerializerMethodField()
+    product_slug = serializers.SerializerMethodField()
+    review_type = serializers.SerializerMethodField()
+
+    def get_user_display(self, obj):
+        user = getattr(obj, "user", None)
+        if not user:
+            return "Unknown"
+        display = getattr(user, "get_display_name", None)
+        if callable(display):
+            result = display()
+            if result:
+                return result
+        return getattr(user, "email", None) or "Unknown"
+
+    def get_user_email(self, obj):
+        user = getattr(obj, "user", None)
+        return getattr(user, "email", None) if user else None
+
+    def get_product_name(self, obj):
+        return obj.product.name if (obj.product_id and obj.product) else None
+
+    def get_product_slug(self, obj):
+        return slugify(obj.product.name) if (obj.product_id and obj.product) else None
+
+    def get_review_type(self, obj):
+        return "product" if obj.product_id else "shop"
+
+    class Meta:
+        model = ProductReview
+        fields = [
+            "id",
+            "user", "user_display", "user_email",
+            "product", "product_name", "product_slug", "review_type",
+            "rating", "title", "comment",
+            "is_approved", "is_featured",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "user", "user_display", "user_email",
+            "product", "product_name", "product_slug", "review_type",
+            "created_at", "updated_at",
+        ]
+        # is_approved and is_featured are writable for moderation
+
+
+# ── Internal / legacy serializer ──────────────────────────────────────────
+
+class ReviewSerializer(serializers.ModelSerializer):
+    """
+    Internal serializer kept for backward compatibility.
+
+    Used by: ProductReviewListCreate (product review creation + display).
+
+    Note: ``user_name`` in this serializer may fall back to email — do NOT
+    use this on public endpoints.  Use ``ReviewPublicSerializer`` instead.
+    """
+
+    user_name = serializers.SerializerMethodField()
+    is_verified_purchase = serializers.SerializerMethodField()
+    product_name = serializers.SerializerMethodField()
+    product_slug = serializers.SerializerMethodField()
+    review_type = serializers.SerializerMethodField()
+
+    def get_user_name(self, obj):
+        # Internal use: safe fallback chain (email visible to authenticated user who left the review)
+        return _get_safe_display_name(getattr(obj, "user", None))
+
+    def get_is_verified_purchase(self, obj):
+        return _get_verified_purchase(getattr(obj, "user", None), getattr(obj, "product", None))
+
+    def get_product_name(self, obj):
+        return obj.product.name if (obj.product_id and obj.product) else None
+
+    def get_product_slug(self, obj):
+        return slugify(obj.product.name) if (obj.product_id and obj.product) else None
+
+    def get_review_type(self, obj):
+        return "product" if obj.product_id else "shop"
+
+    class Meta:
+        model = ProductReview
+        fields = [
+            "id", "user", "user_name",
+            "product", "product_name", "product_slug", "review_type",
+            "rating", "title", "comment",
+            "is_approved", "is_featured",
+            "created_at", "is_verified_purchase",
+        ]
+        read_only_fields = [
+            "id", "user", "user_name",
+            "product", "product_name", "product_slug", "review_type",
+            "is_approved", "is_featured",
+            "created_at", "is_verified_purchase",
+        ]
+
+
+# Alias — keeps any remaining imports of ``ProductReviewSerializer`` working
+ProductReviewSerializer = ReviewSerializer
 
 
 class ProductSerializer(ProductImageValidationMixin, serializers.ModelSerializer):
