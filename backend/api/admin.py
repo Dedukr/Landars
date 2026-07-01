@@ -834,14 +834,68 @@ def mark_orders_paid(modeladmin, request, queryset):
 
 @admin.action(description="Mark selected orders as Cancelled")
 def mark_orders_cancelled(modeladmin, request, queryset):
-    from api.services.product_sales import bulk_set_order_status
+    """
+    Cancel selected orders using the same workflow as a manual status change:
 
-    updated = bulk_set_order_status(queryset, "cancelled")
-    modeladmin.message_user(
-        request,
-        f"{updated} order(s) marked as cancelled.",
-        level=messages.SUCCESS,
-    )
+    - Credit note for the latest invoice when one exists and is not yet voided
+    - ``set_order_status(..., "cancelled")`` → shipping signal cancels Sendcloud / Shipment
+    """
+    import logging
+
+    from api.services.order_cancellation import cancel_order
+
+    logger = logging.getLogger(__name__)
+
+    success_count = 0
+    skipped_count = 0
+    credit_note_count = 0
+    error_count = 0
+    errors = []
+
+    optimized_queryset = queryset.prefetch_related(
+        "invoices", "invoices__credit_note"
+    ).order_by("id")
+
+    for order in optimized_queryset:
+        if order.status == "cancelled":
+            skipped_count += 1
+            continue
+        try:
+            result = cancel_order(order, request=request)
+            if result.skipped_already_cancelled:
+                skipped_count += 1
+                continue
+            success_count += 1
+            if result.credit_note_created:
+                credit_note_count += 1
+        except Exception as exc:
+            error_count += 1
+            error_msg = f"Order #{order.id}: {exc}"
+            errors.append(error_msg)
+            logger.error(error_msg, exc_info=True)
+
+    if success_count > 0:
+        message = f"{success_count} order(s) marked as cancelled."
+        if credit_note_count > 0:
+            message += f" {credit_note_count} credit note(s) issued."
+        modeladmin.message_user(request, message, level=messages.SUCCESS)
+
+    if skipped_count > 0:
+        modeladmin.message_user(
+            request,
+            f"{skipped_count} order(s) already cancelled — skipped.",
+            level=messages.WARNING,
+        )
+
+    if error_count > 0:
+        error_display = "\n".join(errors[:10])
+        if len(errors) > 10:
+            error_display += f"\n... and {len(errors) - 10} more errors."
+        modeladmin.message_user(
+            request,
+            f"Failed to cancel {error_count} order(s):\n{error_display}",
+            level=messages.ERROR,
+        )
 
 
 @admin.action(description="Mark selected orders as Ready to ship")
@@ -906,16 +960,21 @@ def create_credit_note_for_invoices(modeladmin, request, queryset):
             except CreditNote.DoesNotExist:
                 pass
 
-            # Create credit note using unified function
+            # Create credit note using unified function, then cancel via shared workflow
             credit_note = create_credit_note(
                 invoice=invoice,
                 reason="Information about the order has been changed",
                 request=request,
             )
 
-            from api.services.product_sales import set_order_status
+            from api.services.order_cancellation import cancel_order
 
-            set_order_status(order, "cancelled")
+            cancel_order(
+                order,
+                request=request,
+                reason="Information about the order has been changed",
+                issue_credit_note=False,
+            )
 
             success_count += 1
             logger.info(
@@ -1528,7 +1587,7 @@ class OrderAdmin(admin.ModelAdmin):
         create_credit_note_and_new_invoice,
         mark_orders_paid,
         mark_orders_ready_to_ship,
-        # mark_orders_cancelled,
+        mark_orders_cancelled,
         # mark_orders_pending,
         calculate_sum,
         calculate_total_items,
@@ -1953,6 +2012,15 @@ class OrderAdmin(admin.ModelAdmin):
         if change and "status" in form.changed_data and obj.status == "paid":
             status_changed_to_paid = True
 
+        status_changed_to_cancelled = (
+            change and "status" in form.changed_data and obj.status == "cancelled"
+        )
+        previous_status = None
+        if status_changed_to_cancelled and obj.pk:
+            previous_status = (
+                Order.objects.filter(pk=obj.pk).values_list("status", flat=True).first()
+            )
+
         if not change:
             obj.source = Order.Source.ADMIN
 
@@ -1961,9 +2029,12 @@ class OrderAdmin(admin.ModelAdmin):
         # Update related invoice when order status changes to "paid"
         if status_changed_to_paid:
             self._update_invoice_to_paid(obj)
-        # NOTE: Do not auto-promote paid → ready_to_ship.
-        # Ops can set ready_to_ship explicitly; shipment automation is triggered
-        # on the ready_to_ship transition via shipping signals.
+
+        # Credit note when transitioning to cancelled (shipment cancel runs via post_save)
+        if status_changed_to_cancelled and previous_status != "cancelled":
+            from api.services.order_cancellation import issue_credit_note_if_needed
+
+            issue_credit_note_if_needed(obj, request=request)
 
     def _update_invoice_to_paid(self, order):
         """

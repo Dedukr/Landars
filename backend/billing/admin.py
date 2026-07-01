@@ -230,9 +230,14 @@ class InvoiceAdmin(admin.ModelAdmin):
                 )
 
                 if invoice.order:
-                    from api.services.product_sales import set_order_status
+                    from api.services.order_cancellation import cancel_order
 
-                    set_order_status(invoice.order, "cancelled")
+                    cancel_order(
+                        invoice.order,
+                        request=request,
+                        reason="Information about the order has been changed",
+                        issue_credit_note=False,
+                    )
 
                 success_count += 1
                 logger.info(
