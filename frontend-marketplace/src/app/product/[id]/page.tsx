@@ -334,25 +334,6 @@ export default function ProductPage() {
               </p>
             )}
 
-            {typeof product.sold_quantity === "number" && product.sold_quantity > 0 && (
-              <p className="text-sm -mt-1" style={{ color: "var(--muted-foreground)" }}>
-                <span className="font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>
-                  {product.sold_quantity}
-                </span>{" "}
-                units sold on completed orders
-                {typeof product.sold_orders_count === "number" && product.sold_orders_count > 0 ? (
-                  <>
-                    {" "}
-                    ·{" "}
-                    <span className="font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>
-                      {product.sold_orders_count}
-                    </span>{" "}
-                    orders
-                  </>
-                ) : null}
-              </p>
-            )}
-
             {description && (
               <div
                 className="rounded-2xl border p-4 sm:p-5"
