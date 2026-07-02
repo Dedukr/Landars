@@ -12,7 +12,12 @@ from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.decorators import (
+    api_view,
+    authentication_classes,
+    permission_classes,
+    throttle_classes,
+)
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
@@ -44,12 +49,14 @@ logger = logging.getLogger("account")
 
 # Custom throttle for registration
 class RegisterThrottle(AnonRateThrottle):
-    rate = "3/hour"
+    scope = "register"
+    rate = getattr(settings, "REGISTER_RATE_LIMIT", "10/hour")
 
 
 # Custom throttle for login
 class LoginThrottle(AnonRateThrottle):
-    rate = "5/minute"
+    scope = "login"
+    rate = getattr(settings, "LOGIN_RATE_LIMIT", "5/minute")
 
 
 # Custom throttle for password reset requests
@@ -76,6 +83,7 @@ class EmailVerificationResendThrottle(AnonRateThrottle):
 
 
 @api_view(["POST"])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @throttle_classes([RegisterThrottle])
 def register(request):
@@ -217,6 +225,7 @@ def register(request):
 
 
 @api_view(["POST"])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @throttle_classes([LoginThrottle])
 def login_view(request):
@@ -591,6 +600,7 @@ def update_profile(request):
 
 
 @api_view(["POST"])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @throttle_classes([PasswordResetThrottle])
 def request_password_reset(request):
@@ -725,6 +735,7 @@ def request_password_reset(request):
 
 
 @api_view(["POST"])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @throttle_classes([PasswordResetThrottle])
 def confirm_password_reset(request):
@@ -1033,6 +1044,7 @@ def set_default_payment_method(request, payment_id):
 
 
 @api_view(["POST"])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @throttle_classes([EmailVerificationThrottle])
 def verify_email(request):
@@ -1121,6 +1133,7 @@ def verify_email(request):
 
 
 @api_view(["POST"])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @throttle_classes([EmailVerificationResendThrottle])
 def resend_verification_email(request):

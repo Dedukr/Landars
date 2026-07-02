@@ -148,7 +148,15 @@ REST_FRAMEWORK = {
     "DEFAULT_PARSER_CLASSES": [
         "rest_framework.parsers.JSONParser",
     ],
+    # Behind the nginx reverse proxy the client IP is in X-Forwarded-For.
+    # Tell DRF how many trusted proxies sit in front so per-client throttling
+    # keys on the real visitor IP instead of the shared nginx address.
+    "NUM_PROXIES": int(os.getenv("DRF_NUM_PROXIES", "1")),
 }
+
+# Anonymous auth throttle rates (env-overridable so testing isn't painful).
+REGISTER_RATE_LIMIT = os.getenv("REGISTER_RATE_LIMIT", "10/hour")
+LOGIN_RATE_LIMIT = os.getenv("LOGIN_RATE_LIMIT", "5/minute")
 
 # JWT Settings
 from datetime import timedelta

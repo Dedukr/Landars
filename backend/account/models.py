@@ -51,7 +51,13 @@ class CustomUserManager(BaseUserManager):
         if self.filter(email=email).exists():
             raise ValueError("A user with this email already exists")
 
-        user = self.model(name=name, email=email, **extra_fields)
+        user = self.model(
+            name=name,
+            email=email,
+            first_name=first_name,
+            surname=surname,
+            **extra_fields,
+        )
         if password:
             user.set_password(password)
         else:
