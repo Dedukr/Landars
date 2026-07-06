@@ -26,6 +26,15 @@ from django.db.models import Count
 from api.models import CategoryGroup, Product, ProductCategory
 
 
+def _leaf_ids_under(category: ProductCategory) -> set[int]:
+    if not category.subcategories.exists():
+        return {category.id}
+    ids: set[int] = set()
+    for child in category.subcategories.all():
+        ids |= _leaf_ids_under(child)
+    return ids
+
+
 class Command(BaseCommand):
     help = "Validate category/group data integrity before/after the parent -> CategoryGroup migration."
 
@@ -77,14 +86,15 @@ class Command(BaseCommand):
         # 2. Every former-parent category is represented in some CategoryGroup via its children.
         w(style.MIGRATE_HEADING("[2/4] Checking every parent's children are covered by a CategoryGroup..."))
         for parent in parents:
-            children = set(parent.subcategories.values_list("id", flat=True))
-            if not children:
-                continue
+            member_ids: set[int] = set()
+            for child in parent.subcategories.all():
+                member_ids |= _leaf_ids_under(child)
+
             covered = set(
-                CategoryGroup.objects.filter(categories__id__in=children)
+                CategoryGroup.objects.filter(categories__id__in=member_ids)
                 .values_list("categories__id", flat=True)
             )
-            missing = children - covered
+            missing = member_ids - covered
             if missing:
                 missing_names = ProductCategory.objects.filter(id__in=missing).values_list(
                     "name", flat=True

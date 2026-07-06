@@ -22,6 +22,16 @@ from django.db import transaction
 from api.models import CategoryGroup, ProductCategory
 
 
+def _leaf_ids_under(category: ProductCategory) -> set[int]:
+    """All leaf category ids at or below ``category`` (handles 3+ level chains)."""
+    if not category.subcategories.exists():
+        return {category.id}
+    ids: set[int] = set()
+    for child in category.subcategories.all():
+        ids |= _leaf_ids_under(child)
+    return ids
+
+
 class Command(BaseCommand):
     help = (
         "Create/merge a CategoryGroup per structural parent ProductCategory, with the "
@@ -52,8 +62,6 @@ class Command(BaseCommand):
                 group.description = parent.description
                 group.save(update_fields=["description"])
 
-            # Groups must only ever contain leaf categories — drop the parent itself
-            # from membership if it was ever added there directly.
             if group.categories.filter(pk=parent.pk).exists():
                 group.categories.remove(parent)
                 w(
@@ -64,9 +72,27 @@ class Command(BaseCommand):
                     )
                 )
 
+            member_ids: set[int] = set()
+            for child in children:
+                member_ids |= _leaf_ids_under(child)
+
+            # Drop structural parents that may have been added by an earlier migrate run.
+            member_ids -= {c.id for c in parents}
+
             existing_member_ids = set(group.categories.values_list("id", flat=True))
-            child_ids = {c.id for c in children}
-            to_add = child_ids - existing_member_ids
+            parent_id_set = {c.id for c in parents}
+            stale = existing_member_ids & parent_id_set
+            if stale:
+                group.categories.remove(*stale)
+                w(
+                    style.WARNING(
+                        f"  Removed structural parent row(s) {sorted(stale)} from group "
+                        f"{group.name!r} (id={group.id})."
+                    )
+                )
+                existing_member_ids -= stale
+
+            to_add = member_ids - existing_member_ids
             if to_add:
                 group.categories.add(*to_add)
 
@@ -74,8 +100,8 @@ class Command(BaseCommand):
             w(
                 style.SUCCESS(
                     f"{verb} CategoryGroup {group.name!r} (id={group.id}) for parent "
-                    f"{parent.name!r} (id={parent.id}) — {len(children)} children "
-                    f"({len(to_add)} newly added, {len(existing_member_ids & child_ids)} already present)."
+                    f"{parent.name!r} (id={parent.id}) — {len(member_ids)} leaf member(s) "
+                    f"({len(to_add)} newly added, {len(existing_member_ids & member_ids)} already present)."
                 )
             )
 

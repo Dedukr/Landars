@@ -66,8 +66,10 @@
 # Usage:
 #   ./management/category_migration_stage1_data.sh [--status] [--yes]
 #
-#   --status  Print schema state and exit (use on prod to confirm readiness).
-#   --yes     Skip interactive confirmation prompts.
+#   --validate-only
+#             Re-run step 7 only (after a script bug or failed validation). Reads baseline
+#             from db_backups/.category_migration_stage1_complete if present, else pass
+#             CATEGORY_MIGRATION_BASELINE=212 in the environment.
 #######################################################################################
 
 set -euo pipefail
@@ -93,12 +95,14 @@ source "$SCRIPT_DIR/category_migration_common.sh"
 
 ASSUME_YES=false
 STATUS_ONLY=false
+VALIDATE_ONLY=false
 for arg in "$@"; do
     case "$arg" in
         --yes|-y) ASSUME_YES=true ;;
         --status) STATUS_ONLY=true ;;
+        --validate-only) VALIDATE_ONLY=true ;;
         --help|-h)
-            sed -n '3,75p' "$0"
+            sed -n '3,80p' "$0"
             exit 0
             ;;
         *) ;;
@@ -324,13 +328,21 @@ run_strip_products() {
 
 run_validate() {
     section "STEP 7/8 — Validating migration integrity against the captured baseline"
-    local allow_arg=()
-    if [ -n "${SKIPPED_IDS:-}" ]; then
-        allow_arg=(--allow-parent-tags-on="$SKIPPED_IDS")
+
+    if [ -z "${BASELINE_TOTAL:-}" ]; then
+        error "BASELINE_TOTAL is not set — cannot validate."
+        exit 1
     fi
 
-    if ! dc exec -T backend python manage.py validate_category_group_migration \
-        --baseline-total="$BASELINE_TOTAL" "${allow_arg[@]:-}"; then
+    local validate_cmd=(
+        dc exec -T backend python manage.py validate_category_group_migration
+        --baseline-total="$BASELINE_TOTAL"
+    )
+    if [ -n "${SKIPPED_IDS:-}" ]; then
+        validate_cmd+=(--allow-parent-tags-on="$SKIPPED_IDS")
+    fi
+
+    if ! "${validate_cmd[@]}"; then
         error "VALIDATION FAILED. Do NOT proceed to deploying the full code / stage 2."
         error "The database has NOT had its schema changed — data is still recoverable/inspectable as-is."
         error "If you need to fully undo the CategoryGroup/product changes made so far, restore the backup"
@@ -338,6 +350,34 @@ run_validate() {
         exit 1
     fi
     log "Validation passed."
+}
+
+run_validate_only() {
+    section "Validate-only (re-run step 7 after migration data changes)"
+    BACKEND_CID=$(get_backend_container)
+
+    if [ -f "$MARKER_FILE" ]; then
+        # shellcheck disable=SC1090
+        source "$MARKER_FILE" 2>/dev/null || true
+        if [ -z "${BASELINE_TOTAL:-}" ] && grep -q baseline_leaf_category_tag_total= "$MARKER_FILE"; then
+            BASELINE_TOTAL=$(grep baseline_leaf_category_tag_total= "$MARKER_FILE" | cut -d= -f2)
+        fi
+    fi
+    if [ -z "${BASELINE_TOTAL:-}" ] && [ -n "${CATEGORY_MIGRATION_BASELINE:-}" ]; then
+        BASELINE_TOTAL="$CATEGORY_MIGRATION_BASELINE"
+    fi
+    if [ -z "${BASELINE_TOTAL:-}" ]; then
+        error "Set CATEGORY_MIGRATION_BASELINE=212 (from your audit) or complete a full stage 1 run first."
+        exit 1
+    fi
+    log "Using baseline leaf-category tag total: $BASELINE_TOTAL"
+
+    # Ensure latest command files are in the container (migrate fix for 3-level chains).
+    copy_commands
+    info "Reconciling CategoryGroup membership (idempotent)..."
+    dc exec -T backend python manage.py migrate_parent_categories_to_groups
+    run_validate
+    write_marker
 }
 
 write_marker() {
@@ -360,6 +400,14 @@ main() {
         section "Category migration — status check"
         print_category_migration_status
         exit $?
+    fi
+
+    if [ "$VALIDATE_ONLY" = true ]; then
+        load_env
+        mkdir -p "$LOG_DIR"
+        run_validate_only
+        section "✅ VALIDATION COMPLETE"
+        exit 0
     fi
 
     section "Category System Redesign — STAGE 1 (data migration)"
