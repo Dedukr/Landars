@@ -57,6 +57,11 @@ category_migration_verdict() {
         return 0
     fi
 
+    if [ "$has_parent" = "False" ] && [ "$parent_col" = "present" ]; then
+        echo "ready_stage2"
+        return 0
+    fi
+
     if [ "$has_parent" = "False" ] && [ "$parent_col" = "absent" ]; then
         if [ -f "${STAGE2_MARKER_FILE:-}" ]; then
             echo "already_complete"
@@ -109,6 +114,9 @@ print_category_migration_status() {
         inconsistent)
             echo "VERDICT: INCONSISTENT — manual review required"
             echo "  Model and database category schema do not match expected combinations."
+            echo "  Expected after stage 1: model=True, db=present"
+            echo "  Expected after rebuild (before stage 2 migrate): model=False, db=present"
+            echo "  Expected after stage 2: model=False, db=absent"
             return 2
             ;;
         *)

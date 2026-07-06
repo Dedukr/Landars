@@ -138,14 +138,22 @@ preflight() {
     info "  ProductCategory.parent on model: $has_parent"
     info "  parent_id column in database:  $parent_col"
 
-    if [ "$has_parent" = "True" ] || [ "$parent_col" = "present" ]; then
-        error "The running backend still has the OLD category schema."
-        error "Deploy the full category-redesign code first (./management/deploy.sh), then re-run"
+    if [ "$has_parent" = "True" ]; then
+        error "The running backend still has the OLD category model (ProductCategory.parent field)."
+        error "Rebuild/restart the backend with the category-redesign code first, then re-run"
         error "this script. If stage 1 data migration has not run yet, run:"
         error "  ./management/category_migration_stage1_data.sh"
         exit 1
     fi
-    log "Confirmed: running backend has the new schema-less category model."
+
+    if [ "$has_parent" = "False" ] && [ "$parent_col" = "present" ]; then
+        log "Confirmed: new category model is running; parent_id column still in DB (step 3 will drop it)."
+    elif [ "$has_parent" = "False" ] && [ "$parent_col" = "absent" ]; then
+        log "Confirmed: new category model and database schema (parent_id column already dropped)."
+    else
+        error "Unexpected category schema state (model=$has_parent, db=$parent_col)."
+        exit 1
+    fi
 
     if [ ! -f "$MARKER_FILE" ]; then
         if [ "$verdict" = "ready_stage2" ] || [ "$verdict" = "already_complete" ]; then

@@ -268,8 +268,8 @@ class Invoice(models.Model):
 
     @property
     def due_date(self):
-        """Invoice due date: 14 days from order creation date."""
-        return self.created_at.date() + timezone.timedelta(days=14)
+        """Invoice due date: 7 days from order creation date."""
+        return self.created_at.date() + timezone.timedelta(days=7)
 
     @property
     def amount_due(self) -> Decimal:

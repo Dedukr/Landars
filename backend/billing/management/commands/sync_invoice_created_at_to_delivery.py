@@ -1,7 +1,7 @@
 """
 Set Invoice.created_at from the invoice's snapshot delivery_date (invoice numbers in a range).
 
-`Invoice.due_date` is a @property (created_at + 14 days), so there is no separate DB field
+`Invoice.due_date` is a @property (created_at + 7 days), so there is no separate DB field
 to update — changing created_at is enough for templates and new PDFs.
 
 Usage:
