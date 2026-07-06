@@ -15,15 +15,13 @@ from django.utils import timezone
 
 # ProductCategory model
 class ProductCategory(models.Model):
+    """
+    Flat leaf category. Top-tier grouping/navigation is handled entirely by
+    :class:`CategoryGroup` membership — there is no parent/child tree here.
+    """
+
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
-    parent = models.ForeignKey(
-        "self",
-        null=True,
-        blank=True,
-        related_name="subcategories",
-        on_delete=models.CASCADE,
-    )
     sold_quantity = models.PositiveIntegerField(
         default=0,
         db_index=True,
@@ -35,24 +33,15 @@ class ProductCategory(models.Model):
 
     class Meta:
         verbose_name_plural = "Product Categories"
-        ordering = ["parent__name", "name"]
-        # Ensure categories are ordered by parent name first, then by name
+        ordering = ["name"]
 
     def __str__(self):
-        # if self.parent:
-        #     return f"{self.parent.name} → {self.name}"
         return self.name
 
     def get_category_details(self):
         return {
             "id": self.id,
             "name": self.name,
-            "parent": self.parent.name if self.parent else None,
-            "subcategories": (
-                [sub.name for sub in self.subcategories.all()]
-                if self.subcategories.exists()
-                else None
-            ),
             "description": self.description,
             "sold_quantity": int(self.sold_quantity or 0),
         }
@@ -232,9 +221,7 @@ class Product(models.Model):
         return Decimal("0.2") if self.vat else Decimal("0")
 
     def get_categories(self):
-        return [
-            cat.name for cat in self.categories.all().order_by("parent__name", "name")
-        ]
+        return [cat.name for cat in self.categories.all().order_by("name")]
 
     def get_product_details(self):
         primary_image = self.images.first()  # First image is always primary

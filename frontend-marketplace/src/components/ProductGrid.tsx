@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { useInView } from "react-intersection-observer";
 import type { ShopListingFilters } from "@/types/shop-filters";
 import type { ShopCategoryRecord } from "@/components/shop/ShopFilterPanelContent";
+import type { ApiCategoryGroup } from "@/lib/prepareHomeDisplayCategories";
 import ShopProductTile from "@/components/shop/ShopProductTile";
 import { ShopProductCardSkeleton } from "@/components/shop/ShopProductCardSkeleton";
 import { ShopEmptyState, ShopErrorState } from "@/components/shop/ShopListingStates";
@@ -38,6 +39,7 @@ interface ProductGridProps {
   filters: ShopListingFilters;
   search?: string;
   categories: ShopCategoryRecord[];
+  categoryGroups?: ApiCategoryGroup[];
   categoriesLoading?: boolean;
   onListingMeta?: (meta: ShopListingMeta) => void;
 }
@@ -49,6 +51,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({
   filters,
   search,
   categories,
+  categoryGroups = [],
   categoriesLoading = false,
   onListingMeta,
 }) => {
@@ -102,8 +105,23 @@ const ProductGrid: React.FC<ProductGridProps> = ({
 
   const filteredProducts = useMemo(() => {
     if (categoryFilterPending) return [];
-    return applyShopListingQuery(catalog, filters, sort, search, categories);
-  }, [catalog, filters, sort, search, categories, categoryFilterPending]);
+    return applyShopListingQuery(
+      catalog,
+      filters,
+      sort,
+      search,
+      categories,
+      categoryGroups
+    );
+  }, [
+    catalog,
+    filters,
+    sort,
+    search,
+    categories,
+    categoryGroups,
+    categoryFilterPending,
+  ]);
 
   useEffect(() => {
     setVisibleProductsCount(PAGE_SIZE);

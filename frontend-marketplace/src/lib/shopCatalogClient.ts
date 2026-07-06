@@ -3,6 +3,10 @@ import type { ShopListingFilters } from "@/types/shop-filters";
 import { SHOP_PRICE_MAX_UNLIMITED } from "@/types/shop-filters";
 import type { ShopCategoryRecord } from "@/components/shop/ShopFilterPanelContent";
 import type { ShopProductDto } from "@/components/shop/ShopProductCard";
+import {
+  shopFilterGroupParentId,
+  type ApiCategoryGroup,
+} from "@/lib/prepareHomeDisplayCategories";
 
 function mainImageUrl(product: ShopCatalogProduct): string | null {
   if (product.images?.length) {
@@ -66,50 +70,43 @@ export async function fetchAllShopProducts(
   return all;
 }
 
-/** Mirror backend ``expand_category_ids_for_product_filter`` (all descendant subcategories). */
+/**
+ * Normalize selected filter ids to real (leaf) category ids.
+ *
+ * ``ProductCategory`` rows are flat leaves, so a selected id is just itself. The only
+ * expansion needed is for a virtual ``CategoryGroup`` id (see ``shopFilterGroupParentId``),
+ * which resolves to that group's member category ids.
+ */
 export function expandCategoryIdsForFilter(
   filterIds: number[],
-  records: ShopCategoryRecord[]
+  groups: ApiCategoryGroup[] = []
 ): Set<number> {
-  const ids = new Set(
-    filterIds.filter((id) => Number.isFinite(id) && id > 0)
-  );
-  if (!ids.size) return ids;
+  const ids = new Set<number>();
 
-  const childrenByParent = new Map<number, number[]>();
-  for (const record of records) {
-    if (record.parent != null) {
-      const list = childrenByParent.get(record.parent) ?? [];
-      list.push(record.id);
-      childrenByParent.set(record.parent, list);
+  for (const id of filterIds) {
+    if (!Number.isFinite(id) || id === 0) continue;
+    if (id > 0) {
+      ids.add(id);
+      continue;
     }
-  }
-
-  let frontier = [...ids];
-  while (frontier.length > 0) {
-    const next: number[] = [];
-    for (const parentId of frontier) {
-      for (const childId of childrenByParent.get(parentId) ?? []) {
-        if (!ids.has(childId)) {
-          ids.add(childId);
-          next.push(childId);
-        }
-      }
+    const group = groups.find((g) => shopFilterGroupParentId(g.id) === id);
+    for (const memberId of group?.category_ids ?? []) {
+      ids.add(memberId);
     }
-    frontier = next;
   }
 
   return ids;
 }
 
-/** Names of categories matching ``filterIds``, including all descendant subcategories. */
+/** Names of categories matching ``filterIds`` (expanding any virtual group ids). */
 export function categoryNamesForFilterIds(
   filterIds: number[],
-  records: ShopCategoryRecord[]
+  records: ShopCategoryRecord[],
+  groups: ApiCategoryGroup[] = []
 ): Set<string> {
   if (!filterIds.length) return new Set();
 
-  const expandedIds = expandCategoryIdsForFilter(filterIds, records);
+  const expandedIds = expandCategoryIdsForFilter(filterIds, groups);
   const names = new Set<string>();
 
   for (const record of records) {
@@ -188,7 +185,8 @@ export function applyShopListingQuery(
   filters: ShopListingFilters,
   sort: string,
   search: string | undefined,
-  categoryRecords: ShopCategoryRecord[]
+  categoryRecords: ShopCategoryRecord[],
+  categoryGroups: ApiCategoryGroup[] = []
 ): ShopCatalogProduct[] {
   let result = catalog;
 
@@ -199,7 +197,8 @@ export function applyShopListingQuery(
 
     const allowedNames = categoryNamesForFilterIds(
       filters.categories,
-      categoryRecords
+      categoryRecords,
+      categoryGroups
     );
     if (allowedNames.size === 0) {
       return [];

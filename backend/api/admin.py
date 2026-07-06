@@ -306,40 +306,8 @@ class ProductAdmin(admin.ModelAdmin):
 
     def formfield_for_manytomany(self, db_field, request, **kwargs):
         if db_field.name == "categories":
-            # Only categories that are not parents (i.e., that are leaf nodes)
-            kwargs["queryset"] = ProductCategory.objects.filter(
-                subcategories__isnull=True
-            ).order_by("parent__name", "name")
+            kwargs["queryset"] = ProductCategory.objects.order_by("name")
         return super().formfield_for_manytomany(db_field, request, **kwargs)
-
-    def save_related(self, request, form, formsets, change):
-        super().save_related(request, form, formsets, change)
-
-        # Now categories are saved, safe to modify them
-        instance = form.instance
-        to_add = set()
-        for cat in instance.categories.all():
-            parent = cat.parent
-            while parent:
-                to_add.add(parent)
-                parent = parent.parent
-        if to_add:
-            instance.categories.add(*to_add)
-
-
-class ParentCategoriesFilter(admin.SimpleListFilter):
-    title = _("Parent Category")
-    parameter_name = "parent_category"
-
-    def lookups(self, request, model_admin):
-        # Only show parents that have subcategories
-        parents = ProductCategory.objects.filter(subcategories__isnull=False).distinct()
-        return [(parent.id, parent.name) for parent in parents]
-
-    def queryset(self, request, queryset):
-        if self.value():
-            return queryset.filter(parent__id=self.value())
-        return queryset
 
 
 class HolidayFeeFilter(admin.SimpleListFilter):
@@ -362,12 +330,11 @@ class HolidayFeeFilter(admin.SimpleListFilter):
 
 @admin.register(ProductCategory)
 class ProductCategoryAdmin(admin.ModelAdmin):
-    list_display = ["name", "description", "parent", "products_count"]
-    list_filter = [ParentCategoriesFilter]
+    list_display = ["name", "description", "products_count"]
     search_fields = ["name"]
-    ordering = ["parent__name", "name"]
+    ordering = ["name"]
     readonly_fields = ["products_inline"]
-    fields = ["name", "description", "parent", "products_inline"]
+    fields = ["name", "description", "products_inline"]
 
     class Media:
         js = ("admin/js/prevent_double_submit.js",)

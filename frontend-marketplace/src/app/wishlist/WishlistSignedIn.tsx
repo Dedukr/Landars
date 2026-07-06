@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useMemo, useEffect } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { SortOption } from "@/components/SortList";
 import { toast } from "sonner";
@@ -15,12 +15,6 @@ import WishlistEmptyState from "@/components/wishlist/WishlistEmptyState";
 import WishlistErrorState from "@/components/wishlist/WishlistErrorState";
 import WishlistLoadingState from "@/components/wishlist/WishlistLoadingState";
 import { Button } from "@/components/ui/Button";
-
-interface Category {
-  id: number;
-  name: string;
-  parent: number | null;
-}
 
 export default function WishlistSignedIn() {
   const {
@@ -38,43 +32,10 @@ export default function WishlistSignedIn() {
     "name"
   );
   const [filterCategory, setFilterCategory] = useState<string>("all");
-  const [categories, setCategories] = useState<Category[]>([]);
 
-  useEffect(() => {
-    async function fetchCategories() {
-      try {
-        const response = await fetch("/api/categories/");
-        if (!response.ok) return;
-        const raw = await response.json();
-        const list = Array.isArray(raw)
-          ? raw
-          : (raw as { results?: Category[] }).results ?? [];
-        setCategories(Array.isArray(list) ? list : []);
-      } catch (error) {
-        console.error("Error fetching categories:", error);
-      }
-    }
-    fetchCategories();
-  }, []);
-
-  const productsWithLeafCategories = useMemo(() => {
-    if (!categories.length) return filteredProducts;
-
-    const categoryMap = new Map<string, boolean>();
-    categories.forEach((cat) => {
-      categoryMap.set(cat.name, cat.parent !== null);
-    });
-
-    return filteredProducts.map((product) => {
-      const leafCategories =
-        product.categories?.filter((catName) => Boolean(categoryMap.get(catName))) || [];
-
-      return {
-        ...product,
-        categories: leafCategories,
-      };
-    });
-  }, [filteredProducts, categories]);
+  // ``ProductCategory`` rows are flat leaves now, so every category on a product is
+  // already display-worthy — no more filtering out structural parent-category names.
+  const productsWithLeafCategories = filteredProducts;
 
   const wishlistSortOptions: SortOption[] = [
     { value: "name", label: "Name: A–Z", icon: "↑" },

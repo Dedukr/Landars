@@ -62,7 +62,6 @@ export default function ShopContent() {
     const apiList: ApiCategory[] = categories.map((c) => ({
       id: c.id,
       name: c.name,
-      parent: c.parent ?? null,
       image_url: c.image_url ?? null,
       products_count: c.products_count ?? null,
       top_seller_sold_quantity: c.top_seller_sold_quantity ?? null,
@@ -280,6 +279,7 @@ export default function ShopContent() {
                 filters={filters}
                 search={search}
                 categories={categories}
+                categoryGroups={categoryGroups}
                 categoriesLoading={categoriesLoading}
               />
             </div>

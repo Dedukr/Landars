@@ -12,7 +12,7 @@ from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
-_CACHE_KEY = "post_delivery_category_ids:v2:{group_id}"
+_CACHE_KEY = "post_delivery_category_ids:v3:{group_id}"
 
 
 def post_delivery_category_group_id() -> int:
@@ -38,7 +38,7 @@ def invalidate_post_delivery_category_cache(group_id: int | None = None) -> None
 
 def get_post_delivery_category_ids() -> frozenset[int]:
     """
-    Category PKs for the post-delivery group, expanded to descendant subcategories.
+    Category PKs for the post-delivery group's direct (leaf) member categories.
     """
     gid = post_delivery_category_group_id()
     cache_key = _CACHE_KEY.format(group_id=gid)

@@ -31,7 +31,6 @@ export function shopCategoryChipSortIndex(name: string): number {
 export interface ShopCategoryLike {
   id: number;
   name: string;
-  parent?: number | null;
   image_url?: string | null;
   products_count?: number | null;
 }
@@ -57,11 +56,9 @@ export function resolveShopFeaturedCategories<T extends ShopCategoryLike>(
 export function shopFeaturedCategoryFallbacks(): Array<{
   id: number;
   name: string;
-  parent: null;
 }> {
   return SHOP_FEATURED_CATEGORIES.map((item, index) => ({
     id: -(index + 1),
     name: item.label,
-    parent: null,
   }));
 }

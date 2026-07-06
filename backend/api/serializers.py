@@ -54,9 +54,6 @@ class CategoryGroupSerializer(serializers.ModelSerializer):
 
 
 class CategorySerializer(serializers.ModelSerializer):
-    parent = serializers.PrimaryKeyRelatedField(
-        queryset=ProductCategory.objects.all(), allow_null=True
-    )
     products_count = serializers.SerializerMethodField()
     image_url = serializers.SerializerMethodField()
     top_seller_sold_quantity = serializers.SerializerMethodField()
@@ -66,7 +63,6 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
-            "parent",
             "description",
             "sold_quantity",
             "products_count",
@@ -412,22 +408,8 @@ class ProductSerializer(ProductImageValidationMixin, serializers.ModelSerializer
         read_only_fields = ["id", "primary_image", "sold_quantity", "sold_orders_count"]
 
     def get_categories(self, obj):
-        """Return all category names for the product, including parent categories."""
-        categories = []
-        category_names = set()  # Track what we've already added to prevent duplicates
-
-        for cat in obj.categories.all().order_by("parent__name", "name"):
-            # Add the category itself if not already added
-            if cat.name not in category_names:
-                categories.append(cat.name)
-                category_names.add(cat.name)
-
-            # Add parent category if it exists and not already added
-            if cat.parent and cat.parent.name not in category_names:
-                categories.append(cat.parent.name)
-                category_names.add(cat.parent.name)
-
-        return categories
+        """Return the product's own (leaf) category names."""
+        return [cat.name for cat in obj.categories.all().order_by("name")]
 
     # def get_stock_quantity(self, obj):
     #     stock = Stock.objects.filter(product=obj).first()
@@ -515,19 +497,8 @@ class ProductListSerializer(serializers.ModelSerializer):
         ]  # Limit to 5 images for performance
 
     def get_categories(self, obj):
-        """Return all category names for the product, including parent categories."""
-        categories = []
-        category_names = set()
-
-        for cat in obj.categories.all().order_by("parent__name", "name"):
-            if cat.name not in category_names:
-                categories.append(cat.name)
-                category_names.add(cat.name)
-            if cat.parent and cat.parent.name not in category_names:
-                categories.append(cat.parent.name)
-                category_names.add(cat.parent.name)
-
-        return categories
+        """Return the product's own (leaf) category names."""
+        return [cat.name for cat in obj.categories.all().order_by("name")]
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -816,12 +787,8 @@ class WishlistItemSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "added_date"]
 
     def get_product_categories(self, obj):
-        """Return only child category names (categories with a parent)."""
-        return [
-            cat.name
-            for cat in obj.product.categories.all().order_by("parent__name", "name")
-            if cat.parent is not None
-        ]
+        """Return the product's own (leaf) category names."""
+        return [cat.name for cat in obj.product.categories.all().order_by("name")]
 
 
 class WishlistSerializer(serializers.ModelSerializer):

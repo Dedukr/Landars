@@ -7,10 +7,15 @@ import { Button } from "@/components/ui/Button";
 export interface ShopCategoryRecord {
   id: number;
   name: string;
-  parent?: number | null;
   image_url?: string | null;
   products_count?: number | null;
   top_seller_sold_quantity?: number | null;
+  /**
+   * Only present on rows produced by ``buildShopFilterPanelCategories``: a virtual
+   * CategoryGroup id (see ``shopFilterGroupParentId``) when this row is nested under a
+   * group, otherwise ``null``. Raw ``ProductCategory`` API records never set this.
+   */
+  parent?: number | null;
 }
 
 interface ShopFilterPanelContentProps {
@@ -42,24 +47,27 @@ export function ShopFilterPanelContent({
     );
   }, [filters.price]);
 
-  const categoryTree: { [parentId: number]: ShopCategoryRecord[] } = {};
+  // Categories are flat leaves, so this is a single level: a CategoryGroup's virtual
+  // parent row (see ``buildShopFilterPanelCategories``) maps to its member category rows.
+  // Any row without a ``parent`` is a root row; root rows never have grandchildren.
+  const membersByGroupParentId: { [parentId: number]: ShopCategoryRecord[] } = {};
   categories.forEach((cat) => {
     if (cat.parent == null) return;
-    if (!categoryTree[cat.parent]) categoryTree[cat.parent] = [];
-    categoryTree[cat.parent].push(cat);
+    if (!membersByGroupParentId[cat.parent]) membersByGroupParentId[cat.parent] = [];
+    membersByGroupParentId[cat.parent].push(cat);
   });
   const rootCategories = categories.filter((cat) => cat.parent == null);
 
   function handleCategoryTreeChange(cat: ShopCategoryRecord, isChecked: boolean) {
-    const children = categoryTree[cat.id] || [];
-    const childIds = children.map((c) => c.id);
+    const members = membersByGroupParentId[cat.id] || [];
+    const memberIds = members.map((c) => c.id);
     let newCategories = [...filters.categories];
 
-    if (childIds.length > 0) {
+    if (memberIds.length > 0) {
       if (isChecked) {
-        newCategories = newCategories.filter((id) => !childIds.includes(id));
+        newCategories = newCategories.filter((id) => !memberIds.includes(id));
       } else {
-        newCategories = Array.from(new Set([...newCategories, ...childIds]));
+        newCategories = Array.from(new Set([...newCategories, ...memberIds]));
       }
     } else {
       if (isChecked) {
@@ -71,18 +79,13 @@ export function ShopFilterPanelContent({
     setFilters((prev) => ({ ...prev, categories: newCategories }));
   }
 
-  function renderCategoryTree(parentId: number, level: number = 0) {
-    const children = categoryTree[parentId] || [];
-    const sorted = [...children].sort((a, b) => a.name.localeCompare(b.name));
+  function renderGroupMembers(groupParentId: number) {
+    const members = membersByGroupParentId[groupParentId] || [];
+    const sorted = [...members].sort((a, b) => a.name.localeCompare(b.name));
     return sorted.map((cat) => {
-      const subChildren = categoryTree[cat.id];
-      const childIds = subChildren ? subChildren.map((c) => c.id) : [];
-      const allChildrenChecked =
-        childIds.length > 0 && childIds.every((id) => filters.categories.includes(id));
-      const isChecked =
-        childIds.length > 0 ? allChildrenChecked : filters.categories.includes(cat.id);
+      const isChecked = filters.categories.includes(cat.id);
       return (
-        <div key={cat.id} style={{ marginLeft: level * 14 }}>
+        <div key={cat.id} style={{ marginLeft: 14 }}>
           <label className="flex items-start gap-2.5 cursor-pointer py-1.5 text-sm">
             <input
               type="checkbox"
@@ -94,7 +97,6 @@ export function ShopFilterPanelContent({
             />
             <span id={`cat-label-${cat.id}`}>{cat.name}</span>
           </label>
-          {subChildren && subChildren.length > 0 && renderCategoryTree(cat.id, level + 1)}
         </div>
       );
     });
@@ -167,14 +169,14 @@ export function ShopFilterPanelContent({
               rootCategories
                 .sort((a, b) => a.name.localeCompare(b.name))
                 .map((cat) => {
-                  const children = categoryTree[cat.id];
-                  const childIds = children ? children.map((c) => c.id) : [];
-                  const allChildrenChecked =
-                    childIds.length > 0 &&
-                    childIds.every((id) => filters.categories.includes(id));
+                  const members = membersByGroupParentId[cat.id];
+                  const memberIds = members ? members.map((c) => c.id) : [];
+                  const allMembersChecked =
+                    memberIds.length > 0 &&
+                    memberIds.every((id) => filters.categories.includes(id));
                   const isChecked =
-                    childIds.length > 0
-                      ? allChildrenChecked
+                    memberIds.length > 0
+                      ? allMembersChecked
                       : filters.categories.includes(cat.id);
                   return (
                     <div key={cat.id}>
@@ -188,9 +190,7 @@ export function ShopFilterPanelContent({
                         />
                         <span>{cat.name}</span>
                       </label>
-                      {children &&
-                        children.length > 0 &&
-                        renderCategoryTree(cat.id, 1)}
+                      {members && members.length > 0 && renderGroupMembers(cat.id)}
                     </div>
                   );
                 })

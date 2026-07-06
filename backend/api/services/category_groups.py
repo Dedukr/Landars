@@ -25,28 +25,13 @@ def category_ids_for_group(group_id: int) -> list[int]:
 
 def expand_category_ids_for_product_filter(category_ids: Iterable[int]) -> list[int]:
     """
-    Expand selected category ids to include all descendant subcategories.
+    Normalize a set of selected category ids for product filtering.
 
-    Products are usually tagged with leaf categories; filtering by a parent id alone
-    would otherwise return no rows.
+    ``ProductCategory`` rows are flat leaves (no parent/child tree), so there is nothing to
+    expand — a selected id only ever matches itself. This function is kept (rather than
+    inlining ``sorted(set(...))`` at every call site) so callers don't need to know that
+    detail, and so a future re-introduction of grouping/expansion only needs to change this
+    one place.
     """
-    from api.models import ProductCategory
-
     ids: set[int] = {int(i) for i in category_ids if i is not None}
-    if not ids:
-        return []
-
-    frontier = list(ids)
-    while frontier:
-        child_ids = list(
-            ProductCategory.objects.filter(parent_id__in=frontier).values_list(
-                "id", flat=True
-            )
-        )
-        new = [cid for cid in child_ids if cid is not None and cid not in ids]
-        if not new:
-            break
-        ids.update(new)
-        frontier = new
-
     return sorted(ids)

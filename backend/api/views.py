@@ -104,8 +104,9 @@ class ProductList(APIView):
     def get(self, request):
         """Retrieve products with filtering, sorting, and pagination."""
         no_cache = request.query_params.get("no_cache") == "1"
-        # Cache key version suffix bumps stale entries when search logic changes
-        cache_key = f"products_v10_{hash(str(request.query_params))}"
+        # Cache key version suffix bumps stale entries when search logic changes.
+        # v11: categories no longer inject synthetic parent-category names (flat leaves only).
+        cache_key = f"products_v11_{hash(str(request.query_params))}"
 
         # Try to get cached response
         if not no_cache:
@@ -113,9 +114,9 @@ class ProductList(APIView):
             if cached_response:
                 return Response(cached_response)
 
-        # Optimize database queries: prefetch categories (and parent) to avoid N+1 in serializer
+        # Optimize database queries: prefetch categories to avoid N+1 in serializer
         products = (
-            Product.objects.prefetch_related("categories__parent", "images")
+            Product.objects.prefetch_related("categories", "images")
             .filter(active=True)
         )
 
@@ -197,14 +198,13 @@ class ProductList(APIView):
         elif sort == "sales_asc":
             products = products.order_by("sold_quantity", "sold_orders_count", "id")
         elif sort == "category_asc":
+            # Categories are flat leaves now (no parent tier to sort by first),
+            # so sort purely by each product's lowest-alphabetical category name.
             products = (
                 products.annotate(
-                    category_parent_sort=Coalesce(
-                        Min("categories__parent__name"), Value("")
-                    ),
                     category_sort=Coalesce(Min("categories__name"), Value("")),
                 )
-                .order_by("category_parent_sort", "category_sort", "id")
+                .order_by("category_sort", "id")
                 .distinct()
             )
 
@@ -635,7 +635,8 @@ class CategoryList(APIView):
 
     def get(self, request):
         """Retrieve all categories."""
-        cache_key = "categories_list_v4"
+        # v5: ProductCategory.parent removed — categories are now flat leaves only.
+        cache_key = "categories_list_v5"
         cached_response = cache.get(cache_key)
         if cached_response:
             return Response(cached_response)
@@ -669,7 +670,8 @@ class CategoryGroupList(APIView):
         from api.serializers import CategoryGroupSerializer
         from api.services.category_display import products_count_by_category_id
 
-        cache_key = "category_groups_list_v1"
+        # v2: CategoryGroup membership now fully absorbs the former parent categories.
+        cache_key = "category_groups_list_v2"
         cached = cache.get(cache_key)
         if cached is not None:
             return Response(cached)
