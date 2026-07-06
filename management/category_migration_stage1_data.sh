@@ -51,11 +51,23 @@
 # This script is safe to re-run: every step it triggers is idempotent, and it will
 # refuse to proceed if it detects it has already run past a given point incorrectly.
 #
-# Usage:
-#   ./management/category_migration_stage1_data.sh [--yes]
+# PRODUCTION ROLLOUT (run on prod server — NOT on dev after migration testing):
 #
-#   --yes    Skip interactive confirmation prompts (for unattended/CI use). Backups
-#            are still always taken.
+#   1. git pull   # only to get these scripts + management command files on disk
+#   2. ./management/category_migration_stage1_data.sh --status
+#      → must show: model .parent=True, parent_id=present, VERDICT: READY for stage 1
+#   3. ./management/category_migration_stage1_data.sh
+#   4. ./management/deploy.sh          # deploy new code + schema migration
+#   5. ./management/category_migration_stage2_finalize.sh
+#
+#   Do NOT run deploy.sh or `docker compose pull/up` before step 3.
+#   The running backend image must still be the OLD one (with ProductCategory.parent).
+#
+# Usage:
+#   ./management/category_migration_stage1_data.sh [--status] [--yes]
+#
+#   --status  Print schema state and exit (use on prod to confirm readiness).
+#   --yes     Skip interactive confirmation prompts.
 #######################################################################################
 
 set -euo pipefail
@@ -74,13 +86,19 @@ STAMP="$(date +'%Y%m%d_%H%M%S')"
 AUDIT_LOG="$LOG_DIR/category_migration_stage1_audit_${STAMP}.log"
 STRIP_LOG="$LOG_DIR/category_migration_stage1_strip_${STAMP}.log"
 MARKER_FILE="$LOG_DIR/.category_migration_stage1_complete"
+STAGE2_MARKER_FILE="$LOG_DIR/.category_migration_stage2_complete"
+
+# shellcheck source=category_migration_common.sh
+source "$SCRIPT_DIR/category_migration_common.sh"
 
 ASSUME_YES=false
+STATUS_ONLY=false
 for arg in "$@"; do
     case "$arg" in
         --yes|-y) ASSUME_YES=true ;;
+        --status) STATUS_ONLY=true ;;
         --help|-h)
-            sed -n '3,60p' "$0"
+            sed -n '3,75p' "$0"
             exit 0
             ;;
         *) ;;
@@ -132,9 +150,9 @@ COMMANDS_DST_DIR="/backend/api/management/commands"
 
 get_backend_container() {
     local cid
-    cid=$(cd "$PROJECT_DIR" && docker compose ps -q backend 2>/dev/null | head -1)
+    cid=$(cd "$PROJECT_DIR" && dc ps -q backend 2>/dev/null | head -1)
     if [ -z "$cid" ]; then
-        error "Could not find a running 'backend' container (docker compose ps -q backend was empty)."
+        error "Could not find a running 'backend' container (dc ps -q backend was empty)."
         exit 1
     fi
     echo "$cid"
@@ -172,25 +190,59 @@ preflight() {
         confirm "Re-run stage 1 anyway? (safe/idempotent, but confirm this is intentional)"
     fi
 
-    # Wrong-stage guard: if the running backend image ALREADY has `parent` removed,
-    # the new code has already been deployed and stage 1 no longer applies here.
-    info "Checking the currently running backend image still has ProductCategory.parent..."
-    local has_parent
-    has_parent=$(docker compose exec -T backend python -c \
-        "from api.models import ProductCategory; print(hasattr(ProductCategory, 'parent'))" \
-        2>/dev/null | tr -d '\r\n' || true)
+    # Wrong-stage guard: distinguish new code deployed vs a broken preflight check.
+    info "Checking category schema state (model field + database column)..."
+    local has_parent parent_col
+    has_parent=$(django_model_has_parent_field) || true
+    parent_col=$(django_db_has_parent_id_column) || true
 
-    if [ "$has_parent" != "True" ]; then
-        error "The running backend container does NOT have ProductCategory.parent (got: '${has_parent:-empty}')."
-        error "This means the full code has already been deployed to this container."
-        error "Stage 1 must run against the OLD backend image, before that deploy."
-        error "If stage 1 data migration already ran successfully before this deploy, skip to:"
-        error "  ./management/category_migration_stage2_finalize.sh"
+    if [[ "$has_parent" == ERROR:* ]] || [[ "$parent_col" == ERROR:* ]]; then
+        error "Could not inspect category schema state:"
+        [[ "$has_parent" == ERROR:* ]] && error "  model check: ${has_parent#ERROR:}"
+        [[ "$parent_col" == ERROR:* ]] && error "  database check: ${parent_col#ERROR:}"
+        error "Fix the backend container / Django setup, then re-run this script."
         exit 1
     fi
-    log "Confirmed: running backend still has the old parent/child schema — safe to proceed."
 
-    mkdir -p "$LOG_DIR"
+    info "  ProductCategory.parent on model: $has_parent"
+    info "  parent_id column in database:  $parent_col"
+
+    if [ "$has_parent" = "False" ] && [ "$parent_col" = "absent" ]; then
+        error "The running backend already has the NEW category schema (no parent field/column)."
+        error "Stage 1 is for production BEFORE deploy — it needs the OLD schema:"
+        error "  model .parent=True  AND  database parent_id column present"
+        error ""
+        error "On this machine the schema is already migrated (typical after dev testing or"
+        error "after ./management/deploy.sh). That is NOT the prod pre-migration state."
+        error ""
+        error "On production (unchanged deploy), run first:"
+        error "  ./management/category_migration_stage1_data.sh --status"
+        error "You should see parent=True and parent_id=present before running stage 1."
+        error ""
+        error "If stage 1 data migration already ran on this database, continue with:"
+        error "  ./management/category_migration_stage2_finalize.sh"
+        error ""
+        error "Note: stage 1 cannot be tested on dev after migration — use prod for the full flow,"
+        error "or run stage 2 on dev to test finalize/cleanup/health checks only."
+        exit 1
+    fi
+
+    if [ "$has_parent" = "True" ] && [ "$parent_col" = "present" ]; then
+        log "Confirmed: OLD production schema detected (parent field + parent_id column) — safe to proceed."
+        mkdir -p "$LOG_DIR"
+        return 0
+    fi
+
+    if [ "$has_parent" = "False" ] && [ "$parent_col" = "present" ]; then
+        error "Inconsistent state: model has no parent field but parent_id column still exists in DB."
+        error "Redeploy a matching backend image or run migrations before stage 1."
+        exit 1
+    fi
+
+    error "Unexpected category schema state for stage 1."
+    error "  model .parent=$has_parent   database parent_id=$parent_col"
+    error "Expected on production before deploy: model=True, database=present"
+    exit 1
 }
 
 do_backup() {
@@ -215,7 +267,7 @@ copy_commands() {
 
     info "Verifying Django can see the new commands..."
     local help_output
-    help_output=$(docker compose exec -T backend python manage.py help 2>/dev/null || true)
+    help_output=$(dc exec -T backend python manage.py help 2>/dev/null || true)
     for f in "${COMMAND_FILES[@]}"; do
         local cmd_name="${f%.py}"
         if ! echo "$help_output" | grep -q "$cmd_name"; then
@@ -228,7 +280,7 @@ copy_commands() {
 
 run_audit() {
     section "STEP 4/8 — Read-only audit (captures baseline, surfaces edge cases)"
-    docker compose exec -T backend python manage.py audit_category_parent_tree 2>&1 | tee "$AUDIT_LOG"
+    dc exec -T backend python manage.py audit_category_parent_tree 2>&1 | tee "$AUDIT_LOG"
 
     BASELINE_TOTAL=$(grep -oE 'Total leaf-category product tags: [0-9]+' "$AUDIT_LOG" | grep -oE '[0-9]+' | tail -1 || true)
     if [ -z "${BASELINE_TOTAL:-}" ]; then
@@ -253,12 +305,12 @@ run_audit() {
 
 run_migrate_groups() {
     section "STEP 5/8 — Migrating parent categories into CategoryGroups (idempotent)"
-    docker compose exec -T backend python manage.py migrate_parent_categories_to_groups
+    dc exec -T backend python manage.py migrate_parent_categories_to_groups
 }
 
 run_strip_products() {
     section "STEP 6/8 — Stripping parent-category tags from products (idempotent, never zeroes a product's categories)"
-    docker compose exec -T backend python manage.py strip_parent_categories_from_products 2>&1 | tee "$STRIP_LOG"
+    dc exec -T backend python manage.py strip_parent_categories_from_products 2>&1 | tee "$STRIP_LOG"
 
     SKIPPED_IDS=$(grep -oE 'SKIPPED product .* \(id=[0-9]+\)' "$STRIP_LOG" | grep -oE 'id=[0-9]+' | grep -oE '[0-9]+' | paste -sd, - || true)
     if [ -n "${SKIPPED_IDS:-}" ]; then
@@ -277,7 +329,7 @@ run_validate() {
         allow_arg=(--allow-parent-tags-on="$SKIPPED_IDS")
     fi
 
-    if ! docker compose exec -T backend python manage.py validate_category_group_migration \
+    if ! dc exec -T backend python manage.py validate_category_group_migration \
         --baseline-total="$BASELINE_TOTAL" "${allow_arg[@]:-}"; then
         error "VALIDATION FAILED. Do NOT proceed to deploying the full code / stage 2."
         error "The database has NOT had its schema changed — data is still recoverable/inspectable as-is."
@@ -301,8 +353,16 @@ write_marker() {
 }
 
 main() {
-    section "Category System Redesign — STAGE 1 (data migration)"
+    cd "$PROJECT_DIR"
     load_env
+
+    if [ "$STATUS_ONLY" = true ]; then
+        section "Category migration — status check"
+        print_category_migration_status
+        exit $?
+    fi
+
+    section "Category System Redesign — STAGE 1 (data migration)"
     preflight
     confirm "This will back up the database and then migrate category data (categories into CategoryGroups, strip redundant parent tags from products). Continue?"
     do_backup

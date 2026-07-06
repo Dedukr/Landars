@@ -37,14 +37,33 @@ info() {
     echo -e "${BLUE}[$(date +'%Y-%m-%d %H:%M:%S')] INFO: $1${NC}"
 }
 
-# Load environment variables
+# Load environment variables (safe for .env values with spaces, quotes, inline comments).
 load_env() {
     if [ -f "$PROJECT_DIR/.env" ]; then
-        export $(grep -v '^#' "$PROJECT_DIR/.env" | xargs)
+        set -a
+        # shellcheck disable=SC1091
+        source "$PROJECT_DIR/.env"
+        set +a
         log "Environment variables loaded"
     else
         warn "No .env file found, using system environment"
     fi
+}
+
+# Try nginx on localhost and 127.0.0.1 (dev often uses https://localhost only).
+curl_via_nginx() {
+    local path="$1"
+    local url
+    for url in \
+        "https://localhost${path}" \
+        "http://localhost${path}" \
+        "https://127.0.0.1${path}" \
+        "http://127.0.0.1${path}"; do
+        if curl -f -sk --connect-timeout 5 "$url" > /dev/null 2>&1; then
+            return 0
+        fi
+    done
+    return 1
 }
 
 # Check if Docker Compose is available
@@ -168,11 +187,11 @@ check_backend() {
             warn "Backend container is not running"
         else
             # Backend is not published on the host; check via nginx (same path as production traffic).
-            if curl -f -sk https://127.0.0.1/health/ > /dev/null 2>&1; then
+            if curl_via_nginx "/health/"; then
                 log "✅ Backend API is healthy"
                 
                 # Check admin endpoint
-                if curl -f -sk -o /dev/null -w "%{http_code}" https://127.0.0.1/admin/ | grep -q "200\|302"; then
+                if curl_via_nginx "/admin/"; then
                     log "✅ Backend admin is accessible"
                 fi
                 
@@ -207,7 +226,7 @@ check_frontend() {
             warn "Frontend container is not running"
         else
             # Try to connect to frontend
-            if curl -f -sk https://127.0.0.1/ > /dev/null 2>&1; then
+            if curl_via_nginx "/"; then
                 log "✅ Frontend is healthy (via nginx)"
                 return 0
             fi

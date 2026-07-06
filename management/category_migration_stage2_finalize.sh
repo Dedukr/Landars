@@ -31,11 +31,11 @@
 #      /api/category-groups/ via nginx.
 #
 # Usage:
-#   ./management/category_migration_stage2_finalize.sh [--yes] [--force]
+#   ./management/category_migration_stage2_finalize.sh [--status] [--yes] [--force]
 #
 #   --yes     Skip interactive confirmation prompts (for unattended/CI use).
-#   --force   Proceed even if the stage-1 completion marker is missing (not
-#             recommended — only use if you're certain stage 1 was already done).
+#   --force   On prod only: proceed without stage 1 marker even if schema state is unclear.
+#             Usually not needed — stage 2 auto-detects already-migrated dev/prod schema.
 #######################################################################################
 
 set -euo pipefail
@@ -55,14 +55,19 @@ CLEANUP_LOG="$LOG_DIR/category_migration_stage2_cleanup_${STAMP}.log"
 MARKER_FILE="$LOG_DIR/.category_migration_stage1_complete"
 STAGE2_MARKER_FILE="$LOG_DIR/.category_migration_stage2_complete"
 
+# shellcheck source=category_migration_common.sh
+source "$SCRIPT_DIR/category_migration_common.sh"
+
 ASSUME_YES=false
 FORCE=false
+STATUS_ONLY=false
 for arg in "$@"; do
     case "$arg" in
         --yes|-y) ASSUME_YES=true ;;
         --force) FORCE=true ;;
+        --status) STATUS_ONLY=true ;;
         --help|-h)
-            sed -n '3,40p' "$0"
+            sed -n '3,45p' "$0"
             exit 0
             ;;
         *) ;;
@@ -103,12 +108,6 @@ load_env() {
     fi
 }
 
-get_postgres_service() {
-    local svc
-    svc=$(cd "$PROJECT_DIR" && docker compose ps --services 2>/dev/null | grep -iE '^(postgres|pg)$' | head -1)
-    echo "${svc:-postgres}"
-}
-
 preflight() {
     section "STEP 1/6 — Pre-flight checks"
 
@@ -118,13 +117,50 @@ preflight() {
     fi
     cd "$PROJECT_DIR"
 
+    if [ -z "$(dc ps -q backend 2>/dev/null)" ]; then
+        error "No running 'backend' container found. Deploy the new code first (e.g. ./management/deploy.sh)."
+        exit 1
+    fi
+
+    info "Checking category schema state (model field + database column)..."
+    local has_parent parent_col verdict
+    has_parent=$(django_model_has_parent_field) || true
+    parent_col=$(django_db_has_parent_id_column) || true
+    verdict=$(category_migration_verdict) || verdict="check_failed"
+
+    if [[ "$has_parent" == ERROR:* ]] || [[ "$parent_col" == ERROR:* ]]; then
+        error "Could not inspect category schema state:"
+        [[ "$has_parent" == ERROR:* ]] && error "  model check: ${has_parent#ERROR:}"
+        [[ "$parent_col" == ERROR:* ]] && error "  database check: ${parent_col#ERROR:}"
+        exit 1
+    fi
+
+    info "  ProductCategory.parent on model: $has_parent"
+    info "  parent_id column in database:  $parent_col"
+
+    if [ "$has_parent" = "True" ] || [ "$parent_col" = "present" ]; then
+        error "The running backend still has the OLD category schema."
+        error "Deploy the full category-redesign code first (./management/deploy.sh), then re-run"
+        error "this script. If stage 1 data migration has not run yet, run:"
+        error "  ./management/category_migration_stage1_data.sh"
+        exit 1
+    fi
+    log "Confirmed: running backend has the new schema-less category model."
+
     if [ ! -f "$MARKER_FILE" ]; then
-        if [ "$FORCE" = true ]; then
-            warn "Stage-1 completion marker not found, but --force was passed. Proceeding anyway."
+        if [ "$verdict" = "ready_stage2" ] || [ "$verdict" = "already_complete" ]; then
+            warn "Stage 1 completion marker not found: $MARKER_FILE"
+            warn "Schema is already migrated — this is normal on dev after manual/ad-hoc migration."
+            print_category_data_summary
+            if [ "$FORCE" != true ] && [ "$ASSUME_YES" != true ]; then
+                confirm "Continue stage 2 finalize without stage 1 marker?"
+            fi
+        elif [ "$FORCE" = true ]; then
+            warn "Stage 1 marker missing; proceeding because --force was passed."
         else
             error "Stage-1 completion marker not found: $MARKER_FILE"
-            error "Run ./management/category_migration_stage1_data.sh first, or pass --force if you're"
-            error "certain the data migration already happened (e.g. via a manual run)."
+            error "On production, run ./management/category_migration_stage1_data.sh first."
+            error "If schema is already migrated (dev), re-run — this script should auto-detect that."
             exit 1
         fi
     else
@@ -132,27 +168,14 @@ preflight() {
         sed 's/^/    /' "$MARKER_FILE"
     fi
 
-    if [ -z "$(docker compose ps -q backend 2>/dev/null)" ]; then
-        error "No running 'backend' container found. Deploy the new code first (e.g. ./management/deploy.sh)."
-        exit 1
+    if [ -f "$STAGE2_MARKER_FILE" ]; then
+        warn "Stage 2 already completed previously:"
+        sed 's/^/    /' "$STAGE2_MARKER_FILE"
+        confirm "Re-run stage 2 anyway? (idempotent: cleanup, cache, health checks)"
     fi
-
-    info "Checking the running backend image no longer has ProductCategory.parent..."
-    local has_parent
-    has_parent=$(docker compose exec -T backend python -c \
-        "from api.models import ProductCategory; print(hasattr(ProductCategory, 'parent'))" \
-        2>/dev/null | tr -d '\r\n' || true)
-
-    if [ "$has_parent" != "False" ]; then
-        error "The running backend container still has ProductCategory.parent (got: '${has_parent:-empty}')."
-        error "The full code deploy has not happened yet on this server. Deploy it first"
-        error "(./management/deploy.sh or your usual pipeline), THEN re-run this script."
-        exit 1
-    fi
-    log "Confirmed: running backend has the new schema-less category model."
 
     info "Checking delete_orphaned_parent_categories command is available..."
-    if ! docker compose exec -T backend python manage.py help delete_orphaned_parent_categories > /dev/null 2>&1; then
+    if ! dc exec -T backend python manage.py help delete_orphaned_parent_categories > /dev/null 2>&1; then
         error "delete_orphaned_parent_categories is not available in the running backend image."
         error "The deploy may be incomplete/stale. Verify the deployed image actually contains the"
         error "full category-redesign commit before continuing."
@@ -179,12 +202,12 @@ do_backup() {
 apply_schema_migration() {
     section "STEP 3/6 — Applying/confirming the schema migration"
 
-    if docker compose exec -T backend python manage.py migrate --check > /dev/null 2>&1; then
+    if dc exec -T backend python manage.py migrate --check > /dev/null 2>&1; then
         log "No pending migrations — schema migration was already applied (likely by your deploy pipeline)."
     else
         info "Pending migrations detected — applying now."
         confirm "About to run 'manage.py migrate --noinput', which will drop the ProductCategory.parent column. Continue?"
-        if ! docker compose exec -T backend python manage.py migrate --noinput; then
+        if ! dc exec -T backend python manage.py migrate --noinput; then
             error "Migration failed. Investigate before proceeding — do not run delete_orphaned_parent_categories yet."
             exit 1
         fi
@@ -192,14 +215,12 @@ apply_schema_migration() {
     fi
 
     info "Verifying the parent_id column is actually gone from api_productcategory..."
-    local pg_service
-    pg_service=$(get_postgres_service)
-    local column_check
-    column_check=$(docker compose exec -T "$pg_service" psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -tAc \
-        "SELECT column_name FROM information_schema.columns WHERE table_name='api_productcategory' AND column_name='parent_id';" \
-        2>/dev/null | tr -d '\r\n' || true)
-
-    if [ -n "$column_check" ]; then
+    parent_col=$(django_db_has_parent_id_column) || true
+    if [[ "$parent_col" == ERROR:* ]]; then
+        error "Could not verify database column: ${parent_col#ERROR:}"
+        exit 1
+    fi
+    if [ "$parent_col" = "present" ]; then
         error "Column 'parent_id' still exists on api_productcategory after migration. Something is wrong."
         exit 1
     fi
@@ -210,7 +231,7 @@ cleanup_orphans() {
     section "STEP 4/6 — Cleaning up orphaned former-parent ProductCategory rows"
 
     info "Dry run first (preview only, no deletions)..."
-    docker compose exec -T backend python manage.py delete_orphaned_parent_categories --dry-run 2>&1 | tee "$CLEANUP_LOG"
+    dc exec -T backend python manage.py delete_orphaned_parent_categories --dry-run 2>&1 | tee "$CLEANUP_LOG"
 
     if grep -q "No orphaned former-parent categories found" "$CLEANUP_LOG"; then
         log "Nothing to clean up."
@@ -221,13 +242,13 @@ cleanup_orphans() {
     warn "Review the candidates above (also saved to: $CLEANUP_LOG)."
     confirm "Proceed with deleting these orphaned former-parent categories?"
 
-    docker compose exec -T backend python manage.py delete_orphaned_parent_categories 2>&1 | tee -a "$CLEANUP_LOG"
+    dc exec -T backend python manage.py delete_orphaned_parent_categories 2>&1 | tee -a "$CLEANUP_LOG"
     log "Cleanup complete."
 }
 
 clear_caches() {
     section "STEP 5/6 — Clearing Redis cache (defensive — versioned cache keys already changed)"
-    if docker compose exec -T backend python manage.py shell -c \
+    if dc exec -T backend python manage.py shell -c \
         "from django.core.cache import cache; cache.clear(); print('cache cleared')" 2>/dev/null | grep -q "cache cleared"; then
         log "Redis cache cleared."
     else
@@ -238,39 +259,55 @@ clear_caches() {
 run_health_checks() {
     section "STEP 6/6 — Health checks + live category API smoke test"
 
+    local health_ok=true
     if [ -x "$SCRIPT_DIR/health_check.sh" ]; then
         if ! "$SCRIPT_DIR/health_check.sh"; then
-            warn "health_check.sh reported failures — review output above before considering this done."
+            warn "health_check.sh reported failures (see above)."
+            health_ok=false
         fi
     else
         warn "health_check.sh not found, skipping full health check."
     fi
 
-    info "Smoke-testing /api/categories/ and /api/category-groups/ via nginx..."
-    local cat_status groups_status
-    cat_status=$(curl -sk -o /dev/null -w "%{http_code}" https://127.0.0.1/api/categories/ || echo "000")
-    groups_status=$(curl -sk -o /dev/null -w "%{http_code}" https://127.0.0.1/api/category-groups/ || echo "000")
+    info "Smoke-testing /api/categories/ and /api/category-groups/..."
+    local cat_result groups_result smoke_ok=true
+    cat_result=$(curl_api_smoke "/api/categories/") || true
+    groups_result=$(curl_api_smoke "/api/category-groups/") || true
 
-    if [ "$cat_status" = "200" ]; then
-        log "/api/categories/ responded 200"
+    if [[ "$cat_result" == 200* ]]; then
+        log "/api/categories/ OK ($cat_result)"
     else
-        error "/api/categories/ responded $cat_status"
+        error "/api/categories/ failed ($cat_result)"
+        smoke_ok=false
     fi
-    if [ "$groups_status" = "200" ]; then
-        log "/api/category-groups/ responded 200"
+    if [[ "$groups_result" == 200* ]]; then
+        log "/api/category-groups/ OK ($groups_result)"
     else
-        error "/api/category-groups/ responded $groups_status"
+        error "/api/category-groups/ failed ($groups_result)"
+        smoke_ok=false
     fi
 
-    if [ "$cat_status" != "200" ] || [ "$groups_status" != "200" ]; then
-        error "One or more category endpoints are not healthy. Investigate before signing off."
+    if [ "$smoke_ok" = false ]; then
+        error "Category API smoke tests failed."
         exit 1
+    fi
+
+    if [ "$health_ok" = false ]; then
+        warn "Full health_check.sh had issues, but category API smoke tests passed — stage 2 migration checks OK."
     fi
 }
 
 main() {
-    section "Category System Redesign — STAGE 2 (schema finalize + cleanup)"
+    cd "$PROJECT_DIR"
     load_env
+
+    if [ "$STATUS_ONLY" = true ]; then
+        section "Category migration — status check"
+        print_category_migration_status
+        exit $?
+    fi
+
+    section "Category System Redesign — STAGE 2 (schema finalize + cleanup)"
     preflight
     do_backup
     apply_schema_migration
