@@ -26,7 +26,10 @@ const GRID_CONFIG: Record<
     gap: string;
     mobileCardW: string;
     skeletonH: string;
-    mobileScrollPad: string;
+    /** Negative horizontal margin so the scroll track can bleed to the shell edge. */
+    mobileScrollBleed: string;
+    /** Equal inset on both ends of the scrolling row (left at start, right at end). */
+    mobileRowInset: string;
   }
 > = {
   default: {
@@ -35,7 +38,8 @@ const GRID_CONFIG: Record<
     gap: "gap-4",
     mobileCardW: "w-44 sm:w-52",
     skeletonH: "260px",
-    mobileScrollPad: "-mx-4 px-4 sm:-mx-6 sm:px-6 lg:mx-0 lg:px-0",
+    mobileScrollBleed: "-mx-4 sm:-mx-5",
+    mobileRowInset: "px-4 sm:px-5",
   },
   compact: {
     itemsPerPage: 20,
@@ -43,21 +47,25 @@ const GRID_CONFIG: Record<
     gap: "gap-1.5 lg:gap-2",
     mobileCardW: "w-20",
     skeletonH: "76px",
-    mobileScrollPad: "-mx-1 px-1 sm:-mx-2 sm:px-2 lg:mx-0 lg:px-0",
+    mobileScrollBleed: "-mx-1 sm:-mx-2",
+    mobileRowInset: "px-1 sm:px-2",
   },
 };
 
 function CategorySectionShell({
   children,
   className,
+  allowHorizontalBleed = false,
 }: {
   children: React.ReactNode;
   className?: string;
+  allowHorizontalBleed?: boolean;
 }) {
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-2xl border p-4 sm:p-5 backdrop-blur-md",
+        "rounded-2xl border p-4 sm:p-5 backdrop-blur-md",
+        allowHorizontalBleed ? "overflow-x-visible overflow-y-hidden" : "overflow-hidden",
         className
       )}
       style={{
@@ -187,14 +195,17 @@ export default function CategoryDisplayGrid({
 
   if (isMobile) {
     return (
-      <CategorySectionShell className={className}>
+      <CategorySectionShell className={className} allowHorizontalBleed>
         <div
           className={cn(
             "w-full max-w-full min-w-0 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-            "-mx-4 px-4 sm:-mx-5 sm:px-5"
+            config.mobileScrollBleed
           )}
+          style={{ WebkitOverflowScrolling: "touch" }}
+          role="region"
+          aria-label={ariaLabel}
         >
-          <div className="flex gap-1.5 w-max">
+          <div className={cn("flex gap-1.5 w-max box-border", config.mobileRowInset)}>
             {categories.map((cat) =>
               renderCard(cat, cn("flex-shrink-0", config.mobileCardW))
             )}

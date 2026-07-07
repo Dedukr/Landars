@@ -347,7 +347,7 @@ export default function ProductPage() {
                   About this item
                 </h2>
                 <p
-                  className="text-sm sm:text-base leading-relaxed line-clamp-6 lg:line-clamp-none whitespace-pre-wrap"
+                  className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap break-words"
                   style={{ color: "var(--foreground)" }}
                 >
                   {description}

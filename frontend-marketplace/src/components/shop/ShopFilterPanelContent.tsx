@@ -1,21 +1,17 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { type ShopListingFilters, SHOP_PRICE_MAX_UNLIMITED } from "@/types/shop-filters";
 import { Button } from "@/components/ui/Button";
+import { isShopFilterGroupHeaderRow } from "@/lib/prepareHomeDisplayCategories";
 
 export interface ShopCategoryRecord {
   id: number;
   name: string;
+  parent?: number | null;
   image_url?: string | null;
   products_count?: number | null;
   top_seller_sold_quantity?: number | null;
-  /**
-   * Only present on rows produced by ``buildShopFilterPanelCategories``: a virtual
-   * CategoryGroup id (see ``shopFilterGroupParentId``) when this row is nested under a
-   * group, otherwise ``null``. Raw ``ProductCategory`` API records never set this.
-   */
-  parent?: number | null;
 }
 
 interface ShopFilterPanelContentProps {
@@ -47,27 +43,54 @@ export function ShopFilterPanelContent({
     );
   }, [filters.price]);
 
-  // Categories are flat leaves, so this is a single level: a CategoryGroup's virtual
-  // parent row (see ``buildShopFilterPanelCategories``) maps to its member category rows.
-  // Any row without a ``parent`` is a root row; root rows never have grandchildren.
-  const membersByGroupParentId: { [parentId: number]: ShopCategoryRecord[] } = {};
-  categories.forEach((cat) => {
-    if (cat.parent == null) return;
-    if (!membersByGroupParentId[cat.parent]) membersByGroupParentId[cat.parent] = [];
-    membersByGroupParentId[cat.parent].push(cat);
-  });
-  const rootCategories = categories.filter((cat) => cat.parent == null);
+  const membersByParentId = useMemo(() => {
+    const map: Record<number, ShopCategoryRecord[]> = {};
+    for (const cat of categories) {
+      if (cat.parent == null) continue;
+      const parentId = cat.parent;
+      if (!map[parentId]) map[parentId] = [];
+      map[parentId].push(cat);
+    }
+    for (const parentId of Object.keys(map)) {
+      map[Number(parentId)].sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return map;
+  }, [categories]);
+
+  const rootCategories = useMemo(
+    () =>
+      categories
+        .filter((cat) => cat.parent == null)
+        .sort((a, b) => {
+          const aGroup = isShopFilterGroupHeaderRow(a.id);
+          const bGroup = isShopFilterGroupHeaderRow(b.id);
+          if (aGroup !== bGroup) return aGroup ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        }),
+    [categories]
+  );
+
+  function getChildIds(parentId: number): number[] {
+    return (membersByParentId[parentId] ?? []).map((c) => c.id);
+  }
+
+  function isRowChecked(cat: ShopCategoryRecord): boolean {
+    const childIds = getChildIds(cat.id);
+    if (childIds.length > 0) {
+      return childIds.every((id) => filters.categories.includes(id));
+    }
+    return filters.categories.includes(cat.id);
+  }
 
   function handleCategoryTreeChange(cat: ShopCategoryRecord, isChecked: boolean) {
-    const members = membersByGroupParentId[cat.id] || [];
-    const memberIds = members.map((c) => c.id);
+    const childIds = getChildIds(cat.id);
     let newCategories = [...filters.categories];
 
-    if (memberIds.length > 0) {
+    if (childIds.length > 0) {
       if (isChecked) {
-        newCategories = newCategories.filter((id) => !memberIds.includes(id));
+        newCategories = newCategories.filter((id) => !childIds.includes(id));
       } else {
-        newCategories = Array.from(new Set([...newCategories, ...memberIds]));
+        newCategories = Array.from(new Set([...newCategories, ...childIds]));
       }
     } else {
       if (isChecked) {
@@ -79,27 +102,58 @@ export function ShopFilterPanelContent({
     setFilters((prev) => ({ ...prev, categories: newCategories }));
   }
 
-  function renderGroupMembers(groupParentId: number) {
-    const members = membersByGroupParentId[groupParentId] || [];
-    const sorted = [...members].sort((a, b) => a.name.localeCompare(b.name));
-    return sorted.map((cat) => {
-      const isChecked = filters.categories.includes(cat.id);
-      return (
-        <div key={cat.id} style={{ marginLeft: 14 }}>
-          <label className="flex items-start gap-2.5 cursor-pointer py-1.5 text-sm">
-            <input
-              type="checkbox"
-              className="mt-1 rounded shrink-0"
-              style={{ accentColor: "var(--primary)" }}
-              checked={isChecked}
-              onChange={() => handleCategoryTreeChange(cat, isChecked)}
-              aria-labelledby={`cat-label-${cat.id}`}
-            />
-            <span id={`cat-label-${cat.id}`}>{cat.name}</span>
-          </label>
-        </div>
-      );
-    });
+  function renderCategoryCheckbox(cat: ShopCategoryRecord, options?: { nested?: boolean }) {
+    const isChecked = isRowChecked(cat);
+    const isGroup = isShopFilterGroupHeaderRow(cat.id);
+    return (
+      <label
+        className={`flex items-start gap-2.5 cursor-pointer py-1.5 text-sm ${
+          options?.nested ? "pl-1" : ""
+        }`}
+      >
+        <input
+          type="checkbox"
+          className="mt-1 rounded shrink-0"
+          style={{ accentColor: "var(--primary)" }}
+          checked={isChecked}
+          onChange={() => handleCategoryTreeChange(cat, isChecked)}
+          aria-labelledby={`cat-label-${cat.parent ?? "root"}-${cat.id}`}
+        />
+        <span
+          id={`cat-label-${cat.parent ?? "root"}-${cat.id}`}
+          className={isGroup ? "font-semibold" : undefined}
+        >
+          {cat.name}
+        </span>
+      </label>
+    );
+  }
+
+  function renderNestedMembers(parentId: number, depth = 0): React.ReactNode {
+    const members = membersByParentId[parentId] ?? [];
+    if (members.length === 0) return null;
+
+    return (
+      <div
+        className="mt-0.5 mb-2 space-y-0.5 border-l-2 pl-3"
+        style={{
+          marginLeft: depth > 0 ? 12 : 8,
+          borderColor: "var(--sidebar-border)",
+        }}
+      >
+        {members.map((cat) => {
+          const subMembers = membersByParentId[cat.id];
+          return (
+            <div key={`${parentId}-${cat.id}`}>
+              {renderCategoryCheckbox(cat, { nested: true })}
+              {subMembers && subMembers.length > 0
+                ? renderNestedMembers(cat.id, depth + 1)
+                : null}
+            </div>
+          );
+        })}
+      </div>
+    );
   }
 
   function applyPrice() {
@@ -166,34 +220,15 @@ export function ShopFilterPanelContent({
                 No categories available.
               </p>
             ) : (
-              rootCategories
-                .sort((a, b) => a.name.localeCompare(b.name))
-                .map((cat) => {
-                  const members = membersByGroupParentId[cat.id];
-                  const memberIds = members ? members.map((c) => c.id) : [];
-                  const allMembersChecked =
-                    memberIds.length > 0 &&
-                    memberIds.every((id) => filters.categories.includes(id));
-                  const isChecked =
-                    memberIds.length > 0
-                      ? allMembersChecked
-                      : filters.categories.includes(cat.id);
-                  return (
-                    <div key={cat.id}>
-                      <label className="flex items-start gap-2.5 cursor-pointer py-1.5 text-sm">
-                        <input
-                          type="checkbox"
-                          className="mt-1 rounded shrink-0"
-                          style={{ accentColor: "var(--primary)" }}
-                          checked={isChecked}
-                          onChange={() => handleCategoryTreeChange(cat, isChecked)}
-                        />
-                        <span>{cat.name}</span>
-                      </label>
-                      {members && members.length > 0 && renderGroupMembers(cat.id)}
-                    </div>
-                  );
-                })
+              rootCategories.map((cat) => {
+                const members = membersByParentId[cat.id];
+                return (
+                  <div key={cat.id} className="block w-full">
+                    {renderCategoryCheckbox(cat)}
+                    {members && members.length > 0 ? renderNestedMembers(cat.id) : null}
+                  </div>
+                );
+              })
             )}
           </div>
         )}

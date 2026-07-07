@@ -24,7 +24,7 @@ import {
 } from "@/lib/parseShopCategoryParams";
 import { fetchCategoryGroups } from "@/lib/fetchCategoryGroups";
 import {
-  buildShopByCategoryDisplay,
+  buildShopCarouselCategories,
   buildShopFilterPanelCategories,
   type ApiCategory,
 } from "@/lib/prepareHomeDisplayCategories";
@@ -54,8 +54,38 @@ export default function ShopContent() {
   const [categoryGroups, setCategoryGroups] = useState<
     Awaited<ReturnType<typeof fetchCategoryGroups>>
   >([]);
+
   useEffect(() => {
-    fetchCategoryGroups().then(setCategoryGroups);
+    let cancelled = false;
+
+    async function loadCategoryData() {
+      setCategoriesLoading(true);
+      try {
+        const [categoriesRes, groups] = await Promise.all([
+          fetch("/api/categories/"),
+          fetchCategoryGroups(),
+        ]);
+
+        if (cancelled) return;
+
+        if (!categoriesRes.ok) throw new Error("categories");
+        const categoriesData = await categoriesRes.json();
+        setCategories(normalizeListResponse<ShopCategoryRecord>(categoriesData));
+        setCategoryGroups(groups);
+      } catch {
+        if (!cancelled) {
+          setCategories([]);
+          setCategoryGroups([]);
+        }
+      } finally {
+        if (!cancelled) setCategoriesLoading(false);
+      }
+    }
+
+    void loadCategoryData();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const displayCategories = useMemo(() => {
@@ -66,7 +96,7 @@ export default function ShopContent() {
       products_count: c.products_count ?? null,
       top_seller_sold_quantity: c.top_seller_sold_quantity ?? null,
     }));
-    return buildShopByCategoryDisplay(apiList, categoryGroups);
+    return buildShopCarouselCategories(apiList, categoryGroups);
   }, [categories, categoryGroups]);
 
   const filterPanelCategories = useMemo(
@@ -107,23 +137,6 @@ export default function ShopContent() {
       cancelled = true;
     };
   }, [urlParamsKey]);
-
-  useEffect(() => {
-    async function loadCategories() {
-      setCategoriesLoading(true);
-      try {
-        const res = await fetch("/api/categories/");
-        if (!res.ok) throw new Error("categories");
-        const data = await res.json();
-        setCategories(normalizeListResponse<ShopCategoryRecord>(data));
-      } catch {
-        setCategories([]);
-      } finally {
-        setCategoriesLoading(false);
-      }
-    }
-    loadCategories();
-  }, []);
 
   useEffect(() => {
     if (categories.length > 0) {
