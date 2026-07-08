@@ -66,6 +66,7 @@ export interface CategoryDisplayGridProps {
   onCategorySelect?: (categoryIds: number[], categoryGroupId?: number) => void;
   ariaLabel?: string;
   className?: string;
+  mobileScrollbar?: boolean;
 }
 
 export default function CategoryDisplayGrid({
@@ -77,12 +78,14 @@ export default function CategoryDisplayGrid({
   onCategorySelect,
   ariaLabel = "Browse categories",
   className,
+  mobileScrollbar = false,
 }: CategoryDisplayGridProps) {
   const config = GRID_CONFIG[size];
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [showArrows, setShowArrows] = useState(false);
+  const [thumb, setThumb] = useState({ width: 0, left: 0, visible: false });
 
   const updateScrollState = useCallback(() => {
     const el = scrollRef.current;
@@ -91,6 +94,27 @@ export default function CategoryDisplayGrid({
     setShowArrows(overflow);
     setCanScrollLeft(el.scrollLeft > 4);
     setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+
+    if (overflow) {
+      const ratio = el.clientWidth / el.scrollWidth;
+      const widthPct = Math.max(ratio * 100, 12);
+      const maxScroll = el.scrollWidth - el.clientWidth;
+      const progress = maxScroll > 0 ? el.scrollLeft / maxScroll : 0;
+      const leftPct = progress * (100 - widthPct);
+      setThumb({ width: widthPct, left: leftPct, visible: true });
+    } else {
+      setThumb((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+    }
+  }, []);
+
+  const handleThumbDrag = useCallback((clientX: number, startX: number, startScrollLeft: number) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const trackWidth = el.clientWidth;
+    const maxScroll = el.scrollWidth - el.clientWidth;
+    const deltaPx = clientX - startX;
+    const deltaRatio = trackWidth > 0 ? deltaPx / trackWidth : 0;
+    el.scrollLeft = startScrollLeft + deltaRatio * maxScroll;
   }, []);
 
   useEffect(() => {
@@ -211,6 +235,38 @@ export default function CategoryDisplayGrid({
             )}
           </div>
         </div>
+
+        {mobileScrollbar && thumb.visible ? (
+          <div
+            className="sm:hidden mt-2 h-1.5 w-full rounded-full"
+            style={{ background: "var(--sidebar-border)", opacity: 0.35 }}
+            aria-hidden
+          >
+            <div
+              className="h-full rounded-full touch-none"
+              style={{
+                width: `${thumb.width}%`,
+                marginLeft: `${thumb.left}%`,
+                background: "var(--muted-foreground)",
+              }}
+              onPointerDown={(e) => {
+                const el = scrollRef.current;
+                if (!el) return;
+                e.currentTarget.setPointerCapture(e.pointerId);
+                const startX = e.clientX;
+                const startScrollLeft = el.scrollLeft;
+                const move = (ev: PointerEvent) =>
+                  handleThumbDrag(ev.clientX, startX, startScrollLeft);
+                const up = () => {
+                  window.removeEventListener("pointermove", move);
+                  window.removeEventListener("pointerup", up);
+                };
+                window.addEventListener("pointermove", move);
+                window.addEventListener("pointerup", up);
+              }}
+            />
+          </div>
+        ) : null}
       </div>
     </CategorySectionShell>
   );

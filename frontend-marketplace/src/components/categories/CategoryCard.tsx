@@ -99,7 +99,6 @@ export function CategoryCard({
   const cardStyle = {
     background: isActive ? "var(--sidebar-bg)" : "var(--card-bg)",
     borderColor: isActive ? "var(--primary)" : "var(--sidebar-border)",
-    boxShadow: "var(--card-shadow)",
   };
 
   const inner = (

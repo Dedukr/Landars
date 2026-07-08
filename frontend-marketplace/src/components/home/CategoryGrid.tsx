@@ -117,6 +117,7 @@ export default function CategoryGrid() {
         size="default"
         mode="link"
         ariaLabel="Shop by category"
+        mobileScrollbar
       />
     </ShelfSection>
   );
