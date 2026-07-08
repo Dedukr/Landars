@@ -18,8 +18,6 @@ const GRID_CONFIG: Record<
     gap: string;
     carouselCardW: string;
     skeletonH: string;
-    mobileScrollBleed: string;
-    mobileRowInset: string;
   }
 > = {
   default: {
@@ -27,33 +25,26 @@ const GRID_CONFIG: Record<
     gap: "gap-4",
     carouselCardW: "w-44 sm:w-52",
     skeletonH: "260px",
-    mobileScrollBleed: "-mx-4 sm:-mx-5",
-    mobileRowInset: "px-4 sm:px-5",
   },
   compact: {
     skeletonCount: 12,
     gap: "gap-1.5 lg:gap-2",
     carouselCardW: "w-20 sm:w-24 lg:w-28",
     skeletonH: "76px",
-    mobileScrollBleed: "-mx-1 sm:-mx-2",
-    mobileRowInset: "px-1 sm:px-2",
   },
 };
 
 function CategorySectionShell({
   children,
   className,
-  allowHorizontalBleed = false,
 }: {
   children: React.ReactNode;
   className?: string;
-  allowHorizontalBleed?: boolean;
 }) {
   return (
     <div
       className={cn(
-        "rounded-2xl border p-4 sm:p-5 backdrop-blur-md",
-        allowHorizontalBleed ? "overflow-x-visible overflow-y-hidden" : "overflow-hidden",
+        "overflow-hidden rounded-2xl border p-3 sm:p-4 backdrop-blur-md",
         className
       )}
       style={{
@@ -127,15 +118,8 @@ export default function CategoryDisplayGrid({
 
   if (loading) {
     return (
-      <CategorySectionShell className={className} allowHorizontalBleed>
-        <div
-          className={cn(
-            "flex w-max min-w-full",
-            config.gap,
-            config.mobileScrollBleed,
-            config.mobileRowInset
-          )}
-        >
+      <CategorySectionShell className={className}>
+        <div className={cn("flex w-max min-w-full", config.gap)}>
           {Array.from({ length: config.skeletonCount }).map((_, i) => (
             <div
               key={i}
@@ -179,7 +163,7 @@ export default function CategoryDisplayGrid({
   );
 
   return (
-    <CategorySectionShell className={className} allowHorizontalBleed>
+    <CategorySectionShell className={className}>
       <div className="relative min-w-0">
         {showArrows ? (
           <>
@@ -188,7 +172,7 @@ export default function CategoryDisplayGrid({
               aria-label="Scroll categories left"
               onClick={() => scrollCarousel(-1)}
               disabled={!canScrollLeft}
-              className="hidden sm:flex absolute -left-1 top-1/2 -translate-y-1/2 z-10 h-10 w-10 items-center justify-center rounded-full border shadow-md disabled:pointer-events-none disabled:opacity-30"
+              className="hidden sm:flex absolute left-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 items-center justify-center rounded-full border shadow-md disabled:pointer-events-none disabled:opacity-30"
               style={{
                 background: "var(--card-bg)",
                 borderColor: "var(--sidebar-border)",
@@ -202,7 +186,7 @@ export default function CategoryDisplayGrid({
               aria-label="Scroll categories right"
               onClick={() => scrollCarousel(1)}
               disabled={!canScrollRight}
-              className="hidden sm:flex absolute -right-1 top-1/2 -translate-y-1/2 z-10 h-10 w-10 items-center justify-center rounded-full border shadow-md disabled:pointer-events-none disabled:opacity-30"
+              className="hidden sm:flex absolute right-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 items-center justify-center rounded-full border shadow-md disabled:pointer-events-none disabled:opacity-30"
               style={{
                 background: "var(--card-bg)",
                 borderColor: "var(--sidebar-border)",
@@ -216,21 +200,12 @@ export default function CategoryDisplayGrid({
 
         <div
           ref={scrollRef}
-          className={cn(
-            "w-full max-w-full min-w-0 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-            config.mobileScrollBleed
-          )}
+          className="w-full max-w-full min-w-0 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           style={{ WebkitOverflowScrolling: "touch" }}
           role="region"
           aria-label={ariaLabel}
         >
-          <div
-            className={cn(
-              "flex w-max box-border",
-              config.gap,
-              config.mobileRowInset
-            )}
-          >
+          <div className={cn("flex w-max", config.gap)}>
             {categories.map((cat) =>
               renderCard(cat, cn("flex-shrink-0", config.carouselCardW))
             )}

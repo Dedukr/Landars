@@ -5,7 +5,7 @@ import { fetchCategoryGroups } from "@/lib/fetchCategoryGroups";
 import ShelfSection from "@/components/home/ShelfSection";
 import CategoryDisplayGrid from "@/components/categories/CategoryDisplayGrid";
 import {
-  buildShopByCategoryDisplay,
+  buildShopCarouselCategories,
   type HomeDisplayCategory,
 } from "@/lib/prepareHomeDisplayCategories";
 
@@ -44,7 +44,7 @@ export default function CategoryGrid() {
     ])
       .then(([data, groups]) => {
         const list = Array.isArray(data) ? data : (data.results ?? []);
-        setCategories(buildShopByCategoryDisplay(list, groups));
+        setCategories(buildShopCarouselCategories(list, groups));
       })
       .catch(() => setCategories([]))
       .finally(() => setLoading(false));
