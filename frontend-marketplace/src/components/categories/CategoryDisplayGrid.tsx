@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -11,41 +11,29 @@ import {
 } from "@/components/categories/CategoryCard";
 import type { HomeDisplayCategory } from "@/lib/prepareHomeDisplayCategories";
 
-function chunk<T>(items: T[], size: number): T[][] {
-  if (size <= 0) return [items];
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
-}
-
 const GRID_CONFIG: Record<
   CategoryCardSize,
   {
-    itemsPerPage: number;
-    gridCols: string;
+    skeletonCount: number;
     gap: string;
-    mobileCardW: string;
+    carouselCardW: string;
     skeletonH: string;
-    /** Negative horizontal margin so the scroll track can bleed to the shell edge. */
     mobileScrollBleed: string;
-    /** Equal inset on both ends of the scrolling row (left at start, right at end). */
     mobileRowInset: string;
   }
 > = {
   default: {
-    itemsPerPage: 8,
-    gridCols: "grid-cols-4",
+    skeletonCount: 8,
     gap: "gap-4",
-    mobileCardW: "w-44 sm:w-52",
+    carouselCardW: "w-44 sm:w-52",
     skeletonH: "260px",
     mobileScrollBleed: "-mx-4 sm:-mx-5",
     mobileRowInset: "px-4 sm:px-5",
   },
   compact: {
-    itemsPerPage: 20,
-    gridCols: "grid-cols-6 sm:grid-cols-8 lg:grid-cols-10",
+    skeletonCount: 12,
     gap: "gap-1.5 lg:gap-2",
-    mobileCardW: "w-20",
+    carouselCardW: "w-20 sm:w-24 lg:w-28",
     skeletonH: "76px",
     mobileScrollBleed: "-mx-1 sm:-mx-2",
     mobileRowInset: "px-1 sm:px-2",
@@ -69,7 +57,6 @@ function CategorySectionShell({
         className
       )}
       style={{
-        // background: "color-mix(in srgb, var(--sidebar-bg) 82%, transparent)",
         borderColor: "var(--sidebar-border)",
         boxShadow: "var(--card-shadow)",
       }}
@@ -101,62 +88,60 @@ export default function CategoryDisplayGrid({
   className,
 }: CategoryDisplayGridProps) {
   const config = GRID_CONFIG[size];
-  const [isMobile, setIsMobile] = useState(false);
-  const [pageIndex, setPageIndex] = useState(0);
-  const viewportRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  const [showArrows, setShowArrows] = useState(false);
 
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 639px)");
-    const sync = () => setIsMobile(mq.matches);
-    sync();
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
+  const updateScrollState = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const overflow = el.scrollWidth > el.clientWidth + 2;
+    setShowArrows(overflow);
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
   }, []);
 
-  const pages = useMemo(
-    () => chunk(categories, config.itemsPerPage),
-    [categories, config.itemsPerPage]
-  );
-  const pageCount = pages.length;
-
   useEffect(() => {
-    setPageIndex((i) => (pageCount === 0 ? 0 : Math.min(i, pageCount - 1)));
-  }, [pageCount]);
+    const el = scrollRef.current;
+    if (!el) return;
 
-  const scrollToPage = (index: number) => {
-    const el = viewportRef.current;
-    if (!el || pageCount === 0) return;
-    const next = Math.max(0, Math.min(index, pageCount - 1));
-    el.scrollTo({ left: next * el.clientWidth, behavior: "smooth" });
-    setPageIndex(next);
-  };
+    updateScrollState();
 
-  const syncPageIndexFromScroll = () => {
-    const el = viewportRef.current;
-    if (!el || pageCount === 0) return;
-    const width = el.clientWidth;
-    if (width <= 0) return;
-    const next = Math.round(el.scrollLeft / width);
-    setPageIndex(Math.max(0, Math.min(next, pageCount - 1)));
+    el.addEventListener("scroll", updateScrollState, { passive: true });
+    const resizeObserver = new ResizeObserver(updateScrollState);
+    resizeObserver.observe(el);
+
+    return () => {
+      el.removeEventListener("scroll", updateScrollState);
+      resizeObserver.disconnect();
+    };
+  }, [categories.length, loading, updateScrollState]);
+
+  const scrollCarousel = (direction: -1 | 1) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const step = Math.max(240, Math.round(el.clientWidth * 0.85));
+    el.scrollBy({ left: direction * step, behavior: "smooth" });
   };
 
   if (loading) {
     return (
-      <CategorySectionShell className={className}>
+      <CategorySectionShell className={className} allowHorizontalBleed>
         <div
           className={cn(
-            "grid",
-            size === "compact"
-              ? "grid-cols-4 sm:grid-cols-6 lg:grid-cols-10"
-              : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4",
-            config.gap
+            "flex w-max min-w-full",
+            config.gap,
+            config.mobileScrollBleed,
+            config.mobileRowInset
           )}
         >
-          {Array.from({ length: config.itemsPerPage }).map((_, i) => (
+          {Array.from({ length: config.skeletonCount }).map((_, i) => (
             <div
               key={i}
               className={cn(
-                "rounded-2xl animate-pulse",
+                "flex-shrink-0 rounded-2xl animate-pulse",
+                config.carouselCardW,
                 size === "compact" && "min-h-[76px] lg:min-h-[112px]"
               )}
               style={{
@@ -193,10 +178,44 @@ export default function CategoryDisplayGrid({
     />
   );
 
-  if (isMobile) {
-    return (
-      <CategorySectionShell className={className} allowHorizontalBleed>
+  return (
+    <CategorySectionShell className={className} allowHorizontalBleed>
+      <div className="relative min-w-0">
+        {showArrows ? (
+          <>
+            <button
+              type="button"
+              aria-label="Scroll categories left"
+              onClick={() => scrollCarousel(-1)}
+              disabled={!canScrollLeft}
+              className="hidden sm:flex absolute -left-1 top-1/2 -translate-y-1/2 z-10 h-10 w-10 items-center justify-center rounded-full border shadow-md disabled:pointer-events-none disabled:opacity-30"
+              style={{
+                background: "var(--card-bg)",
+                borderColor: "var(--sidebar-border)",
+                color: "var(--foreground)",
+              }}
+            >
+              <ChevronLeft className="h-5 w-5" strokeWidth={2} aria-hidden />
+            </button>
+            <button
+              type="button"
+              aria-label="Scroll categories right"
+              onClick={() => scrollCarousel(1)}
+              disabled={!canScrollRight}
+              className="hidden sm:flex absolute -right-1 top-1/2 -translate-y-1/2 z-10 h-10 w-10 items-center justify-center rounded-full border shadow-md disabled:pointer-events-none disabled:opacity-30"
+              style={{
+                background: "var(--card-bg)",
+                borderColor: "var(--sidebar-border)",
+                color: "var(--foreground)",
+              }}
+            >
+              <ChevronRight className="h-5 w-5" strokeWidth={2} aria-hidden />
+            </button>
+          </>
+        ) : null}
+
         <div
+          ref={scrollRef}
           className={cn(
             "w-full max-w-full min-w-0 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
             config.mobileScrollBleed
@@ -205,99 +224,18 @@ export default function CategoryDisplayGrid({
           role="region"
           aria-label={ariaLabel}
         >
-          <div className={cn("flex gap-1.5 w-max box-border", config.mobileRowInset)}>
+          <div
+            className={cn(
+              "flex w-max box-border",
+              config.gap,
+              config.mobileRowInset
+            )}
+          >
             {categories.map((cat) =>
-              renderCard(cat, cn("flex-shrink-0", config.mobileCardW))
+              renderCard(cat, cn("flex-shrink-0", config.carouselCardW))
             )}
           </div>
         </div>
-      </CategorySectionShell>
-    );
-  }
-
-  return (
-    <CategorySectionShell className={className}>
-      <div className="relative">
-      {pageCount > 1 ? (
-        <>
-          <button
-            type="button"
-            aria-label="Previous categories"
-            onClick={() => scrollToPage(pageIndex - 1)}
-            disabled={pageIndex <= 0}
-            className="hidden lg:flex absolute left-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 items-center justify-center rounded-full border shadow-md disabled:opacity-30"
-            style={{
-              background: "var(--card-bg)",
-              borderColor: "var(--sidebar-border)",
-              color: "var(--foreground)",
-            }}
-          >
-            <ChevronLeft className="h-5 w-5" strokeWidth={2} aria-hidden />
-          </button>
-          <button
-            type="button"
-            aria-label="Next categories"
-            onClick={() => scrollToPage(pageIndex + 1)}
-            disabled={pageIndex >= pageCount - 1}
-            className="hidden lg:flex absolute right-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 items-center justify-center rounded-full border shadow-md disabled:opacity-30"
-            style={{
-              background: "var(--card-bg)",
-              borderColor: "var(--sidebar-border)",
-              color: "var(--foreground)",
-            }}
-          >
-            <ChevronRight className="h-5 w-5" strokeWidth={2} aria-hidden />
-          </button>
-        </>
-      ) : null}
-
-      <div
-        ref={viewportRef}
-        onScroll={syncPageIndexFromScroll}
-        className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        style={{ WebkitOverflowScrolling: "touch" }}
-        role="region"
-        aria-label={ariaLabel}
-      >
-        <div className="flex w-full">
-          {pages.map((page, idx) => (
-            <div key={idx} className="min-w-full w-full shrink-0">
-              <div className={cn("grid", config.gridCols, config.gap)}>
-                {page.map((cat) => renderCard(cat, "w-auto"))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {pageCount > 1 ? (
-        <div
-          className="hidden lg:flex justify-center gap-2 mt-3"
-          role="tablist"
-          aria-label="Category pages"
-        >
-          {Array.from({ length: pageCount }, (_, i) => (
-            <button
-              key={i}
-              type="button"
-              role="tab"
-              aria-label={`Page ${i + 1} of ${pageCount}`}
-              aria-selected={i === pageIndex}
-              onClick={() => scrollToPage(i)}
-              className="flex h-9 w-9 items-center justify-center rounded-sm"
-            >
-              <span
-                className={`block h-1 rounded-sm transition-all ${i === pageIndex ? "w-8" : "w-5 opacity-50"}`}
-                style={{
-                  background:
-                    i === pageIndex ? "var(--primary)" : "var(--sidebar-border)",
-                }}
-                aria-hidden
-              />
-            </button>
-          ))}
-        </div>
-      ) : null}
       </div>
     </CategorySectionShell>
   );
