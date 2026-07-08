@@ -5,6 +5,7 @@ import CategoryGrid from "@/components/home/CategoryGrid";
 import ProductPreviewSection from "@/components/home/ProductPreviewSection";
 import TrustBenefitsSection from "@/components/home/TrustBenefitsSection";
 import HomeCTASection from "@/components/home/HomeCTASection";
+import SectionSeparator from "@/components/home/SectionSeparator";
 
 export const metadata: Metadata = {
   title:
@@ -37,6 +38,8 @@ export default function HomePage() {
         offset={0}
         background="transparent"
       />
+
+      <SectionSeparator />
 
       <HowItWorksSection />
 
