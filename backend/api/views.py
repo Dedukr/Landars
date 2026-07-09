@@ -1123,27 +1123,26 @@ class OrderListView(APIView):
             if all_post_delivery:
                 # All lines are in the post-delivery category group — Royal Mail pricing
                 order.is_home_delivery = False
+                total_weight = ShippingService.parcel_weight_kg_from_line_items(
+                    items
+                )
+                addr = order.get_delivery_address()
+                postal = (addr.postal_code or "").strip() if addr else ""
+                order.delivery_fee = ShippingService.get_delivery_fee_by_weight(
+                    total_weight,
+                    to_country="GB",
+                    to_postal_code=postal or None,
+                )
+            else:
+                order.is_home_delivery = True
                 merch = Decimal(0)
                 for item in items:
                     tp = item.get_total_price()
                     if tp != "":
                         merch += Decimal(str(tp))
-                if merch > Decimal("220"):
-                    order.delivery_fee = Decimal("0")
-                else:
-                    total_weight = ShippingService.parcel_weight_kg_from_line_items(
-                        items
-                    )
-                    addr = order.get_delivery_address()
-                    postal = (addr.postal_code or "").strip() if addr else ""
-                    order.delivery_fee = ShippingService.get_delivery_fee_by_weight(
-                        total_weight,
-                        to_country="GB",
-                        to_postal_code=postal or None,
-                    )
-            else:
-                order.is_home_delivery = True
-                order.delivery_fee = Decimal("10")
+                order.delivery_fee = (
+                    Decimal("0") if merch >= Decimal("200") else Decimal("10")
+                )
         order.save()
 
 
@@ -1582,16 +1581,15 @@ class CartView(APIView):
         if all_post_delivery:
             # All lines are in the post-delivery category group — Royal Mail pricing
             cart.is_home_delivery = False
-            if cart.sum_price > 220:
-                cart.delivery_fee = Decimal("0")
-            else:
-                total_weight = ShippingService.parcel_weight_kg_from_line_items(items)
-                cart.delivery_fee = ShippingService.get_delivery_fee_by_weight(
-                    total_weight
-                )
+            total_weight = ShippingService.parcel_weight_kg_from_line_items(items)
+            cart.delivery_fee = ShippingService.get_delivery_fee_by_weight(
+                total_weight
+            )
         else:
             cart.is_home_delivery = True
-            cart.delivery_fee = Decimal("10")
+            cart.delivery_fee = (
+                Decimal("0") if cart.sum_price >= Decimal("200") else Decimal("10")
+            )
 
     def delete(self, request):
         """Remove a product from cart or clear entire cart."""

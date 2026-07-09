@@ -16,8 +16,6 @@ interface UseDeliveryFeeProps {
   discount?: number;
   postDeliveryGroup?: ApiCategoryGroup | null;
   categoryRecords?: ShopCategoryRecord[];
-  /** When set, overrides client-side post/home detection (from ``GET /api/cart/``). */
-  isHomeDeliveryFromCart?: boolean;
 }
 
 interface UseDeliveryFeeReturn {
@@ -32,13 +30,14 @@ export function useDeliveryFee({
   discount = 0,
   postDeliveryGroup = null,
   categoryRecords,
-  isHomeDeliveryFromCart,
 }: UseDeliveryFeeProps): UseDeliveryFeeReturn {
   const deliveryCalculation = useMemo(() => {
     if (products.length === 0) {
       return {
         deliveryFee: 0,
         isHomeDelivery: true,
+        allPostDelivery: false,
+        qualifiesForFreeHomeDelivery: false,
         totalWeight: 0,
         hasSausages: false,
         reasoning: "No items in cart",
@@ -47,23 +46,12 @@ export function useDeliveryFee({
       };
     }
 
-    const calculated = calculateDeliveryFee(
+    return calculateDeliveryFee(
       products,
       postDeliveryGroup,
       categoryRecords
     );
-
-    if (isHomeDeliveryFromCart === undefined) {
-      return calculated;
-    }
-
-    const isHomeDelivery = isHomeDeliveryFromCart;
-    return {
-      ...calculated,
-      isHomeDelivery,
-      hasSausages: !isHomeDelivery,
-    };
-  }, [products, postDeliveryGroup, categoryRecords, isHomeDeliveryFromCart]);
+  }, [products, postDeliveryGroup, categoryRecords]);
 
   const deliveryBreakdown = useMemo(() => {
     return getDeliveryFeeBreakdown(deliveryCalculation);
