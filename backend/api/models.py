@@ -760,7 +760,7 @@ class Order(models.Model):
             tp = item.get_total_price()
             if tp != "":
                 merch += Decimal(str(tp))
-        if merch > Decimal("220"):
+        if merch > Decimal("200"):
             return False, Decimal("0")  # Free delivery for high-value orders
 
         from shipping.sendcloud_shipping import ShippingService
@@ -849,7 +849,7 @@ class Order(models.Model):
             merch = sum(
                 (prod.price * Decimal(str(q))) for prod, q in normalized if prod
             )
-        if merch > Decimal("220"):
+        if merch > Decimal("200"):
             return False, Decimal("0")
 
         from shipping.sendcloud_shipping import ShippingService

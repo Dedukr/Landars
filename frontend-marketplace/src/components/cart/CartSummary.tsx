@@ -44,8 +44,8 @@ const CartSummary = memo<CartSummaryProps>(
       hasSausages &&
       !isDeliveryHome &&
       !deliveryCalculation.overweight &&
-      subtotal < 220
-        ? (220 - subtotal).toFixed(2)
+      subtotal < 200
+        ? (200 - subtotal).toFixed(2)
         : null;
 
     return (
@@ -146,7 +146,7 @@ const CartSummary = memo<CartSummaryProps>(
                 Spend{" "}
                 <span className="font-semibold">£{spendMoreForFreePost}</span>{" "}
                 more to qualify for free post delivery on sausages (orders over
-                £220).
+                £200).
               </p>
             </div>
           )}

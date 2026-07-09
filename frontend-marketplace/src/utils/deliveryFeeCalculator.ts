@@ -86,9 +86,9 @@ export function calculateDeliveryFee(
     isHomeDelivery = false;
     hasSausages = true;
 
-    if (subtotal > 220) {
+    if (subtotal > 200) {
       deliveryFee = 0;
-      reasoning = "Free delivery for post-delivery orders over £220";
+      reasoning = "Free delivery for post-delivery orders over £200";
     } else {
       if (totalWeight > 20) {
         deliveryFee = 0;

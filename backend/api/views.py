@@ -1128,7 +1128,7 @@ class OrderListView(APIView):
                     tp = item.get_total_price()
                     if tp != "":
                         merch += Decimal(str(tp))
-                if merch > Decimal("220"):
+                if merch > Decimal("200"):
                     order.delivery_fee = Decimal("0")
                 else:
                     total_weight = ShippingService.parcel_weight_kg_from_line_items(
@@ -1582,7 +1582,7 @@ class CartView(APIView):
         if all_post_delivery:
             # All lines are in the post-delivery category group — Royal Mail pricing
             cart.is_home_delivery = False
-            if cart.sum_price > 220:
+            if cart.sum_price > 200:
                 cart.delivery_fee = Decimal("0")
             else:
                 total_weight = ShippingService.parcel_weight_kg_from_line_items(items)
