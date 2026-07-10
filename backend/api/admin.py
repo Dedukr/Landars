@@ -2919,42 +2919,59 @@ class OrderAdmin(admin.ModelAdmin):
 
     export_orders_pdf.short_description = "Export Selected Orders to PDF"
 
-    def food_summary_csv(self, request, queryset):
+    def _build_food_summary_rows(self, queryset):
         """
-        Export a food summary of all products and their total quantities for selected orders as CSV.
-        Frozen products are on the left, fresh products on the right.
+        Aggregate order line quantities into frozen vs ready product lists.
+
+        Frozen items are those in ``FROZEN_CATEGORY_GROUP_ID`` (CategoryGroup), not a
+        legacy ``Frozen Products`` category name.
         """
-        order_items = OrderItem.objects.filter(order__in=queryset).select_related(
-            "product"
+        from api.services.frozen_categories import product_has_frozen_category
+
+        order_items = (
+            OrderItem.objects.filter(order__in=queryset)
+            .select_related("product")
+            .prefetch_related("product__categories")
         )
+
         frozen_summary = {}
         ready_summary = {}
         for item in order_items:
             product = item.product
             if not product:
                 continue
-            if product.categories.filter(name__iexact="Frozen Products").exists():
-                frozen_summary[product.name] = frozen_summary.get(
-                    product.name, 0
-                ) + float(item.quantity)
-            else:
-                ready_summary[product.name] = ready_summary.get(
-                    product.name, 0
-                ) + float(item.quantity)
+            bucket = frozen_summary if product_has_frozen_category(product) else ready_summary
+            bucket[product.name] = bucket.get(product.name, 0) + float(item.quantity)
 
-        # Sort and convert to lists of tuples
         frozen_list = sorted(frozen_summary.items())
         ready_list = sorted(ready_summary.items())
 
-        # Pad the shorter list
         max_len = max(len(frozen_list), len(ready_list))
         frozen_list += [("", "")] * (max_len - len(frozen_list))
         ready_list += [("", "")] * (max_len - len(ready_list))
 
         delivery_dates = queryset.values_list("delivery_date", flat=True).distinct()
+        return frozen_list, ready_list, delivery_dates
+
+    def _food_summary_filename_suffix(self, delivery_dates) -> str:
+        labels = sorted(
+            {d.strftime("%d-%b-%Y") for d in delivery_dates if d is not None}
+        )
+        return ", ".join(labels) if labels else "Orders"
+
+    def food_summary_csv(self, request, queryset):
+        """
+        Export a food summary of all products and their total quantities for selected orders as CSV.
+        Frozen products are on the left, fresh products on the right.
+        """
+        frozen_list, ready_list, delivery_dates = self._build_food_summary_rows(
+            queryset
+        )
+        filename_suffix = self._food_summary_filename_suffix(delivery_dates)
+
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = (
-            f'attachment; filename="{", ".join(sorted({d.strftime("%d-%b-%Y") for d in delivery_dates}))}_Products.csv"'
+            f'attachment; filename="{filename_suffix}_Products.csv"'
         )
         writer = csv.writer(response)
         writer.writerow(["Frozen Product", "Quantity", "", "Ready Product", "Quantity"])
@@ -2969,37 +2986,12 @@ class OrderAdmin(admin.ModelAdmin):
         Export a food summary of all products and their total quantities for selected orders as Excel.
         Frozen products are on the left, fresh products on the right.
         """
-        order_items = OrderItem.objects.filter(order__in=queryset).select_related(
-            "product"
+        frozen_list, ready_list, delivery_dates = self._build_food_summary_rows(
+            queryset
         )
 
-        frozen_summary = {}
-        ready_summary = {}
-
-        for item in order_items:
-            product = item.product
-            if not product:
-                continue
-            if product.categories.filter(name__iexact="Frozen Products").exists():
-                frozen_summary[product.name] = frozen_summary.get(
-                    product.name, 0
-                ) + float(item.quantity)
-            else:
-                ready_summary[product.name] = ready_summary.get(
-                    product.name, 0
-                ) + float(item.quantity)
-
-        frozen_list = sorted(frozen_summary.items())
-        ready_list = sorted(ready_summary.items())
-
-        max_len = max(len(frozen_list), len(ready_list))
-        frozen_list += [("", "")] * (max_len - len(frozen_list))
-        ready_list += [("", "")] * (max_len - len(ready_list))
-
-        delivery_dates = queryset.values_list("delivery_date", flat=True).distinct()
         filename = (
-            ", ".join(sorted({d.strftime("%d-%b-%Y") for d in delivery_dates}))
-            + "_Products.xlsx"
+            self._food_summary_filename_suffix(delivery_dates) + "_Products.xlsx"
         )
 
         # Create Excel workbook

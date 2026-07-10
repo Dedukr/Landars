@@ -321,6 +321,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Cart/order delivery: products in this category can qualify for post (Royal Mail) pricing.
 # Post delivery (Royal Mail) uses categories in this CategoryGroup (default: group #1).
 POST_DELIVERY_CATEGORY_GROUP_ID = int(os.getenv("POST_DELIVERY_CATEGORY_GROUP_ID", "1"))
+# Food summary export: products in this CategoryGroup count as frozen (default: group #2).
+FROZEN_CATEGORY_GROUP_ID = int(os.getenv("FROZEN_CATEGORY_GROUP_ID", "2"))
 
 # AWS Configuration
 
