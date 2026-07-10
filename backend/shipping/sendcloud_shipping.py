@@ -160,11 +160,10 @@ def _select_methods_to_quote_rows(
 ) -> list[dict[str, Any]]:
     """
     Same rows as checkout ``get_shipping_options`` when weight-based collapse is on.
+
+    Always quotes Royal Mail Tracked 24 (tightest tier for ``weight``).
     """
-    from .method_mapping import (
-        logical_shipping_option_for_billable_kg,
-        pick_sendcloud_method_row,
-    )
+    from .method_mapping import pick_sendcloud_method_row
 
     if not eligible:
         return []
@@ -175,67 +174,15 @@ def _select_methods_to_quote_rows(
     if not collapse:
         return list(eligible)
 
-    t24_raw = getattr(settings, "POST_SHIPMENT_TRACKED_24_MIN_KG", None)
-    w = float(weight)
-    methods_to_quote: list[dict[str, Any]]
-    if t24_raw is not None:
-        t_min = float(t24_raw)
-        if w > t_min + 1e-9:
-            logical = "uk_tracked_24"
-            try:
-                methods_to_quote = [pick_sendcloud_method_row(eligible, logical, w)]
-            except ValueError as exc:
-                logger.warning(
-                    "Weight-based Sendcloud quote pick failed (%s); "
-                    "returning all eligible methods for this address.",
-                    exc,
-                )
-                methods_to_quote = list(eligible)
-        else:
-            picked_rows: list[dict[str, Any]] = []
-            for logical_key in ("uk_tracked_48", "uk_tracked_24"):
-                try:
-                    picked_rows.append(
-                        pick_sendcloud_method_row(eligible, logical_key, w)
-                    )
-                except ValueError:
-                    continue
-            seen_ids: set[int] = set()
-            methods_to_quote = []
-            for row in picked_rows:
-                mid = row.get("id")
-                if mid is None:
-                    continue
-                try:
-                    iid = int(mid)
-                except (TypeError, ValueError):
-                    continue
-                if iid in seen_ids:
-                    continue
-                seen_ids.add(iid)
-                methods_to_quote.append(row)
-            if not methods_to_quote:
-                logger.warning(
-                    "No Tracked 48/24 quote rows for weight %s kg at threshold %s; "
-                    "returning all eligible methods.",
-                    w,
-                    t_min,
-                )
-                methods_to_quote = list(eligible)
-    else:
-        logical = logical_shipping_option_for_billable_kg(weight)
-        try:
-            methods_to_quote = [
-                pick_sendcloud_method_row(eligible, logical, weight)
-            ]
-        except ValueError as exc:
-            logger.warning(
-                "Weight-based Sendcloud quote pick failed (%s); "
-                "returning all eligible methods for this address.",
-                exc,
-            )
-            methods_to_quote = list(eligible)
-    return methods_to_quote
+    try:
+        return [pick_sendcloud_method_row(eligible, "uk_tracked_24", float(weight))]
+    except ValueError as exc:
+        logger.warning(
+            "Weight-based Sendcloud quote pick failed (%s); "
+            "returning all eligible methods for this address.",
+            exc,
+        )
+        return list(eligible)
 
 
 def _format_option_price(

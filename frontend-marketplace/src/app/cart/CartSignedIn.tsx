@@ -118,16 +118,15 @@ export default function CartSignedIn() {
 
   const discount = cartData?.discount ? parseFloat(cartData.discount) : 0;
 
-  const { deliveryCalculation } = useDeliveryFee({
+  const { deliveryCalculation, totalPrice } = useDeliveryFee({
     products: cartProducts,
     subtotal,
     discount,
     postDeliveryGroup,
     categoryRecords,
-    isHomeDeliveryFromCart: cartData?.is_home_delivery,
   });
 
-  const total = subtotal - discount;
+  const total = totalPrice;
 
   const handleSaveForLater = useCallback(
     (productId: number) => {

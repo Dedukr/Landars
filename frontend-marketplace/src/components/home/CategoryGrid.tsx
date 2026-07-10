@@ -97,6 +97,8 @@ export default function CategoryGrid() {
 
   const visibleCategories = useMemo(() => {
     return categories.map((c) => {
+      // Prefer the category/group's own image; fall back to top-sold product image.
+      if (c.image_url) return c;
       const topSold = topSoldImageById[c.id];
       if (topSold) return { ...c, image_url: topSold };
       return c;

@@ -11,6 +11,8 @@ interface DeliveryFeeDisplayProps {
   overweight?: boolean;
   /** When true, show "Enter address" instead of a fee (checkout before address). */
   addressPending?: boolean;
+  /** Highlight free delivery in green (e.g. order over £200). */
+  highlightFree?: boolean;
 }
 
 const DeliveryFeeDisplay = memo<DeliveryFeeDisplayProps>(({
@@ -22,23 +24,26 @@ const DeliveryFeeDisplay = memo<DeliveryFeeDisplayProps>(({
   dependsOnCourier,
   overweight,
   addressPending = false,
+  highlightFree = false,
 }) => {
+  const feeColor = highlightFree && isFree ? "var(--success-text)" : "var(--foreground)";
+
   return (
     <>
       <div className="flex justify-between text-sm">
         <span
           style={{ color: "var(--foreground)", opacity: 0.7 }}
         >
-          Delivery Fee
+          Delivery
         </span>
         <span
           className="font-medium"
-          style={{ color: "var(--foreground)" }}
+          style={{ color: feeColor }}
         >
           {addressPending ? (
             <span style={{ opacity: 0.7 }}>Enter address</span>
           ) : dependsOnCourier ? (
-            <span style={{ opacity: 0.7 }}>Depends on courier</span>
+            <span style={{ opacity: 0.7 }}>At checkout</span>
           ) : isFree ? (
             "Free"
           ) : (

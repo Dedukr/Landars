@@ -14,6 +14,9 @@ import {
 } from "@/lib/categoryGroups";
 import type { ApiCategoryGroup } from "@/lib/prepareHomeDisplayCategories";
 
+export const FREE_HOME_DELIVERY_THRESHOLD = 200;
+export const HOME_DELIVERY_FEE = 10;
+
 export interface CartProduct {
   id: number;
   name: string;
@@ -27,6 +30,8 @@ export interface CartProduct {
 export interface DeliveryFeeCalculation {
   deliveryFee: number;
   isHomeDelivery: boolean;
+  allPostDelivery: boolean;
+  qualifiesForFreeHomeDelivery: boolean;
   totalWeight: number;
   hasSausages: boolean;
   reasoning: string;
@@ -86,32 +91,37 @@ export function calculateDeliveryFee(
     isHomeDelivery = false;
     hasSausages = true;
 
-    if (subtotal > 200) {
+    if (totalWeight > 20) {
       deliveryFee = 0;
-      reasoning = "Free delivery for post-delivery orders over £200";
+      overweight = true;
+      dependsOnCourier = true;
+      reasoning =
+        "We can ship post-delivery orders up to 20kg. Please split your order or contact us for assistance.";
     } else {
-      if (totalWeight > 20) {
-        deliveryFee = 0;
-        overweight = true;
-        dependsOnCourier = true;
-        reasoning =
-          "We can ship post-delivery orders up to 20kg. Please split your order or contact us for assistance.";
-      } else {
-        deliveryFee = 0;
-        dependsOnCourier = true;
-        reasoning =
-          "Post delivery price is set at checkout from live courier rates (includes markup).";
-      }
+      deliveryFee = 0;
+      dependsOnCourier = true;
+      reasoning =
+        "Post delivery price is set at checkout from live courier rates (includes markup).";
     }
   } else {
     isHomeDelivery = true;
-    deliveryFee = 10;
-    reasoning = "Standard home delivery: £10 delivery fee";
+    if (subtotal >= FREE_HOME_DELIVERY_THRESHOLD) {
+      deliveryFee = 0;
+      reasoning = `Free home delivery on orders of £${FREE_HOME_DELIVERY_THRESHOLD} or more`;
+    } else {
+      deliveryFee = HOME_DELIVERY_FEE;
+      reasoning = `Standard home delivery: £${HOME_DELIVERY_FEE} delivery fee`;
+    }
   }
+
+  const qualifiesForFreeHomeDelivery =
+    !allPostDelivery && subtotal >= FREE_HOME_DELIVERY_THRESHOLD;
 
   return {
     deliveryFee,
     isHomeDelivery,
+    allPostDelivery: Boolean(allPostDelivery),
+    qualifiesForFreeHomeDelivery,
     totalWeight,
     hasSausages,
     reasoning,

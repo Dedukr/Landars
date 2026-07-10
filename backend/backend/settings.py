@@ -321,6 +321,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Cart/order delivery: products in this category can qualify for post (Royal Mail) pricing.
 # Post delivery (Royal Mail) uses categories in this CategoryGroup (default: group #1).
 POST_DELIVERY_CATEGORY_GROUP_ID = int(os.getenv("POST_DELIVERY_CATEGORY_GROUP_ID", "1"))
+# Food summary export: products in this CategoryGroup count as frozen (default: group #2).
+FROZEN_CATEGORY_GROUP_ID = int(os.getenv("FROZEN_CATEGORY_GROUP_ID", "2"))
 
 # AWS Configuration
 
@@ -432,9 +434,9 @@ SENDCLOUD_WEBHOOK_SECRET = os.getenv("SENDCLOUD_WEBHOOK_SECRET", "")
 SENDCLOUD_ALLOWED_CARRIERS = os.getenv(
     "SENDCLOUD_ALLOWED_CARRIERS", "royal_mailv2"
 ).split(",")
-# Service name substrings (lowercase) on Sendcloud method rows. Include both speeds so
-# ``POST_SHIPMENT_TRACKED_24_MIN_KG`` / ``uk_tracked_24`` can resolve (exclude list must
-# not blanket-ban ``tracked 24`` when heavier parcels use that tier).
+# Service name substrings (lowercase) on Sendcloud method rows. Include Tracked 24 so
+# ``uk_tracked_24`` can resolve (exclude list must not blanket-ban ``tracked 24``).
+# Tracked 48 may remain listed for legacy method-name matching.
 SENDCLOUD_ALLOWED_SERVICES = os.getenv(
     "SENDCLOUD_ALLOWED_SERVICES", "tracked 48,tracked 24"
 ).split(",")
@@ -445,18 +447,15 @@ SENDCLOUD_EXCLUDE_SERVICES = os.getenv(
 # Sendcloud panel sender address (integer ID). Required for post-delivery shipment automation.
 SENDCLOUD_SENDER_ADDRESS_ID = os.getenv("SENDCLOUD_SENDER_ADDRESS_ID") or None
 # Logical option → resolved at ship time via /shipping_methods (IDs must not be stored long-term).
-# When POST_SHIPMENT_USE_WEIGHT_BASED_LOGICAL is True (default), option is picked from goods
-# weight only (packaging/tare is not added); otherwise this single value is used.
+# When POST_SHIPMENT_USE_WEIGHT_BASED_LOGICAL is True (default), checkout/ship always use
+# uk_tracked_24 (weight only picks the small/medium tier). Otherwise this single value is used.
 POST_SHIPMENT_LOGICAL_OPTION = os.getenv(
-    "POST_SHIPMENT_LOGICAL_OPTION", "uk_tracked_48"
+    "POST_SHIPMENT_LOGICAL_OPTION", "uk_tracked_24"
 )
 POST_SHIPMENT_USE_WEIGHT_BASED_LOGICAL = os.getenv(
     "POST_SHIPMENT_USE_WEIGHT_BASED_LOGICAL", "True"
 ).lower() in ("1", "true", "yes")
-# If set (kg): checkout quotes **both** Tracked 48 and Tracked 24 for parcel weight **at or
-# below** this value; **strictly above** it, only Tracked 24 is quoted. Snapshot / Celery
-# fallback logical: above → uk_tracked_24; at or below → uk_tracked_48 (checkout method id
-# remains authoritative when still valid).
+# Legacy: previously switched Tracked 48 vs 24 by weight. Ignored — always Tracked 24.
 _post_t24 = (os.getenv("POST_SHIPMENT_TRACKED_24_MIN_KG") or "").strip()
 POST_SHIPMENT_TRACKED_24_MIN_KG = float(_post_t24) if _post_t24 else None
 # Post-delivery cart/order fee estimate when no delivery address: Sendcloud price × markup.

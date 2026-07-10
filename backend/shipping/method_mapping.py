@@ -9,14 +9,13 @@ offer, per speed:
 
 Only **non-signed** small/medium lines are matched (no Large Letter, no Signed).
 
-``Shipment.logical_shipping_option`` is ``uk_tracked_48`` or ``uk_tracked_24`` (see
+``Shipment.logical_shipping_option`` is always ``uk_tracked_24`` (see
 :func:`logical_shipping_option_for_billable_kg`), or is aligned at ship time from the
 checkout method (see :func:`resolve_checkout_sendcloud_method_id`).
-Checkout quotes below ``POST_SHIPMENT_TRACKED_24_MIN_KG`` (when set) offer **both**
-Tracked 48 and 24; heavier parcels are quoted as Tracked 24 only.
-``uk_standard_small_parcel`` is kept only for legacy DB rows; new snapshots use
-Tracked 48 as the default fallback logical below that threshold when no checkout
-method is stored yet.
+Checkout quotes and ship-time fallbacks always use Royal Mail Tracked **24**
+(tightest small/medium tier for the parcel weight). ``uk_tracked_48`` remains in
+:data:`LOGICAL_SHIPPING_MAP` for legacy rows / name matching only.
+``uk_standard_small_parcel`` is kept only for legacy DB rows.
 
 At ship time, ``pick_sendcloud_method_id`` picks the **tightest** method row whose
 weight bounds contain the parcel (API fields plus ``0-5kg``-style name bands).
@@ -265,22 +264,11 @@ def logical_shipping_option_for_billable_kg(billable_weight_kg: float) -> str:
     Used when building the order snapshot and when Celery must fall back from an invalid
     checkout method id. Checkout's stored Sendcloud method id is still preferred when valid.
 
-    * If ``POST_SHIPMENT_TRACKED_24_MIN_KG`` is set and weight is **strictly greater than**
-      that value → ``uk_tracked_24`` (only Tracked **24** tiers apply for heavy parcels).
-    * Otherwise (including weight **equal** to the threshold) → ``uk_tracked_48`` as the
-      default fallback logical (light parcels may have chosen Tracked 24 at checkout; the
-      checkout method id disambiguates).
-
-    Checkout **quotes** for light parcels include both Tracked 48 and 24 when the threshold
-    is set; see :meth:`ShippingService.get_shipping_options`.
+    Always ``uk_tracked_24`` (Royal Mail Tracked 24); weight only selects the small/medium
+    tier via :func:`pick_sendcloud_method_row`.
     """
-    from django.conf import settings as django_settings
-
-    w = max(0.0, float(billable_weight_kg))
-    t24_raw = getattr(django_settings, "POST_SHIPMENT_TRACKED_24_MIN_KG", None)
-    if t24_raw is not None and w > float(t24_raw):
-        return "uk_tracked_24"
-    return "uk_tracked_48"
+    _ = max(0.0, float(billable_weight_kg))
+    return "uk_tracked_24"
 
 
 def pick_sendcloud_method_row(

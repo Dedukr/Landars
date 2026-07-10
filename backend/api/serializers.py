@@ -35,6 +35,7 @@ class CategoryGroupSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "description",
+            "image_url",
             "category_ids",
             "category_names",
             "products_count",
@@ -74,6 +75,9 @@ class CategorySerializer(serializers.ModelSerializer):
         return self.context.get("products_count", {}).get(obj.id, 0)
 
     def get_image_url(self, obj):
+        # Prefer the category's own image; fall back to top-seller product image.
+        if obj.image_url:
+            return obj.image_url
         return self.context.get("top_seller_image", {}).get(obj.id)
 
     def get_top_seller_sold_quantity(self, obj):

@@ -27,10 +27,11 @@ def get_r2_client():
     )
 
 
-def generate_unique_object_key(filename, product_id=None):
+def generate_unique_object_key(filename, product_id=None, folder=None):
     """
     Generate a unique object key for R2 storage.
     Format: products/{product_id}/{uuid}_{filename}
+    If ``folder`` is provided, use that prefix instead (e.g. categories/12).
     If product_id is not provided: products/temp/{uuid}_{filename}
     """
     # Clean filename and get extension
@@ -38,13 +39,24 @@ def generate_unique_object_key(filename, product_id=None):
     unique_id = uuid.uuid4().hex
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    if product_id:
+    if folder:
+        prefix = folder.strip("/")
+    elif product_id:
         prefix = f"products/{product_id}"
     else:
         prefix = "products/temp"
 
     object_key = f"{prefix}/{timestamp}_{unique_id}_{filename}"
     return object_key
+
+
+def object_key_from_public_url(image_url: str | None) -> str | None:
+    """Extract the R2 object key from a public CDN URL, or None if not ours."""
+    if not image_url or not settings.R2_PUBLIC_URL:
+        return None
+    if not image_url.startswith(settings.R2_PUBLIC_URL):
+        return None
+    return image_url.replace(f"{settings.R2_PUBLIC_URL}/", "", 1)
 
 
 def generate_presigned_upload_url(object_key, content_type, expiration=None):
@@ -222,7 +234,13 @@ def compress_image(
 
 
 def upload_compressed_image_to_r2(
-    image_file, filename, product_id, max_width=1920, max_height=1920, quality=85
+    image_file,
+    filename,
+    product_id=None,
+    max_width=1920,
+    max_height=1920,
+    quality=85,
+    folder=None,
 ):
     """
     Compress an image and upload it directly to R2 storage.
@@ -230,10 +248,11 @@ def upload_compressed_image_to_r2(
     Args:
         image_file: File-like object or bytes containing the image
         filename: Original filename (used for extension detection)
-        product_id: Product ID for organizing files
+        product_id: Product ID for organizing files (products/{id}/...)
         max_width: Maximum width for compression (default: 1920px)
         max_height: Maximum height for compression (default: 1920px)
         quality: JPEG quality (1-100, default: 85)
+        folder: Optional R2 folder prefix (e.g. categories/12). Overrides product_id.
 
     Returns:
         dict: Contains public_url, object_key, original_size, compressed_size, compression_ratio
@@ -265,7 +284,9 @@ def upload_compressed_image_to_r2(
         filename = filename.rsplit(".", 1)[0] + ".webp"
 
     # Generate unique object key
-    object_key = generate_unique_object_key(filename, product_id)
+    object_key = generate_unique_object_key(
+        filename, product_id=product_id, folder=folder
+    )
 
     # Upload to R2
     r2_client = get_r2_client()
