@@ -485,7 +485,8 @@ class SingleImageModelForm(forms.ModelForm):
 
     Upload one image file (compressed to R2) or paste a URL. Uploading a new file
     replaces the previous image and deletes the old R2 object when it is ours.
-    Clear the URL field (and leave upload empty) to remove the image.
+    Check ``clear_image`` or clear the URL field to remove the image (and delete
+    our R2 object). The storefront then falls back to the top-seller product image.
     """
 
     image_file = forms.ImageField(
@@ -499,7 +500,10 @@ class SingleImageModelForm(forms.ModelForm):
     clear_image = forms.BooleanField(
         required=False,
         label="Remove image",
-        help_text="Check to clear the current image without uploading a replacement.",
+        help_text=(
+            "Check to remove the current image (deletes it from cloud storage). "
+            "The website will fall back to the top-seller product image."
+        ),
     )
 
     r2_folder_prefix = "misc"
@@ -548,6 +552,12 @@ class SingleImageModelForm(forms.ModelForm):
             return f"{self.r2_folder_prefix}/{instance.pk}"
         return f"{self.r2_folder_prefix}/temp"
 
+    @staticmethod
+    def _delete_r2_if_ours(image_url: str | None) -> None:
+        old_key = object_key_from_public_url(image_url)
+        if old_key:
+            delete_image_from_r2(old_key)
+
     def save(self, commit=True):
         instance = super().save(commit=False)
         image_file = self.cleaned_data.get("image_file")
@@ -560,6 +570,9 @@ class SingleImageModelForm(forms.ModelForm):
                 .values_list("image_url", flat=True)
                 .first()
             )
+
+        new_url = (instance.image_url or "").strip() or None
+        instance.image_url = new_url
 
         if image_file:
             # Need a PK for a stable R2 folder — save first if new.
@@ -585,16 +598,17 @@ class SingleImageModelForm(forms.ModelForm):
                 raise ValidationError(f"Failed to upload image to R2: {str(e)}")
 
             if previous_url and previous_url != instance.image_url:
-                old_key = object_key_from_public_url(previous_url)
-                if old_key:
-                    delete_image_from_r2(old_key)
+                self._delete_r2_if_ours(previous_url)
 
-        elif clear_image:
+        elif clear_image or not new_url:
+            # Checkbox or emptied URL field — drop DB value and delete our R2 object.
             if previous_url:
-                old_key = object_key_from_public_url(previous_url)
-                if old_key:
-                    delete_image_from_r2(old_key)
+                self._delete_r2_if_ours(previous_url)
             instance.image_url = None
+
+        elif previous_url and previous_url != new_url:
+            # Replaced with a different URL (e.g. pasted external) — delete old R2 object.
+            self._delete_r2_if_ours(previous_url)
 
         if commit:
             instance.save()

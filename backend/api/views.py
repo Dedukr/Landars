@@ -635,8 +635,8 @@ class CategoryList(APIView):
 
     def get(self, request):
         """Retrieve all categories."""
-        # v5: ProductCategory.parent removed — categories are now flat leaves only.
-        cache_key = "categories_list_v5"
+        # v7: prefer category image_url, else top-seller product image.
+        cache_key = "categories_list_v7"
         cached_response = cache.get(cache_key)
         if cached_response:
             return Response(cached_response)
@@ -670,8 +670,8 @@ class CategoryGroupList(APIView):
         from api.serializers import CategoryGroupSerializer
         from api.services.category_display import products_count_by_category_id
 
-        # v2: CategoryGroup membership now fully absorbs the former parent categories.
-        cache_key = "category_groups_list_v2"
+        # v3: group image_url is group-owned only (no member-image fallback in API).
+        cache_key = "category_groups_list_v3"
         cached = cache.get(cache_key)
         if cached is not None:
             return Response(cached)

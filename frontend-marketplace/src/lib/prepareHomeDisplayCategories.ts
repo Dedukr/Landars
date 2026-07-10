@@ -207,6 +207,7 @@ export function buildShopByCategoryDisplay(
       return {
         id: shopFilterGroupParentId(g.id),
         name: g.name,
+        // Prefer group image; else a member category image (often top-seller).
         image_url: g.image_url || imageFromMember,
         products_count: productsCount ?? null,
         combinedCategoryIds: [...(g.category_ids ?? [])],
