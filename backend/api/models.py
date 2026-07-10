@@ -22,6 +22,12 @@ class ProductCategory(models.Model):
 
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
+    image_url = models.URLField(
+        max_length=500,
+        blank=True,
+        null=True,
+        help_text="Optional category image (single). Upload or replace via admin.",
+    )
     sold_quantity = models.PositiveIntegerField(
         default=0,
         db_index=True,
@@ -43,6 +49,7 @@ class ProductCategory(models.Model):
             "id": self.id,
             "name": self.name,
             "description": self.description,
+            "image_url": self.image_url,
             "sold_quantity": int(self.sold_quantity or 0),
         }
 
@@ -64,6 +71,12 @@ class CategoryGroup(models.Model):
 
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
+    image_url = models.URLField(
+        max_length=500,
+        blank=True,
+        null=True,
+        help_text="Optional group image (single). Upload or replace via admin.",
+    )
     categories = models.ManyToManyField(
         ProductCategory,
         related_name="category_groups",
@@ -112,25 +125,12 @@ class ProductImage(models.Model):
         """
         Override delete to also remove the image from R2 storage.
         """
-        # Extract object key from image URL and delete from R2
         if self.image_url:
             try:
-                from django.conf import settings
+                from .r2_storage import delete_image_from_r2, object_key_from_public_url
 
-                from .r2_storage import delete_image_from_r2
-
-                # Extract the object key from the URL
-                # URL format: https://cdn.example.com/products/123/timestamp_uuid_filename.jpg
-                # We need: products/123/timestamp_uuid_filename.jpg
-                if settings.R2_PUBLIC_URL and self.image_url.startswith(
-                    settings.R2_PUBLIC_URL
-                ):
-                    # Remove the public URL prefix to get the object key
-                    object_key = self.image_url.replace(
-                        f"{settings.R2_PUBLIC_URL}/", ""
-                    )
-
-                    # Delete from R2
+                object_key = object_key_from_public_url(self.image_url)
+                if object_key:
                     deleted = delete_image_from_r2(object_key)
                     if deleted:
                         print(f"Successfully deleted image from R2: {object_key}")

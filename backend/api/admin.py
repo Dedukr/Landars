@@ -46,8 +46,10 @@ from shipping.admin import _tracking_url_link_html
 from shipping.models import Shipment
 
 from .forms import (
+    CategoryGroupAdminForm,
     OrderItemInlineForm,
     OrderItemInlineFormSet,
+    ProductCategoryAdminForm,
     ProductImageAdminForm,
     ProductImageInlineForm,
 )
@@ -330,11 +332,20 @@ class HolidayFeeFilter(admin.SimpleListFilter):
 
 @admin.register(ProductCategory)
 class ProductCategoryAdmin(admin.ModelAdmin):
-    list_display = ["name", "description", "products_count"]
+    form = ProductCategoryAdminForm
+    list_display = ["name", "description", "image_preview_list", "products_count"]
     search_fields = ["name"]
     ordering = ["name"]
-    readonly_fields = ["products_inline"]
-    fields = ["name", "description", "products_inline"]
+    readonly_fields = ["image_preview", "products_inline"]
+    fields = [
+        "name",
+        "description",
+        "image_preview",
+        "image_file",
+        "image_url",
+        "clear_image",
+        "products_inline",
+    ]
 
     class Media:
         js = ("admin/js/prevent_double_submit.js",)
@@ -347,6 +358,28 @@ class ProductCategoryAdmin(admin.ModelAdmin):
         return obj.products.count()
 
     products_count.short_description = "Products"
+
+    def image_preview(self, obj):
+        if obj and obj.image_url:
+            return format_html(
+                '<img src="{}" style="max-width: 200px; max-height: 200px; '
+                'object-fit: contain; border: 1px solid #ddd; border-radius: 4px;" />',
+                obj.image_url,
+            )
+        return "No image yet"
+
+    image_preview.short_description = "Current image"
+
+    def image_preview_list(self, obj):
+        if obj.image_url:
+            return format_html(
+                '<img src="{}" style="max-width: 48px; max-height: 48px; '
+                'object-fit: cover; border-radius: 4px;" />',
+                obj.image_url,
+            )
+        return "—"
+
+    image_preview_list.short_description = "Image"
 
     def products_inline(self, obj):
         """
@@ -380,10 +413,21 @@ class ProductCategoryAdmin(admin.ModelAdmin):
 
 @admin.register(CategoryGroup)
 class CategoryGroupAdmin(admin.ModelAdmin):
-    list_display = ["name", "description", "categories_count"]
+    form = CategoryGroupAdminForm
+    list_display = ["name", "description", "image_preview_list", "categories_count"]
     search_fields = ["name", "description"]
     ordering = ["name"]
     filter_horizontal = ["categories"]
+    readonly_fields = ["image_preview"]
+    fields = [
+        "name",
+        "description",
+        "image_preview",
+        "image_file",
+        "image_url",
+        "clear_image",
+        "categories",
+    ]
 
     def get_queryset(self, request):
         return super().get_queryset(request).prefetch_related("categories")
@@ -392,6 +436,28 @@ class CategoryGroupAdmin(admin.ModelAdmin):
         return obj.categories.count()
 
     categories_count.short_description = "Categories"
+
+    def image_preview(self, obj):
+        if obj and obj.image_url:
+            return format_html(
+                '<img src="{}" style="max-width: 200px; max-height: 200px; '
+                'object-fit: contain; border: 1px solid #ddd; border-radius: 4px;" />',
+                obj.image_url,
+            )
+        return "No image yet"
+
+    image_preview.short_description = "Current image"
+
+    def image_preview_list(self, obj):
+        if obj.image_url:
+            return format_html(
+                '<img src="{}" style="max-width: 48px; max-height: 48px; '
+                'object-fit: cover; border-radius: 4px;" />',
+                obj.image_url,
+            )
+        return "—"
+
+    image_preview_list.short_description = "Image"
 
 
 class CartItemInline(admin.TabularInline):

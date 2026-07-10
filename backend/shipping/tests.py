@@ -102,22 +102,17 @@ class SnapshotTotalItemQuantityTests(SimpleTestCase):
 
 
 class LogicalShippingOptionTests(SimpleTestCase):
-    @override_settings(POST_SHIPMENT_TRACKED_24_MIN_KG=None)
-    def test_all_weights_use_tracked_48_when_no_t24_threshold(self):
-        self.assertEqual(logical_shipping_option_for_billable_kg(0.5), "uk_tracked_48")
-        self.assertEqual(logical_shipping_option_for_billable_kg(15.0), "uk_tracked_48")
-
-    @override_settings(POST_SHIPMENT_TRACKED_24_MIN_KG=3.0)
-    def test_t24_only_when_weight_strictly_above_threshold(self):
-        self.assertEqual(logical_shipping_option_for_billable_kg(2.5), "uk_tracked_48")
-        self.assertEqual(logical_shipping_option_for_billable_kg(3.0), "uk_tracked_48")
-        self.assertEqual(logical_shipping_option_for_billable_kg(3.001), "uk_tracked_24")
+    def test_all_weights_use_tracked_24(self):
+        self.assertEqual(logical_shipping_option_for_billable_kg(0.5), "uk_tracked_24")
+        self.assertEqual(logical_shipping_option_for_billable_kg(3.0), "uk_tracked_24")
+        self.assertEqual(logical_shipping_option_for_billable_kg(15.0), "uk_tracked_24")
         self.assertEqual(logical_shipping_option_for_billable_kg(50.0), "uk_tracked_24")
 
-    @override_settings(POST_SHIPMENT_TRACKED_24_MIN_KG=2.0)
-    def test_t24_threshold_two_uses_48_at_two_kg(self):
-        self.assertEqual(logical_shipping_option_for_billable_kg(2.0), "uk_tracked_48")
-        self.assertEqual(logical_shipping_option_for_billable_kg(2.001), "uk_tracked_24")
+    @override_settings(POST_SHIPMENT_TRACKED_24_MIN_KG=3.0)
+    def test_threshold_setting_ignored_always_tracked_24(self):
+        self.assertEqual(logical_shipping_option_for_billable_kg(2.5), "uk_tracked_24")
+        self.assertEqual(logical_shipping_option_for_billable_kg(3.0), "uk_tracked_24")
+        self.assertEqual(logical_shipping_option_for_billable_kg(3.001), "uk_tracked_24")
 
 
 class PickSendcloudMethodIdTests(SimpleTestCase):

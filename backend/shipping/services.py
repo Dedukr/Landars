@@ -392,7 +392,7 @@ def build_shipment_snapshot(order: Any) -> dict[str, Any]:
 
         logical = logical_shipping_option_for_billable_kg(billable_kg)
     else:
-        logical = getattr(dj_settings, "POST_SHIPMENT_LOGICAL_OPTION", "uk_tracked_48")
+        logical = getattr(dj_settings, "POST_SHIPMENT_LOGICAL_OPTION", "uk_tracked_24")
 
     details = getattr(order, "shipping_details", None)
     checkout_mid: int | None = None

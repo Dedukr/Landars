@@ -8,10 +8,10 @@ from django.core.exceptions import ValidationError
 from django.forms.models import BaseInlineFormSet
 from django.utils.html import format_html
 
-from .models import Order, OrderItem, ProductImage
+from .models import CategoryGroup, Order, OrderItem, ProductCategory, ProductImage
 from .r2_storage import (
-    generate_unique_object_key,
-    get_r2_client,
+    delete_image_from_r2,
+    object_key_from_public_url,
     upload_compressed_image_to_r2,
     validate_image_size,
     validate_image_type,
@@ -477,3 +477,143 @@ class OrderItemInlineFormSet(BaseInlineFormSet):
                 )
             else:
                 products_seen[product_id] = product
+
+
+class SingleImageModelForm(forms.ModelForm):
+    """
+    Shared admin form for models with a single optional ``image_url``.
+
+    Upload one image file (compressed to R2) or paste a URL. Uploading a new file
+    replaces the previous image and deletes the old R2 object when it is ours.
+    Clear the URL field (and leave upload empty) to remove the image.
+    """
+
+    image_file = forms.ImageField(
+        required=False,
+        label="Upload image",
+        help_text=(
+            f"Upload one image (max {settings.MAX_IMAGE_SIZE / (1024 * 1024):.0f}MB). "
+            "JPEG, PNG, or WebP. Replaces the current image if one exists."
+        ),
+    )
+    clear_image = forms.BooleanField(
+        required=False,
+        label="Remove image",
+        help_text="Check to clear the current image without uploading a replacement.",
+    )
+
+    r2_folder_prefix = "misc"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if "image_url" in self.fields:
+            self.fields["image_url"].required = False
+            self.fields["image_url"].help_text = (
+                "Filled automatically on upload, or paste an external URL."
+            )
+            self.fields["image_url"].widget = forms.URLInput(
+                attrs={
+                    "placeholder": "Or paste image URL",
+                    "style": "width: 100%;",
+                }
+            )
+        self.fields["image_file"].widget.attrs.update(
+            {
+                "accept": "image/jpeg,image/png,image/webp",
+                "style": "margin-bottom: 10px;",
+            }
+        )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        image_file = cleaned_data.get("image_file")
+        if not image_file:
+            return cleaned_data
+
+        if not validate_image_size(image_file.size):
+            max_size_mb = settings.MAX_IMAGE_SIZE / (1024 * 1024)
+            raise ValidationError(
+                f"Image file size exceeds maximum allowed size of {max_size_mb}MB"
+            )
+
+        content_type = image_file.content_type
+        if not validate_image_type(content_type):
+            raise ValidationError(
+                f"Invalid image type. Allowed types: {', '.join(settings.ALLOWED_IMAGE_TYPES)}"
+            )
+        return cleaned_data
+
+    def _r2_folder(self, instance) -> str:
+        if instance.pk:
+            return f"{self.r2_folder_prefix}/{instance.pk}"
+        return f"{self.r2_folder_prefix}/temp"
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        image_file = self.cleaned_data.get("image_file")
+        clear_image = self.cleaned_data.get("clear_image")
+        previous_url = None
+        if self.instance.pk:
+            previous_url = (
+                type(instance)
+                .objects.filter(pk=self.instance.pk)
+                .values_list("image_url", flat=True)
+                .first()
+            )
+
+        if image_file:
+            # Need a PK for a stable R2 folder — save first if new.
+            if not instance.pk:
+                instance.save()
+
+            try:
+                image_file.seek(0)
+                file_content = image_file.read()
+                upload_result = upload_compressed_image_to_r2(
+                    file_content,
+                    image_file.name,
+                    folder=self._r2_folder(instance),
+                    max_width=1920,
+                    max_height=1920,
+                    quality=85,
+                )
+                instance.image_url = upload_result["public_url"]
+            except Exception as e:
+                import traceback
+
+                print(f"R2 Upload Error: {traceback.format_exc()}")
+                raise ValidationError(f"Failed to upload image to R2: {str(e)}")
+
+            if previous_url and previous_url != instance.image_url:
+                old_key = object_key_from_public_url(previous_url)
+                if old_key:
+                    delete_image_from_r2(old_key)
+
+        elif clear_image:
+            if previous_url:
+                old_key = object_key_from_public_url(previous_url)
+                if old_key:
+                    delete_image_from_r2(old_key)
+            instance.image_url = None
+
+        if commit:
+            instance.save()
+            self.save_m2m()
+
+        return instance
+
+
+class ProductCategoryAdminForm(SingleImageModelForm):
+    r2_folder_prefix = "categories"
+
+    class Meta:
+        model = ProductCategory
+        fields = ["name", "description", "image_url"]
+
+
+class CategoryGroupAdminForm(SingleImageModelForm):
+    r2_folder_prefix = "category-groups"
+
+    class Meta:
+        model = CategoryGroup
+        fields = ["name", "description", "image_url", "categories"]

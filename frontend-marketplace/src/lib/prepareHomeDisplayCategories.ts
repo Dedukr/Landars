@@ -27,6 +27,7 @@ export interface ApiCategoryGroup {
   id: number;
   name: string;
   description?: string | null;
+  image_url?: string | null;
   category_ids: number[];
   category_names?: string[];
   products_count?: number;
@@ -85,7 +86,7 @@ export function buildShopByCategoryDisplay(
       return {
         id: shopFilterGroupParentId(g.id),
         name: g.name,
-        image_url: imageFromMember,
+        image_url: g.image_url || imageFromMember,
         products_count: productsCount ?? null,
         combinedCategoryIds: [...(g.category_ids ?? [])],
         isCombined: true,
