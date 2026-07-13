@@ -53,7 +53,7 @@ export default function WishlistHero({
       >
         {/* Warm accent wash — food-marketplace feel, theme-safe */}
         <div
-          className="pointer-events-none absolute inset-0 opacity-[0.12] dark:opacity-[0.18]"
+          className="pointer-events-none absolute inset-0 opacity-[0.12]"
           style={{
             background:
               "linear-gradient(135deg, color-mix(in srgb, var(--accent) 35%, transparent) 0%, transparent 42%, color-mix(in srgb, var(--primary) 8%, transparent) 100%)",

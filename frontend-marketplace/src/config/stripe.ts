@@ -16,25 +16,10 @@ if (!stripePublishableKey) {
 // Initialize Stripe
 export const stripePromise = loadStripe(stripePublishableKey);
 
-// Function to detect if dark mode is active
-const isDarkMode = () => {
-  if (typeof window === "undefined") return false;
-
-  // Check for dark mode class on html element
-  const htmlElement = document.documentElement;
-  return (
-    htmlElement.classList.contains("dark") ||
-    htmlElement.getAttribute("data-theme") === "dark"
-  );
-};
-
-// Dynamic Stripe configuration options based on theme
 export const getStripeOptions = () => {
-  const darkMode = isDarkMode();
-
   return {
     appearance: {
-      theme: darkMode ? ("night" as const) : ("stripe" as const),
+      theme: "stripe" as const,
       variables: {
         colorPrimary: "#3b82f6",
         colorDanger: "#ef4444",

@@ -145,7 +145,7 @@ export function OrderDetailsHeader({
 
         <div className="relative overflow-hidden">
           <div
-            className="pointer-events-none absolute inset-0 opacity-[0.09] dark:opacity-[0.12]"
+            className="pointer-events-none absolute inset-0 opacity-[0.09]"
             style={{
               background:
                 "radial-gradient(120% 70% at 10% 0%, color-mix(in srgb, var(--accent) 35%, transparent) 0%, transparent 52%), linear-gradient(135deg, color-mix(in srgb, var(--accent) 22%, transparent) 0%, transparent 42%, color-mix(in srgb, var(--primary) 8%, transparent) 100%)",
@@ -239,7 +239,7 @@ export function OrderDetailsHeader({
               <div className="flex min-w-0 flex-1 gap-4 sm:gap-5">
                 <div className="relative shrink-0">
                   <div
-                    className="pointer-events-none absolute -inset-1 rounded-3xl opacity-40 blur-md dark:opacity-25"
+                    className="pointer-events-none absolute -inset-1 rounded-3xl opacity-40 blur-md"
                     style={{ background: tone.iconWrap }}
                     aria-hidden
                   />

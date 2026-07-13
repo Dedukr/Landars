@@ -7,7 +7,6 @@ import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatUserDisplayName, formatUserFirstName } from "@/lib/userName";
 import { getAuthUrl } from "@/utils/authHelpers";
-import { CompactThemeToggle } from "@/components/ThemeToggle";
 import {
   ShoppingCart,
   Heart,
@@ -170,9 +169,6 @@ export default function Header() {
 
           {/* Right side actions */}
           <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
-            {/* Theme Toggle */}
-            <CompactThemeToggle />
-
             {/* Wishlist (icon on desktop & mobile header) */}
             <Link
               href="/wishlist"

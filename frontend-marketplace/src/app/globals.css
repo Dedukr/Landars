@@ -32,7 +32,7 @@
 }
 
 :root {
-  /* Light theme base (refined) */
+  /* Light theme */
   --background: #faf4e8; /* airy warm beige */
   --foreground: #1a1a1a; /* deep neutral for text */
   --primary: #111111; /* brand banner black */
@@ -42,41 +42,17 @@
   --card-bg: #ffffff; /* strong contrast on cards */
   --card-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
   --accent: #d9a441; /* brand gold accent */
-  --btn-primary: #a68b5b; /* muted gold — consistent CTA/button color in all themes */
+  --btn-primary: #a68b5b; /* muted gold CTA/button color */
   --btn-primary-hover: #8f7a4f;
   --btn-primary-fg: #ffffff;
   --sort-bg: #ffffff; /* white sort background */
   --sort-border-radius: 9999px; /* elliptical sort button */
   --sort-arrow-color: #ffffff; /* white arrow for visibility */
   --sort-selected-bg: var(--btn-primary);
-  --sort-selected-fg: #ffffff; /* default selected option text (light) */
+  --sort-selected-fg: #ffffff; /* default selected option text */
   /* Sidebar width used for responsive content offset */
   --sidebar-width: 18rem;
   --ring: #d9a441;
-  /* Font fallbacks (self-hosted / system) */
-  --font-geist-sans: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  --font-geist-mono: "SFMono-Regular", "Menlo", "Consolas", monospace;
-}
-
-/* Light theme (explicit) */
-.light {
-  --background: #faf4e8; /* airy warm beige */
-  --foreground: #1a1a1a; /* deep neutral for text */
-  --primary: #111111; /* brand banner black */
-  --primary-hover: #2b2b2b; /* slightly lighter for hover */
-  --sidebar-bg: #fff9ef; /* softer cream panels */
-  --sidebar-border: #ead9bf; /* subtle beige border */
-  --card-bg: #ffffff; /* strong contrast on cards */
-  --card-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
-  --accent: #d9a441; /* brand gold accent */
-  --btn-primary: #a68b5b; /* muted gold — consistent CTA/button color in all themes */
-  --btn-primary-hover: #8f7a4f;
-  --btn-primary-fg: #ffffff;
-  --sort-bg: #ffffff; /* white sort background */
-  --sort-border-radius: 9999px; /* elliptical sort button */
-  --sort-arrow-color: #ffffff; /* white arrow for visibility */
-  --sort-selected-bg: var(--btn-primary);
-  --sort-selected-fg: #ffffff;
   --muted-foreground: #6b7280; /* muted text for secondary content */
   --destructive: #dc2626; /* red for errors */
   --success: #16a34a; /* green for success states */
@@ -86,38 +62,10 @@
   --success-bg: #f0fdf4; /* light green background for success */
   --success-border: #bbf7d0; /* light green border for success */
   --success-text: #166534; /* dark green text for success */
-  --ring: #d9a441; /* focus ring (accent) – shop UI */
-}
-
-/* Dark theme (explicit) - Improved muted colors */
-.dark {
-  --background: #121212; /* softer dark base instead of pure black */
-  --foreground: #e5e5e5; /* off-white text to reduce eye strain */
-  --primary: #a68b5b; /* muted gold - 30% less saturated */
-  --primary-hover: #8f7a4f; /* darker muted gold for hover */
-  --sidebar-bg: #1e1e1e; /* elevated panel with subtle warmth */
-  --sidebar-border: #333333; /* subtle separation with better contrast */
-  --card-bg: #1a1a1a; /* card background with slight elevation */
-  --card-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-  --accent: #a68b5b; /* align accent to primary in dark */
-  --btn-primary: #a68b5b;
-  --btn-primary-hover: #8f7a4f;
-  --btn-primary-fg: #ffffff;
-  --sort-bg: #2a2a2a; /* neutral dark sort background */
-  --sort-border-radius: 9999px; /* elliptical sort button */
-  --sort-arrow-color: #e5e5e5; /* off-white arrow for better visibility */
-  --sort-selected-bg: var(--accent); /* muted gold selected option */
-  --sort-selected-fg: #1a1a1a; /* dark text on muted gold */
-  --muted-foreground: #a0a0a0; /* muted text for secondary content */
-  --destructive: #dc2626; /* muted red for errors */
-  --success: #16a34a; /* muted green for success states */
-  --info-bg: #1e3a8a; /* dark blue background for info */
-  --info-border: #3b82f6; /* blue border for info */
-  --info-text: #dbeafe; /* light blue text for info */
-  --success-bg: #14532d; /* dark green background for success */
-  --success-border: #22c55e; /* green border for success */
-  --success-text: #dcfce7; /* light green text for success */
-  --ring: #a68b5b;
+  /* Font fallbacks (self-hosted / system) */
+  --font-geist-sans: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-geist-mono: "SFMono-Regular", "Menlo", "Consolas", monospace;
+  color-scheme: light;
 }
 
 @theme inline {
@@ -145,8 +93,6 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
-
-/* System preference fallback removed — theme is light by default and only changes via user toggle */
 
 /* Responsive sidebar width and content offset helpers */
 @media (min-width: 768px) {
@@ -314,7 +260,7 @@ input:focus {
   box-shadow: 0 0 0 3px rgba(184, 149, 106, 0.1);
 }
 
-/* Input field styling for both light and dark modes */
+/* Input field styling */
 input[type="text"],
 input[type="email"],
 input[type="password"],
@@ -332,42 +278,6 @@ input[type="password"]::placeholder,
   opacity: 0.6;
 }
 
-/* Dark mode specific input styling */
-.dark input[type="text"],
-.dark input[type="email"],
-.dark input[type="password"],
-.dark .auth-input {
-  background-color: var(--card-bg) !important;
-  color: var(--foreground) !important;
-  border-color: var(--sidebar-border) !important;
-}
-
-.dark input[type="text"]::placeholder,
-.dark input[type="email"]::placeholder,
-.dark input[type="password"]::placeholder,
-.dark .auth-input::placeholder {
-  color: var(--foreground);
-  opacity: 0.6;
-}
-
-/* Light mode specific input styling */
-.light input[type="text"],
-.light input[type="email"],
-.light input[type="password"],
-.light .auth-input {
-  background-color: var(--card-bg) !important;
-  color: var(--foreground) !important;
-  border-color: var(--sidebar-border) !important;
-}
-
-.light input[type="text"]::placeholder,
-.light input[type="email"]::placeholder,
-.light input[type="password"]::placeholder,
-.light .auth-input::placeholder {
-  color: var(--foreground);
-  opacity: 0.6;
-}
-
 /* Auth page specific styles */
 .auth-container {
   background: var(--background);
@@ -380,15 +290,6 @@ input[type="password"]::placeholder,
   border-radius: 0.75rem;
   padding: 2rem;
   box-shadow: var(--card-shadow);
-}
-
-/* Search input styling for dark theme */
-.dark input[type="text"] {
-  color: #ffffff !important;
-}
-
-.dark input[type="text"]::placeholder {
-  color: #cccccc !important;
 }
 
 /* Custom breakpoint for screens from 1024px down to small */
@@ -417,8 +318,8 @@ input[type="password"]::placeholder,
 }
 
 /* Ensure selected sort option is styled and always elliptical */
-.light [role="listbox"] [role="option"][aria-selected="true"],
-.light button[data-sort-selected="true"] {
+[role="listbox"] [role="option"][aria-selected="true"],
+button[data-sort-selected="true"] {
   color: var(--sort-selected-fg) !important;
   background: var(--sort-selected-bg) !important;
   border-radius: 9999px !important; /* rounded-full - always elliptical */
@@ -429,12 +330,6 @@ input[type="password"]::placeholder,
   border-radius: 9999px; /* rounded-full - always elliptical */
 }
 
-/* Force elliptical styling for sort button in light mode with higher specificity */
-.light button[data-sort-selected="true"] {
-  border-radius: 9999px !important; /* Force elliptical */
-}
-
-/* Force elliptical styling for all sort buttons regardless of theme */
 button[data-sort-selected="true"] {
   border-radius: 9999px !important; /* Force elliptical */
 }
@@ -444,35 +339,13 @@ button[data-sort-selected="true"] {
   border-radius: 9999px !important;
 }
 
-/* Ultra-specific override for sort button */
 button[data-sort-selected="true"].rounded-full {
   border-radius: 9999px !important;
 }
 
-/* Force elliptical for sort button with maximum specificity */
-.light button[data-sort-selected="true"].rounded-full {
-  border-radius: 9999px !important;
-}
-
-/* Override any potential conflicting styles */
-button[data-sort-selected="true"] {
-  border-radius: 9999px !important;
-}
-
-/* Dark mode selected option visuals */
-.dark [role="listbox"] [role="option"][aria-selected="true"],
-.dark button[data-sort-selected="true"] {
-  background: var(--sort-selected-bg) !important;
-  color: var(--sort-selected-fg) !important;
-}
-
-/* Force white arrow in both light and dark modes for visibility */
+/* Force white arrow for visibility on selected sort */
 button[data-sort-selected="true"] svg,
-.light button[data-sort-selected="true"] svg,
-.dark button[data-sort-selected="true"] svg,
-button[data-sort-selected="true"] svg[style*="color"],
-.light button[data-sort-selected="true"] svg[style*="color"],
-.dark button[data-sort-selected="true"] svg[style*="color"] {
+button[data-sort-selected="true"] svg[style*="color"] {
   color: #ffffff !important;
   stroke: #ffffff !important;
 }

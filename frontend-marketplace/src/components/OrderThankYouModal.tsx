@@ -105,7 +105,7 @@ export default function OrderThankYouModal({ open, onClose }: Props) {
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg p-2 hover:bg-black/5 dark:hover:bg-white/10"
+              className="rounded-lg p-2 hover:bg-black/5"
               aria-label="Close"
               style={{ color: "var(--foreground)" }}
             >
