@@ -123,6 +123,12 @@ export const API_ENDPOINTS = {
       DETAIL: (id: number) => `/admin/reviews/${id}/`,
     },
   },
+
+  FESTIVAL: {
+    PRODUCTS: "/api/festival/products/",
+    STATUS: "/api/festival/status/",
+    ORDERS: "/api/festival/orders/",
+  },
 } as const;
 
 /**

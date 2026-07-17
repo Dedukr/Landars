@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <title>Festival Invoice {{ invoice.invoice_number }}</title>
+  <style>
+    body { font-family: Helvetica, Arial, sans-serif; font-size: 12px; color: #111; }
+    h1 { font-size: 20px; margin: 0 0 8px; }
+    h2 { font-size: 14px; margin: 16px 0 8px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid #ddd; }
+    th { font-size: 11px; text-transform: uppercase; color: #555; }
+    .right { text-align: right; }
+    .muted { color: #666; }
+    .totals td { border-bottom: none; }
+    .badge { display: inline-block; padding: 2px 8px; background: #e8f5e9; color: #1b5e20; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>{% if vat_registered %}Festival VAT invoice{% else %}Festival receipt{% endif %}</h1>
+  <p class="badge">PAID</p>
+  <p>
+    <strong>{{ invoice.invoice_number }}</strong><br />
+    Tax point: {{ invoice.issued_at|date:"d/m/Y H:i" }}<br />
+    Order REF: {{ order.id }} &nbsp; Ticket: {{ order.order_number }}
+  </p>
+
+  <h2>Seller</h2>
+  <p>
+    {{ business.name }}<br />
+    {% if business.address %}{{ business.address }}<br />{% endif %}
+    {% if business.city or business.postal_code %}
+      {{ business.city }} {{ business.postal_code }}<br />
+    {% endif %}
+    {% if business.country %}{{ business.country }}<br />{% endif %}
+    {% if vat_registered and business.vat_number %}
+      VAT No: {{ business.vat_number }}
+    {% endif %}
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Qty</th>
+        <th>Item</th>
+        <th class="right">VAT %</th>
+        <th class="right">Gross</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td>{{ item.quantity }}</td>
+        <td>{{ item.product_name }}</td>
+        <td class="right">{{ item.vat_rate }}%</td>
+        <td class="right">£{{ item.line_total }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <table class="totals">
+    <tr><td class="muted">Net</td><td class="right">£{{ invoice.subtotal_net }}</td></tr>
+    <tr><td class="muted">VAT</td><td class="right">£{{ invoice.vat_total }}</td></tr>
+    <tr><td><strong>Total (inc. VAT)</strong></td><td class="right"><strong>£{{ invoice.total_gross }}</strong></td></tr>
+  </table>
+
+  {% if invoice.vat_breakdown %}
+  <h2>VAT breakdown</h2>
+  <table>
+    <thead>
+      <tr><th>Rate</th><th class="right">Net</th><th class="right">VAT</th><th class="right">Gross</th></tr>
+    </thead>
+    <tbody>
+      {% for rate, bucket in invoice.vat_breakdown.items %}
+      <tr>
+        <td>{{ rate }}%</td>
+        <td class="right">£{{ bucket.net }}</td>
+        <td class="right">£{{ bucket.vat }}</td>
+        <td class="right">£{{ bucket.gross }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <p class="muted" style="margin-top:24px;">
+    No customer details are recorded for festival sales.
+    This document is a paid simplified festival invoice/receipt.
+    Accountant approval of templates and product VAT rates is required before production use.
+  </p>
+</body>
+</html>

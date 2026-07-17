@@ -108,6 +108,23 @@ def check_memory():
         return False, f"Memory check error: {str(e)}"
 
 
+def check_festival_optional():
+    """Informational festival status — never fails site health when disabled."""
+    try:
+        if not getattr(settings, "FESTIVAL_ENABLED", False):
+            return True, "Festival feature disabled"
+        from festival.services.cloudprnt import printer_status_payload
+
+        payload = printer_status_payload()
+        return True, (
+            f"enabled mode={payload['mode']} online={payload['online']} "
+            f"queued={payload['queued_jobs']}"
+        )
+    except Exception as e:
+        logger.warning("Festival health probe failed: %s", e)
+        return True, f"Festival probe skipped: {e}"
+
+
 def comprehensive_health_check(request):
     """Comprehensive health check with all system metrics"""
     try:
@@ -116,9 +133,12 @@ def comprehensive_health_check(request):
             "cache": check_redis(),
             "disk_space": check_disk_space(),
             "memory": check_memory(),
+            "festival": check_festival_optional(),
         }
 
-        all_healthy = all(result[0] for result in checks.values())
+        # Festival is informational and must not fail overall site health.
+        critical = {k: v for k, v in checks.items() if k != "festival"}
+        all_healthy = all(result[0] for result in critical.values())
         status_code = 200 if all_healthy else 503
 
         response_data = {

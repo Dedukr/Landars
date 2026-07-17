@@ -166,6 +166,50 @@ services:
         reservations:
           memory: 256M
 
+  celery-beat:
+    image: dedukr/landar-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    working_dir: /backend
+    command:
+      [
+        "celery",
+        "-A",
+        "backend",
+        "beat",
+        "-l",
+        "info",
+        "--schedule",
+        "/tmp/celerybeat-schedule",
+      ]
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - DJANGO_CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      celery:
+        condition: service_started
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
   frontend-marketplace:
     image: dedukr/landar-frontend-marketplace:latest
     build:
