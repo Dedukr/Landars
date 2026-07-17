@@ -1033,6 +1033,47 @@ class OrderListView(APIView):
             )
             order_data["address"] = address
 
+        # Billing address: when use-delivery is checked, leave order billing empty.
+        bill_use_delivery = request.data.get("bill_use_delivery_address")
+        if bill_use_delivery is None:
+            billing_payload = request.data.get("billing_address") or {}
+            if isinstance(billing_payload, dict) and (
+                "bill_use_delivery_address" in billing_payload
+            ):
+                bill_use_delivery = billing_payload.get("bill_use_delivery_address")
+        if bill_use_delivery is None:
+            bill_use_delivery = True
+        order_data["bill_use_delivery_address"] = bool(bill_use_delivery)
+
+        from account.billing_address import (
+            billing_payload_from_request,
+            create_order_billing_address,
+            validate_billing_street,
+        )
+
+        if order_data["bill_use_delivery_address"]:
+            order_data["billing_address"] = None
+        else:
+            billing_fields = billing_payload_from_request(request.data)
+            street_errors = validate_billing_street(billing_fields)
+            if street_errors:
+                return Response(
+                    {
+                        "error": "Please fix billing address fields.",
+                        "errors": street_errors,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            customer = order_data.get("customer")
+            if not customer:
+                return Response(
+                    {"error": "Customer is required for a billing address."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            order_data["billing_address"] = create_order_billing_address(
+                customer, billing_fields
+            )
+
         order = Order.objects.create(**order_data)
         if shipping_details_data:
             Shipment.objects.create(

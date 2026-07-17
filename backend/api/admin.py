@@ -6,7 +6,9 @@ import tempfile
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
-from account.models import CustomUser
+from account.address_validation import validate_street_address
+from account.billing_address import upsert_profile_billing_address
+from account.models import CustomUser, Profile
 from billing.models import (
     CreditNote,
     Invoice,
@@ -14,6 +16,7 @@ from billing.models import (
     create_invoice,
     get_s3_client,
 )
+from django import forms
 from django.conf import settings
 from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
@@ -153,11 +156,46 @@ def _phone_display_with_links(phone_str):
 
 
 class OrderAdminForm(ModelForm):
-    """Custom form for Order admin."""
+    """Custom form for Order admin with editable billing address fields."""
+
+    bill_company_name = forms.CharField(
+        label="Billing company name", required=False
+    )
+    bill_contact_name = forms.CharField(
+        label="Billing contact name", required=False
+    )
+    bill_address_line = forms.CharField(
+        label="Billing address line", required=False
+    )
+    bill_address_line2 = forms.CharField(
+        label="Billing address line 2", required=False
+    )
+    bill_city = forms.CharField(label="Billing city", required=False)
+    bill_postal_code = forms.CharField(
+        label="Billing postal code", required=False
+    )
 
     class Meta:
         model = Order
-        fields = "__all__"
+        exclude = ("billing_address",)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        billing = None
+        if self.instance.pk and self.instance.billing_address_id:
+            billing = self.instance.billing_address
+        elif self.instance.customer_id:
+            profile = getattr(self.instance.customer, "profile", None)
+            if profile:
+                billing = profile.billing_address
+
+        if billing:
+            self.fields["bill_company_name"].initial = billing.company_name
+            self.fields["bill_contact_name"].initial = billing.contact_name
+            self.fields["bill_address_line"].initial = billing.address_line
+            self.fields["bill_address_line2"].initial = billing.address_line2
+            self.fields["bill_city"].initial = billing.city
+            self.fields["bill_postal_code"].initial = billing.postal_code
 
     def clean(self):
         cleaned_data = super().clean()
@@ -172,6 +210,32 @@ class OrderAdminForm(ModelForm):
             result = validate_ready_to_ship(self.instance)
             if not result.ok:
                 raise ValidationError({"status": result.message})
+
+        if cleaned_data.get("bill_use_delivery_address", True):
+            return cleaned_data
+
+        if not cleaned_data.get("customer"):
+            self.add_error(
+                "customer",
+                "Select a customer before setting a separate billing address.",
+            )
+
+        errors = validate_street_address(
+            address_line=cleaned_data.get("bill_address_line"),
+            address_line2=cleaned_data.get("bill_address_line2"),
+            city=cleaned_data.get("bill_city"),
+            postal_code=cleaned_data.get("bill_postal_code"),
+            require_line2=False,
+        )
+        field_map = {
+            "address_line": "bill_address_line",
+            "address_line2": "bill_address_line2",
+            "city": "bill_city",
+            "postal_code": "bill_postal_code",
+        }
+        for key, message in errors.items():
+            self.add_error(field_map[key], message)
+
         return cleaned_data
 
 
@@ -1740,6 +1804,13 @@ class OrderAdmin(admin.ModelAdmin):
             "delivery_fee",
             "holiday_fee",
             "discount",
+            "bill_use_delivery_address",
+            "bill_company_name",
+            "bill_contact_name",
+            "bill_address_line",
+            "bill_address_line2",
+            "bill_city",
+            "bill_postal_code",
         ]
         return fields
 
@@ -2107,6 +2178,27 @@ class OrderAdmin(admin.ModelAdmin):
 
         if not change:
             obj.source = Order.Source.ADMIN
+
+        use_delivery = form.cleaned_data.get("bill_use_delivery_address", True)
+        if use_delivery:
+            obj.billing_address = None
+        else:
+            customer = form.cleaned_data.get("customer") or obj.customer
+            if customer:
+                profile, _ = Profile.objects.get_or_create(user=customer)
+                billing = upsert_profile_billing_address(
+                    profile,
+                    {
+                        "company_name": form.cleaned_data.get("bill_company_name"),
+                        "contact_name": form.cleaned_data.get("bill_contact_name"),
+                        "address_line": form.cleaned_data.get("bill_address_line"),
+                        "address_line2": form.cleaned_data.get("bill_address_line2"),
+                        "city": form.cleaned_data.get("bill_city"),
+                        "postal_code": form.cleaned_data.get("bill_postal_code"),
+                    },
+                )
+                profile.save(update_fields=["billing_address"])
+                obj.billing_address = billing
 
         super().save_model(request, obj, form, change)
 

@@ -386,18 +386,21 @@ class Invoice(models.Model):
             "phone": getattr(profile, "phone", None) if profile else None,
         }
 
-        # Billing address snapshot (prefer explicit order.address; fallback to customer profile address)
-        address = order.address
-        if not address and profile:
-            address = getattr(profile, "address", None)
+        # Billing address snapshot follows the order flag:
+        # false → billing address; true → shipping/delivery address.
+        delivery_address = order.get_delivery_address()
+        billing_fields = order.billing_address_fields()
+
         self.billing_address_snapshot = {
-            "address_line": getattr(address, "address_line", None) if address else None,
-            "address_line2": (
-                getattr(address, "address_line2", None) if address else None
-            ),
-            "city": getattr(address, "city", None) if address else None,
-            "postal_code": getattr(address, "postal_code", None) if address else None,
-            "country": getattr(address, "country", None) if address else None,
+            "company_name": billing_fields.get("company_name"),
+            "contact_name": billing_fields.get("contact_name"),
+            "address_line": billing_fields.get("address_line"),
+            "address_line2": billing_fields.get("address_line2"),
+            "city": billing_fields.get("city"),
+            "postal_code": billing_fields.get("postal_code"),
+            "country": getattr(delivery_address, "country", None)
+            if delivery_address
+            else None,
         }
 
         # Seller snapshot (currently sourced from settings env-backed dict)

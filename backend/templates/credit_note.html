@@ -565,8 +565,7 @@
         <!-- Reference to original invoice -->
         <div class="reference-box">
             <div class="label">This credit note cancels</div>
-            <div class="value">Invoice #{{ credit_note.invoice.invoice_number }} dated {{
-                credit_note.invoice.created_at|date:"d M Y" }}</div>
+            <div class="value">Invoice #{{ credit_note.invoice.invoice_number }} dated {{ credit_note.invoice.created_at|date:"d M Y" }}</div>
         </div>
 
         <div class="mb20" style="width: 100%;">
@@ -653,15 +652,15 @@
                         <strong>Credit to</strong>
                     </div>
                     <div class="break-word">
-                        {% if credit_note.customer_snapshot.first_name or credit_note.customer_snapshot.surname %}
-                        {% if credit_note.customer_snapshot.first_name %}
-                        <div>{{ credit_note.customer_snapshot.first_name }}</div>
+                        {% if credit_note.billing_address_snapshot.company_name %}
+                        <div>{{ credit_note.billing_address_snapshot.company_name }}</div>
                         {% endif %}
-                        {% if credit_note.customer_snapshot.surname %}
-                        <div>{{ credit_note.customer_snapshot.surname }}</div>
-                        {% endif %}
-                        {% else %}
-                        {{ credit_note.customer_snapshot.name }}
+                        {% if credit_note.billing_address_snapshot.contact_name %}
+                        <div>{{ credit_note.billing_address_snapshot.contact_name }}</div>
+                        {% elif credit_note.customer_snapshot.name %}
+                        <div>{{ credit_note.customer_snapshot.name }}</div>
+                        {% elif credit_note.customer_snapshot.first_name or credit_note.customer_snapshot.surname %}
+                        <div>{% if credit_note.customer_snapshot.first_name %}{{ credit_note.customer_snapshot.first_name }}{% endif %}{% if credit_note.customer_snapshot.first_name and credit_note.customer_snapshot.surname %} {% endif %}{% if credit_note.customer_snapshot.surname %}{{ credit_note.customer_snapshot.surname }}{% endif %}</div>
                         {% endif %}
                     </div>
                 </div>

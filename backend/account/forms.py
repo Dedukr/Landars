@@ -3,18 +3,61 @@
 from django import forms
 from django.contrib.auth.forms import UserChangeForm, UserCreationForm
 
+from .address_validation import validate_street_address
+from .billing_address import upsert_profile_billing_address
 from .models import Address, CustomUser, Profile
+
+
+def _validate_billing_street_when_required(form, cleaned_data):
+    """
+    When not using delivery as billing, require street fields
+    (same rules as delivery: line2 optional, UK postcode).
+    """
+    if cleaned_data.get("bill_use_delivery_address", True):
+        return cleaned_data
+
+    errors = validate_street_address(
+        address_line=cleaned_data.get("bill_address_line"),
+        address_line2=cleaned_data.get("bill_address_line2"),
+        city=cleaned_data.get("bill_city"),
+        postal_code=cleaned_data.get("bill_postal_code"),
+        require_line2=False,
+    )
+    field_map = {
+        "address_line": "bill_address_line",
+        "address_line2": "bill_address_line2",
+        "city": "bill_city",
+        "postal_code": "bill_postal_code",
+    }
+    for key, message in errors.items():
+        form.add_error(field_map[key], message)
+    return cleaned_data
 
 
 class CustomUserForm(UserChangeForm):
     first_name = forms.CharField(label="First name", required=False)
     surname = forms.CharField(label="Surname", required=False)
     phone = forms.CharField(required=False)
-    address_line = forms.CharField(label="Address Line", required=False)
-    address_line2 = forms.CharField(label="Address Line 2", required=False)
-    city = forms.CharField(label="City", required=False)
-    postal_code = forms.CharField(label="Postal Code", required=False)
+    address_line = forms.CharField(label="Delivery address line", required=False)
+    address_line2 = forms.CharField(label="Delivery address line 2", required=False)
+    city = forms.CharField(label="Delivery city", required=False)
+    postal_code = forms.CharField(label="Delivery postal code", required=False)
     notes = forms.CharField(label="Notes", required=False)
+    bill_use_delivery_address = forms.BooleanField(
+        label="Use delivery address as billing address",
+        required=False,
+        initial=True,
+    )
+    bill_company_name = forms.CharField(
+        label="Billing company name", required=False
+    )
+    bill_contact_name = forms.CharField(
+        label="Billing contact name", required=False
+    )
+    bill_address_line = forms.CharField(label="Billing address line", required=False)
+    bill_address_line2 = forms.CharField(label="Billing address line 2", required=False)
+    bill_city = forms.CharField(label="Billing city", required=False)
+    bill_postal_code = forms.CharField(label="Billing postal code", required=False)
 
     class Meta:
         model = CustomUser
@@ -35,12 +78,27 @@ class CustomUserForm(UserChangeForm):
             if profile:
                 self.fields["phone"].initial = profile.phone
                 self.fields["notes"].initial = profile.notes
+                self.fields["bill_use_delivery_address"].initial = (
+                    profile.bill_use_delivery_address
+                )
+                billing = profile.billing_address
+                if billing:
+                    self.fields["bill_company_name"].initial = billing.company_name
+                    self.fields["bill_contact_name"].initial = billing.contact_name
+                    self.fields["bill_address_line"].initial = billing.address_line
+                    self.fields["bill_address_line2"].initial = billing.address_line2
+                    self.fields["bill_city"].initial = billing.city
+                    self.fields["bill_postal_code"].initial = billing.postal_code
                 address = profile.address
                 if address:
                     self.fields["address_line"].initial = address.address_line
                     self.fields["address_line2"].initial = address.address_line2
                     self.fields["city"].initial = address.city
                     self.fields["postal_code"].initial = address.postal_code
+
+    def clean(self):
+        cleaned_data = super().clean()
+        return _validate_billing_street_when_required(self, cleaned_data)
 
     def save(self, commit=True):
         user = super().save(commit=False)
@@ -67,6 +125,20 @@ class CustomUserForm(UserChangeForm):
 
         profile.address = address
         profile.notes = self.cleaned_data.get("notes")
+        profile.bill_use_delivery_address = self.cleaned_data.get(
+            "bill_use_delivery_address", True
+        )
+        upsert_profile_billing_address(
+            profile,
+            {
+                "company_name": self.cleaned_data.get("bill_company_name"),
+                "contact_name": self.cleaned_data.get("bill_contact_name"),
+                "address_line": self.cleaned_data.get("bill_address_line"),
+                "address_line2": self.cleaned_data.get("bill_address_line2"),
+                "city": self.cleaned_data.get("bill_city"),
+                "postal_code": self.cleaned_data.get("bill_postal_code"),
+            },
+        )
         profile.save()
 
         return user
@@ -83,6 +155,21 @@ class CustomUserCreationForm(forms.ModelForm):
     city = forms.CharField(label="City", required=False)
     postal_code = forms.CharField(label="Postal Code", required=False)
     notes = forms.CharField(label="Notes", required=False)
+    bill_use_delivery_address = forms.BooleanField(
+        label="Use delivery address as billing address",
+        required=False,
+        initial=True,
+    )
+    bill_company_name = forms.CharField(
+        label="Billing company name", required=False
+    )
+    bill_contact_name = forms.CharField(
+        label="Billing contact name", required=False
+    )
+    bill_address_line = forms.CharField(label="Billing address line", required=False)
+    bill_address_line2 = forms.CharField(label="Billing address line 2", required=False)
+    bill_city = forms.CharField(label="Billing city", required=False)
+    bill_postal_code = forms.CharField(label="Billing postal code", required=False)
     password = forms.CharField(
         label="Password",
         widget=forms.PasswordInput,
@@ -94,29 +181,6 @@ class CustomUserCreationForm(forms.ModelForm):
         model = CustomUser
         fields = ("first_name", "surname", "email")
 
-        # def save(self, commit=True):
-        #     user = super().save(commit=False)
-        #     password = self.cleaned_data.get("password")
-        #     if password:
-        #         user.set_password(password)
-        #     else:
-        #         user.set_unusable_password()
-        #         pass
-        #     if commit:
-        #         user.save()
-        #         address = Address.objects.create(
-        #             address_line=self.cleaned_data.get("address_line", ""),
-        #             address_line2=self.cleaned_data.get("address_line2", ""),
-        #             city=self.cleaned_data.get("city", ""),
-        #             postal_code=self.cleaned_data.get("postal_code", ""),
-        #         )
-
-        #         Profile.objects.create(
-        #             user=user,
-        #             # name=self.cleaned_data["name"],
-        #             phone=self.cleaned_data.get("phone", ""),
-        #             address=address,
-        #             notes=self.cleaned_data.get("notes", ""),
-        #         )
-
-        # return user
+    def clean(self):
+        cleaned_data = super().clean()
+        return _validate_billing_street_when_required(self, cleaned_data)

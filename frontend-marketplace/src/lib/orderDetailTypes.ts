@@ -18,6 +18,15 @@ export interface OrderDetailAddress {
   postal_code?: string | null;
 }
 
+export interface OrderBillingAddress {
+  company_name?: string | null;
+  contact_name?: string | null;
+  address_line?: string | null;
+  address_line2?: string | null;
+  city?: string | null;
+  postal_code?: string | null;
+}
+
 export interface OrderDetailItem {
   id: number;
   product?: {
@@ -46,6 +55,8 @@ export interface MarketplaceOrderDetail {
   customer_phone?: string | null;
   customer_address?: string | null;
   address?: OrderDetailAddress | null;
+  billing_address?: OrderBillingAddress | null;
+  bill_use_delivery_address?: boolean;
   notes: string;
   delivery_date: string;
   is_home_delivery: boolean;

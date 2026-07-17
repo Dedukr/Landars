@@ -12,6 +12,15 @@ import AlertMessage from "@/components/AlertMessage";
 import PageHeader from "@/components/PageHeader";
 import { formatUserDisplayName } from "@/lib/userName";
 
+interface AddressFields {
+  company_name?: string;
+  contact_name?: string;
+  address_line: string;
+  address_line2: string;
+  city: string;
+  postal_code: string;
+}
+
 interface ProfileData {
   user: {
     id: number;
@@ -23,13 +32,17 @@ interface ProfileData {
   };
   profile: {
     phone: string;
+    notes?: string;
+    bill_use_delivery_address: boolean;
+    bill_company_name: string;
+    bill_contact_name: string;
+    bill_address_line: string;
+    bill_address_line2: string;
+    bill_city: string;
+    bill_postal_code: string;
+    billing_address: AddressFields;
   } | null;
-  address: {
-    address_line: string;
-    address_line2: string;
-    city: string;
-    postal_code: string;
-  } | null;
+  address: AddressFields | null;
 }
 
 export default function ProfilePage() {
@@ -62,6 +75,13 @@ export default function ProfilePage() {
     address_line2: "",
     city: "",
     postal_code: "",
+    bill_use_delivery_address: true,
+    bill_company_name: "",
+    bill_contact_name: "",
+    bill_address_line: "",
+    bill_address_line2: "",
+    bill_city: "",
+    bill_postal_code: "",
   });
 
   // Fetch profile data
@@ -86,6 +106,14 @@ export default function ProfilePage() {
         address_line2: data.address?.address_line2 || "",
         city: data.address?.city || "",
         postal_code: data.address?.postal_code || "",
+        bill_use_delivery_address:
+          data.profile?.bill_use_delivery_address ?? true,
+        bill_company_name: data.profile?.bill_company_name || "",
+        bill_contact_name: data.profile?.bill_contact_name || "",
+        bill_address_line: data.profile?.bill_address_line || "",
+        bill_address_line2: data.profile?.bill_address_line2 || "",
+        bill_city: data.profile?.bill_city || "",
+        bill_postal_code: data.profile?.bill_postal_code || "",
       });
     } catch (err) {
       console.error("Failed to fetch profile:", err);
@@ -98,12 +126,39 @@ export default function ProfilePage() {
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
-    const { name, value } = e.target;
+    const { name, value, type } = e.target;
+    const checked =
+      type === "checkbox" && "checked" in e.target
+        ? (e.target as HTMLInputElement).checked
+        : undefined;
     setFormData((prev) => ({
       ...prev,
-      [name]: value,
+      [name]: type === "checkbox" ? checked : value,
     }));
   };
+
+  const effectiveBillingAddress = formData.bill_use_delivery_address
+    ? {
+        company_name: formData.bill_company_name,
+        contact_name: formData.bill_contact_name,
+        address_line: formData.address_line,
+        address_line2: formData.address_line2,
+        city: formData.city,
+        postal_code: formData.postal_code,
+      }
+    : {
+        company_name: formData.bill_company_name,
+        contact_name: formData.bill_contact_name,
+        address_line: formData.bill_address_line,
+        address_line2: formData.bill_address_line2,
+        city: formData.bill_city,
+        postal_code: formData.bill_postal_code,
+      };
+
+  const displayedBillingAddress =
+    !isEditing && profileData?.profile?.billing_address
+      ? profileData.profile.billing_address
+      : effectiveBillingAddress;
 
   const handleSave = async () => {
     try {
@@ -122,6 +177,37 @@ export default function ProfilePage() {
         return;
       }
 
+      if (!formData.bill_use_delivery_address) {
+        const billingRequired = [
+          {
+            key: "bill_address_line" as const,
+            label: "Billing address line 1",
+          },
+          { key: "bill_city" as const, label: "Billing city" },
+          {
+            key: "bill_postal_code" as const,
+            label: "Billing postal code",
+          },
+        ];
+        const missing = billingRequired.find(
+          (field) => !formData[field.key].trim()
+        );
+        if (missing) {
+          setError(`${missing.label} is required`);
+          setSaving(false);
+          return;
+        }
+        if (
+          !/^[A-Z]{1,2}[0-9]{1,2}[A-Z]?[0-9][A-Z]{2}$/i.test(
+            formData.bill_postal_code.replace(/\s/g, "")
+          )
+        ) {
+          setError("Please enter a valid UK postal code for billing");
+          setSaving(false);
+          return;
+        }
+      }
+
       const updateData = {
         first_name: formData.first_name.trim(),
         surname: formData.surname.trim(),
@@ -131,6 +217,15 @@ export default function ProfilePage() {
           address_line2: formData.address_line2,
           city: formData.city,
           postal_code: formData.postal_code,
+        },
+        bill_use_delivery_address: formData.bill_use_delivery_address,
+        billing_address: {
+          bill_company_name: formData.bill_company_name,
+          bill_contact_name: formData.bill_contact_name,
+          bill_address_line: formData.bill_address_line,
+          bill_address_line2: formData.bill_address_line2,
+          bill_city: formData.bill_city,
+          bill_postal_code: formData.bill_postal_code,
         },
       };
 
@@ -175,6 +270,14 @@ export default function ProfilePage() {
         address_line2: profileData.address?.address_line2 || "",
         city: profileData.address?.city || "",
         postal_code: profileData.address?.postal_code || "",
+        bill_use_delivery_address:
+          profileData.profile?.bill_use_delivery_address ?? true,
+        bill_company_name: profileData.profile?.bill_company_name || "",
+        bill_contact_name: profileData.profile?.bill_contact_name || "",
+        bill_address_line: profileData.profile?.bill_address_line || "",
+        bill_address_line2: profileData.profile?.bill_address_line2 || "",
+        bill_city: profileData.profile?.bill_city || "",
+        bill_postal_code: profileData.profile?.bill_postal_code || "",
       });
     }
     setIsEditing(false);
@@ -312,7 +415,7 @@ export default function ProfilePage() {
             {success}
           </AlertMessage>
         )}
-        {error && (
+        {error && !isEditing && !showPasswordChange && (
           <AlertMessage variant="error" className="mb-6">
             {error}
           </AlertMessage>
@@ -448,10 +551,10 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Address Information */}
+        {/* Delivery Address */}
         <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--sidebar-border)] p-6 shadow-sm mb-6">
           <h2 className="text-xl font-semibold text-[var(--foreground)] mb-6">
-            Address Information
+            Delivery Address
           </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -539,6 +642,141 @@ export default function ProfilePage() {
           </div>
         </div>
 
+        {/* Billing Address */}
+        <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--sidebar-border)] p-6 shadow-sm mb-6">
+          <h2 className="text-xl font-semibold text-[var(--foreground)] mb-2">
+            Billing Address
+          </h2>
+          <p className="text-sm text-[var(--muted-foreground)] mb-6">
+            Used for invoices and payment records.
+          </p>
+
+          {isEditing ? (
+            <>
+              <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Input
+                  label="Company name (optional)"
+                  name="bill_company_name"
+                  value={formData.bill_company_name}
+                  onChange={handleInputChange}
+                  placeholder="Company or organisation name"
+                />
+                <Input
+                  label="Contact name (optional)"
+                  name="bill_contact_name"
+                  value={formData.bill_contact_name}
+                  onChange={handleInputChange}
+                  placeholder="Billing contact person"
+                />
+              </div>
+
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  name="bill_use_delivery_address"
+                  checked={formData.bill_use_delivery_address}
+                  onChange={handleInputChange}
+                  className="mt-1 rounded border-[var(--sidebar-border)]"
+                />
+                <span className="text-sm text-[var(--foreground)]">
+                  Use your delivery address as billing address
+                </span>
+              </label>
+
+              {!formData.bill_use_delivery_address ? (
+                <div className="animate-billing-expand mt-6 pt-6 border-t border-[var(--sidebar-border)]">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <Input
+                      label="Billing Address Line 1 *"
+                      name="bill_address_line"
+                      value={formData.bill_address_line}
+                      onChange={handleInputChange}
+                      placeholder="Street address, P.O. box, etc."
+                      required
+                    />
+                    <Input
+                      label="Billing Address Line 2"
+                      name="bill_address_line2"
+                      value={formData.bill_address_line2}
+                      onChange={handleInputChange}
+                      placeholder="Apartment, suite, unit, building, floor, etc."
+                    />
+                    <Input
+                      label="Billing City *"
+                      name="bill_city"
+                      value={formData.bill_city}
+                      onChange={handleInputChange}
+                      placeholder="Enter billing city"
+                      required
+                    />
+                    <Input
+                      label="Billing Postal Code *"
+                      name="bill_postal_code"
+                      value={formData.bill_postal_code}
+                      onChange={handleInputChange}
+                      placeholder="Enter billing postal code"
+                      required
+                    />
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <div className="mb-4 text-sm text-[var(--muted-foreground)]">
+                {profileData?.profile?.bill_use_delivery_address
+                  ? "Same as delivery address"
+                  : "Separate billing address"}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {[
+                  {
+                    label: "Company name",
+                    value: displayedBillingAddress.company_name,
+                    empty: "No company name",
+                  },
+                  {
+                    label: "Contact name",
+                    value: displayedBillingAddress.contact_name,
+                    empty: "No contact name",
+                  },
+                  {
+                    label: "Address Line 1",
+                    value: displayedBillingAddress.address_line,
+                    empty: "No address set",
+                  },
+                  {
+                    label: "Address Line 2",
+                    value: displayedBillingAddress.address_line2,
+                    empty: "No additional address",
+                  },
+                  {
+                    label: "City",
+                    value: displayedBillingAddress.city,
+                    empty: "No city set",
+                  },
+                  {
+                    label: "Postal Code",
+                    value: displayedBillingAddress.postal_code,
+                    empty: "No postal code set",
+                  },
+                ].map((field) => (
+                  <div key={field.label} className="space-y-4">
+                    <div className="border-b border-[var(--sidebar-border)] pb-2">
+                      <label className="block text-sm font-medium text-[var(--muted-foreground)] mb-2">
+                        {field.label}
+                      </label>
+                      <div className="text-lg font-semibold text-[var(--foreground)]">
+                        {field.value || field.empty}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
         {/* Password Reset Section */}
         <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--sidebar-border)] p-6 shadow-sm mb-6">
           <div className="flex items-center justify-between mb-6">
@@ -577,6 +815,12 @@ export default function ProfilePage() {
                 >
                   Enter your current password and choose a new secure password.
                 </p>
+
+                {error && (
+                  <AlertMessage variant="error" className="mb-4">
+                    {error}
+                  </AlertMessage>
+                )}
 
                 {[
                   {
@@ -692,17 +936,24 @@ export default function ProfilePage() {
 
         {/* Action Buttons */}
         {isEditing && (
-          <div className="flex justify-end space-x-4">
-            <Button onClick={handleCancel} variant="outline" disabled={saving}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={saving}
-              className="min-w-[120px]"
-            >
-              {saving ? "Saving..." : "Save Changes"}
-            </Button>
+          <div className="space-y-4">
+            {error && (
+              <AlertMessage variant="error">
+                {error}
+              </AlertMessage>
+            )}
+            <div className="flex justify-end space-x-4">
+              <Button onClick={handleCancel} variant="outline" disabled={saving}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSave}
+                disabled={saving}
+                className="min-w-[120px]"
+              >
+                {saving ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
           </div>
         )}
       </div>

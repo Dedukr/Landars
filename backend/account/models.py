@@ -184,6 +184,47 @@ class Address(models.Model):
         return self.postal_code or "No Address"
 
 
+class BillingAddress(models.Model):
+    """
+    Billing address belonging to a customer.
+
+    Used as the customer's saved billing address (via Profile.billing_address)
+    and as a per-order billing snapshot (via Order.billing_address).
+    """
+
+    customer = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name="billing_addresses",
+    )
+    company_name = models.CharField(max_length=255, blank=True, null=True)
+    contact_name = models.CharField(max_length=255, blank=True, null=True)
+    address_line = models.CharField(max_length=255, blank=True, null=True)
+    address_line2 = models.CharField(max_length=255, blank=True, null=True)
+    city = models.CharField(max_length=100, blank=True, null=True)
+    postal_code = models.CharField(max_length=20, blank=True, null=True)
+
+    class Meta:
+        verbose_name_plural = "Billing addresses"
+
+    def __str__(self):
+        label = (self.company_name or self.contact_name or "").strip()
+        postal = (self.postal_code or "").strip()
+        if label and postal:
+            return f"{label} ({postal})"
+        return label or postal or f"Billing address #{self.pk or 'new'}"
+
+    def as_dict(self) -> dict[str, str | None]:
+        return {
+            "company_name": (self.company_name or "").strip() or None,
+            "contact_name": (self.contact_name or "").strip() or None,
+            "address_line": self.address_line,
+            "address_line2": self.address_line2,
+            "city": self.city,
+            "postal_code": self.postal_code,
+        }
+
+
 class Profile(models.Model):
     user = models.OneToOneField(
         CustomUser, on_delete=models.CASCADE, related_name="profile"
@@ -194,9 +235,64 @@ class Profile(models.Model):
         Address, on_delete=models.CASCADE, related_name="profiles", null=True
     )
     notes = models.TextField(blank=True, null=True)
+    bill_use_delivery_address = models.BooleanField(default=True)
+    billing_address = models.ForeignKey(
+        BillingAddress,
+        on_delete=models.SET_NULL,
+        related_name="profiles",
+        null=True,
+        blank=True,
+    )
 
     def __str__(self):
         return f"{self.user.name}'s Profile"
+
+    def billing_address_fields(self, *, delivery_address=None) -> dict[str, str | None]:
+        """
+        Effective billing address for display.
+
+        - If bill_use_delivery_address: use delivery street, keep company/contact
+          from the saved BillingAddress when present.
+        - Otherwise: use the saved BillingAddress row.
+        """
+        saved = self.billing_address
+        company_name = (
+            (saved.company_name or "").strip() or None if saved else None
+        )
+        contact_name = (
+            (saved.contact_name or "").strip() or None if saved else None
+        )
+
+        if self.bill_use_delivery_address:
+            address = delivery_address or self.address
+            if address:
+                return {
+                    "company_name": company_name,
+                    "contact_name": contact_name,
+                    "address_line": address.address_line,
+                    "address_line2": address.address_line2,
+                    "city": address.city,
+                    "postal_code": address.postal_code,
+                }
+            return {
+                "company_name": company_name,
+                "contact_name": contact_name,
+                "address_line": None,
+                "address_line2": None,
+                "city": None,
+                "postal_code": None,
+            }
+
+        if saved:
+            return saved.as_dict()
+        return {
+            "company_name": None,
+            "contact_name": None,
+            "address_line": None,
+            "address_line2": None,
+            "city": None,
+            "postal_code": None,
+        }
 
 
 class PaymentInformation(models.Model):

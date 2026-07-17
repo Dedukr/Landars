@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from rest_framework.test import APIClient
 
 from .name_utils import split_legacy_name
 from .order_names import require_customer_names
@@ -154,6 +155,199 @@ class CustomUserModelTest(TestCase):
         self.assertEqual(user.surname, "Нова")
         self.assertEqual(user.name, "Юлія Нова")
         self.assertEqual(user.get_display_name(), "Юлія Нова")
+
+    def test_admin_form_requires_complete_billing_street_when_partial(self):
+        from .forms import CustomUserForm
+
+        user = User.objects.create_user(**self.user_data)
+        form = CustomUserForm(
+            data={
+                "first_name": user.first_name,
+                "surname": user.surname,
+                "email": user.email,
+                "password": user.password,
+                "is_email_verified": user.is_email_verified,
+                "phone": "",
+                "address_line": "",
+                "address_line2": "",
+                "city": "",
+                "postal_code": "",
+                "notes": "",
+                "bill_company_name": "",
+                "bill_contact_name": "",
+                "bill_address_line": "",
+                "bill_address_line2": "",
+                "bill_city": "London",
+                "bill_postal_code": "SW1A 1AA",
+            },
+            instance=user,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("bill_address_line", form.errors)
+
+    def test_admin_form_accepts_complete_billing_address(self):
+        from .forms import CustomUserForm
+
+        user = User.objects.create_user(**self.user_data)
+        form = CustomUserForm(
+            data={
+                "first_name": user.first_name,
+                "surname": user.surname,
+                "email": user.email,
+                "password": user.password,
+                "is_email_verified": user.is_email_verified,
+                "phone": "",
+                "address_line": "",
+                "address_line2": "",
+                "city": "",
+                "postal_code": "",
+                "notes": "",
+                "bill_company_name": "Acme Ltd",
+                "bill_contact_name": "",
+                "bill_address_line": "1 Billing St",
+                "bill_address_line2": "Suite 2",
+                "bill_city": "London",
+                "bill_postal_code": "SW1A 1AA",
+            },
+            instance=user,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        form.save()
+        user.profile.refresh_from_db()
+        self.assertIsNotNone(user.profile.billing_address)
+        self.assertEqual(user.profile.billing_address.address_line2, "Suite 2")
+
+    def test_profile_billing_address_empty_without_saved_row(self):
+        user = User.objects.create_user(**self.user_data)
+        profile = Profile.objects.create(user=user)
+        delivery = Address.objects.create(
+            address_line="10 Delivery Rd",
+            address_line2="Flat 2",
+            city="London",
+            postal_code="SW1A 1AA",
+        )
+        profile.address = delivery
+        profile.save()
+
+        self.assertEqual(
+            profile.billing_address_fields(),
+            {
+                "company_name": None,
+                "contact_name": None,
+                "address_line": None,
+                "address_line2": None,
+                "city": None,
+                "postal_code": None,
+            },
+        )
+
+    def test_profile_separate_billing_address(self):
+        from .models import BillingAddress
+
+        user = User.objects.create_user(**self.user_data)
+        billing = BillingAddress.objects.create(
+            customer=user,
+            address_line="1 Billing St",
+            city="Manchester",
+            postal_code="M1 1AA",
+        )
+        profile = Profile.objects.create(
+            user=user,
+            billing_address=billing,
+        )
+
+        self.assertEqual(
+            profile.billing_address_fields()["address_line"],
+            "1 Billing St",
+        )
+
+    def test_profile_billing_includes_company_and_contact(self):
+        from .models import BillingAddress
+
+        user = User.objects.create_user(**self.user_data)
+        billing = BillingAddress.objects.create(
+            customer=user,
+            company_name="Acme Ltd",
+            contact_name="Jane Doe",
+            address_line="1 Billing St",
+            city="Manchester",
+            postal_code="M1 1AA",
+        )
+        profile = Profile.objects.create(
+            user=user,
+            billing_address=billing,
+        )
+        fields = profile.billing_address_fields()
+        self.assertEqual(fields["company_name"], "Acme Ltd")
+        self.assertEqual(fields["contact_name"], "Jane Doe")
+        self.assertEqual(fields["address_line"], "1 Billing St")
+
+
+class ProfileBillingValidationApiTest(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            name="Bill User",
+            email="billuser@example.com",
+            password="pass12345",
+        )
+        Profile.objects.get_or_create(user=self.user)
+        self.client.force_authenticate(user=self.user)
+
+    def test_partial_billing_street_requires_complete_fields(self):
+        response = self.client.put(
+            "/api/auth/profile/update/",
+            {
+                "first_name": "Bill",
+                "surname": "User",
+                "billing_address": {
+                    "bill_company_name": "",
+                    "bill_contact_name": "",
+                    "bill_address_line": "1 Billing St",
+                    "bill_address_line2": "",
+                    "bill_city": "",
+                    "bill_postal_code": "M1 1AA",
+                },
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("errors", response.data)
+        self.assertIn("bill_city", response.data["errors"])
+
+    def test_billing_accepts_complete_address(self):
+        response = self.client.put(
+            "/api/auth/profile/update/",
+            {
+                "first_name": "Bill",
+                "surname": "User",
+                "billing_address": {
+                    "bill_company_name": "Acme",
+                    "bill_contact_name": "",
+                    "bill_address_line": "1 Billing St",
+                    "bill_address_line2": "",
+                    "bill_city": "Manchester",
+                    "bill_postal_code": "M1 1AA",
+                },
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.user.profile.refresh_from_db()
+        self.assertIsNotNone(self.user.profile.billing_address)
+        self.assertEqual(
+            self.user.profile.billing_address.address_line, "1 Billing St"
+        )
+        self.assertEqual(self.user.profile.billing_address.city, "Manchester")
+
+
+class CustomUserEmailTests(TestCase):
+    def setUp(self):
+        self.user_data = {
+            "name": "Test User",
+            "email": "test@example.com",
+            "password": "testpass123",
+        }
 
     def test_duplicate_email_raises_error(self):
         """Test that duplicate emails raise an error"""

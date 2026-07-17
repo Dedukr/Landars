@@ -249,8 +249,22 @@ input[type="radio"] {
   }
 }
 
-.animate-fade-in-up {
-  animation: fade-in-up 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+@keyframes billing-expand {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    max-height: 600px;
+    transform: translateY(0);
+  }
+}
+
+.animate-billing-expand {
+  animation: billing-expand 0.28s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  overflow: hidden;
 }
 
 /* Form input focus states */

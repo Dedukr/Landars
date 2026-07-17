@@ -5,6 +5,7 @@ from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
+from .billing_address import upsert_profile_billing_address
 from .forms import CustomUserCreationForm, CustomUserForm
 from .models import Address, CustomUser, Profile
 
@@ -91,6 +92,21 @@ class CustomUserAdmin(UserAdmin):
                 ),
             },
         ),
+        (
+            _("Billing address"),
+            {
+                "classes": ("wide",),
+                "fields": (
+                    "bill_use_delivery_address",
+                    "bill_company_name",
+                    "bill_contact_name",
+                    "bill_address_line",
+                    "bill_address_line2",
+                    "bill_city",
+                    "bill_postal_code",
+                ),
+            },
+        ),
     ]
 
     def get_fieldsets(self, request, obj=None):
@@ -102,7 +118,7 @@ class CustomUserAdmin(UserAdmin):
         if obj and not obj.is_staff:
             fieldsets = fieldsets + [
                 (
-                    _("Profile"),
+                    _("Delivery address"),
                     {
                         "fields": (
                             "phone",
@@ -111,6 +127,20 @@ class CustomUserAdmin(UserAdmin):
                             "city",
                             "postal_code",
                             "notes",
+                        )
+                    },
+                ),
+                (
+                    _("Billing address"),
+                    {
+                        "fields": (
+                            "bill_use_delivery_address",
+                            "bill_company_name",
+                            "bill_contact_name",
+                            "bill_address_line",
+                            "bill_address_line2",
+                            "bill_city",
+                            "bill_postal_code",
                         )
                     },
                 ),
@@ -214,6 +244,36 @@ class CustomUserAdmin(UserAdmin):
                 notes = (form.cleaned_data.get("notes") or "").strip()
                 if notes and not (profile.notes or "").strip():
                     profile.notes = notes
+
+                if "bill_use_delivery_address" in form.cleaned_data:
+                    profile.bill_use_delivery_address = bool(
+                        form.cleaned_data.get("bill_use_delivery_address", True)
+                    )
+
+                if any(
+                    key in form.cleaned_data
+                    for key in (
+                        "bill_company_name",
+                        "bill_contact_name",
+                        "bill_address_line",
+                        "bill_address_line2",
+                        "bill_city",
+                        "bill_postal_code",
+                    )
+                ):
+                    upsert_profile_billing_address(
+                        profile,
+                        {
+                            "company_name": form.cleaned_data.get("bill_company_name"),
+                            "contact_name": form.cleaned_data.get("bill_contact_name"),
+                            "address_line": form.cleaned_data.get("bill_address_line"),
+                            "address_line2": form.cleaned_data.get(
+                                "bill_address_line2"
+                            ),
+                            "city": form.cleaned_data.get("bill_city"),
+                            "postal_code": form.cleaned_data.get("bill_postal_code"),
+                        },
+                    )
 
                 profile.save()
 

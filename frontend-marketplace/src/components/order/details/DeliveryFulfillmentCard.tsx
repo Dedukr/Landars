@@ -19,22 +19,37 @@ function formatStructuredAddress(order: MarketplaceOrderDetail): string | null {
   return flat || null;
 }
 
+function formatBillingAddress(order: MarketplaceOrderDetail): string | null {
+  const b = order.billing_address;
+  if (!b) return null;
+  const parts = [
+    b.company_name,
+    b.contact_name,
+    b.address_line,
+    b.address_line2,
+    b.city,
+    b.postal_code,
+  ].filter((p) => p && String(p).trim());
+  return parts.length ? parts.join(", ") : null;
+}
+
 export function DeliveryFulfillmentCard({ order }: { order: MarketplaceOrderDetail }) {
   const address = formatStructuredAddress(order);
+  const billingAddress = formatBillingAddress(order);
   const deliveryDate = order.delivery_date
     ? formatOrderDateLong(order.delivery_date)
     : null;
   const deliveryOption = order.is_home_delivery ? "Home delivery" : "Post";
   const notes = order.notes?.trim();
 
-  if (!address && !deliveryDate && !notes) {
+  if (!address && !billingAddress && !deliveryDate && !notes) {
     return null;
   }
 
   return (
-    <OrderSectionCard aria-labelledby="fulfilment-heading">
+    <OrderSectionCard aria-labelledby="fulfillment-heading">
       <h2
-        id="fulfilment-heading"
+        id="fulfillment-heading"
         className="mb-4 text-lg font-bold sm:text-xl"
         style={{ color: "var(--foreground)" }}
       >
@@ -57,6 +72,28 @@ export function DeliveryFulfillmentCard({ order }: { order: MarketplaceOrderDeta
                 style={{ color: "var(--muted-foreground)" }}
               >
                 {address}
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        {billingAddress ? (
+          <div className="flex gap-3">
+            <MapPin
+              className="mt-0.5 h-5 w-5 shrink-0"
+              style={{ color: "var(--accent)" }}
+              aria-hidden
+            />
+            <div>
+              <p className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>
+                Billing address
+                {order.bill_use_delivery_address ? " (same as delivery)" : ""}
+              </p>
+              <p
+                className="mt-1 text-sm leading-relaxed"
+                style={{ color: "var(--muted-foreground)" }}
+              >
+                {billingAddress}
               </p>
             </div>
           </div>

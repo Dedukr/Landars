@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
-from .models import Address, CustomUser, PaymentInformation, Profile
+from .models import Address, BillingAddress, CustomUser, PaymentInformation, Profile
+from .user_payload import billing_address_flat
 
 
 class AddressSerializer(serializers.ModelSerializer):
@@ -15,11 +16,32 @@ class AddressSerializer(serializers.ModelSerializer):
         ]
 
 
+class BillingAddressSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BillingAddress
+        fields = [
+            "id",
+            "company_name",
+            "contact_name",
+            "address_line",
+            "address_line2",
+            "city",
+            "postal_code",
+        ]
+
+
 class ProfileSerializer(serializers.ModelSerializer):
     address = AddressSerializer(read_only=True)
     address_id = serializers.IntegerField(
         write_only=True, required=False, allow_null=True
     )
+    billing_address = serializers.SerializerMethodField()
+    bill_company_name = serializers.SerializerMethodField()
+    bill_contact_name = serializers.SerializerMethodField()
+    bill_address_line = serializers.SerializerMethodField()
+    bill_address_line2 = serializers.SerializerMethodField()
+    bill_city = serializers.SerializerMethodField()
+    bill_postal_code = serializers.SerializerMethodField()
 
     class Meta:
         model = Profile
@@ -29,9 +51,49 @@ class ProfileSerializer(serializers.ModelSerializer):
             "address",
             "address_id",
             "notes",
+            "bill_use_delivery_address",
+            "bill_company_name",
+            "bill_contact_name",
+            "bill_address_line",
+            "bill_address_line2",
+            "bill_city",
+            "bill_postal_code",
+            "billing_address",
         ]
-        read_only_fields = ["id"]
+        read_only_fields = [
+            "id",
+            "billing_address",
+            "bill_company_name",
+            "bill_contact_name",
+            "bill_address_line",
+            "bill_address_line2",
+            "bill_city",
+            "bill_postal_code",
+        ]
 
+    def get_billing_address(self, obj):
+        return obj.billing_address_fields()
+
+    def _flat(self, obj):
+        return billing_address_flat(obj.billing_address)
+
+    def get_bill_company_name(self, obj):
+        return self._flat(obj)["bill_company_name"]
+
+    def get_bill_contact_name(self, obj):
+        return self._flat(obj)["bill_contact_name"]
+
+    def get_bill_address_line(self, obj):
+        return self._flat(obj)["bill_address_line"]
+
+    def get_bill_address_line2(self, obj):
+        return self._flat(obj)["bill_address_line2"]
+
+    def get_bill_city(self, obj):
+        return self._flat(obj)["bill_city"]
+
+    def get_bill_postal_code(self, obj):
+        return self._flat(obj)["bill_postal_code"]
 
 class PaymentInformationSerializer(serializers.ModelSerializer):
     card_number = serializers.CharField(

@@ -106,7 +106,23 @@ class InvoiceAdmin(admin.ModelAdmin):
         if not obj.billing_address_snapshot:
             return "-"
         snapshot = obj.billing_address_snapshot
+        customer = obj.customer_snapshot or {}
         lines = []
+        company_name = (snapshot.get("company_name") or "").strip()
+        contact_name = (snapshot.get("contact_name") or "").strip()
+        if company_name:
+            lines.append(f"<strong>{company_name}</strong>")
+        full_name = (
+            contact_name
+            or customer.get("name")
+            or " ".join(
+                filter(None, [customer.get("first_name"), customer.get("surname")])
+            )
+        ).strip()
+        if full_name:
+            lines.append(
+                f"<strong>{full_name}</strong>" if not company_name else full_name
+            )
         if snapshot.get("address_line"):
             lines.append(snapshot["address_line"])
         if snapshot.get("address_line2"):
@@ -367,7 +383,23 @@ class CreditNoteAdmin(admin.ModelAdmin):
         if not obj.billing_address_snapshot:
             return "-"
         snapshot = obj.billing_address_snapshot
+        customer = obj.customer_snapshot or {}
         lines = []
+        company_name = (snapshot.get("company_name") or "").strip()
+        contact_name = (snapshot.get("contact_name") or "").strip()
+        if company_name:
+            lines.append(f"<strong>{company_name}</strong>")
+        full_name = (
+            contact_name
+            or customer.get("name")
+            or " ".join(
+                filter(None, [customer.get("first_name"), customer.get("surname")])
+            )
+        ).strip()
+        if full_name:
+            lines.append(
+                f"<strong>{full_name}</strong>" if not company_name else full_name
+            )
         if snapshot.get("address_line"):
             lines.append(snapshot["address_line"])
         if snapshot.get("address_line2"):

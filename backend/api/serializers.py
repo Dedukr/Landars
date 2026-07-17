@@ -943,6 +943,7 @@ class OrderSerializer(serializers.ModelSerializer):
     customer_address = serializers.SerializerMethodField()
     invoice_link = serializers.SerializerMethodField()
     address = AddressSerializer(read_only=True)
+    billing_address = serializers.SerializerMethodField()
 
     # --- Shipping / Sendcloud fields (read-only, sourced from shipping_details) ---
     shipping_method_id = serializers.SerializerMethodField()
@@ -972,6 +973,8 @@ class OrderSerializer(serializers.ModelSerializer):
             "customer_phone",
             "customer_address",
             "address",
+            "billing_address",
+            "bill_use_delivery_address",
             "notes",
             "delivery_date",
             "is_home_delivery",
@@ -1006,6 +1009,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "total_price",
             "total_items",
             "invoice_link",
+            "billing_address",
         ]
 
     def _shipping(self, obj):
@@ -1050,6 +1054,9 @@ class OrderSerializer(serializers.ModelSerializer):
             address = obj.address
             return f"{address.address_line + ', ' if address.address_line else ''}{address.address_line2 + ', ' if address.address_line2 else ''}{address.city + ', ' if address.city else ''}{address.postal_code if address.postal_code else ''}"
         return obj.customer_address
+
+    def get_billing_address(self, obj):
+        return obj.billing_address_fields()
 
     def get_shipping_method_id(self, obj):
         s = self._shipping(obj)

@@ -645,15 +645,15 @@
                         <strong>Bill to</strong>
                     </div>
                     <div class="break-word">
-                        {% if invoice.customer_snapshot.first_name or invoice.customer_snapshot.surname %}
-                        {% if invoice.customer_snapshot.first_name %}
-                        <div>{{ invoice.customer_snapshot.first_name }}</div>
+                        {% if invoice.billing_address_snapshot.company_name %}
+                        <div>{{ invoice.billing_address_snapshot.company_name }}</div>
                         {% endif %}
-                        {% if invoice.customer_snapshot.surname %}
-                        <div>{{ invoice.customer_snapshot.surname }}</div>
-                        {% endif %}
-                        {% else %}
-                        {{ invoice.customer_snapshot.name }}
+                        {% if invoice.billing_address_snapshot.contact_name %}
+                        <div>{{ invoice.billing_address_snapshot.contact_name }}</div>
+                        {% elif invoice.customer_snapshot.name %}
+                        <div>{{ invoice.customer_snapshot.name }}</div>
+                        {% elif invoice.customer_snapshot.first_name or invoice.customer_snapshot.surname %}
+                        <div>{% if invoice.customer_snapshot.first_name %}{{ invoice.customer_snapshot.first_name }}{% endif %}{% if invoice.customer_snapshot.first_name and invoice.customer_snapshot.surname %} {% endif %}{% if invoice.customer_snapshot.surname %}{{ invoice.customer_snapshot.surname }}{% endif %}</div>
                         {% endif %}
                     </div>
                 </div>

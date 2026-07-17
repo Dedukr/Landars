@@ -35,6 +35,13 @@ interface ShippingFormData {
   postal_code: string;
   notes: string;
   saveShippingInfo: boolean;
+  bill_use_delivery_address: boolean;
+  bill_company_name: string;
+  bill_contact_name: string;
+  bill_address_line: string;
+  bill_address_line2: string;
+  bill_city: string;
+  bill_postal_code: string;
 }
 
 // Payment form data is now handled by Stripe Elements
@@ -49,6 +56,12 @@ interface ProfileData {
   };
   profile: {
     phone: string;
+    bill_company_name?: string;
+    bill_contact_name?: string;
+    bill_address_line?: string;
+    bill_address_line2?: string;
+    bill_city?: string;
+    bill_postal_code?: string;
   } | null;
   address: {
     address_line: string;
@@ -201,6 +214,13 @@ export default function CheckoutPage() {
     postal_code: "",
     notes: "",
     saveShippingInfo: false,
+    bill_use_delivery_address: true,
+    bill_company_name: "",
+    bill_contact_name: "",
+    bill_address_line: "",
+    bill_address_line2: "",
+    bill_city: "",
+    bill_postal_code: "",
   });
 
   // Payment form is now handled by Stripe Elements
@@ -478,6 +498,13 @@ export default function CheckoutPage() {
         postal_code: data.address?.postal_code || "",
         notes: "",
         saveShippingInfo: false,
+        bill_use_delivery_address: true,
+        bill_company_name: data.profile?.bill_company_name || "",
+        bill_contact_name: data.profile?.bill_contact_name || "",
+        bill_address_line: data.profile?.bill_address_line || "",
+        bill_address_line2: data.profile?.bill_address_line2 || "",
+        bill_city: data.profile?.bill_city || "",
+        bill_postal_code: data.profile?.bill_postal_code || "",
       });
     } catch (error) {
       console.error("Failed to fetch profile:", error);
@@ -738,6 +765,24 @@ export default function CheckoutPage() {
       newErrors.postal_code = "Please enter a valid UK postal code";
     }
 
+    if (!shippingForm.bill_use_delivery_address) {
+      if (!shippingForm.bill_address_line.trim()) {
+        newErrors.bill_address_line = "Billing address line 1 is required";
+      }
+      if (!shippingForm.bill_city.trim()) {
+        newErrors.bill_city = "Billing city is required";
+      }
+      if (!shippingForm.bill_postal_code.trim()) {
+        newErrors.bill_postal_code = "Billing postal code is required";
+      } else if (
+        !/^[A-Z]{1,2}[0-9]{1,2}[A-Z]?[0-9][A-Z]{2}$/i.test(
+          shippingForm.bill_postal_code.replace(/\s/g, "")
+        )
+      ) {
+        newErrors.bill_postal_code = "Please enter a valid UK postal code";
+      }
+    }
+
     // Post delivery: quotes must load; then either one auto-assigned tier or explicit pick
     const addressCompleteForQuotes =
       shippingForm.address_line.trim() &&
@@ -890,6 +935,15 @@ export default function CheckoutPage() {
           postal_code: string;
           country: string;
         };
+        bill_use_delivery_address: boolean;
+        billing_address?: {
+          bill_company_name: string;
+          bill_contact_name: string;
+          bill_address_line: string;
+          bill_address_line2: string;
+          bill_city: string;
+          bill_postal_code: string;
+        };
         delivery_fee: string;
         shipping_method_id?: number;
         shipping_carrier?: string;
@@ -915,7 +969,20 @@ export default function CheckoutPage() {
           postal_code: shippingForm.postal_code,
           country: "GB", // Default to UK
         },
+        bill_use_delivery_address: shippingForm.bill_use_delivery_address,
       };
+
+      // Separate billing only when unchecked — leave order billing empty when same as shipping.
+      if (!shippingForm.bill_use_delivery_address) {
+        orderData.billing_address = {
+          bill_company_name: shippingForm.bill_company_name.trim(),
+          bill_contact_name: shippingForm.bill_contact_name.trim(),
+          bill_address_line: shippingForm.bill_address_line.trim(),
+          bill_address_line2: shippingForm.bill_address_line2.trim(),
+          bill_city: shippingForm.bill_city.trim(),
+          bill_postal_code: shippingForm.bill_postal_code.trim(),
+        };
+      }
 
       // Courier metadata (post / home-delivery parcel): use resolved quote when only one tier
       if (!cartIsHomeDelivery && resolvedPostShipmentQuote?.price) {
@@ -925,17 +992,39 @@ export default function CheckoutPage() {
         orderData.shipping_cost = resolvedPostShipmentQuote.price;
       }
 
-      // Name and phone are required server-side; persist before creating the order.
+      // Name, phone, and billing are required for invoices; persist before creating the order.
       try {
         await httpClient.put("/api/auth/profile/update/", {
           first_name: shippingForm.first_name.trim(),
           surname: shippingForm.surname.trim(),
           phone: shippingForm.phone.trim(),
+          billing_address: {
+            bill_company_name: shippingForm.bill_company_name.trim(),
+            bill_contact_name: shippingForm.bill_contact_name.trim(),
+            bill_address_line: shippingForm.bill_address_line.trim(),
+            bill_address_line2: shippingForm.bill_address_line2.trim(),
+            bill_city: shippingForm.bill_city.trim(),
+            bill_postal_code: shippingForm.bill_postal_code.trim(),
+          },
         });
       } catch (profileError) {
         console.error("Failed to save customer details:", profileError);
+        const message =
+          profileError &&
+          typeof profileError === "object" &&
+          "response" in profileError &&
+          profileError.response &&
+          typeof profileError.response === "object" &&
+          "data" in profileError.response &&
+          profileError.response.data &&
+          typeof profileError.response.data === "object" &&
+          "error" in profileError.response.data
+            ? String(
+                (profileError.response.data as { error: string }).error
+              )
+            : "Could not save your details. Please check the form and try again.";
         setErrors({
-          submit: "Could not save your details. Please check the form and try again.",
+          submit: message,
         });
         return;
       }
@@ -967,6 +1056,14 @@ export default function CheckoutPage() {
               city: shippingForm.city,
               postal_code: shippingForm.postal_code,
               country: "GB",
+            },
+            billing_address: {
+              bill_company_name: shippingForm.bill_company_name.trim(),
+              bill_contact_name: shippingForm.bill_contact_name.trim(),
+              bill_address_line: shippingForm.bill_address_line.trim(),
+              bill_address_line2: shippingForm.bill_address_line2.trim(),
+              bill_city: shippingForm.bill_city.trim(),
+              bill_postal_code: shippingForm.bill_postal_code.trim(),
             },
           });
         } catch (profileError) {
@@ -1058,7 +1155,7 @@ export default function CheckoutPage() {
           <div className="lg:grid lg:grid-cols-12 lg:gap-x-12 lg:items-start">
             {/* Shipping & Payment Forms (row 1 left on desktop) */}
             <div className="lg:col-span-8 lg:col-start-1 lg:row-start-1 space-y-8">
-              {/* Shipping Information */}
+              {/* Shipping Address */}
               <div
                 className="rounded-lg shadow-sm p-6"
                 style={{
@@ -1070,7 +1167,7 @@ export default function CheckoutPage() {
                   className="text-xl font-semibold mb-6"
                   style={{ color: "var(--foreground)" }}
                 >
-                  Shipping Information
+                  Shipping Address
                 </h2>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1226,6 +1323,134 @@ export default function CheckoutPage() {
                     </span>
                   </label>
                 </div>
+              </div>
+
+              {/* Billing Address */}
+              <div
+                className="rounded-lg shadow-sm p-6"
+                style={{
+                  background: "var(--card-bg)",
+                  border: "1px solid var(--sidebar-border)",
+                }}
+              >
+                <h2
+                  className="text-xl font-semibold mb-2"
+                  style={{ color: "var(--foreground)" }}
+                >
+                  Billing Address
+                </h2>
+                <p
+                  className="text-sm mb-6"
+                  style={{ color: "var(--muted-foreground)" }}
+                >
+                  Used for invoices and payment records.
+                </p>
+
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={shippingForm.bill_use_delivery_address}
+                    onChange={(e) =>
+                      setShippingForm({
+                        ...shippingForm,
+                        bill_use_delivery_address: e.target.checked,
+                      })
+                    }
+                    className="mt-1 rounded border-[var(--sidebar-border)]"
+                  />
+                  <span
+                    className="text-sm"
+                    style={{ color: "var(--foreground)" }}
+                  >
+                    Use your delivery address as billing address
+                  </span>
+                </label>
+
+                {!shippingForm.bill_use_delivery_address ? (
+                  <div className="animate-billing-expand mt-6 pt-6 border-t border-[var(--sidebar-border)]">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <Input
+                        label="Company name (optional)"
+                        value={shippingForm.bill_company_name}
+                        onChange={(e) =>
+                          setShippingForm({
+                            ...shippingForm,
+                            bill_company_name: e.target.value,
+                          })
+                        }
+                        placeholder="Company or organisation name"
+                        fullWidth
+                      />
+                      <Input
+                        label="Contact name (optional)"
+                        value={shippingForm.bill_contact_name}
+                        onChange={(e) =>
+                          setShippingForm({
+                            ...shippingForm,
+                            bill_contact_name: e.target.value,
+                          })
+                        }
+                        placeholder="Billing contact person"
+                        fullWidth
+                      />
+                      <Input
+                        label="Billing Address Line 1 *"
+                        value={shippingForm.bill_address_line}
+                        onChange={(e) =>
+                          setShippingForm({
+                            ...shippingForm,
+                            bill_address_line: e.target.value,
+                          })
+                        }
+                        error={errors.bill_address_line}
+                        placeholder="Street address, P.O. box, etc."
+                        required
+                        fullWidth
+                      />
+                      <Input
+                        label="Billing Address Line 2"
+                        value={shippingForm.bill_address_line2}
+                        onChange={(e) =>
+                          setShippingForm({
+                            ...shippingForm,
+                            bill_address_line2: e.target.value,
+                          })
+                        }
+                        error={errors.bill_address_line2}
+                        placeholder="Apartment, suite, unit, building, floor, etc."
+                        fullWidth
+                      />
+                      <Input
+                        label="Billing City *"
+                        value={shippingForm.bill_city}
+                        onChange={(e) =>
+                          setShippingForm({
+                            ...shippingForm,
+                            bill_city: e.target.value,
+                          })
+                        }
+                        error={errors.bill_city}
+                        placeholder="Enter billing city"
+                        required
+                        fullWidth
+                      />
+                      <Input
+                        label="Billing Postal Code *"
+                        value={shippingForm.bill_postal_code}
+                        onChange={(e) =>
+                          setShippingForm({
+                            ...shippingForm,
+                            bill_postal_code: e.target.value,
+                          })
+                        }
+                        error={errors.bill_postal_code}
+                        placeholder="Enter billing postal code"
+                        required
+                        fullWidth
+                      />
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               {!cartIsHomeDelivery ? (

@@ -32,7 +32,7 @@ from .email_utils import (
 )
 from .email_validators import validate_email_comprehensive, validate_email_field
 from .name_utils import split_legacy_name
-from .user_payload import user_payload
+from .user_payload import user_payload, user_profile_payload
 from .models import (
     Address,
     CustomUser,
@@ -365,38 +365,7 @@ def logout_view(request):
 def user_profile(request):
     """Get user profile - requires authentication"""
     try:
-        user = request.user
-        profile_data = {
-            "user": {
-                **user_payload(user, include_staff=True),
-                "last_login": user.last_login,
-            }
-        }
-
-        # Include profile information if it exists
-        if hasattr(user, "profile"):
-            profile = user.profile
-            profile_data["profile"] = {
-                "phone": profile.phone,
-                "notes": profile.notes,
-            }
-
-            # Include address information if it exists
-            if profile.address:
-                address = profile.address
-                profile_data["address"] = {
-                    "address_line": address.address_line,
-                    "address_line2": address.address_line2,
-                    "city": address.city,
-                    "postal_code": address.postal_code,
-                }
-            else:
-                profile_data["address"] = None
-        else:
-            profile_data["profile"] = None
-            profile_data["address"] = None
-
-        return Response(profile_data, status=status.HTTP_200_OK)
+        return Response(user_profile_payload(request.user), status=status.HTTP_200_OK)
     except Exception as e:
         logger.error(f"User profile error: {str(e)}")
         return Response(
@@ -551,6 +520,59 @@ def update_profile(request):
 
             profile.address = address
 
+        if "bill_use_delivery_address" in data:
+            profile.bill_use_delivery_address = bool(
+                data.get("bill_use_delivery_address", True)
+            )
+
+        from account.billing_address import (
+            billing_payload_from_request,
+            upsert_profile_billing_address,
+            validate_billing_street,
+        )
+
+        has_billing_input = data.get("billing_address") is not None or any(
+            key in data
+            for key in (
+                "bill_company_name",
+                "bill_contact_name",
+                "bill_address_line",
+                "bill_address_line2",
+                "bill_city",
+                "bill_postal_code",
+            )
+        )
+        if has_billing_input:
+            billing_fields = billing_payload_from_request(data)
+            if not profile.bill_use_delivery_address:
+                street_errors = validate_billing_street(billing_fields)
+                if street_errors:
+                    return Response(
+                        {
+                            "error": "Please fix billing address fields.",
+                            "errors": street_errors,
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            upsert_profile_billing_address(profile, billing_fields)
+        elif not profile.bill_use_delivery_address:
+            saved = profile.billing_address
+            check_fields = {
+                "address_line": saved.address_line if saved else None,
+                "address_line2": saved.address_line2 if saved else None,
+                "city": saved.city if saved else None,
+                "postal_code": saved.postal_code if saved else None,
+            }
+            street_errors = validate_billing_street(check_fields)
+            if street_errors:
+                return Response(
+                    {
+                        "error": "Please fix billing address fields.",
+                        "errors": street_errors,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         profile.save()
 
         # Log profile update
@@ -558,33 +580,7 @@ def update_profile(request):
             f"Profile updated for user: {user.email} from IP: {request.META.get('REMOTE_ADDR')}"
         )
 
-        # Return updated profile data
-        profile_data = {
-            "user": {
-                **user_payload(user, include_staff=True),
-                "last_login": user.last_login,
-            },
-            "profile": {
-                "phone": profile.phone,
-                "notes": profile.notes,
-            },
-            "address": (
-                {
-                    "address_line": (
-                        profile.address.address_line if profile.address else None
-                    ),
-                    "address_line2": (
-                        profile.address.address_line2 if profile.address else None
-                    ),
-                    "city": profile.address.city if profile.address else None,
-                    "postal_code": (
-                        profile.address.postal_code if profile.address else None
-                    ),
-                }
-                if profile.address
-                else None
-            ),
-        }
+        profile_data = user_profile_payload(user)
 
         return Response(
             {"message": "Profile updated successfully", "profile": profile_data},

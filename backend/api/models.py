@@ -1,7 +1,7 @@
 from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
-from account.models import Address, CustomUser
+from account.models import Address, BillingAddress, CustomUser
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.core.validators import (
@@ -386,6 +386,14 @@ class Order(models.Model):
     address = models.ForeignKey(
         Address, on_delete=models.SET_NULL, related_name="orders", null=True, blank=True
     )
+    bill_use_delivery_address = models.BooleanField(default=True)
+    billing_address = models.ForeignKey(
+        BillingAddress,
+        on_delete=models.SET_NULL,
+        related_name="orders",
+        null=True,
+        blank=True,
+    )
     notes = models.CharField(max_length=200, blank=True, null=True)
     delivery_date = models.DateField(null=True, blank=True)
     is_home_delivery = models.BooleanField(default=True, verbose_name="Home Delivery")
@@ -555,6 +563,45 @@ class Order(models.Model):
             if profile and profile.address_id:
                 return profile.address
         return None
+
+    def billing_address_fields(self) -> dict[str, str | None]:
+        """
+        Effective billing address for this order (invoices / credit notes).
+
+        - If bill_use_delivery_address: use the shipping/delivery address.
+        - Otherwise: use the order billing address, falling back to the
+          customer's saved BillingAddress.
+        """
+        empty = {
+            "company_name": None,
+            "contact_name": None,
+            "address_line": None,
+            "address_line2": None,
+            "city": None,
+            "postal_code": None,
+        }
+
+        if self.bill_use_delivery_address:
+            address = self.get_delivery_address()
+            if not address:
+                return empty
+            return {
+                "company_name": None,
+                "contact_name": None,
+                "address_line": address.address_line,
+                "address_line2": address.address_line2,
+                "city": address.city,
+                "postal_code": address.postal_code,
+            }
+
+        billing = self.billing_address
+        if billing is None and self.customer_id:
+            profile = getattr(self.customer, "profile", None)
+            if profile:
+                billing = profile.billing_address
+        if billing:
+            return billing.as_dict()
+        return empty
 
     @property
     def customer_address(self):
