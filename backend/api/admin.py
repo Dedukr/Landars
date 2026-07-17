@@ -9,7 +9,7 @@ from decimal import Decimal, InvalidOperation
 from account.address_validation import validate_street_address
 from account.billing_address import upsert_profile_billing_address
 from account.latin_validation import add_latin_script_errors
-from account.models import Address, CustomUser, Profile
+from account.models import CustomUser, Profile
 from billing.models import (
     CreditNote,
     Invoice,
@@ -157,14 +157,7 @@ def _phone_display_with_links(phone_str):
 
 
 class OrderAdminForm(ModelForm):
-    """Custom form for Order admin with editable delivery + billing address fields."""
-
-    address_line = forms.CharField(label="Delivery address line", required=False)
-    address_line2 = forms.CharField(
-        label="Delivery address line 2", required=False
-    )
-    city = forms.CharField(label="Delivery city", required=False)
-    postal_code = forms.CharField(label="Delivery postal code", required=False)
+    """Custom form for Order admin with editable billing address fields."""
 
     bill_company_name = forms.CharField(
         label="Billing company name", required=False
@@ -185,24 +178,10 @@ class OrderAdminForm(ModelForm):
 
     class Meta:
         model = Order
-        exclude = ("billing_address", "address")
+        exclude = ("billing_address",)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        delivery = None
-        if self.instance.pk:
-            delivery = self.instance.get_delivery_address()
-        elif self.instance.customer_id:
-            profile = getattr(self.instance.customer, "profile", None)
-            if profile:
-                delivery = profile.address
-
-        if delivery and "address_line" in self.fields:
-            self.fields["address_line"].initial = delivery.address_line
-            self.fields["address_line2"].initial = delivery.address_line2
-            self.fields["city"].initial = delivery.city
-            self.fields["postal_code"].initial = delivery.postal_code
-
         billing = None
         if self.instance.pk and self.instance.billing_address_id:
             billing = self.instance.billing_address
@@ -219,44 +198,12 @@ class OrderAdminForm(ModelForm):
             self.fields["bill_city"].initial = billing.city
             self.fields["bill_postal_code"].initial = billing.postal_code
 
-    def _stage_delivery_address(self, cleaned_data) -> None:
-        """Attach cleaned delivery fields to the instance for same-request checks."""
-        address = self.instance.address
-        if address is None and self.instance.customer_id:
-            profile = getattr(self.instance.customer, "profile", None)
-            if profile and profile.address_id:
-                address = profile.address
-        if address is None:
-            address = Address()
-        address.address_line = cleaned_data.get("address_line")
-        address.address_line2 = cleaned_data.get("address_line2")
-        address.city = cleaned_data.get("city")
-        address.postal_code = cleaned_data.get("postal_code")
-        self.instance.address = address
-
     def clean(self):
         cleaned_data = super().clean()
-
-        if "address_line" in self.fields:
-            errors = validate_street_address(
-                address_line=cleaned_data.get("address_line"),
-                address_line2=cleaned_data.get("address_line2"),
-                city=cleaned_data.get("city"),
-                postal_code=cleaned_data.get("postal_code"),
-                require_line2=False,
-            )
-            for key, message in errors.items():
-                self.add_error(key, message)
-            if not errors:
-                self._stage_delivery_address(cleaned_data)
 
         add_latin_script_errors(
             self,
             (
-                "address_line",
-                "address_line2",
-                "city",
-                "postal_code",
                 "bill_company_name",
                 "bill_contact_name",
                 "bill_address_line",
@@ -1878,6 +1825,7 @@ class OrderAdmin(admin.ModelAdmin):
             fields += [
                 "source",
                 "customer_phone",
+                "customer_address",
                 "created_at",
                 "get_total_items",
                 "get_holiday_fee_amount",
@@ -1889,10 +1837,6 @@ class OrderAdmin(admin.ModelAdmin):
             if not request.user.has_perm("account.change_customuser"):
                 return fields[0].replace("customer", "customer_name")
         fields += [
-            "address_line",
-            "address_line2",
-            "city",
-            "postal_code",
             "delivery_fee_manual",
             "delivery_fee",
             "holiday_fee",
@@ -2313,26 +2257,6 @@ class OrderAdmin(admin.ModelAdmin):
 
         if not change:
             obj.source = Order.Source.ADMIN
-
-        if "address_line" in form.cleaned_data:
-            address = obj.address
-            if address is None and obj.customer_id:
-                profile = getattr(obj.customer, "profile", None)
-                if profile and profile.address_id:
-                    address = profile.address
-            if address is None:
-                address = Address()
-            address.address_line = form.cleaned_data.get("address_line")
-            address.address_line2 = form.cleaned_data.get("address_line2")
-            address.city = form.cleaned_data.get("city")
-            address.postal_code = form.cleaned_data.get("postal_code")
-            address.save()
-            obj.address = address
-            if obj.customer_id:
-                profile, _ = Profile.objects.get_or_create(user=obj.customer)
-                if profile.address_id is None:
-                    profile.address = address
-                    profile.save(update_fields=["address"])
 
         use_delivery = form.cleaned_data.get("bill_use_delivery_address", True)
         if use_delivery:
