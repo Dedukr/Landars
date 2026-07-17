@@ -124,6 +124,37 @@ class CustomUserModelTest(TestCase):
         with self.assertRaises(ValueError):
             User.objects.create_user(name="No Email User", password="testpass123")
 
+    def test_admin_form_updates_display_name_from_parts(self):
+        """Changing first/surname in the admin form must update computed name."""
+        from .forms import CustomUserForm
+
+        user = User.objects.create_user(**self.user_data)
+        form = CustomUserForm(
+            data={
+                "first_name": "Юлія",
+                "surname": "Нова",
+                "email": user.email,
+                "password": user.password,
+                "is_email_verified": user.is_email_verified,
+                "phone": "",
+                "address_line": "",
+                "address_line2": "",
+                "city": "",
+                "postal_code": "",
+                "notes": "",
+            },
+            instance=user,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        # Admin calls save(commit=False) then save_model().
+        updated = form.save(commit=False)
+        updated.save()
+        user.refresh_from_db()
+        self.assertEqual(user.first_name, "Юлія")
+        self.assertEqual(user.surname, "Нова")
+        self.assertEqual(user.name, "Юлія Нова")
+        self.assertEqual(user.get_display_name(), "Юлія Нова")
+
     def test_duplicate_email_raises_error(self):
         """Test that duplicate emails raise an error"""
         User.objects.create_user(**self.user_data)

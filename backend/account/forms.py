@@ -18,14 +18,19 @@ class CustomUserForm(UserChangeForm):
 
     class Meta:
         model = CustomUser
-        fields = ("first_name", "surname", "email", "password", "is_staff")
+        fields = (
+            "first_name",
+            "surname",
+            "email",
+            "password",
+            "is_staff",
+            "is_email_verified",
+        )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         if self.instance.pk:
-            self.fields["first_name"].initial = self.instance.first_name
-            self.fields["surname"].initial = self.instance.surname
             profile = getattr(self.instance, "profile", None)
             if profile:
                 self.fields["phone"].initial = profile.phone
@@ -37,20 +42,20 @@ class CustomUserForm(UserChangeForm):
                     self.fields["city"].initial = address.city
                     self.fields["postal_code"].initial = address.postal_code
 
-        # if self.instance and hasattr(self.instance, "profile"):
-        #     self.fields["name"].initial = self.instance.profile.name
-        #     self.fields["phone"].initial = self.instance.profile.phone
-        #     self.fields["address"].initial = self.instance.profile.address
-        #     self.fields["notes"].initial = self.instance.profile.notes
-
     def save(self, commit=True):
-        user = super().save(commit)
-        profile, _ = Profile.objects.get_or_create(user=user)
-        user.first_name = self.cleaned_data.get("first_name") or user.first_name
-        user.surname = self.cleaned_data.get("surname") or user.surname
+        user = super().save(commit=False)
+
+        # Name is derived from first_name + surname; never keep a stale legacy name.
+        if "first_name" in self.cleaned_data:
+            user.first_name = (self.cleaned_data.get("first_name") or "").strip() or None
+        if "surname" in self.cleaned_data:
+            user.surname = (self.cleaned_data.get("surname") or "").strip() or None
         user.sync_computed_name()
+
         if commit:
-            user.save(update_fields=["first_name", "surname", "name"])
+            user.save()
+
+        profile, _ = Profile.objects.get_or_create(user=user)
         profile.phone = self.cleaned_data.get("phone")
 
         address = profile.address or Address()
@@ -61,6 +66,7 @@ class CustomUserForm(UserChangeForm):
         address.save()
 
         profile.address = address
+        profile.notes = self.cleaned_data.get("notes")
         profile.save()
 
         return user

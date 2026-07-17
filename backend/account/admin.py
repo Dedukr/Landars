@@ -59,7 +59,18 @@ class CustomUserAdmin(UserAdmin):
         js = ("admin/js/prevent_double_submit.js",)
 
     fieldsets = [
-        (None, {"fields": ("name", "email", "password", "is_email_verified")}),
+        (
+            None,
+            {
+                "fields": (
+                    "first_name",
+                    "surname",
+                    "email",
+                    "password",
+                    "is_email_verified",
+                )
+            },
+        ),
     ]
     add_fieldsets = [
         (
@@ -94,7 +105,6 @@ class CustomUserAdmin(UserAdmin):
                     _("Profile"),
                     {
                         "fields": (
-                            # "name",
                             "phone",
                             "address_line",
                             "address_line2",
