@@ -441,7 +441,12 @@ def _patch_resolved_shipping_method(
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def create_sendcloud_shipment(self, shipment_id: int) -> None:
+def create_sendcloud_shipment(
+    self,
+    shipment_id: int,
+    *,
+    allow_pre_ready: bool = False,
+) -> None:
     from django.conf import settings as django_settings
     from django.core.cache import cache
     from .sendcloud_client import SendcloudAPIError, SendcloudClient
@@ -525,7 +530,7 @@ def create_sendcloud_shipment(self, shipment_id: int) -> None:
                 )
                 return
 
-            if order.status != "ready_to_ship":
+            if order.status != "ready_to_ship" and not allow_pre_ready:
                 logger.info(
                     "Skipping Sendcloud task for shipment %s: order %s status is %s (expected ready_to_ship)",
                     shipment_id,

@@ -1,4 +1,5 @@
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.admin.sites import site
 from django.contrib.auth import get_user_model
@@ -68,6 +69,7 @@ class ReadyToShipPostDeliveryValidationTests(TestCase):
             request,
             Order.objects.filter(pk=order.pk),
         )
+        return [str(message) for message in messages]
 
     def test_post_delivery_order_with_compatible_products_passes(self):
         order = self._create_order(
@@ -125,7 +127,12 @@ class ReadyToShipPostDeliveryValidationTests(TestCase):
         with self.assertRaises(ValidationError):
             order.save(update_fields=["status"])
 
-    def test_bulk_action_marks_compatible_post_orders_ready(self):
+    @patch(
+        "shipping.order_shipping.OrderShippingService."
+        "complete_ready_to_ship_prerequisites",
+        return_value=(True, ""),
+    )
+    def test_bulk_action_marks_compatible_post_orders_ready(self, _complete_shipping):
         order = self._create_order(
             is_home_delivery=False,
             products=[self.post_product],
@@ -134,3 +141,71 @@ class ReadyToShipPostDeliveryValidationTests(TestCase):
 
         order.refresh_from_db()
         self.assertEqual(order.status, "ready_to_ship")
+
+    @patch(
+        "shipping.order_shipping.OrderShippingService."
+        "complete_ready_to_ship_prerequisites",
+        return_value=(False, "Sendcloud rejected the delivery address."),
+    )
+    def test_bulk_action_keeps_status_and_shows_shipping_error(
+        self, _complete_shipping
+    ):
+        order = self._create_order(
+            is_home_delivery=False,
+            products=[self.post_product],
+        )
+
+        admin_messages = self._run_bulk_ready_to_ship(order)
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, "paid")
+        self.assertTrue(
+            any(
+                "Sendcloud rejected the delivery address." in message
+                for message in admin_messages
+            )
+        )
+
+    @patch(
+        "shipping.order_shipping.OrderShippingService."
+        "complete_ready_to_ship_prerequisites",
+        return_value=(False, "Order city is required for courier shipment"),
+    )
+    def test_admin_save_model_skips_save_and_shows_error(self, _complete_shipping):
+        order = self._create_order(
+            is_home_delivery=False,
+            products=[self.post_product],
+        )
+        admin_user = User.objects.create_superuser(
+            name="Admin Save",
+            email="adminsave@ready.test",
+            password="x",
+        )
+        request = RequestFactory().post("/admin/api/order/")
+        request.user = admin_user
+        request.session = "session"
+        storage = FallbackStorage(request)
+        request._messages = storage
+
+        form = type(
+            "DummyForm",
+            (),
+            {
+                "changed_data": ["status"],
+                "cleaned_data": {},
+                "instance": order,
+            },
+        )()
+        order.status = "ready_to_ship"
+
+        OrderAdmin(Order, site).save_model(request, order, form, change=True)
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, "paid")
+        self.assertTrue(
+            any(
+                "Order city is required for courier shipment" in str(message)
+                for message in storage
+            )
+        )
+        self.assertTrue(getattr(request, "_ready_to_ship_had_skip", False))

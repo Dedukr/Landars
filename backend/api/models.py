@@ -703,9 +703,11 @@ class Order(models.Model):
         ):
             from django.core.exceptions import ValidationError
 
-            from api.services.order_ready_to_ship import validate_ready_to_ship
+            from api.services.order_ready_to_ship import (
+                complete_ready_to_ship_prerequisites,
+            )
 
-            result = validate_ready_to_ship(self)
+            result = complete_ready_to_ship_prerequisites(self)
             if not result.ok:
                 raise ValidationError({"status": result.message})
 

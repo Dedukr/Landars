@@ -54,6 +54,94 @@ class OrderShippingService:
             return False
         return order.get_delivery_address() is not None
 
+    @classmethod
+    def complete_ready_to_ship_prerequisites(
+        cls, order: Order
+    ) -> tuple[bool, str]:
+        """
+        Synchronously create and store the courier label before an order becomes ready.
+
+        The Shipment row is deliberately retained on failure. This preserves Sendcloud
+        parcel details and the provider response for a safe retry, while the Order keeps
+        its previous status.
+        """
+        from .models import Shipment
+        from .services import build_shipment_snapshot
+        from .tasks import create_sendcloud_shipment
+
+        if order.is_home_delivery:
+            return True, ""
+        if order.get_delivery_address() is None:
+            return False, "A delivery address is required for courier shipment."
+
+        try:
+            snapshot = build_shipment_snapshot(order)
+        except (TypeError, ValueError) as exc:
+            return False, str(exc)
+
+        shipment: Shipment | None = None
+        try:
+            with transaction.atomic():
+                shipment = (
+                    Shipment.objects.select_for_update()
+                    .filter(order_id=order.pk)
+                    .first()
+                )
+                if shipment is None:
+                    shipment = Shipment.objects.create(
+                        order=order,
+                        status=Shipment.Status.QUEUED,
+                        **snapshot,
+                    )
+                elif shipment.is_label_fully_stored():
+                    if shipment.status != Shipment.Status.LABEL_READY:
+                        shipment.status = Shipment.Status.LABEL_READY
+                        shipment.save(update_fields=["status", "updated_at"])
+                    return True, ""
+                elif shipment.status == Shipment.Status.CANCELLED:
+                    return False, "The courier shipment is cancelled."
+                else:
+                    # A parcel already created at Sendcloud must retain its frozen
+                    # snapshot so a failed label download can resume safely.
+                    if not shipment.sendcloud_parcel_id:
+                        for key, value in snapshot.items():
+                            setattr(shipment, key, value)
+                    shipment.status = Shipment.Status.QUEUED
+                    shipment.last_error = ""
+                    shipment.save()
+
+            create_sendcloud_shipment.apply(
+                args=[shipment.pk],
+                kwargs={"allow_pre_ready": True},
+                throw=True,
+            )
+        except Exception as exc:
+            if shipment is not None:
+                shipment.refresh_from_db()
+            message = (
+                (shipment.last_error if shipment is not None else "")
+                or str(exc)
+                or "Shipment creation failed."
+            ).strip()
+            return False, message
+
+        if shipment is None:
+            return False, "Shipment creation failed."
+        shipment.refresh_from_db()
+        if (
+            shipment.status == Shipment.Status.LABEL_READY
+            and shipment.is_label_fully_stored()
+        ):
+            return True, ""
+
+        message = (shipment.last_error or "").strip()
+        if not message:
+            message = (
+                "Shipment processing did not complete "
+                f"(current status: {shipment.get_status_display()})."
+            )
+        return False, message
+
     @staticmethod
     def transition_to_ready_to_ship(order: Order) -> bool:
         """

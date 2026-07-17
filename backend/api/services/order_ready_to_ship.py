@@ -58,3 +58,29 @@ def validate_ready_to_ship(order) -> ReadyToShipValidation:
         incompatible_products=tuple(incompatible),
         message=message,
     )
+
+
+def complete_ready_to_ship_prerequisites(order) -> ReadyToShipValidation:
+    """
+    Validate the transition and finish courier processing before status persistence.
+
+    Home-delivery orders have no courier work. Post-delivery orders must have their
+    Sendcloud parcel label fully stored before this returns successfully.
+    """
+    validation = validate_ready_to_ship(order)
+    if not validation.ok:
+        return validation
+
+    from shipping.order_shipping import OrderShippingService
+
+    ok, error = OrderShippingService.complete_ready_to_ship_prerequisites(order)
+    if ok:
+        return ReadyToShipValidation(ok=True)
+
+    return ReadyToShipValidation(
+        ok=False,
+        message=(
+            f"Order #{order.pk} was not marked ready to ship: "
+            f"{error or 'shipment processing failed.'}"
+        ),
+    )

@@ -205,11 +205,22 @@ class OrderAdminForm(ModelForm):
             and self.instance.pk
             and self.instance.status != "ready_to_ship"
         ):
-            from api.services.order_ready_to_ship import validate_ready_to_ship
+            from api.services.order_ready_to_ship import (
+                complete_ready_to_ship_prerequisites,
+            )
 
-            result = validate_ready_to_ship(self.instance)
-            if not result.ok:
-                raise ValidationError({"status": result.message})
+            # Invalidate the form (no save) when courier prerequisites fail.
+            # Never raise uncaught errors here — show them on the status field.
+            try:
+                result = complete_ready_to_ship_prerequisites(self.instance)
+            except Exception as exc:
+                self.add_error(
+                    "status",
+                    f"Order #{self.instance.pk} was not marked ready to ship: {exc}",
+                )
+            else:
+                if not result.ok:
+                    self.add_error("status", result.message)
 
         if cleaned_data.get("bill_use_delivery_address", True):
             return cleaned_data
@@ -1008,7 +1019,7 @@ def mark_orders_cancelled(modeladmin, request, queryset):
 
 @admin.action(description="Mark selected orders as Ready to ship")
 def mark_orders_ready_to_ship(modeladmin, request, queryset):
-    from api.services.order_ready_to_ship import validate_ready_to_ship
+    from api.services.order_ready_to_ship import complete_ready_to_ship_prerequisites
     from api.services.product_sales import set_order_status
 
     updated = 0
@@ -1021,12 +1032,24 @@ def mark_orders_ready_to_ship(modeladmin, request, queryset):
         if order.status == "ready_to_ship":
             skipped += 1
             continue
-        result = validate_ready_to_ship(order)
+        try:
+            result = complete_ready_to_ship_prerequisites(order)
+        except Exception as exc:
+            errors.append(
+                f"Order #{order.pk} was not marked ready to ship: {exc}"
+            )
+            continue
         if not result.ok:
             errors.append(result.message)
             continue
-        set_order_status(order, "ready_to_ship")
-        updated += 1
+        try:
+            set_order_status(order, "ready_to_ship")
+        except Exception as exc:
+            errors.append(
+                f"Order #{order.pk} was not marked ready to ship: {exc}"
+            )
+        else:
+            updated += 1
 
     if updated:
         modeladmin.message_user(
@@ -2137,6 +2160,33 @@ class OrderAdmin(admin.ModelAdmin):
 
     get_shipping_label_link.short_description = "Shipping Label"
 
+    def message_user(
+        self, request, message, level=messages.INFO, extra_tags="", fail_silently=False
+    ):
+        # list_editable still counts skipped ready-to-ship rows as "changed";
+        # suppress that success flash when we intentionally did not save.
+        if (
+            getattr(request, "_ready_to_ship_had_skip", False)
+            and level == messages.SUCCESS
+            and "changed successfully" in str(message).lower()
+        ):
+            return
+        return super().message_user(
+            request,
+            message,
+            level=level,
+            extra_tags=extra_tags,
+            fail_silently=fail_silently,
+        )
+
+    def log_change(self, request, object, message):
+        if getattr(request, "_ready_to_ship_save_skipped", False):
+            # Skip audit log for the row we did not persist; keep had_skip for
+            # message_user so the changelist success flash can be suppressed.
+            request._ready_to_ship_save_skipped = False
+            return
+        return super().log_change(request, object, message)
+
     def save_model(self, request, obj, form, change):
         """
         Save the order without calculating delivery fees here to avoid double save.
@@ -2162,19 +2212,34 @@ class OrderAdmin(admin.ModelAdmin):
             change and "status" in form.changed_data and obj.status == "ready_to_ship"
         )
         previous_status = None
-        if (status_changed_to_cancelled or status_changed_to_ready_to_ship) and obj.pk:
+        if (
+            status_changed_to_cancelled or status_changed_to_ready_to_ship
+        ) and obj.pk:
             previous_status = (
                 Order.objects.filter(pk=obj.pk).values_list("status", flat=True).first()
             )
 
+        # list_editable / change form safety net: never let ready-to-ship failures
+        # raise out of admin (that becomes a 500). Skip the save and show the error.
         if status_changed_to_ready_to_ship and previous_status != "ready_to_ship":
-            from api.services.order_ready_to_ship import validate_ready_to_ship
+            from api.services.order_ready_to_ship import (
+                complete_ready_to_ship_prerequisites,
+            )
 
-            result = validate_ready_to_ship(obj)
-            if not result.ok:
+            try:
+                result = complete_ready_to_ship_prerequisites(obj)
+                error_message = result.message if not result.ok else None
+            except Exception as exc:
+                error_message = (
+                    f"Order #{obj.pk} was not marked ready to ship: {exc}"
+                )
+            if error_message:
                 obj.status = previous_status
-                self.message_user(request, result.message, level=messages.ERROR)
-                status_changed_to_ready_to_ship = False
+                form.instance.status = previous_status
+                self.message_user(request, error_message, level=messages.ERROR)
+                request._ready_to_ship_save_skipped = True
+                request._ready_to_ship_had_skip = True
+                return
 
         if not change:
             obj.source = Order.Source.ADMIN
@@ -2200,7 +2265,21 @@ class OrderAdmin(admin.ModelAdmin):
                 profile.save(update_fields=["billing_address"])
                 obj.billing_address = billing
 
-        super().save_model(request, obj, form, change)
+        try:
+            super().save_model(request, obj, form, change)
+        except ValidationError as exc:
+            # Final safety net if Order.save rejects ready_to_ship.
+            if hasattr(exc, "message_dict") and "status" in exc.message_dict:
+                msg = "; ".join(str(m) for m in exc.message_dict["status"])
+            else:
+                msg = "; ".join(str(m) for m in exc.messages)
+            if previous_status is not None:
+                obj.status = previous_status
+                form.instance.status = previous_status
+            self.message_user(request, msg, level=messages.ERROR)
+            request._ready_to_ship_save_skipped = True
+            request._ready_to_ship_had_skip = True
+            return
 
         # Update related invoice when order status changes to "paid"
         if status_changed_to_paid:
