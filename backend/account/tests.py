@@ -132,6 +132,37 @@ class CustomUserModelTest(TestCase):
         user = User.objects.create_user(**self.user_data)
         form = CustomUserForm(
             data={
+                "first_name": "José",
+                "surname": "García",
+                "email": user.email,
+                "password": user.password,
+                "is_email_verified": user.is_email_verified,
+                "phone": "",
+                "address_line": "",
+                "address_line2": "",
+                "city": "",
+                "postal_code": "",
+                "notes": "",
+                "bill_use_delivery_address": True,
+            },
+            instance=user,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        # Admin calls save(commit=False) then save_model().
+        updated = form.save(commit=False)
+        updated.save()
+        user.refresh_from_db()
+        self.assertEqual(user.first_name, "José")
+        self.assertEqual(user.surname, "García")
+        self.assertEqual(user.name, "José García")
+        self.assertEqual(user.get_display_name(), "José García")
+
+    def test_admin_form_rejects_non_latin_names(self):
+        from .forms import CustomUserForm
+
+        user = User.objects.create_user(**self.user_data)
+        form = CustomUserForm(
+            data={
                 "first_name": "Юлія",
                 "surname": "Нова",
                 "email": user.email,
@@ -143,18 +174,38 @@ class CustomUserModelTest(TestCase):
                 "city": "",
                 "postal_code": "",
                 "notes": "",
+                "bill_use_delivery_address": True,
             },
             instance=user,
         )
-        self.assertTrue(form.is_valid(), form.errors)
-        # Admin calls save(commit=False) then save_model().
-        updated = form.save(commit=False)
-        updated.save()
-        user.refresh_from_db()
-        self.assertEqual(user.first_name, "Юлія")
-        self.assertEqual(user.surname, "Нова")
-        self.assertEqual(user.name, "Юлія Нова")
-        self.assertEqual(user.get_display_name(), "Юлія Нова")
+        self.assertFalse(form.is_valid())
+        self.assertIn("first_name", form.errors)
+        self.assertIn("surname", form.errors)
+
+    def test_admin_form_rejects_non_latin_address(self):
+        from .forms import CustomUserForm
+
+        user = User.objects.create_user(**self.user_data)
+        form = CustomUserForm(
+            data={
+                "first_name": "Julia",
+                "surname": "Nova",
+                "email": user.email,
+                "password": user.password,
+                "is_email_verified": user.is_email_verified,
+                "phone": "",
+                "address_line": "Вулиця Шевченка 1",
+                "address_line2": "",
+                "city": "Київ",
+                "postal_code": "SW1A 1AA",
+                "notes": "",
+                "bill_use_delivery_address": True,
+            },
+            instance=user,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("address_line", form.errors)
+        self.assertIn("city", form.errors)
 
     def test_admin_form_requires_complete_billing_street_when_partial(self):
         from .forms import CustomUserForm
@@ -227,18 +278,13 @@ class CustomUserModelTest(TestCase):
             postal_code="SW1A 1AA",
         )
         profile.address = delivery
+        profile.bill_use_delivery_address = True
         profile.save()
 
+        # When using delivery as billing, street fields come from the delivery address.
         self.assertEqual(
-            profile.billing_address_fields(),
-            {
-                "company_name": None,
-                "contact_name": None,
-                "address_line": None,
-                "address_line2": None,
-                "city": None,
-                "postal_code": None,
-            },
+            profile.billing_address_fields()["address_line"],
+            "10 Delivery Rd",
         )
 
     def test_profile_separate_billing_address(self):
@@ -254,6 +300,7 @@ class CustomUserModelTest(TestCase):
         profile = Profile.objects.create(
             user=user,
             billing_address=billing,
+            bill_use_delivery_address=False,
         )
 
         self.assertEqual(
@@ -276,6 +323,7 @@ class CustomUserModelTest(TestCase):
         profile = Profile.objects.create(
             user=user,
             billing_address=billing,
+            bill_use_delivery_address=False,
         )
         fields = profile.billing_address_fields()
         self.assertEqual(fields["company_name"], "Acme Ltd")

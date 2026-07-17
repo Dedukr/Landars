@@ -35,6 +35,8 @@ def validate_street_address(
 
     Returns a dict of field_name -> error message (empty if valid).
     """
+    from account.latin_validation import LATIN_SCRIPT_ERROR, is_latin_script_text
+
     errors: dict[str, str] = {}
     line = (address_line or "").strip()
     line2 = (address_line2 or "").strip()
@@ -51,5 +53,16 @@ def validate_street_address(
         errors["postal_code"] = "Postal code is required"
     elif check_uk_postcode and not is_valid_uk_postal_code(postal):
         errors["postal_code"] = "Please enter a valid UK postal code"
+
+    for key, value in (
+        ("address_line", line),
+        ("address_line2", line2),
+        ("city", city_val),
+        ("postal_code", postal),
+    ):
+        if key in errors or not value:
+            continue
+        if not is_latin_script_text(value):
+            errors[key] = LATIN_SCRIPT_ERROR
 
     return errors

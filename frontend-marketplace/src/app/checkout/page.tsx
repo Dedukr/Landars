@@ -23,6 +23,7 @@ import {
   useShipmentQuoteOptions,
   type ShipmentQuoteOption,
 } from "@/hooks/useShipmentQuoteOptions";
+import { applyLatinScriptErrors } from "@/utils/latinValidation";
 
 interface ShippingFormData {
   first_name: string;
@@ -782,6 +783,24 @@ export default function CheckoutPage() {
         newErrors.bill_postal_code = "Please enter a valid UK postal code";
       }
     }
+
+    applyLatinScriptErrors(
+      {
+        first_name: shippingForm.first_name,
+        surname: shippingForm.surname,
+        address_line: shippingForm.address_line,
+        address_line2: shippingForm.address_line2,
+        city: shippingForm.city,
+        postal_code: shippingForm.postal_code,
+        bill_company_name: shippingForm.bill_company_name,
+        bill_contact_name: shippingForm.bill_contact_name,
+        bill_address_line: shippingForm.bill_address_line,
+        bill_address_line2: shippingForm.bill_address_line2,
+        bill_city: shippingForm.bill_city,
+        bill_postal_code: shippingForm.bill_postal_code,
+      },
+      newErrors
+    );
 
     // Post delivery: quotes must load; then either one auto-assigned tier or explicit pick
     const addressCompleteForQuotes =

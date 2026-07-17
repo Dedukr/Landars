@@ -11,6 +11,7 @@ import NotAuthenticatedState from "@/components/NotAuthenticatedState";
 import AlertMessage from "@/components/AlertMessage";
 import PageHeader from "@/components/PageHeader";
 import { formatUserDisplayName } from "@/lib/userName";
+import { latinScriptError } from "@/utils/latinValidation";
 
 interface AddressFields {
   company_name?: string;
@@ -175,6 +176,44 @@ export default function ProfilePage() {
         setError("Surname is required");
         setSaving(false);
         return;
+      }
+
+      const latinFields: {
+        key:
+          | "first_name"
+          | "surname"
+          | "address_line"
+          | "address_line2"
+          | "city"
+          | "postal_code"
+          | "bill_company_name"
+          | "bill_contact_name"
+          | "bill_address_line"
+          | "bill_address_line2"
+          | "bill_city"
+          | "bill_postal_code";
+        label: string;
+      }[] = [
+        { key: "first_name", label: "First name" },
+        { key: "surname", label: "Surname" },
+        { key: "address_line", label: "Address line 1" },
+        { key: "address_line2", label: "Address line 2" },
+        { key: "city", label: "City" },
+        { key: "postal_code", label: "Postal code" },
+        { key: "bill_company_name", label: "Billing company name" },
+        { key: "bill_contact_name", label: "Billing contact name" },
+        { key: "bill_address_line", label: "Billing address line 1" },
+        { key: "bill_address_line2", label: "Billing address line 2" },
+        { key: "bill_city", label: "Billing city" },
+        { key: "bill_postal_code", label: "Billing postal code" },
+      ];
+      for (const field of latinFields) {
+        const message = latinScriptError(formData[field.key]);
+        if (message) {
+          setError(`${field.label}: ${message}`);
+          setSaving(false);
+          return;
+        }
       }
 
       if (!formData.bill_use_delivery_address) {

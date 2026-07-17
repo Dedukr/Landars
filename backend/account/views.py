@@ -113,6 +113,19 @@ def register(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        from .latin_validation import LATIN_SCRIPT_ERROR, is_latin_script_text
+
+        if not is_latin_script_text(first_name):
+            return Response(
+                {"error": f"First name: {LATIN_SCRIPT_ERROR}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not is_latin_script_text(surname):
+            return Response(
+                {"error": f"Surname: {LATIN_SCRIPT_ERROR}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         # Comprehensive email validation
         is_valid, error_message, warning_message = validate_email_field(
             email, allow_disposable=False
@@ -465,6 +478,18 @@ def update_profile(request):
                     {"error": "Surname is required"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            from .latin_validation import LATIN_SCRIPT_ERROR, is_latin_script_text
+
+            if not is_latin_script_text(first_name):
+                return Response(
+                    {"error": f"First name: {LATIN_SCRIPT_ERROR}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not is_latin_script_text(surname):
+                return Response(
+                    {"error": f"Surname: {LATIN_SCRIPT_ERROR}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             user.first_name = first_name
             user.surname = surname
             user.sync_computed_name()
@@ -507,15 +532,39 @@ def update_profile(request):
         # Handle address information
         address_data = data.get("address", {})
         if address_data:
+            from account.latin_validation import LATIN_SCRIPT_ERROR, is_latin_script_text
+
+            address_line = (address_data.get("address_line") or "").strip()
+            address_line2 = (address_data.get("address_line2") or "").strip()
+            city = (address_data.get("city") or "").strip()
+            postal_code = (address_data.get("postal_code") or "").strip()
+            latin_errors = {}
+            for key, value in (
+                ("address_line", address_line),
+                ("address_line2", address_line2),
+                ("city", city),
+                ("postal_code", postal_code),
+            ):
+                if value and not is_latin_script_text(value):
+                    latin_errors[key] = LATIN_SCRIPT_ERROR
+            if latin_errors:
+                return Response(
+                    {
+                        "error": "Please fix address fields.",
+                        "errors": latin_errors,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
             if profile.address:
                 address = profile.address
             else:
                 address = Address()
 
-            address.address_line = address_data.get("address_line", "").strip()
-            address.address_line2 = address_data.get("address_line2", "").strip()
-            address.city = address_data.get("city", "").strip()
-            address.postal_code = address_data.get("postal_code", "").strip()
+            address.address_line = address_line
+            address.address_line2 = address_line2
+            address.city = city
+            address.postal_code = postal_code
             address.save()
 
             profile.address = address

@@ -3,6 +3,8 @@
 from rest_framework import status
 from rest_framework.response import Response
 
+from .latin_validation import LATIN_SCRIPT_ERROR, is_latin_script_text
+
 
 def require_customer_names(
     user, first_name_from_request=None, surname_from_request=None
@@ -20,6 +22,11 @@ def require_customer_names(
                 {"error": "First name is required to place an order"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if not is_latin_script_text(first_name):
+            return Response(
+                {"error": f"First name: {LATIN_SCRIPT_ERROR}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         user.first_name = first_name
         update_fields.append("first_name")
 
@@ -28,6 +35,11 @@ def require_customer_names(
         if not surname:
             return Response(
                 {"error": "Surname is required to place an order"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not is_latin_script_text(surname):
+            return Response(
+                {"error": f"Surname: {LATIN_SCRIPT_ERROR}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         user.surname = surname
@@ -46,6 +58,16 @@ def require_customer_names(
     if not (user.surname or "").strip():
         return Response(
             {"error": "Surname is required to place an order"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not is_latin_script_text(user.first_name):
+        return Response(
+            {"error": f"First name: {LATIN_SCRIPT_ERROR}"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not is_latin_script_text(user.surname):
+        return Response(
+            {"error": f"Surname: {LATIN_SCRIPT_ERROR}"},
             status=status.HTTP_400_BAD_REQUEST,
         )
 

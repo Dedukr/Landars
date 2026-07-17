@@ -7,6 +7,7 @@ import { httpClient } from "@/utils/httpClient";
 import { getSafeNextRedirect } from "@/utils/authHelpers";
 import { EmailInput } from "@/components/ui/EmailInput";
 import EmailVerificationPopup from "@/components/EmailVerificationPopup";
+import { latinScriptError } from "@/utils/latinValidation";
 
 interface AuthResponse {
   access?: string;
@@ -181,6 +182,19 @@ function AuthForm() {
 
       if (!formData.first_name.trim() || !formData.surname.trim()) {
         setError("First name and surname are required");
+        setLoading(false);
+        return;
+      }
+
+      const firstNameLatinError = latinScriptError(formData.first_name);
+      if (firstNameLatinError) {
+        setError(`First name: ${firstNameLatinError}`);
+        setLoading(false);
+        return;
+      }
+      const surnameLatinError = latinScriptError(formData.surname);
+      if (surnameLatinError) {
+        setError(`Surname: ${surnameLatinError}`);
         setLoading(false);
         return;
       }

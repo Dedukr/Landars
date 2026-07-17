@@ -555,9 +555,13 @@ class Order(models.Model):
         """
         Address record used for courier/post shipment: order FK, else profile address.
         Matches the fallback used by :meth:`customer_address` / checkout display.
+
+        An unsaved ``Address`` assigned on the instance (e.g. admin form staging)
+        is returned so same-request validation can use the edited fields.
         """
-        if self.address_id:
-            return self.address
+        address = self.address
+        if address is not None:
+            return address
         if self.customer_id:
             profile = getattr(self.customer, "profile", None)
             if profile and profile.address_id:
