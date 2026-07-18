@@ -138,10 +138,10 @@ class CustomUserModelTest(TestCase):
                 "password": user.password,
                 "is_email_verified": user.is_email_verified,
                 "phone": "",
-                "address_line": "",
+                "address_line": "10 Delivery Rd",
                 "address_line2": "",
-                "city": "",
-                "postal_code": "",
+                "city": "London",
+                "postal_code": "SW1A 1AA",
                 "notes": "",
                 "bill_use_delivery_address": True,
             },
@@ -157,6 +157,32 @@ class CustomUserModelTest(TestCase):
         self.assertEqual(user.name, "José García")
         self.assertEqual(user.get_display_name(), "José García")
 
+    def test_admin_form_requires_delivery_address_fields(self):
+        from .forms import CustomUserForm
+
+        user = User.objects.create_user(**self.user_data)
+        form = CustomUserForm(
+            data={
+                "first_name": "Julia",
+                "surname": "Nova",
+                "email": user.email,
+                "password": user.password,
+                "is_email_verified": user.is_email_verified,
+                "phone": "",
+                "address_line": "",
+                "address_line2": "",
+                "city": "",
+                "postal_code": "",
+                "notes": "",
+                "bill_use_delivery_address": True,
+            },
+            instance=user,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("address_line", form.errors)
+        self.assertIn("city", form.errors)
+        self.assertIn("postal_code", form.errors)
+
     def test_admin_form_rejects_non_latin_names(self):
         from .forms import CustomUserForm
 
@@ -169,10 +195,10 @@ class CustomUserModelTest(TestCase):
                 "password": user.password,
                 "is_email_verified": user.is_email_verified,
                 "phone": "",
-                "address_line": "",
+                "address_line": "10 Delivery Rd",
                 "address_line2": "",
-                "city": "",
-                "postal_code": "",
+                "city": "London",
+                "postal_code": "SW1A 1AA",
                 "notes": "",
                 "bill_use_delivery_address": True,
             },
@@ -219,10 +245,10 @@ class CustomUserModelTest(TestCase):
                 "password": user.password,
                 "is_email_verified": user.is_email_verified,
                 "phone": "",
-                "address_line": "",
+                "address_line": "10 Delivery Rd",
                 "address_line2": "",
-                "city": "",
-                "postal_code": "",
+                "city": "London",
+                "postal_code": "SW1A 1AA",
                 "notes": "",
                 "bill_company_name": "",
                 "bill_contact_name": "",
@@ -248,10 +274,10 @@ class CustomUserModelTest(TestCase):
                 "password": user.password,
                 "is_email_verified": user.is_email_verified,
                 "phone": "",
-                "address_line": "",
+                "address_line": "10 Delivery Rd",
                 "address_line2": "",
-                "city": "",
-                "postal_code": "",
+                "city": "London",
+                "postal_code": "SW1A 1AA",
                 "notes": "",
                 "bill_company_name": "Acme Ltd",
                 "bill_contact_name": "",

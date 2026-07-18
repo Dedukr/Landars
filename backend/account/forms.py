@@ -50,6 +50,32 @@ def _validate_billing_street_when_required(form, cleaned_data):
     return cleaned_data
 
 
+def _validate_delivery_street_when_required(form, cleaned_data):
+    """
+    Require delivery address line, city, and UK postal code for customer accounts.
+
+    Staff change forms do not show these fields, so validation is skipped for staff.
+    """
+    instance = getattr(form, "instance", None)
+    if instance is not None and getattr(instance, "is_staff", False):
+        return cleaned_data
+    if cleaned_data.get("is_staff"):
+        return cleaned_data
+    if "address_line" not in getattr(form, "fields", {}):
+        return cleaned_data
+
+    errors = validate_street_address(
+        address_line=cleaned_data.get("address_line"),
+        address_line2=cleaned_data.get("address_line2"),
+        city=cleaned_data.get("city"),
+        postal_code=cleaned_data.get("postal_code"),
+        require_line2=False,
+    )
+    for key, message in errors.items():
+        form.add_error(key, message)
+    return cleaned_data
+
+
 def _validate_latin_name_and_address_fields(form):
     add_latin_script_errors(form, NAME_AND_ADDRESS_LATIN_FIELDS)
 
@@ -119,6 +145,7 @@ class CustomUserForm(UserChangeForm):
     def clean(self):
         cleaned_data = super().clean()
         _validate_latin_name_and_address_fields(self)
+        _validate_delivery_street_when_required(self, cleaned_data)
         return _validate_billing_street_when_required(self, cleaned_data)
 
     def save(self, commit=True):
@@ -171,10 +198,10 @@ class CustomUserCreationForm(forms.ModelForm):
     phone = forms.CharField(label="Phone", required=False)
 
     # Address fields
-    address_line = forms.CharField(label="Address Line", required=False)
-    address_line2 = forms.CharField(label="Address Line 2", required=False)
-    city = forms.CharField(label="City", required=False)
-    postal_code = forms.CharField(label="Postal Code", required=False)
+    address_line = forms.CharField(label="Delivery address line", required=False)
+    address_line2 = forms.CharField(label="Delivery address line 2", required=False)
+    city = forms.CharField(label="Delivery city", required=False)
+    postal_code = forms.CharField(label="Delivery postal code", required=False)
     notes = forms.CharField(label="Notes", required=False)
     bill_use_delivery_address = forms.BooleanField(
         label="Use delivery address as billing address",
@@ -205,4 +232,5 @@ class CustomUserCreationForm(forms.ModelForm):
     def clean(self):
         cleaned_data = super().clean()
         _validate_latin_name_and_address_fields(self)
+        _validate_delivery_street_when_required(self, cleaned_data)
         return _validate_billing_street_when_required(self, cleaned_data)
