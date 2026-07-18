@@ -38,7 +38,7 @@ from django.db.models import (
 from django.db.models.expressions import ExpressionWrapper
 from django.db.models.functions import Coalesce, Round
 from django.forms import ModelForm
-from django.http import HttpResponse, HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.template.loader import render_to_string
 from django.urls import path, reverse
 from django.utils.html import escape, format_html, format_html_join
@@ -1728,7 +1728,7 @@ class OrderAdmin(admin.ModelAdmin):
 
     class Media:
         js = (
-            "admin/js/order_filter_cleaner.js",
+            "admin/js/order_filters_cleaner.js",
             "admin/js/prevent_double_submit.js",
         )
 
@@ -2592,12 +2592,64 @@ class OrderAdmin(admin.ModelAdmin):
         urls = super().get_urls()
         custom_urls = [
             path(
+                "customer-billing/<int:customer_id>/",
+                self.admin_site.admin_view(self.customer_billing_json),
+                name="api_order_customer_billing",
+            ),
+            path(
                 "<int:order_id>/create-invoice/",
                 self.admin_site.admin_view(self.create_invoice_view),
                 name="api_order_create_invoice",
             ),
         ]
         return custom_urls + urls
+
+    def customer_billing_json(self, request, customer_id):
+        """
+        Return a customer's billing preferences/address for order-create prefills.
+        """
+        if request.method != "GET":
+            return JsonResponse({"error": "Method not allowed"}, status=405)
+        if not (self.has_add_permission(request) or self.has_change_permission(request)):
+            return JsonResponse({"error": "Forbidden"}, status=403)
+
+        empty = {
+            "bill_use_delivery_address": True,
+            "company_name": "",
+            "contact_name": "",
+            "address_line": "",
+            "address_line2": "",
+            "city": "",
+            "postal_code": "",
+        }
+
+        try:
+            customer = (
+                CustomUser.objects.select_related(
+                    "profile",
+                    "profile__billing_address",
+                    "profile__address",
+                ).get(pk=customer_id)
+            )
+        except CustomUser.DoesNotExist:
+            return JsonResponse({"error": "Customer not found"}, status=404)
+
+        profile = getattr(customer, "profile", None)
+        if not profile:
+            return JsonResponse(empty)
+
+        fields = profile.billing_address_fields()
+        return JsonResponse(
+            {
+                "bill_use_delivery_address": bool(profile.bill_use_delivery_address),
+                "company_name": fields.get("company_name") or "",
+                "contact_name": fields.get("contact_name") or "",
+                "address_line": fields.get("address_line") or "",
+                "address_line2": fields.get("address_line2") or "",
+                "city": fields.get("city") or "",
+                "postal_code": fields.get("postal_code") or "",
+            }
+        )
 
     def create_invoice_view(self, request, order_id):
         """

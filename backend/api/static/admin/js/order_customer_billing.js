@@ -1,13 +1,10 @@
-{% extends "admin/change_form.html" %}
-{% block extrahead %}
-{{ block.super }}
-{% include "admin/shipping/shipment/_label_print_js.html" %}
-<script>
-  window.ORDER_CUSTOMER_BILLING_URL_TEMPLATE =
-    "{% url 'admin:api_order_customer_billing' 999999999 %}";
-</script>
-{# Inline: static_volume overlays image collectstatic, so Media JS can 404 until collectstatic. #}
-<script>
+/**
+ * When customer is selected/changed on Order add or change form,
+ * fetch their billing address and prefill the billing fields.
+ *
+ * Note: also inlined in change_form.html because Docker static_volume
+ * can hide newly collected Media assets.
+ */
 (function ($) {
   "use strict";
 
@@ -98,5 +95,3 @@
     $customer.on("select2:select select2:clear", onCustomerChange);
   });
 })(django.jQuery);
-</script>
-{% endblock %}
