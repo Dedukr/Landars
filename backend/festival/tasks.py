@@ -43,8 +43,8 @@ def generate_festival_credit_note_pdf_task(self, credit_note_id: int) -> str | N
         raise self.retry(exc=exc)
 
 
-@shared_task
-def recover_stale_festival_print_claims() -> dict:
+@shared_task(ignore_result=True)
+def recover_stale_festival_print_claims() -> dict | None:
     """
     Observe stale CLAIMED jobs. Re-delivery of the same claimed job is preferred
     over advancing the queue; this task only logs/alerts and does not auto-fail
@@ -52,33 +52,34 @@ def recover_stale_festival_print_claims() -> dict:
     """
     stale_minutes = 10
     cutoff = timezone.now() - timedelta(minutes=stale_minutes)
-    qs = FestivalPrintJob.objects.filter(
+    count = FestivalPrintJob.objects.filter(
         status=FestivalPrintJob.Status.CLAIMED,
         claimed_at__lt=cutoff,
-    )
-    count = qs.count()
-    if count:
-        logger.warning("Found %s stale CLAIMED festival print jobs", count)
+    ).count()
+    if not count:
+        return None
+    logger.warning("Found %s stale CLAIMED festival print jobs", count)
     return {"stale_claimed": count}
 
 
-@shared_task
-def report_missing_festival_document_pdfs() -> dict:
+@shared_task(ignore_result=True)
+def report_missing_festival_document_pdfs() -> dict | None:
     missing_invoices = FestivalInvoice.objects.filter(pdf_key="").count()
     missing_credits = FestivalCreditNote.objects.filter(pdf_key="").count()
-    if missing_invoices or missing_credits:
-        logger.warning(
-            "Missing festival PDFs: invoices=%s credit_notes=%s",
-            missing_invoices,
-            missing_credits,
-        )
+    if not missing_invoices and not missing_credits:
+        return None
+    logger.warning(
+        "Missing festival PDFs: invoices=%s credit_notes=%s",
+        missing_invoices,
+        missing_credits,
+    )
     return {
         "missing_invoices": missing_invoices,
         "missing_credit_notes": missing_credits,
     }
 
 
-@shared_task
+@shared_task(ignore_result=True)
 def cleanup_old_festival_ticket_payloads() -> int:
     """
     Clear payload_text for old PRINTED jobs while retaining checksums/metadata.
@@ -98,4 +99,6 @@ def cleanup_old_festival_ticket_payloads() -> int:
         ) + "Payload cleared after retention period."
         job.save(update_fields=["payload_text", "audit_note", "updated_at"])
         updated += 1
+    if updated:
+        logger.info("Cleared payload_text on %s old festival print jobs", updated)
     return updated

@@ -37,7 +37,7 @@ def serialize_order_response(order, *, replayed: bool = False) -> dict:
         "id": order.pk,
         "order_number": str(order.order_number),
         "total_price": f"{order.total_price:.2f}",
-        "paid_at": order.paid_at.isoformat().replace("+00:00", "Z"),
+        "created_at": order.created_at.isoformat().replace("+00:00", "Z"),
         "invoice_number": invoice_number,
         "print_status": order_print_status(order),
         "replayed": replayed,

@@ -83,29 +83,37 @@ class FestivalOrderAdmin(admin.ModelAdmin):
         "order_number",
         "total_price",
         "status",
-        "paid_at",
+        "created_at",
         "created_by",
-        "invoice_link",
+        "invoice_pdf_link",
         "print_status_summary",
     ]
-    list_filter = ["status", "paid_at"]
+    list_display_links = ["id", "order_number"]
+    list_filter = ["status", "created_at"]
     search_fields = ["id", "order_number", "client_request_id", "invoice__invoice_number"]
     inlines = [FestivalOrderItemInline]
     readonly_fields = [
         "order_number",
         "total_price",
         "created_at",
-        "paid_at",
-        "client_request_id",
-        "request_fingerprint",
+        "created_by",
         "status",
+        "invoice_pdf_link",
         "cancelled_at",
         "cancellation_reason",
-        "created_by",
-        "invoice_link",
-        "cancel_button",
+        "credit_note_pdf_link",
+        "client_request_id",
+        "request_fingerprint",
     ]
     fields = readonly_fields
+
+    def get_queryset(self, request):
+        return (
+            super()
+            .get_queryset(request)
+            .select_related("invoice", "invoice__credit_note", "created_by")
+            .prefetch_related("print_jobs")
+        )
 
     def has_add_permission(self, request):
         return False
@@ -124,15 +132,58 @@ class FestivalOrderAdmin(admin.ModelAdmin):
         ]
         return custom + urls
 
-    def invoice_link(self, obj: FestivalOrder):
-        if not hasattr(obj, "invoice"):
-            return "-"
-        url = reverse("admin:festival_festivalinvoice_change", args=[obj.invoice.pk])
+    @staticmethod
+    def _invoice(obj: FestivalOrder) -> FestivalInvoice | None:
+        try:
+            return obj.invoice
+        except FestivalInvoice.DoesNotExist:
+            return None
+
+    @staticmethod
+    def _credit_note(obj: FestivalOrder) -> FestivalCreditNote | None:
+        invoice = FestivalOrderAdmin._invoice(obj)
+        if invoice is None:
+            return None
+        try:
+            return invoice.credit_note
+        except FestivalCreditNote.DoesNotExist:
+            return None
+
+    def invoice_pdf_link(self, obj: FestivalOrder):
+        invoice = self._invoice(obj)
+        if invoice is None or not invoice.pdf_key:
+            return "—"
+        try:
+            url = get_presigned_pdf_url(invoice.pdf_key)
+        except Exception:
+            return "—"
         return format_html(
-            '<a href="{}">{}</a>', url, obj.invoice.invoice_number
+            '<a href="{}" target="_blank" rel="noopener">Open PDF</a>', url
         )
 
-    invoice_link.short_description = "Invoice"
+    invoice_pdf_link.short_description = "Invoice PDF"
+
+    def credit_note_pdf_link(self, obj: FestivalOrder):
+        if not obj.pk:
+            return "—"
+        if obj.status != FestivalOrder.Status.CANCELLED:
+            url = reverse("admin:festival_festivalorder_cancel", args=[obj.pk])
+            return format_html(
+                '<a class="button" href="{}">Cancel order and issue credit note</a>',
+                url,
+            )
+        credit_note = self._credit_note(obj)
+        if credit_note is None or not credit_note.pdf_key:
+            return "—"
+        try:
+            url = get_presigned_pdf_url(credit_note.pdf_key)
+        except Exception:
+            return "—"
+        return format_html(
+            '<a href="{}" target="_blank" rel="noopener">Open PDF</a>', url
+        )
+
+    credit_note_pdf_link.short_description = "Credit note"
 
     def print_status_summary(self, obj: FestivalOrder):
         jobs = obj.print_jobs.all()
@@ -141,17 +192,6 @@ class FestivalOrderAdmin(admin.ModelAdmin):
         return ", ".join(f"{j.job_type}:{j.status}" for j in jobs)
 
     print_status_summary.short_description = "Print jobs"
-
-    def cancel_button(self, obj: FestivalOrder):
-        if not obj.pk or obj.status == FestivalOrder.Status.CANCELLED:
-            return "—"
-        url = reverse("admin:festival_festivalorder_cancel", args=[obj.pk])
-        return format_html(
-            '<a class="button" href="{}">Cancel order and issue credit note</a>',
-            url,
-        )
-
-    cancel_button.short_description = "Cancellation"
 
     def cancel_view(self, request, object_id):
         order = get_object_or_404(FestivalOrder, pk=object_id)

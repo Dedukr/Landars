@@ -79,7 +79,7 @@ async function stubFestivalApis(page: Page, opts?: { offline?: boolean }) {
         id: 99,
         order_number: "12",
         total_price: "8.50",
-        paid_at: "2026-07-13T12:00:00Z",
+        created_at: "2026-07-13T12:00:00Z",
         invoice_number: "FINV-000099",
         print_status: "queued",
         replayed: false,
@@ -119,7 +119,7 @@ test.describe("@festival Till", () => {
     await expect(page).toHaveURL(/auth|sign/i, { timeout: 15_000 });
   });
 
-  test("product grid, quantity, place paid order, success number", async ({
+  test("product grid, quantity, place order, success number", async ({
     page,
   }) => {
     await seedAuth(page);
@@ -133,7 +133,7 @@ test.describe("@festival Till", () => {
     await expect(page.getByRole("heading", { name: "Festival Orders" })).toBeVisible();
     await expect(page.getByText("Varenyky")).toBeVisible({ timeout: 15_000 });
     await page.getByLabel("Increase Varenyky").click();
-    const orderBtn = page.getByRole("button", { name: /Place paid order/i });
+    const orderBtn = page.getByRole("button", { name: /Place order/i });
     await expect(orderBtn).toBeEnabled();
     await orderBtn.click();
     await expect(page.getByText("#12", { exact: true })).toBeVisible({
@@ -156,7 +156,7 @@ test.describe("@festival Till", () => {
             id: 1,
             order_number: "3",
             total_price: "8.50",
-            paid_at: "2026-07-13T12:00:00Z",
+            created_at: "2026-07-13T12:00:00Z",
             invoice_number: "FINV-1",
             print_status: "queued",
             replayed: false,
@@ -169,7 +169,7 @@ test.describe("@festival Till", () => {
     });
     await page.goto("/festival", { waitUntil: "domcontentloaded" });
     await page.getByLabel("Increase Varenyky").click();
-    const btn = page.getByRole("button", { name: /Place paid order/i });
+    const btn = page.getByRole("button", { name: /Place order/i });
     await Promise.all([btn.click(), btn.click()]);
     await expect(page.getByText("#3", { exact: true })).toBeVisible({
       timeout: 10_000,
@@ -196,7 +196,7 @@ test.describe("@festival Till", () => {
     });
     await page.getByLabel("Increase Varenyky").click();
     await expect(
-      page.getByRole("button", { name: /Place paid order/i })
+      page.getByRole("button", { name: /Place order/i })
     ).toBeDisabled();
   });
 });

@@ -84,7 +84,7 @@ class FestivalOrderServiceTests(TestCase):
         order = result.order
         self.assertFalse(result.replayed)
         self.assertEqual(order.status, FestivalOrder.Status.PAID)
-        self.assertIsNotNone(order.paid_at)
+        self.assertIsNotNone(order.created_at)
         self.assertEqual(order.total_price, Decimal("17.00"))
         item = order.items.get()
         self.assertEqual(item.product_name, "Varenyky")
@@ -151,14 +151,20 @@ class FestivalOrderServiceTests(TestCase):
 
     def test_cancellation_issues_credit_note(self):
         owner = _staff_user("owner@example.com", cancel=True)
-        result = place_festival_order(
-            user=self.user,
-            client_request_id=uuid.uuid4(),
-            items=[{"product_id": self.vat_product.id, "quantity": 1}],
-        )
-        order = cancel_festival_order(
-            order=result.order, user=owner, reason="Test cancel"
-        )
+        with mock.patch(
+            "festival.tasks.generate_festival_invoice_pdf_task.delay"
+        ), mock.patch(
+            "festival.services.documents.generate_credit_note_pdf",
+            return_value="festival/credit_notes/test.pdf",
+        ) as gen_pdf:
+            result = place_festival_order(
+                user=self.user,
+                client_request_id=uuid.uuid4(),
+                items=[{"product_id": self.vat_product.id, "quantity": 1}],
+            )
+            order = cancel_festival_order(
+                order=result.order, user=owner, reason="Test cancel"
+            )
         order.refresh_from_db()
         invoice = order.invoice
         self.assertEqual(order.status, FestivalOrder.Status.CANCELLED)
@@ -167,8 +173,34 @@ class FestivalOrderServiceTests(TestCase):
         self.assertTrue(cn.credit_note_number.startswith("FCN-"))
         self.assertEqual(cn.total_gross, invoice.total_gross)
         self.assertEqual(cn.original_invoice_number, invoice.invoice_number)
-        with self.assertRaises(FestivalCancellationError):
+        gen_pdf.assert_called_once()
+        self.assertEqual(gen_pdf.call_args.args[0].pk, cn.pk)
+        with mock.patch(
+            "festival.services.documents.generate_credit_note_pdf"
+        ), self.assertRaises(FestivalCancellationError):
             cancel_festival_order(order=order, user=owner, reason="again")
+
+    def test_quantity_9999_rejected(self):
+        with self.assertRaises(FestivalOrderError) as ctx:
+            place_festival_order(
+                user=self.user,
+                client_request_id=uuid.uuid4(),
+                items=[{"product_id": self.product.id, "quantity": 9999}],
+            )
+        self.assertIn("cannot exceed", str(ctx.exception).lower())
+        self.assertEqual(FestivalOrder.objects.count(), 0)
+
+    def test_quantity_99_accepted_without_order_total_cap(self):
+        with mock.patch(
+            "festival.tasks.generate_festival_invoice_pdf_task.delay"
+        ):
+            result = place_festival_order(
+                user=self.user,
+                client_request_id=uuid.uuid4(),
+                items=[{"product_id": self.product.id, "quantity": 99}],
+            )
+        self.assertEqual(result.order.items.get().quantity, 99)
+        self.assertEqual(result.order.total_price, Decimal("841.50"))
 
     def test_ticket_sequence_wraps(self):
         from festival.models import FestivalNumberSequence
@@ -181,6 +213,33 @@ class FestivalOrderServiceTests(TestCase):
         seq.save()
         allocation = allocate_ticket_number()
         self.assertEqual(allocation.order_number, 1)
+
+    def test_allocate_ticket_wraps_after_full_1_to_99_cycle(self):
+        numbers = [allocate_ticket_number().order_number for _ in range(100)]
+        self.assertEqual(numbers[:99], list(range(1, 100)))
+        self.assertEqual(numbers[99], 1)
+
+    def test_place_orders_ticket_sequence_wraps_after_99(self):
+        with mock.patch(
+            "festival.tasks.generate_festival_invoice_pdf_task.delay"
+        ):
+            numbers = []
+            for _ in range(101):
+                result = place_festival_order(
+                    user=self.user,
+                    client_request_id=uuid.uuid4(),
+                    items=[{"product_id": self.product.id, "quantity": 1}],
+                )
+                numbers.append(result.order.order_number)
+
+        self.assertEqual(FestivalOrder.objects.count(), 101)
+        self.assertEqual(numbers[:99], list(range(1, 100)))
+        self.assertEqual(numbers[99], 1)
+        self.assertEqual(numbers[100], 2)
+        # Display ticket numbers reuse; order PKs stay unique.
+        self.assertEqual(
+            FestivalOrder.objects.filter(order_number=1).count(), 2
+        )
 
     def test_invoice_sequence_does_not_wrap_at_99(self):
         from festival.models import FestivalNumberSequence
@@ -257,6 +316,29 @@ class FestivalCloudPRNTOrderTests(TestCase):
         self.assertIn("CUSTOMER COPY", jobs[1].payload_text)
         self.assertIn("PAID", jobs[1].payload_text)
         self.assertNotIn("£", jobs[0].payload_text)
+
+    def test_missing_printer_rejected_when_required(self):
+        FestivalPrinter.objects.all().delete()
+        with self.assertRaises(FestivalOrderError) as ctx:
+            place_festival_order(
+                user=self.user,
+                client_request_id=uuid.uuid4(),
+                items=[{"product_id": self.product.id, "quantity": 1}],
+            )
+        self.assertEqual(ctx.exception.code, "printer_missing")
+
+    @override_settings(FESTIVAL_ALLOW_ORDERS_WHEN_PRINTER_OFFLINE=True)
+    def test_order_without_printer_when_offline_allowed(self):
+        FestivalPrinter.objects.all().delete()
+        result = place_festival_order(
+            user=self.user,
+            client_request_id=uuid.uuid4(),
+            items=[{"product_id": self.product.id, "quantity": 1}],
+        )
+        self.assertEqual(result.order.status, FestivalOrder.Status.PAID)
+        self.assertEqual(
+            FestivalPrintJob.objects.filter(order=result.order).count(), 0
+        )
 
 
 @override_settings(FESTIVAL_ENABLED=True, FESTIVAL_PRINT_MODE="disabled")

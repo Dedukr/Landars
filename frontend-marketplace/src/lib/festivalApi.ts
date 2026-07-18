@@ -21,7 +21,7 @@ export type FestivalOrderResponse = {
   id: number;
   order_number: string;
   total_price: string;
-  paid_at: string;
+  created_at: string;
   invoice_number: string;
   print_status: string;
   replayed: boolean;

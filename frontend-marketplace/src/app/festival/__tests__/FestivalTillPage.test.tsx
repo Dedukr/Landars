@@ -9,7 +9,17 @@ jest.mock("next/navigation", () => ({
 
 jest.mock("next/image", () => ({
   __esModule: true,
-  default: (props: { alt: string }) => <img alt={props.alt} />,
+  default: (props: Record<string, unknown>) => {
+    const { alt, src, onError } = props;
+    return (
+      // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
+      <img
+        alt={typeof alt === "string" ? alt : ""}
+        src={typeof src === "string" ? src : ""}
+        onError={onError as React.ReactEventHandler<HTMLImageElement> | undefined}
+      />
+    );
+  },
 }));
 
 jest.mock("sonner", () => ({
@@ -92,7 +102,7 @@ describe("FestivalTillPage", () => {
       id: 10,
       order_number: "7",
       total_price: "8.50",
-      paid_at: "2026-07-13T12:00:00Z",
+      created_at: "2026-07-13T12:00:00Z",
       invoice_number: "FINV-000001",
       print_status: "queued",
       replayed: false,
@@ -102,13 +112,15 @@ describe("FestivalTillPage", () => {
 
   it("loads products and calculates total", async () => {
     render(<FestivalTillPage />);
-    expect(await screen.findByText("Varenyky")).toBeInTheDocument();
-    expect(screen.getByText("Kvas")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Varenyky" })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Kvas" })).toBeInTheDocument();
     const input = screen.getByLabelText("Quantity for Varenyky");
     fireEvent.change(input, { target: { value: "2" } });
     expect(input).toHaveValue(2);
     expect(
-      screen.getByRole("button", { name: /Place paid order for £17.00/i })
+      screen.getByRole("button", { name: /Place order for £17.00/i })
     ).toBeEnabled();
   });
 
@@ -128,15 +140,15 @@ describe("FestivalTillPage", () => {
 
   it("disables empty basket submit", async () => {
     render(<FestivalTillPage />);
-    await screen.findByText("Varenyky");
+    await screen.findByRole("heading", { name: "Varenyky" });
     expect(
-      screen.getByRole("button", { name: /Place paid order/i })
+      screen.getByRole("button", { name: /Place order/i })
     ).toBeDisabled();
   });
 
   it("clamps max quantity", async () => {
     render(<FestivalTillPage />);
-    await screen.findByText("Varenyky");
+    await screen.findByRole("heading", { name: "Varenyky" });
     const input = screen.getByLabelText("Quantity for Varenyky");
     fireEvent.change(input, { target: { value: "150" } });
     expect(input).toHaveValue(99);
@@ -144,9 +156,9 @@ describe("FestivalTillPage", () => {
 
   it("submits and resets quantities, then uses new uuid", async () => {
     render(<FestivalTillPage />);
-    await screen.findByText("Varenyky");
+    await screen.findByRole("heading", { name: "Varenyky" });
     fireEvent.click(screen.getAllByLabelText(/Increase/)[0]);
-    fireEvent.click(screen.getByRole("button", { name: /Place paid order/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
     await waitFor(() => expect(placeOrder).toHaveBeenCalled());
     const firstId = placeOrder.mock.calls[0][0].client_request_id as string;
     expect(firstId).toMatch(
@@ -159,7 +171,7 @@ describe("FestivalTillPage", () => {
     expect(screen.getByLabelText("Quantity for Varenyky")).toHaveValue(0);
 
     fireEvent.click(screen.getAllByLabelText(/Increase/)[0]);
-    fireEvent.click(screen.getByRole("button", { name: /Place paid order/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
     await waitFor(() => expect(placeOrder).toHaveBeenCalledTimes(2));
     expect(placeOrder.mock.calls[1][0].client_request_id).not.toBe(firstId);
   });
@@ -167,20 +179,40 @@ describe("FestivalTillPage", () => {
   it("preserves basket and uuid after network failure", async () => {
     placeOrder.mockRejectedValueOnce(new Error("Network down"));
     render(<FestivalTillPage />);
-    await screen.findByText("Varenyky");
+    await screen.findByRole("heading", { name: "Varenyky" });
     fireEvent.click(screen.getAllByLabelText(/Increase/)[0]);
-    fireEvent.click(screen.getByRole("button", { name: /Place paid order/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
     await waitFor(() => expect(placeOrder).toHaveBeenCalled());
     const firstId = placeOrder.mock.calls[0][0].client_request_id;
     expect(screen.getByLabelText("Quantity for Varenyky")).toHaveValue(1);
-    fireEvent.click(screen.getByRole("button", { name: /Place paid order/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
     await waitFor(() => expect(placeOrder).toHaveBeenCalledTimes(2));
     expect(placeOrder.mock.calls[1][0].client_request_id).toBe(firstId);
   });
 
-  it("shows branded fallback when image missing", async () => {
+  it("shows product name fallback when image missing", async () => {
     render(<FestivalTillPage />);
-    expect(await screen.findAllByText(/Landar's Food/)).not.toHaveLength(0);
+    await screen.findByRole("heading", { name: "Varenyky" });
+    expect(screen.queryByText(/Landar's Food/)).not.toBeInTheDocument();
+    // Name appears in the image placeholder and the title row.
+    expect(screen.getAllByText("Varenyky").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("shows product name when image fails to load", async () => {
+    const { container } = render(<FestivalTillPage />);
+    await screen.findByRole("heading", { name: "Kvas" });
+    const kvasImg = container.querySelector(
+      'img[src="https://example.com/kvas.jpg"]'
+    ) as HTMLImageElement | null;
+    expect(kvasImg).toBeTruthy();
+    fireEvent.error(kvasImg!);
+    await waitFor(() => {
+      expect(
+        container.querySelector('img[src="https://example.com/kvas.jpg"]')
+      ).toBeNull();
+    });
+    expect(screen.queryByText(/Landar's Food/)).not.toBeInTheDocument();
+    expect(screen.getAllByText("Kvas").length).toBeGreaterThanOrEqual(2);
   });
 
   it("disables place when printer offline and required", async () => {
@@ -196,7 +228,10 @@ describe("FestivalTillPage", () => {
     await screen.findByText(/Printer offline/i);
     fireEvent.click(screen.getAllByLabelText(/Increase/)[0]);
     expect(
-      screen.getByRole("button", { name: /Place paid order/i })
+      screen.getByRole("button", { name: /Place order/i })
     ).toBeDisabled();
+    expect(
+      screen.getByText(/Printer offline — orders paused/i)
+    ).toBeInTheDocument();
   });
 });

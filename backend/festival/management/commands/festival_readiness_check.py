@@ -61,7 +61,6 @@ class Command(BaseCommand):
         class _DummyOrder:
             pk = 1
             order_number = 1
-            paid_at = None
             created_at = None
 
             class items:
@@ -76,7 +75,6 @@ class Command(BaseCommand):
         try:
             from django.utils import timezone
 
-            _DummyOrder.paid_at = timezone.now()
             _DummyOrder.created_at = timezone.now()
             text = render_kitchen_ticket(_DummyOrder())
             encoded = text.encode("utf-8")

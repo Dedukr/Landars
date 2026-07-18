@@ -5,11 +5,9 @@ import json
 import logging
 import uuid
 from dataclasses import dataclass
-from decimal import Decimal
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
-from django.utils import timezone
 
 from festival.models import (
     FestivalOrder,
@@ -45,10 +43,6 @@ class PlaceOrderResult:
 
 def _max_item_qty() -> int:
     return int(getattr(settings, "FESTIVAL_MAX_ITEM_QUANTITY", 99))
-
-
-def _max_order_gross() -> Decimal:
-    return Decimal(str(getattr(settings, "FESTIVAL_MAX_ORDER_GROSS", "250.00")))
 
 
 def normalize_items(items: list[dict]) -> list[dict]:
@@ -115,7 +109,15 @@ def _ensure_printer_available() -> None:
     allow_offline = bool(
         getattr(settings, "FESTIVAL_ALLOW_ORDERS_WHEN_PRINTER_OFFLINE", False)
     )
-    if require and not allow_offline and not status["online"]:
+    if not require or allow_offline:
+        return
+    if not get_active_printer():
+        raise FestivalOrderError(
+            "No active festival printer is configured.",
+            code="printer_missing",
+            status=503,
+        )
+    if not status["online"]:
         raise FestivalOrderError(
             "Festival printer is offline. Orders cannot be accepted right now.",
             code="printer_offline",
@@ -181,28 +183,17 @@ def place_festival_order(
                 )
             )
         pricing = price_order(priced_lines)
-        if pricing.total_gross > _max_order_gross():
-            raise FestivalOrderError(
-                f"Order total cannot exceed £{_max_order_gross()}.",
-                code="max_total",
-            )
 
         printer = get_active_printer()
         mode = getattr(settings, "FESTIVAL_PRINT_MODE", "disabled")
-        if mode == "cloudprnt" and not printer:
-            raise FestivalOrderError(
-                "No active festival printer is configured.",
-                code="printer_missing",
-                status=503,
-            )
+        # Print jobs are queued only when an active printer exists; missing
+        # printers are already gated by _ensure_printer_available().
 
         ticket = allocate_ticket_number()
-        now = timezone.now()
         try:
             order = FestivalOrder.objects.create(
                 order_number=ticket.order_number,
                 total_price=pricing.total_gross,
-                paid_at=now,
                 client_request_id=request_id,
                 request_fingerprint=fingerprint,
                 status=FestivalOrder.Status.PAID,

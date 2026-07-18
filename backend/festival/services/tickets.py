@@ -128,7 +128,7 @@ def render_kitchen_ticket(
     order: FestivalOrder, *, is_copy: bool = False
 ) -> str:
     width = _columns()
-    created = _local_dt(order.paid_at or order.created_at)
+    created = _local_dt(order.created_at)
     lines = [
         _center("KITCHEN", width),
         _rule(width, "="),

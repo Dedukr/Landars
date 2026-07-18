@@ -572,7 +572,6 @@ FESTIVAL_CLOUDPRNT_ENDPOINT = os.getenv(
 FESTIVAL_CLOUDPRNT_POLL_SECONDS = int(os.getenv("FESTIVAL_CLOUDPRNT_POLL_SECONDS", "5"))
 FESTIVAL_TICKET_COLUMNS = int(os.getenv("FESTIVAL_TICKET_COLUMNS", "48"))
 FESTIVAL_TICKET_MAX_BYTES = int(os.getenv("FESTIVAL_TICKET_MAX_BYTES", "32768"))
-FESTIVAL_MAX_ORDER_GROSS = os.getenv("FESTIVAL_MAX_ORDER_GROSS", "250.00")
 FESTIVAL_MAX_ITEM_QUANTITY = int(os.getenv("FESTIVAL_MAX_ITEM_QUANTITY", "99"))
 FESTIVAL_CLOUDPRNT_USERNAME = os.getenv("FESTIVAL_CLOUDPRNT_USERNAME", "festival-printer")
 FESTIVAL_CLOUDPRNT_PASSWORD = os.getenv("FESTIVAL_CLOUDPRNT_PASSWORD", "")
@@ -632,6 +631,16 @@ LOGGING = {
         },
         "weasyprint": {
             "level": "ERROR",
+            "propagate": False,
+        },
+        # Quiet healthy Celery ticks; failures/exceptions still surface.
+        # Festival beat tasks only emit app WARNING/INFO when counts > 0.
+        "celery.app.trace": {
+            "level": "WARNING",
+            "propagate": False,
+        },
+        "celery.worker.strategy": {
+            "level": "WARNING",
             "propagate": False,
         },
         # Scanner traffic with bogus Host headers — Django already returns 400.

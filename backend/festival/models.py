@@ -146,7 +146,6 @@ class FestivalOrder(models.Model):
     )
     total_price = models.DecimalField(max_digits=10, decimal_places=2)
     created_at = models.DateTimeField(auto_now_add=True)
-    paid_at = models.DateTimeField()
     client_request_id = models.UUIDField(unique=True)
     request_fingerprint = models.CharField(max_length=64)
     status = models.CharField(

@@ -12,7 +12,9 @@
     th { font-size: 11px; text-transform: uppercase; color: #555; }
     .right { text-align: right; }
     .muted { color: #666; }
-    .totals td { border-bottom: none; }
+    .totals { width: auto; margin-left: auto; margin-top: 16px; }
+    .totals td { border-bottom: none; padding: 4px 0 4px 16px; white-space: nowrap; }
+    .totals td:first-child { padding-left: 0; text-align: right; }
     .badge { display: inline-block; padding: 2px 8px; background: #e8f5e9; color: #1b5e20; font-weight: 700; }
   </style>
 </head>
@@ -41,18 +43,20 @@
   <table>
     <thead>
       <tr>
-        <th>Qty</th>
-        <th>Item</th>
-        <th class="right">VAT %</th>
-        <th class="right">Gross</th>
+        <th>Product</th>
+        <th class="right">Qty</th>
+        <th class="right">Unit price</th>
+        <th class="right">VAT</th>
+        <th class="right">Total</th>
       </tr>
     </thead>
     <tbody>
       {% for item in items %}
       <tr>
-        <td>{{ item.quantity }}</td>
         <td>{{ item.product_name }}</td>
-        <td class="right">{{ item.vat_rate }}%</td>
+        <td class="right">{{ item.quantity }}</td>
+        <td class="right">£{{ item.unit_price }}</td>
+        <td class="right">£{{ item.line_vat }}</td>
         <td class="right">£{{ item.line_total }}</td>
       </tr>
       {% endfor %}
@@ -83,11 +87,5 @@
     </tbody>
   </table>
   {% endif %}
-
-  <p class="muted" style="margin-top:24px;">
-    No customer details are recorded for festival sales.
-    This document is a paid simplified festival invoice/receipt.
-    Accountant approval of templates and product VAT rates is required before production use.
-  </p>
 </body>
 </html>
