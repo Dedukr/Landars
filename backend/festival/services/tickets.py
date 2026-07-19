@@ -200,7 +200,7 @@ def render_customer_ticket(
     if vat_registered:
         vat_number = (
             (invoice.seller_snapshot or {}).get("vat_number")
-            or getattr(settings, "FESTIVAL_VAT_NUMBER", "")
+            or (getattr(settings, "BUSINESS_INFO", {}) or {}).get("tax_code", "")
             or ""
         )
         if vat_number:

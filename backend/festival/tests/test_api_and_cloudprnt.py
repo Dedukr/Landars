@@ -4,6 +4,7 @@ import base64
 import uuid
 from datetime import timedelta
 from decimal import Decimal
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
@@ -362,3 +363,180 @@ class CloudPRNTProtocolTests(TestCase):
             format="json",
         )
         self.assertEqual(resp.status_code, 503)
+
+
+@override_settings(
+    FESTIVAL_ENABLED=True,
+    FESTIVAL_PRINT_MODE="cloudprnt",
+    FESTIVAL_PRINTER_REQUIRED=True,
+    FESTIVAL_ALLOW_ORDERS_WHEN_PRINTER_OFFLINE=False,
+    FESTIVAL_CLOUDPRNT_USERNAME="festival-printer",
+    FESTIVAL_CLOUDPRNT_PASSWORD="test-secret-password",
+    FESTIVAL_PRINTER_STALE_SECONDS=60,
+)
+class PrintRecoveryTests(TestCase):
+    def setUp(self):
+        self.user = make_staff()
+        self.product = FestivalProduct.objects.create(
+            name="Varenyky", price=Decimal("8.50"), vat_rate=0
+        )
+        self.printer = FestivalPrinter.objects.create(
+            name="Main",
+            mac_address="001C62000000",
+            is_active=True,
+            last_seen_at=timezone.now(),
+            last_status_code="200",
+            last_status_text="OK",
+        )
+
+    def _poll(self):
+        return handle_poll(
+            {
+                "printerMAC": "00:1C:62:00:00:00",
+                "statusCode": "200%20OK",
+                "printingInProgress": False,
+            }
+        )
+
+    def _place_order(self):
+        return place_festival_order(
+            user=self.user,
+            client_request_id=uuid.uuid4(),
+            items=[{"product_id": self.product.id, "quantity": 1}],
+        ).order
+
+    def _fail_claimed_job(self):
+        """Claim the next job and mark it FAILED like a 51x DELETE would."""
+        result = self._poll()
+        job = FestivalPrintJob.objects.get(job_token=result["jobToken"])
+        job.status = FestivalPrintJob.Status.FAILED
+        job.last_error = "510 Incompatible media type"
+        job.save(update_fields=["status", "last_error", "updated_at"])
+        self.printer.refresh_from_db()
+        self.printer.current_job_token = None
+        self.printer.save(update_fields=["current_job_token"])
+        return job
+
+    def test_auto_retry_unblocks_batch(self):
+        from festival.tasks import auto_retry_failed_festival_print_jobs
+
+        order = self._place_order()
+        failed = self._fail_claimed_job()
+
+        # Batch is blocked while the job is FAILED.
+        self.assertFalse(self._poll()["jobReady"])
+
+        with mock.patch("festival.services.alerts.send_festival_alert"):
+            auto_retry_failed_festival_print_jobs()
+
+        failed.refresh_from_db()
+        self.assertEqual(failed.status, FestivalPrintJob.Status.CANCELLED)
+        replacement = FestivalPrintJob.objects.get(retry_of=failed)
+        self.assertEqual(replacement.status, FestivalPrintJob.Status.READY)
+        self.assertEqual(replacement.payload_text, failed.payload_text)
+
+        # Queue is unblocked again; both remaining jobs can be printed.
+        remaining = FestivalPrintJob.objects.filter(
+            order=order, status=FestivalPrintJob.Status.READY
+        ).count()
+        self.assertEqual(remaining, 2)
+        self.assertTrue(self._poll()["jobReady"])
+
+    def test_auto_retry_gives_up_after_max_attempts(self):
+        from festival.tasks import MAX_AUTO_RETRIES, auto_retry_failed_festival_print_jobs
+
+        self._place_order()
+        job = self._fail_claimed_job()
+        with mock.patch("festival.services.alerts.send_festival_alert") as alert:
+            for _ in range(MAX_AUTO_RETRIES):
+                auto_retry_failed_festival_print_jobs()
+                job = FestivalPrintJob.objects.get(retry_of=job)
+                job.status = FestivalPrintJob.Status.FAILED
+                job.save(update_fields=["status", "updated_at"])
+            self.assertFalse(alert.called)
+            auto_retry_failed_festival_print_jobs()
+            self.assertTrue(alert.called)
+        job.refresh_from_db()
+        self.assertEqual(job.status, FestivalPrintJob.Status.FAILED)
+        self.assertFalse(
+            FestivalPrintJob.objects.filter(retry_of=job).exists()
+        )
+
+    def test_stale_claim_requeued(self):
+        from festival.tasks import recover_stale_festival_print_claims
+
+        self._place_order()
+        result = self._poll()
+        job = FestivalPrintJob.objects.get(job_token=result["jobToken"])
+        FestivalPrintJob.objects.filter(pk=job.pk).update(
+            claimed_at=timezone.now() - timedelta(minutes=11)
+        )
+
+        with mock.patch("festival.services.alerts.send_festival_alert") as alert:
+            recover_stale_festival_print_claims()
+            self.assertTrue(alert.called)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, FestivalPrintJob.Status.READY)
+        self.assertIsNone(job.claimed_at)
+        self.printer.refresh_from_db()
+        self.assertIsNone(self.printer.current_job_token)
+        # Next poll re-offers the recovered job.
+        self.assertTrue(self._poll()["jobReady"])
+
+    def test_fresh_claim_not_requeued(self):
+        from festival.tasks import recover_stale_festival_print_claims
+
+        self._place_order()
+        result = self._poll()
+        with mock.patch("festival.services.alerts.send_festival_alert") as alert:
+            recover_stale_festival_print_claims()
+            self.assertFalse(alert.called)
+        job = FestivalPrintJob.objects.get(job_token=result["jobToken"])
+        self.assertEqual(job.status, FestivalPrintJob.Status.CLAIMED)
+
+    def test_printer_offline_alert_when_jobs_pending(self):
+        from festival.tasks import check_festival_printer_health
+
+        self._place_order()
+        self.printer.last_seen_at = timezone.now() - timedelta(minutes=10)
+        self.printer.save(update_fields=["last_seen_at"])
+        with mock.patch("festival.services.alerts.send_festival_alert") as alert:
+            check_festival_printer_health()
+            self.assertTrue(alert.called)
+
+    def test_printer_online_no_alert(self):
+        from festival.tasks import check_festival_printer_health
+
+        self._place_order()
+        with mock.patch("festival.services.alerts.send_festival_alert") as alert:
+            check_festival_printer_health()
+            self.assertFalse(alert.called)
+
+    def test_failed_job_alert_contains_ticket_details(self):
+        from festival.services.cloudprnt import failed_job_alert_text
+
+        order = self._place_order()
+        job = self._fail_claimed_job()
+        text = failed_job_alert_text(job)
+        self.assertIn(f"#{order.order_number}", text)
+        self.assertIn("Varenyky", text)
+        self.assertIn("£8.50", text)
+        self.assertIn("510 Incompatible media type", text)
+
+    def test_terminal_failure_sends_alert_with_details(self):
+        from festival.services.cloudprnt import handle_job_delete
+
+        self._place_order()
+        token = self._poll()["jobToken"]
+        with mock.patch("festival.tasks.send_festival_alert_task") as task:
+            with self.captureOnCommitCallbacks(execute=True):
+                handle_job_delete(
+                    mac="001C62000000",
+                    token=token,
+                    code="510 Incompatible media type",
+                )
+            task.delay.assert_called_once()
+            text = task.delay.call_args[0][0]
+        self.assertIn("Ticket print FAILED", text)
+        self.assertIn("Varenyky", text)

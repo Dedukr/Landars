@@ -25,8 +25,12 @@ class Command(BaseCommand):
                 errors.append(f"BUSINESS_INFO.{key} is missing.")
 
         if settings.FESTIVAL_VAT_REGISTERED:
-            if not settings.FESTIVAL_VAT_NUMBER:
-                errors.append("FESTIVAL_VAT_NUMBER required when VAT registered.")
+            if not business.get("tax_code"):
+                errors.append(
+                    "TAX_CODE (BUSINESS_INFO.tax_code) required when VAT registered; "
+                    "festival documents use the same VAT number as the main "
+                    "invoice/credit-note system."
+                )
         else:
             warnings.append("Festival VAT registration is disabled.")
 

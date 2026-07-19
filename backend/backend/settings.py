@@ -580,7 +580,8 @@ FESTIVAL_VAT_REGISTERED = os.getenv("FESTIVAL_VAT_REGISTERED", "false").lower() 
     "true",
     "yes",
 )
-FESTIVAL_VAT_NUMBER = os.getenv("FESTIVAL_VAT_NUMBER", "").strip()
+# Festival documents reuse BUSINESS_INFO["tax_code"] (TAX_CODE env) as the VAT
+# number, the same source as the main invoice/credit-note system.
 FESTIVAL_ORDER_PREFIX = os.getenv("FESTIVAL_ORDER_PREFIX", "FEST")
 FESTIVAL_INVOICE_PREFIX = os.getenv("FESTIVAL_INVOICE_PREFIX", "FINV")
 FESTIVAL_CREDIT_NOTE_PREFIX = os.getenv("FESTIVAL_CREDIT_NOTE_PREFIX", "FCN")
@@ -591,6 +592,14 @@ from celery.schedules import crontab  # noqa: E402
 CELERY_BEAT_SCHEDULE = {
     "festival-recover-stale-claims": {
         "task": "festival.tasks.recover_stale_festival_print_claims",
+        "schedule": crontab(minute="*/5"),
+    },
+    "festival-auto-retry-failed-print-jobs": {
+        "task": "festival.tasks.auto_retry_failed_festival_print_jobs",
+        "schedule": crontab(minute="*/2"),
+    },
+    "festival-printer-health": {
+        "task": "festival.tasks.check_festival_printer_health",
         "schedule": crontab(minute="*/5"),
     },
     "festival-missing-pdfs": {

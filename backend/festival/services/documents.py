@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 def seller_snapshot() -> dict:
     business = dict(getattr(settings, "BUSINESS_INFO", {}) or {})
     if getattr(settings, "FESTIVAL_VAT_REGISTERED", False):
-        business["vat_number"] = getattr(settings, "FESTIVAL_VAT_NUMBER", "") or ""
+        # Same VAT/tax number as the main invoice & credit-note system.
+        business["vat_number"] = business.get("tax_code", "") or ""
         business["vat_registered"] = True
     else:
         business["vat_registered"] = False

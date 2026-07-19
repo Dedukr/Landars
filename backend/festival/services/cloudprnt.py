@@ -219,7 +219,12 @@ def _next_ready_job(printer: FestivalPrinter) -> FestivalPrintJob | None:
         earlier_pending = FestivalPrintJob.objects.filter(
             batch_uuid=batch_uuid,
             sequence__lt=job.sequence,
-        ).exclude(status=FestivalPrintJob.Status.PRINTED)
+        ).exclude(
+            status__in=[
+                FestivalPrintJob.Status.PRINTED,
+                FestivalPrintJob.Status.CANCELLED,
+            ]
+        )
         if earlier_pending.exists():
             continue
         return job
@@ -352,6 +357,7 @@ def handle_poll(payload: dict, *, mac_override: str | None = None) -> dict:
         printer.last_error = job.last_error
         printer.current_job_token = None
         printer.save()
+        _alert_job_failed_after_commit(job)
         return {"jobReady": False}
 
     job.status = FestivalPrintJob.Status.CLAIMED
@@ -403,6 +409,47 @@ def handle_job_get(*, mac: str, media_type: str, token: str) -> bytes:
     printer.current_job_token = job.job_token
     printer.save(update_fields=["last_seen_at", "current_job_token", "updated_at"])
     return job.payload_text.encode("utf-8")
+
+
+def failed_job_alert_text(job: FestivalPrintJob) -> str:
+    """Human-readable ticket details for a failed print job."""
+    import html
+
+    order = job.order
+    job_type = job.get_job_type_display()
+    lines = [
+        f"❌ Ticket print FAILED: {html.escape(job_type)} ticket "
+        f"#{order.order_number}",
+        f"Error: {html.escape(job.last_error or 'unknown error')}",
+        "",
+    ]
+    for item in order.items.all():
+        lines.append(
+            f"• {item.quantity} × {html.escape(item.product_name)} — "
+            f"£{item.line_total}"
+        )
+    lines.append(f"<b>Total: £{order.total_price}</b>")
+    created = timezone.localtime(order.created_at).strftime("%H:%M")
+    lines.append(f"Placed at {created}")
+    lines.append("Auto-retry is scheduled; check the printer.")
+    return "\n".join(lines)
+
+
+def _alert_job_failed_after_commit(job: FestivalPrintJob) -> None:
+    """Queue a Telegram alert for a FAILED job once the transaction commits."""
+    text = failed_job_alert_text(job)
+    # One alert per ticket per window, even if retries of it also fail.
+    throttle_key = f"job-failed:{job.order_id}:{job.job_type}"
+
+    def enqueue() -> None:
+        from festival.tasks import send_festival_alert_task
+
+        try:
+            send_festival_alert_task.delay(text, throttle_key)
+        except Exception:
+            logger.exception("Failed to enqueue festival print-failure alert")
+
+    transaction.on_commit(enqueue)
 
 
 def _is_terminal_client_failure(code: str) -> bool:
@@ -482,6 +529,7 @@ def handle_job_delete(
             job.job_token,
             status_code,
         )
+        _alert_job_failed_after_commit(job)
         return
 
     # Transient printer conditions (paper out, cover open): keep CLAIMED for retry.
@@ -547,6 +595,17 @@ def printer_status_payload() -> dict:
     }
 
 
+def retry_chain_depth(job: FestivalPrintJob) -> int:
+    """How many times this payload has already been retried."""
+    depth = 0
+    current = job
+    while current.retry_of_id is not None and depth < 20:
+        depth += 1
+        current = current.retry_of
+    return depth
+
+
+@transaction.atomic
 def create_retry_job(failed_job: FestivalPrintJob) -> FestivalPrintJob:
     if failed_job.status != FestivalPrintJob.Status.FAILED:
         raise CloudPRNTError("Only failed jobs can be retried.")
@@ -569,7 +628,15 @@ def create_retry_job(failed_job: FestivalPrintJob) -> FestivalPrintJob:
         is_reprint=failed_job.is_reprint,
         retry_of_map={failed_job.sequence: failed_job},
     )
-    return jobs[0]
+    replacement = jobs[0]
+    # Supersede the failed job so it no longer blocks the rest of its batch
+    # and cannot be retried twice.
+    failed_job.status = FestivalPrintJob.Status.CANCELLED
+    failed_job.audit_note = (
+        failed_job.audit_note + "\n" if failed_job.audit_note else ""
+    ) + f"Superseded by retry job {replacement.job_token}."
+    failed_job.save(update_fields=["status", "audit_note", "updated_at"])
+    return replacement
 
 
 def create_reprint_batch(order, *, is_copy: bool = True) -> list[FestivalPrintJob]:
