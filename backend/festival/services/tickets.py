@@ -143,7 +143,7 @@ def render_kitchen_ticket(
         _rule(width),
     ]
     for item in order.items.all():
-        lines.extend(_qty_name_line(item.quantity, item.product_name, width))
+        lines.extend(_qty_name_line(item.quantity, item.display_name, width))
     lines += [
         _rule(width, "="),
         _center(f"TICKET {order.order_number}", width),
@@ -177,7 +177,7 @@ def render_customer_ticket(
     for item in order.items.all():
         lines.extend(
             _qty_name_price_line(
-                item.quantity, item.product_name, item.line_total, width
+                item.quantity, item.display_name, item.line_total, width
             )
         )
     lines += [
@@ -234,7 +234,7 @@ def render_cancellation_kitchen_ticket(
         lines.extend(_wrap_words(f"Reason: {reason}", width))
     lines.append(_rule(width))
     for item in order.items.all():
-        lines.extend(_qty_name_line(item.quantity, item.product_name, width))
+        lines.extend(_qty_name_line(item.quantity, item.display_name, width))
     lines += [
         _rule(width, "*"),
         _center(f"TICKET {order.order_number}", width),
@@ -269,7 +269,7 @@ def render_customer_credit_ticket(
     for item in order.items.all():
         lines.extend(
             _qty_name_price_line(
-                item.quantity, item.product_name, item.line_total, width
+                item.quantity, item.display_name, item.line_total, width
             )
         )
     lines += [

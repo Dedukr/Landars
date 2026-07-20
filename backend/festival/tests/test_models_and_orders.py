@@ -11,10 +11,11 @@ from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 
 from festival.models import (
+    FestivalAddition,
+    FestivalAdditionClass,
     FestivalCreditNote,
     FestivalInvoice,
     FestivalOrder,
-    FestivalOrderItem,
     FestivalPrinter,
     FestivalPrintJob,
     FestivalProduct,
@@ -274,6 +275,83 @@ class FestivalOrderServiceTests(TestCase):
         )
         with self.assertRaises(Exception):
             seq.full_clean()
+
+    def test_order_with_addition_includes_addition_price(self):
+        addition_class = FestivalAdditionClass.objects.create(name="Soft drinks")
+        cola = FestivalAddition.objects.create(
+            name="Cola",
+            addition_class=addition_class,
+            price=Decimal("1.50"),
+        )
+        FestivalAddition.objects.create(
+            name="Water",
+            addition_class=addition_class,
+            price=Decimal("0.00"),
+        )
+        self.product.addition_class = addition_class
+        self.product.save(update_fields=["addition_class"])
+
+        result = place_festival_order(
+            user=self.user,
+            client_request_id=uuid.uuid4(),
+            items=[
+                {
+                    "product_id": self.product.id,
+                    "addition_id": cola.id,
+                    "quantity": 2,
+                }
+            ],
+        )
+        order = result.order
+        self.assertEqual(order.total_price, Decimal("20.00"))
+        item = order.items.get()
+        self.assertEqual(item.addition_id, cola.id)
+        self.assertEqual(item.addition_name, "Cola")
+        self.assertEqual(item.addition_unit_price, Decimal("1.50"))
+        self.assertEqual(item.unit_price, Decimal("10.00"))
+        self.assertEqual(item.display_name, "Varenyky + Cola")
+
+    def test_addition_required_when_product_has_class(self):
+        addition_class = FestivalAdditionClass.objects.create(name="Drinks")
+        FestivalAddition.objects.create(
+            name="Cola",
+            addition_class=addition_class,
+            price=Decimal("1.00"),
+        )
+        self.product.addition_class = addition_class
+        self.product.save(update_fields=["addition_class"])
+        with self.assertRaises(FestivalOrderError) as ctx:
+            place_festival_order(
+                user=self.user,
+                client_request_id=uuid.uuid4(),
+                items=[{"product_id": self.product.id, "quantity": 1}],
+            )
+        self.assertEqual(ctx.exception.code, "addition_required")
+
+    def test_addition_must_match_product_class(self):
+        soft = FestivalAdditionClass.objects.create(name="Soft")
+        beer = FestivalAdditionClass.objects.create(name="Beer")
+        cola = FestivalAddition.objects.create(
+            name="Cola", addition_class=soft, price=Decimal("1.00")
+        )
+        FestivalAddition.objects.create(
+            name="Lager", addition_class=beer, price=Decimal("2.00")
+        )
+        self.product.addition_class = beer
+        self.product.save(update_fields=["addition_class"])
+        with self.assertRaises(FestivalOrderError) as ctx:
+            place_festival_order(
+                user=self.user,
+                client_request_id=uuid.uuid4(),
+                items=[
+                    {
+                        "product_id": self.product.id,
+                        "addition_id": cola.id,
+                        "quantity": 1,
+                    }
+                ],
+            )
+        self.assertEqual(ctx.exception.code, "invalid_addition")
 
 
 @override_settings(

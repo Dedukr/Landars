@@ -1,10 +1,19 @@
 import { httpClient } from "@/utils/httpClient";
 
+export type FestivalAddition = {
+  id: number;
+  name: string;
+  price: string;
+};
+
 export type FestivalProduct = {
   id: number;
   name: string;
   category_id: number | null;
   category: string | null;
+  addition_class_id: number | null;
+  addition_class: string | null;
+  additions: FestivalAddition[];
   image: string;
   price: string;
   vat_rate: string;
@@ -30,6 +39,12 @@ export type FestivalOrderResponse = {
   status: string;
 };
 
+export type FestivalOrderItemInput = {
+  product_id: number;
+  quantity: number;
+  addition_id?: number | null;
+};
+
 export async function fetchFestivalProducts(): Promise<FestivalProduct[]> {
   const data = await httpClient.get<{ results: FestivalProduct[] }>(
     "/api/festival/products/"
@@ -43,7 +58,7 @@ export async function fetchFestivalStatus(): Promise<FestivalStatus> {
 
 export async function placeFestivalOrder(payload: {
   client_request_id: string;
-  items: { product_id: number; quantity: number }[];
+  items: FestivalOrderItemInput[];
 }): Promise<FestivalOrderResponse> {
   return httpClient.post<FestivalOrderResponse>("/api/festival/orders/", payload);
 }

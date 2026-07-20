@@ -5,11 +5,13 @@ import json
 import logging
 import uuid
 from dataclasses import dataclass
+from decimal import Decimal
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
 
 from festival.models import (
+    FestivalAddition,
     FestivalOrder,
     FestivalOrderItem,
     FestivalPrintJob,
@@ -48,7 +50,7 @@ def _max_item_qty() -> int:
 def normalize_items(items: list[dict]) -> list[dict]:
     if not items:
         raise FestivalOrderError("Order must contain at least one item.")
-    normalized: dict[int, int] = {}
+    normalized: dict[tuple[int, int | None], int] = {}
     for raw in items:
         try:
             product_id = int(raw["product_id"])
@@ -57,20 +59,40 @@ def normalize_items(items: list[dict]) -> list[dict]:
             raise FestivalOrderError(
                 "Each item requires integer product_id and quantity."
             ) from exc
+        raw_addition = raw.get("addition_id", None)
+        if raw_addition is None or raw_addition == "":
+            addition_id: int | None = None
+        else:
+            try:
+                addition_id = int(raw_addition)
+            except (TypeError, ValueError) as exc:
+                raise FestivalOrderError(
+                    "addition_id must be an integer when provided."
+                ) from exc
+            if addition_id < 1:
+                raise FestivalOrderError("addition_id must be at least 1.")
         if quantity < 1:
             raise FestivalOrderError("Item quantity must be at least 1.")
         if quantity > _max_item_qty():
             raise FestivalOrderError(
                 f"Item quantity cannot exceed {_max_item_qty()}."
             )
-        normalized[product_id] = normalized.get(product_id, 0) + quantity
-        if normalized[product_id] > _max_item_qty():
+        key = (product_id, addition_id)
+        normalized[key] = normalized.get(key, 0) + quantity
+        if normalized[key] > _max_item_qty():
             raise FestivalOrderError(
                 f"Item quantity cannot exceed {_max_item_qty()}."
             )
     return [
-        {"product_id": pid, "quantity": qty}
-        for pid, qty in sorted(normalized.items(), key=lambda pair: pair[0])
+        {
+            "product_id": product_id,
+            "addition_id": addition_id,
+            "quantity": qty,
+        }
+        for (product_id, addition_id), qty in sorted(
+            normalized.items(),
+            key=lambda pair: (pair[0][0], pair[0][1] or 0),
+        )
     ]
 
 
@@ -156,10 +178,13 @@ def place_festival_order(
     _ensure_printer_available()
 
     product_ids = [row["product_id"] for row in normalized]
+    addition_ids = [
+        row["addition_id"] for row in normalized if row["addition_id"] is not None
+    ]
     with transaction.atomic():
         products = {
             p.id: p
-            for p in FestivalProduct.objects.select_for_update().filter(
+            for p in FestivalProduct.objects.select_for_update(of=("self",)).filter(
                 id__in=product_ids, is_active=True
             )
         }
@@ -170,17 +195,69 @@ def place_festival_order(
                 code="inactive_product",
             )
 
+        additions = {
+            a.id: a
+            for a in FestivalAddition.objects.select_for_update(of=("self",)).filter(
+                id__in=addition_ids
+            )
+        }
+        missing_additions = [
+            aid for aid in addition_ids if aid not in additions
+        ]
+        if missing_additions:
+            raise FestivalOrderError(
+                f"Unknown additions: {missing_additions}.",
+                code="invalid_addition",
+            )
+
         priced_lines = []
+        resolved_lines = []
         for row in normalized:
             product = products[row["product_id"]]
+            addition_id = row["addition_id"]
+            addition = None
+            addition_name = ""
+            addition_unit_price = Decimal("0.00")
+
+            if product.addition_class_id:
+                if addition_id is None:
+                    raise FestivalOrderError(
+                        f"Product {product.id} requires an addition_id.",
+                        code="addition_required",
+                    )
+                addition = additions[addition_id]
+                if addition.addition_class_id != product.addition_class_id:
+                    raise FestivalOrderError(
+                        f"Addition {addition_id} does not belong to product "
+                        f"{product.id}'s addition class.",
+                        code="invalid_addition",
+                    )
+                addition_name = addition.name
+                addition_unit_price = addition.price
+            elif addition_id is not None:
+                raise FestivalOrderError(
+                    f"Product {product.id} does not accept an addition.",
+                    code="invalid_addition",
+                )
+
+            unit_gross = product.price + addition_unit_price
             priced_lines.append(
                 price_line(
                     product_id=product.id,
                     product_name=product.name,
                     quantity=row["quantity"],
-                    unit_gross=product.price,
+                    unit_gross=unit_gross,
                     vat_rate_percent=product.vat_rate,
                 )
+            )
+            resolved_lines.append(
+                {
+                    "product_id": product.id,
+                    "addition_id": addition.id if addition else None,
+                    "addition_name": addition_name,
+                    "addition_unit_price": addition_unit_price,
+                    "quantity": row["quantity"],
+                }
             )
         pricing = price_order(priced_lines)
 
@@ -213,12 +290,15 @@ def place_festival_order(
                 status=409,
             )
 
-        for line in pricing.lines:
+        for line, resolved in zip(pricing.lines, resolved_lines, strict=True):
             FestivalOrderItem.objects.create(
                 order=order,
                 product_id=line.product_id,
+                addition_id=resolved["addition_id"],
                 quantity=line.quantity,
                 product_name=line.product_name,
+                addition_name=resolved["addition_name"],
+                addition_unit_price=resolved["addition_unit_price"],
                 unit_price=line.unit_price,
                 vat_rate=line.vat_rate,
                 line_net=line.line_net,

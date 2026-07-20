@@ -42,6 +42,52 @@ class FestivalCategory(models.Model):
         return self.name
 
 
+class FestivalAdditionClass(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "Addition class"
+        verbose_name_plural = "Addition classes"
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class FestivalAddition(models.Model):
+    name = models.CharField(max_length=200)
+    addition_class = models.ForeignKey(
+        FestivalAdditionClass,
+        on_delete=models.PROTECT,
+        related_name="additions",
+    )
+    price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text="VAT-inclusive addition price (default £0.00).",
+    )
+
+    class Meta:
+        ordering = ["addition_class__name", "name"]
+        verbose_name = "Addition"
+        verbose_name_plural = "Additions"
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(price__gte=0),
+                name="festival_addition_price_non_negative",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} (£{self.price})"
+
+    def clean(self):
+        if self.price is not None and self.price < 0:
+            raise ValidationError({"price": "Price cannot be negative."})
+
+
 class FestivalProduct(models.Model):
     category = models.ForeignKey(
         FestivalCategory,
@@ -49,6 +95,14 @@ class FestivalProduct(models.Model):
         related_name="products",
         null=True,
         blank=True,
+    )
+    addition_class = models.ForeignKey(
+        FestivalAdditionClass,
+        on_delete=models.PROTECT,
+        related_name="products",
+        null=True,
+        blank=True,
+        help_text="Additions from this class can be chosen with the product.",
     )
     name = models.CharField(max_length=200)
     image_url = models.URLField(blank=True, default="", max_length=500)
@@ -221,14 +275,28 @@ class FestivalOrderItem(models.Model):
         on_delete=models.PROTECT,
         related_name="order_items",
     )
+    addition = models.ForeignKey(
+        FestivalAddition,
+        on_delete=models.PROTECT,
+        related_name="order_items",
+        null=True,
+        blank=True,
+    )
     quantity = models.PositiveIntegerField(
         validators=[MinValueValidator(1)],
     )
     product_name = models.CharField(max_length=200)
+    addition_name = models.CharField(max_length=200, blank=True, default="")
+    addition_unit_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text="VAT-inclusive addition unit price snapshot.",
+    )
     unit_price = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        help_text="VAT-inclusive unit price snapshot.",
+        help_text="VAT-inclusive combined unit price snapshot (product + addition).",
     )
     vat_rate = models.DecimalField(
         max_digits=3,
@@ -243,8 +311,8 @@ class FestivalOrderItem(models.Model):
         ordering = ["id"]
         constraints = [
             models.UniqueConstraint(
-                fields=["order", "product"],
-                name="festival_order_item_unique_product",
+                fields=["order", "product", "addition"],
+                name="festival_order_item_unique_product_addition",
             ),
             models.CheckConstraint(
                 condition=Q(quantity__gte=1),
@@ -253,7 +321,15 @@ class FestivalOrderItem(models.Model):
         ]
 
     def __str__(self) -> str:
+        if self.addition_name:
+            return f"{self.quantity} × {self.product_name} + {self.addition_name}"
         return f"{self.quantity} × {self.product_name}"
+
+    @property
+    def display_name(self) -> str:
+        if self.addition_name:
+            return f"{self.product_name} + {self.addition_name}"
+        return self.product_name
 
     def clean(self):
         if self.pk:
@@ -261,8 +337,11 @@ class FestivalOrderItem(models.Model):
             for field in (
                 "order_id",
                 "product_id",
+                "addition_id",
                 "quantity",
                 "product_name",
+                "addition_name",
+                "addition_unit_price",
                 "unit_price",
                 "vat_rate",
                 "line_net",

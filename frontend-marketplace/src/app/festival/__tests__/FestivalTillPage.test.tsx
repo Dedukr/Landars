@@ -51,6 +51,14 @@ const products = [
   {
     id: 1,
     name: "Varenyky",
+    category_id: 1,
+    category: "Mains",
+    addition_class_id: 1,
+    addition_class: "Soft drinks",
+    additions: [
+      { id: 10, name: "Cola", price: "1.50" },
+      { id: 11, name: "Water", price: "0.00" },
+    ],
     image: "",
     price: "8.50",
     vat_rate: "0",
@@ -58,6 +66,11 @@ const products = [
   {
     id: 2,
     name: "Kvas",
+    category_id: 2,
+    category: "Drinks",
+    addition_class_id: null,
+    addition_class: null,
+    additions: [],
     image: "https://example.com/kvas.jpg",
     price: "3.00",
     vat_rate: "20",
@@ -77,6 +90,19 @@ jest.mock("@/lib/festivalApi", () => ({
     return `£${n.toFixed(2)}`;
   },
 }));
+
+async function addVarenykyWithCola(qty = 1) {
+  fireEvent.click(await screen.findByRole("button", { name: "Order Varenyky" }));
+  await screen.findByRole("dialog");
+  fireEvent.click(screen.getByRole("button", { name: /Cola/i }));
+  if (qty !== 1) {
+    fireEvent.change(screen.getByLabelText("Quantity for Varenyky"), {
+      target: { value: String(qty) },
+    });
+  }
+  fireEvent.click(screen.getByRole("button", { name: /Add to cart/i }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+}
 
 describe("FestivalTillPage", () => {
   beforeEach(() => {
@@ -101,7 +127,7 @@ describe("FestivalTillPage", () => {
     placeOrder.mockResolvedValue({
       id: 10,
       order_number: "7",
-      total_price: "8.50",
+      total_price: "10.00",
       created_at: "2026-07-13T12:00:00Z",
       invoice_number: "FINV-000001",
       print_status: "queued",
@@ -110,17 +136,22 @@ describe("FestivalTillPage", () => {
     });
   });
 
-  it("loads products and calculates total", async () => {
+  it("groups products by category", async () => {
     render(<FestivalTillPage />);
-    expect(
-      await screen.findByRole("heading", { name: "Varenyky" })
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Mains" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Drinks" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Varenyky" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Kvas" })).toBeInTheDocument();
-    const input = screen.getByLabelText("Quantity for Varenyky");
-    fireEvent.change(input, { target: { value: "2" } });
-    expect(input).toHaveValue(2);
+  });
+
+  it("adds to cart with addition and updates total", async () => {
+    render(<FestivalTillPage />);
+    await addVarenykyWithCola(2);
+    expect(screen.getByLabelText("Festival cart")).toHaveTextContent(
+      /2× Varenyky \+ Cola/
+    );
     expect(
-      screen.getByRole("button", { name: /Place order for £17.00/i })
+      screen.getByRole("button", { name: /Place order for £20.00/i })
     ).toBeEnabled();
   });
 
@@ -138,7 +169,16 @@ describe("FestivalTillPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("disables empty basket submit", async () => {
+  it("disables add to cart until addition chosen", async () => {
+    render(<FestivalTillPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Order Varenyky" }));
+    await screen.findByRole("dialog");
+    expect(
+      screen.getByRole("button", { name: /Add to cart/i })
+    ).toBeDisabled();
+  });
+
+  it("disables empty cart submit", async () => {
     render(<FestivalTillPage />);
     await screen.findByRole("heading", { name: "Varenyky" });
     expect(
@@ -146,18 +186,23 @@ describe("FestivalTillPage", () => {
     ).toBeDisabled();
   });
 
-  it("clamps max quantity", async () => {
+  it("clamps max quantity in modal", async () => {
     render(<FestivalTillPage />);
-    await screen.findByRole("heading", { name: "Varenyky" });
-    const input = screen.getByLabelText("Quantity for Varenyky");
+    fireEvent.click(await screen.findByRole("button", { name: "Order Kvas" }));
+    await screen.findByRole("dialog");
+    const input = screen.getByLabelText("Quantity for Kvas");
     fireEvent.change(input, { target: { value: "150" } });
     expect(input).toHaveValue(99);
   });
 
-  it("submits and resets quantities, then uses new uuid", async () => {
+  it("places multi-item order and resets cart with new uuid", async () => {
     render(<FestivalTillPage />);
-    await screen.findByRole("heading", { name: "Varenyky" });
-    fireEvent.click(screen.getAllByLabelText(/Increase/)[0]);
+    await addVarenykyWithCola(1);
+    fireEvent.click(screen.getByRole("button", { name: "Order Kvas" }));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByRole("button", { name: /Add to cart/i }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
     fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
     await waitFor(() => expect(placeOrder).toHaveBeenCalled());
     const firstId = placeOrder.mock.calls[0][0].client_request_id as string;
@@ -165,26 +210,32 @@ describe("FestivalTillPage", () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     );
     expect(placeOrder.mock.calls[0][0].items).toEqual([
-      { product_id: 1, quantity: 1 },
+      { product_id: 1, quantity: 1, addition_id: 10 },
+      { product_id: 2, quantity: 1 },
     ]);
     await screen.findByText("#7");
-    expect(screen.getByLabelText("Quantity for Varenyky")).toHaveValue(0);
+    expect(screen.queryByLabelText("Festival cart")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByLabelText(/Increase/)[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Order Kvas" }));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByRole("button", { name: /Add to cart/i }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
     await waitFor(() => expect(placeOrder).toHaveBeenCalledTimes(2));
     expect(placeOrder.mock.calls[1][0].client_request_id).not.toBe(firstId);
   });
 
-  it("preserves basket and uuid after network failure", async () => {
+  it("preserves cart and uuid after network failure", async () => {
     placeOrder.mockRejectedValueOnce(new Error("Network down"));
     render(<FestivalTillPage />);
-    await screen.findByRole("heading", { name: "Varenyky" });
-    fireEvent.click(screen.getAllByLabelText(/Increase/)[0]);
+    fireEvent.click(await screen.findByRole("button", { name: "Order Kvas" }));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByRole("button", { name: /Add to cart/i }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
     await waitFor(() => expect(placeOrder).toHaveBeenCalled());
     const firstId = placeOrder.mock.calls[0][0].client_request_id;
-    expect(screen.getByLabelText("Quantity for Varenyky")).toHaveValue(1);
+    expect(screen.getByLabelText("Festival cart")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
     await waitFor(() => expect(placeOrder).toHaveBeenCalledTimes(2));
     expect(placeOrder.mock.calls[1][0].client_request_id).toBe(firstId);
@@ -194,7 +245,6 @@ describe("FestivalTillPage", () => {
     render(<FestivalTillPage />);
     await screen.findByRole("heading", { name: "Varenyky" });
     expect(screen.queryByText(/Landar's Food/)).not.toBeInTheDocument();
-    // Name appears in the image placeholder and the title row.
     expect(screen.getAllByText("Varenyky").length).toBeGreaterThanOrEqual(2);
   });
 
@@ -225,13 +275,15 @@ describe("FestivalTillPage", () => {
       can_accept_orders: false,
     });
     render(<FestivalTillPage />);
-    await screen.findByText(/Printer offline/i);
-    fireEvent.click(screen.getAllByLabelText(/Increase/)[0]);
+    expect(
+      await screen.findByText(/Printer offline — orders paused/i)
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Order Kvas" }));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByRole("button", { name: /Add to cart/i }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(
       screen.getByRole("button", { name: /Place order/i })
     ).toBeDisabled();
-    expect(
-      screen.getByText(/Printer offline — orders paused/i)
-    ).toBeInTheDocument();
   });
 });

@@ -8,6 +8,8 @@ from django.utils.html import format_html
 
 from festival.forms import FestivalCancelOrderForm, FestivalProductAdminForm
 from festival.models import (
+    FestivalAddition,
+    FestivalAdditionClass,
     FestivalCategory,
     FestivalCreditNote,
     FestivalInvoice,
@@ -37,8 +39,11 @@ class FestivalOrderItemInline(admin.TabularInline):
     max_num = 0
     readonly_fields = [
         "product",
+        "addition",
         "quantity",
         "product_name",
+        "addition_name",
+        "addition_unit_price",
         "unit_price",
         "vat_rate",
         "line_net",
@@ -58,24 +63,50 @@ class FestivalCategoryAdmin(admin.ModelAdmin):
         return obj.products.count()
 
 
+@admin.register(FestivalAdditionClass)
+class FestivalAdditionClassAdmin(admin.ModelAdmin):
+    list_display = ["name", "addition_count", "product_count"]
+    search_fields = ["name"]
+    ordering = ["name"]
+
+    @admin.display(description="Additions")
+    def addition_count(self, obj: FestivalAdditionClass) -> int:
+        return obj.additions.count()
+
+    @admin.display(description="Products")
+    def product_count(self, obj: FestivalAdditionClass) -> int:
+        return obj.products.count()
+
+
+@admin.register(FestivalAddition)
+class FestivalAdditionAdmin(admin.ModelAdmin):
+    list_display = ["name", "addition_class", "price"]
+    list_filter = ["addition_class"]
+    search_fields = ["name", "addition_class__name"]
+    autocomplete_fields = ["addition_class"]
+    ordering = ["addition_class__name", "name"]
+
+
 @admin.register(FestivalProduct)
 class FestivalProductAdmin(admin.ModelAdmin):
     form = FestivalProductAdminForm
     list_display = [
         "name",
         "category",
+        "addition_class",
         "price",
         "vat_rate",
         "is_active",
         "created_at",
         "image_preview",
     ]
-    list_filter = ["category", "is_active", "vat_rate"]
-    search_fields = ["name", "category__name"]
-    autocomplete_fields = ["category"]
+    list_filter = ["category", "addition_class", "is_active", "vat_rate"]
+    search_fields = ["name", "category__name", "addition_class__name"]
+    autocomplete_fields = ["category", "addition_class"]
     readonly_fields = ["created_at", "updated_at", "image_preview"]
     fields = [
         "category",
+        "addition_class",
         "name",
         "price",
         "vat_rate",
