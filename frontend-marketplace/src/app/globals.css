@@ -125,6 +125,24 @@ body {
   touch-action: manipulation;
 }
 
+/* Festival till: lock the shell to the visible viewport so short menus
+   don't leave empty scrollable space below the product grid. Products
+   scroll inside main when they overflow. */
+html.festival-till-active,
+html.festival-till-active body {
+  height: 100dvh;
+  overflow: hidden;
+}
+html.festival-till-active body {
+  min-height: 100dvh;
+}
+html.festival-till-active main {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 /* Ensure buttons work properly on mobile */
 button,
 a[role="button"] {

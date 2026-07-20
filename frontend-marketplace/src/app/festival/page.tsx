@@ -82,6 +82,13 @@ export default function FestivalTillPage() {
 
   const canUse = Boolean(user?.can_use_festival);
 
+  useEffect(() => {
+    document.documentElement.classList.add("festival-till-active");
+    return () => {
+      document.documentElement.classList.remove("festival-till-active");
+    };
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
@@ -208,7 +215,7 @@ export default function FestivalTillPage() {
 
   return (
     <div
-      className="relative min-h-[calc(100vh-4rem)] pb-20 md:pb-24"
+      className="relative pb-16 md:pb-[4.5rem]"
       style={{ background: "var(--background)" }}
     >
       {lastOrderNumber && (
@@ -231,8 +238,8 @@ export default function FestivalTillPage() {
         </div>
       )}
 
-      <div className="mx-auto max-w-7xl px-4 py-6 md:px-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+      <div className="mx-auto max-w-7xl px-4 pt-4 pb-2 md:px-6 md:pt-5 md:pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div>
             <h1
               className="text-2xl md:text-3xl font-extrabold tracking-tight"
@@ -287,7 +294,7 @@ export default function FestivalTillPage() {
           </div>
         ) : (
           <ul
-            className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-5"
+            className="grid items-start gap-2 md:gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(6.75rem,1fr))]"
             aria-label="Festival products"
           >
             {products.map((product) => {
@@ -295,14 +302,14 @@ export default function FestivalTillPage() {
               return (
                 <li
                   key={product.id}
-                  className="flex flex-col rounded-2xl overflow-hidden shadow-sm min-h-0 md:min-h-[360px]"
+                  className="flex h-fit w-full flex-col rounded-xl overflow-hidden shadow-sm"
                   style={{
                     background: "var(--card-bg)",
                     border: "1px solid var(--sidebar-border)",
                   }}
                 >
                   <div
-                    className="relative aspect-[3/2] md:aspect-[5/4] w-full"
+                    className="relative aspect-[3/2] md:aspect-[5/4] w-full shrink-0"
                     style={{ background: "var(--sidebar-bg)" }}
                   >
                     {product.image && !brokenImages[product.id] ? (
@@ -311,7 +318,7 @@ export default function FestivalTillPage() {
                         alt=""
                         fill
                         className="object-cover"
-                        sizes="(max-width:768px) 50vw, (max-width:1280px) 25vw, 20vw"
+                        sizes="108px"
                         unoptimized
                         onError={() =>
                           setBrokenImages((prev) => ({
@@ -322,31 +329,31 @@ export default function FestivalTillPage() {
                       />
                     ) : (
                       <div
-                        className="absolute inset-0 flex items-center justify-center text-sm md:text-lg font-semibold px-2 md:px-3 text-center leading-snug"
+                        className="absolute inset-0 flex items-center justify-center text-xs md:text-sm font-semibold px-1.5 md:px-2 text-center leading-snug"
                         style={{ color: "var(--accent)" }}
                       >
                         {product.name}
                       </div>
                     )}
                   </div>
-                  <div className="flex flex-1 flex-col gap-1 md:gap-3 p-2.5 md:p-5">
+                  <div className="flex flex-col gap-0.5 md:gap-1 p-1.5 md:p-2.5">
                     <h2
-                      className="w-full font-semibold text-base md:text-xl leading-snug text-left"
+                      className="w-full font-semibold text-xs md:text-sm leading-snug text-left"
                       style={{ color: "var(--foreground)" }}
                     >
                       {product.name}
                     </h2>
                     <p
-                      className="w-full text-base md:text-xl font-bold text-right tabular-nums"
+                      className="w-full text-xs md:text-sm font-bold text-right tabular-nums"
                       style={{ color: "var(--primary)" }}
                     >
                       {formatFestivalMoney(product.price)}
                     </p>
-                    <div className="mt-0.5 md:mt-auto flex items-center justify-center gap-1 md:gap-1.5">
+                    <div className="mt-1 flex items-center justify-center gap-0.5 md:gap-1">
                       <button
                         type="button"
                         aria-label={`Decrease ${product.name}`}
-                        className="flex items-center justify-center rounded-lg md:rounded-xl border text-xl md:text-2xl font-bold min-w-11 min-h-11 md:min-w-14 md:min-h-14"
+                        className="flex items-center justify-center rounded-md md:rounded-lg border text-base md:text-lg font-bold flex-1 basis-0 !min-w-0 max-w-12 !min-h-8 md:!min-h-9"
                         style={{
                           borderColor: "var(--sidebar-border)",
                           color: "var(--foreground)",
@@ -362,7 +369,7 @@ export default function FestivalTillPage() {
                         min={0}
                         max={MAX_QTY}
                         aria-label={`Quantity for ${product.name}`}
-                        className="w-14 md:w-20 text-center rounded-lg md:rounded-xl border text-lg md:text-xl font-semibold min-h-11 md:min-h-14 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        className="flex-1 basis-0 min-w-0 max-w-12 text-center rounded-md md:rounded-lg border text-base font-semibold min-h-8 md:min-h-9 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         style={{
                           borderColor: "var(--sidebar-border)",
                           background: "var(--background)",
@@ -377,7 +384,7 @@ export default function FestivalTillPage() {
                       <button
                         type="button"
                         aria-label={`Increase ${product.name}`}
-                        className="flex items-center justify-center rounded-lg md:rounded-xl border text-xl md:text-2xl font-bold min-w-11 min-h-11 md:min-w-14 md:min-h-14"
+                        className="flex items-center justify-center rounded-md md:rounded-lg border text-base md:text-lg font-bold flex-1 basis-0 !min-w-0 max-w-12 !min-h-8 md:!min-h-9"
                         style={{
                           borderColor: "var(--sidebar-border)",
                           color: "var(--foreground)",

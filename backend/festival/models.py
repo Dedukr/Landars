@@ -30,7 +30,26 @@ def payload_sha256(text: str) -> str:
 FESTIVAL_TICKET_SEQUENCE_MAX = 99
 
 
+class FestivalCategory(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "Festival category"
+        verbose_name_plural = "Festival categories"
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class FestivalProduct(models.Model):
+    category = models.ForeignKey(
+        FestivalCategory,
+        on_delete=models.PROTECT,
+        related_name="products",
+        null=True,
+        blank=True,
+    )
     name = models.CharField(max_length=200)
     image_url = models.URLField(blank=True, default="", max_length=500)
     vat_rate = models.DecimalField(
@@ -51,7 +70,7 @@ class FestivalProduct(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["name"]
+        ordering = ["category__name", "name"]
         permissions = [
             ("place_festival_order", "Can place festival orders"),
             ("cancel_festival_order", "Can cancel festival orders"),

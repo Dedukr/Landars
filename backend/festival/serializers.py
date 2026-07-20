@@ -8,10 +8,22 @@ from festival.services.orders import order_print_status
 
 class FestivalProductSerializer(serializers.ModelSerializer):
     image = serializers.CharField(source="image_url", read_only=True)
+    category = serializers.SerializerMethodField()
 
     class Meta:
         model = FestivalProduct
-        fields = ["id", "name", "image", "price", "vat_rate"]
+        fields = [
+            "id",
+            "name",
+            "category_id",
+            "category",
+            "image",
+            "price",
+            "vat_rate",
+        ]
+
+    def get_category(self, obj: FestivalProduct) -> str | None:
+        return obj.category.name if obj.category_id else None
 
 
 class FestivalOrderItemInputSerializer(serializers.Serializer):

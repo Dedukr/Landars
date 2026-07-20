@@ -8,6 +8,7 @@ from django.utils.html import format_html
 
 from festival.forms import FestivalCancelOrderForm, FestivalProductAdminForm
 from festival.models import (
+    FestivalCategory,
     FestivalCreditNote,
     FestivalInvoice,
     FestivalNumberSequence,
@@ -46,14 +47,35 @@ class FestivalOrderItemInline(admin.TabularInline):
     ]
 
 
+@admin.register(FestivalCategory)
+class FestivalCategoryAdmin(admin.ModelAdmin):
+    list_display = ["name", "product_count"]
+    search_fields = ["name"]
+    ordering = ["name"]
+
+    @admin.display(description="Products")
+    def product_count(self, obj: FestivalCategory) -> int:
+        return obj.products.count()
+
+
 @admin.register(FestivalProduct)
 class FestivalProductAdmin(admin.ModelAdmin):
     form = FestivalProductAdminForm
-    list_display = ["name", "price", "vat_rate", "is_active", "created_at", "image_preview"]
-    list_filter = ["is_active", "vat_rate"]
-    search_fields = ["name"]
+    list_display = [
+        "name",
+        "category",
+        "price",
+        "vat_rate",
+        "is_active",
+        "created_at",
+        "image_preview",
+    ]
+    list_filter = ["category", "is_active", "vat_rate"]
+    search_fields = ["name", "category__name"]
+    autocomplete_fields = ["category"]
     readonly_fields = ["created_at", "updated_at", "image_preview"]
     fields = [
+        "category",
         "name",
         "price",
         "vat_rate",

@@ -3,6 +3,8 @@ import { httpClient } from "@/utils/httpClient";
 export type FestivalProduct = {
   id: number;
   name: string;
+  category_id: number | null;
+  category: string | null;
   image: string;
   price: string;
   vat_rate: string;

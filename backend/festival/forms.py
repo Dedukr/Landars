@@ -11,7 +11,7 @@ class FestivalProductAdminForm(forms.ModelForm):
 
     class Meta:
         model = FestivalProduct
-        fields = ["name", "image_url", "price", "vat_rate", "is_active"]
+        fields = ["name", "category", "image_url", "price", "vat_rate", "is_active"]
 
     def save(self, commit=True):
         instance = super().save(commit=False)

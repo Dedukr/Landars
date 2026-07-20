@@ -46,7 +46,11 @@ class FestivalProductsView(APIView):
                 {"detail": "Festival ordering is disabled."},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
-        products = FestivalProduct.objects.filter(is_active=True).order_by("name")
+        products = (
+            FestivalProduct.objects.filter(is_active=True)
+            .select_related("category")
+            .order_by("category__name", "name")
+        )
         data = FestivalProductSerializer(products, many=True).data
         return Response({"results": data})
 
