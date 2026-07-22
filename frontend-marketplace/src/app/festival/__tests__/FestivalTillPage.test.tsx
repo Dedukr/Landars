@@ -196,6 +196,17 @@ describe("FestivalTillPage", () => {
     expect(screen.getByRole("button", { name: /Add to cart/i })).toBeDisabled();
   });
 
+  it("hides price on free additions in the modal", async () => {
+    render(<FestivalTillPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Order Varenyky" }));
+    await screen.findByRole("dialog");
+    expect(screen.getByRole("button", { name: /^Cola/i })).toHaveTextContent("£1.50");
+    expect(screen.getByRole("button", { name: /^Water/i })).not.toHaveTextContent(
+      "£0.00"
+    );
+    expect(screen.getByRole("button", { name: /^Water/i })).toHaveTextContent("Water");
+  });
+
   it("adds to cart with addition and updates total", async () => {
     render(<FestivalTillPage />);
     await addVarenykyWithCola(2);

@@ -684,6 +684,129 @@ class FestivalOrderAdminDeleteTests(TestCase):
         self.assertEqual(protected, [])
 
 
+@override_settings(
+    FESTIVAL_ENABLED=True,
+    FESTIVAL_PRINT_MODE="disabled",
+    FESTIVAL_PRINTER_REQUIRED=False,
+)
+class FestivalProductDeletionTests(TestCase):
+    """Orders stay usable via snapshots after catalog rows are deleted."""
+
+    def setUp(self):
+        self.user = _staff_user()
+        self.product = FestivalProduct.objects.create(
+            name="Varenyky",
+            price=Decimal("8.50"),
+            vat_rate=Decimal("0"),
+        )
+
+    def test_delete_product_nulls_fk_and_keeps_order_snapshots(self):
+        order = place_festival_order(
+            user=self.user,
+            client_request_id=uuid.uuid4(),
+            items=[{"product_id": self.product.id, "quantity": 2}],
+        ).order
+        item = order.items.get()
+        self.assertEqual(item.product_id, self.product.id)
+        self.assertEqual(item.product_name, "Varenyky")
+        self.assertEqual(item.display_name, "Varenyky")
+        self.assertEqual(item.unit_price, Decimal("8.50"))
+        self.assertEqual(item.line_total, Decimal("17.00"))
+
+        product_pk = self.product.pk
+        self.product.delete()
+
+        self.assertFalse(FestivalProduct.objects.filter(pk=product_pk).exists())
+        item.refresh_from_db()
+        order.refresh_from_db()
+        self.assertIsNone(item.product_id)
+        self.assertEqual(item.product_name, "Varenyky")
+        self.assertEqual(item.display_name, "Varenyky")
+        self.assertEqual(item.unit_price, Decimal("8.50"))
+        self.assertEqual(item.line_total, Decimal("17.00"))
+        self.assertEqual(order.total_price, Decimal("17.00"))
+        self.assertEqual(order.invoice.total_gross, Decimal("17.00"))
+        self.assertEqual(str(item), "2 × Varenyky")
+
+    def test_delete_product_with_filling_and_addition_keeps_snapshots(self):
+        addition_class = FestivalAdditionClass.objects.create(name="Drinks")
+        cola = FestivalAddition.objects.create(
+            name="Cola",
+            addition_class=addition_class,
+            price=Decimal("1.50"),
+        )
+        self.product.addition_class = addition_class
+        self.product.save(update_fields=["addition_class"])
+        potato = FestivalFilling.objects.create(
+            product=self.product, name="Potato"
+        )
+
+        order = place_festival_order(
+            user=self.user,
+            client_request_id=uuid.uuid4(),
+            items=[
+                {
+                    "product_id": self.product.id,
+                    "filling_id": potato.id,
+                    "addition_id": cola.id,
+                    "quantity": 1,
+                }
+            ],
+        ).order
+        item = order.items.get()
+        self.assertEqual(item.display_name, "Varenyky (Potato) + Cola")
+
+        filling_pk = potato.pk
+        addition_pk = cola.pk
+        self.product.delete()
+
+        item.refresh_from_db()
+        self.assertIsNone(item.product_id)
+        self.assertIsNone(item.filling_id)
+        # Filling row is cascaded with the product; addition still exists.
+        self.assertFalse(FestivalFilling.objects.filter(pk=filling_pk).exists())
+        self.assertTrue(FestivalAddition.objects.filter(pk=addition_pk).exists())
+        self.assertEqual(item.addition_id, addition_pk)
+        self.assertEqual(item.product_name, "Varenyky")
+        self.assertEqual(item.filling_name, "Potato")
+        self.assertEqual(item.addition_name, "Cola")
+        self.assertEqual(item.display_name, "Varenyky (Potato) + Cola")
+        self.assertEqual(item.unit_price, Decimal("10.00"))
+
+    def test_delete_addition_nulls_fk_and_keeps_addition_snapshot(self):
+        addition_class = FestivalAdditionClass.objects.create(name="Drinks")
+        cola = FestivalAddition.objects.create(
+            name="Cola",
+            addition_class=addition_class,
+            price=Decimal("1.50"),
+        )
+        self.product.addition_class = addition_class
+        self.product.save(update_fields=["addition_class"])
+
+        order = place_festival_order(
+            user=self.user,
+            client_request_id=uuid.uuid4(),
+            items=[
+                {
+                    "product_id": self.product.id,
+                    "addition_id": cola.id,
+                    "quantity": 1,
+                }
+            ],
+        ).order
+        item = order.items.get()
+
+        cola.delete()
+
+        item.refresh_from_db()
+        self.assertIsNone(item.addition_id)
+        self.assertEqual(item.addition_name, "Cola")
+        self.assertEqual(item.display_name, "Varenyky + Cola")
+        self.assertEqual(item.unit_price, Decimal("10.00"))
+        # Product itself remains.
+        self.assertEqual(item.product_id, self.product.id)
+
+
 @override_settings(FESTIVAL_ENABLED=True, FESTIVAL_PRINT_MODE="disabled")
 class ConcurrentTicketAllocationTests(TransactionTestCase):
     def test_allocate_unique_under_contention(self):

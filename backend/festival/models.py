@@ -157,13 +157,13 @@ class FestivalFilling(models.Model):
     A variant of a product (e.g. Varenyky fillings: potato, cheese, meat).
 
     Fillings share the parent product's price, VAT rate, image and addition
-    class. Deactivate a filling instead of deleting it once it has been
-    ordered (PROTECT blocks deletion).
+    class. Deleting a product cascades to its fillings; order items keep
+    filling_name snapshots and null out the FK (SET_NULL).
     """
 
     product = models.ForeignKey(
         FestivalProduct,
-        on_delete=models.PROTECT,
+        on_delete=models.CASCADE,
         related_name="fillings",
     )
     name = models.CharField(max_length=100)
@@ -304,22 +304,27 @@ class FestivalOrderItem(models.Model):
     )
     product = models.ForeignKey(
         FestivalProduct,
-        on_delete=models.PROTECT,
+        on_delete=models.SET_NULL,
         related_name="order_items",
+        null=True,
+        blank=True,
+        help_text="May be null if the product was deleted; use product_name snapshot.",
     )
     filling = models.ForeignKey(
         FestivalFilling,
-        on_delete=models.PROTECT,
+        on_delete=models.SET_NULL,
         related_name="order_items",
         null=True,
         blank=True,
+        help_text="May be null if the filling was deleted; use filling_name snapshot.",
     )
     addition = models.ForeignKey(
         FestivalAddition,
-        on_delete=models.PROTECT,
+        on_delete=models.SET_NULL,
         related_name="order_items",
         null=True,
         blank=True,
+        help_text="May be null if the addition was deleted; use addition_name snapshot.",
     )
     quantity = models.PositiveIntegerField(
         validators=[MinValueValidator(1)],

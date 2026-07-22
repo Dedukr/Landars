@@ -480,7 +480,7 @@ export default function FestivalTillPage() {
               alt=""
               fill
               className="object-cover"
-              sizes="108px"
+              sizes="(min-width: 768px) 160px, 108px"
               unoptimized
               onError={() =>
                 setBrokenImages((prev) => ({
@@ -716,7 +716,7 @@ export default function FestivalTillPage() {
                 </h2>
                 {group.products.some((p) => p.fillings.length === 0) && (
                   <ul
-                    className="grid items-start gap-2 md:gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(6.75rem,1fr))]"
+                    className="grid items-start gap-2 md:gap-3 [grid-template-columns:repeat(auto-fill,minmax(6.75rem,1fr))] md:[grid-template-columns:repeat(auto-fill,minmax(10rem,1fr))]"
                     aria-label={`${group.label} products`}
                   >
                     {group.products
@@ -739,7 +739,7 @@ export default function FestivalTillPage() {
                         {product.name}
                       </h3>
                       <ul
-                        className="grid items-start gap-2 md:gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(6.75rem,1fr))]"
+                        className="grid items-start gap-2 md:gap-3 [grid-template-columns:repeat(auto-fill,minmax(6.75rem,1fr))] md:[grid-template-columns:repeat(auto-fill,minmax(10rem,1fr))]"
                         aria-label={`${product.name} fillings`}
                       >
                         {product.fillings.map((filling) => (
@@ -971,9 +971,11 @@ export default function FestivalTillPage() {
                               disabled={submitting}
                             >
                               <span className="font-medium">{addition.name}</span>
-                              <span className="tabular-nums font-semibold">
-                                {formatFestivalMoney(addition.price)}
-                              </span>
+                              {Number(addition.price) > 0 ? (
+                                <span className="tabular-nums font-semibold">
+                                  {formatFestivalMoney(addition.price)}
+                                </span>
+                              ) : null}
                             </button>
                           </li>
                         );
