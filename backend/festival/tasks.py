@@ -6,17 +6,27 @@ from datetime import timedelta
 from celery import shared_task
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from festival.models import FestivalCreditNote, FestivalInvoice, FestivalPrintJob
+from festival.services.cloudprnt import MAX_AUTO_RETRIES, MAX_STALE_CLAIM_REQUEUES
 
 logger = logging.getLogger(__name__)
 
-# A single ticket payload is auto-retried at most this many times before we
-# leave it FAILED and rely on the alert + manual intervention.
-MAX_AUTO_RETRIES = 3
-# A claimed job is requeued at most this many times before it is failed.
-MAX_STALE_CLAIM_REQUEUES = 5
+# Re-export for tests / callers that imported these from tasks.
+__all__ = [
+    "MAX_AUTO_RETRIES",
+    "MAX_STALE_CLAIM_REQUEUES",
+    "send_festival_alert_task",
+    "generate_festival_invoice_pdf_task",
+    "generate_festival_credit_note_pdf_task",
+    "auto_retry_failed_festival_print_jobs",
+    "recover_stale_festival_print_claims",
+    "check_festival_printer_health",
+    "report_missing_festival_document_pdfs",
+    "cleanup_old_festival_ticket_payloads",
+]
 
 
 @shared_task(ignore_result=True)
@@ -116,38 +126,41 @@ def auto_retry_failed_festival_print_jobs() -> dict | None:
 @shared_task(ignore_result=True)
 def recover_stale_festival_print_claims() -> dict | None:
     """
-    Auto-fix stale CLAIMED jobs. If a printer claimed a job but never
-    acknowledged it within the stale window (printer rebooted, network drop),
-    the job is requeued as READY so the next poll can pick it up again.
-    Jobs requeued too many times are failed (auto-retry then takes over).
+    Auto-fix stale CLAIMED jobs. Unfetched claims stale after 3 minutes;
+    fetched claims after 10 minutes (printer may still be printing).
     """
     from festival.services.alerts import send_festival_alert
+    from festival.services.cloudprnt import sync_print_batch
 
-    stale_minutes = 10
-    cutoff = timezone.now() - timedelta(minutes=stale_minutes)
+    now = timezone.now()
+    unfetched_cutoff = now - timedelta(minutes=3)
+    fetched_cutoff = now - timedelta(minutes=10)
     requeued = 0
     failed = 0
     with transaction.atomic():
         stale_jobs = (
             FestivalPrintJob.objects.select_for_update()
+            .filter(status=FestivalPrintJob.Status.CLAIMED)
             .filter(
-                status=FestivalPrintJob.Status.CLAIMED,
-                claimed_at__lt=cutoff,
+                Q(fetched_at__isnull=True, claimed_at__lt=unfetched_cutoff)
+                | Q(fetched_at__isnull=False, claimed_at__lt=fetched_cutoff)
             )
             .select_related("printer")
         )
         for job in stale_jobs:
             note = (
-                f"Stale claim recovered at {timezone.now().isoformat()} "
+                f"Stale claim recovered at {now.isoformat()} "
                 f"(claimed {job.claimed_at.isoformat() if job.claimed_at else '?'})."
             )
             job.audit_note = (
                 job.audit_note + "\n" if job.audit_note else ""
             ) + note
-            job.attempt_count += 1
-            if job.attempt_count >= MAX_STALE_CLAIM_REQUEUES:
+            job.stale_requeue_count += 1
+            if job.stale_requeue_count >= MAX_STALE_CLAIM_REQUEUES:
                 job.status = FestivalPrintJob.Status.FAILED
                 job.last_error = "Claimed repeatedly but never acknowledged."
+                job.claimed_at = None
+                job.fetched_at = None
                 failed += 1
             else:
                 job.status = FestivalPrintJob.Status.READY
@@ -159,12 +172,13 @@ def recover_stale_festival_print_claims() -> dict | None:
                     "status",
                     "claimed_at",
                     "fetched_at",
-                    "attempt_count",
+                    "stale_requeue_count",
                     "last_error",
                     "audit_note",
                     "updated_at",
                 ]
             )
+            sync_print_batch(job.batch_uuid)
             printer = job.printer
             if printer.current_job_token == job.job_token:
                 printer.current_job_token = None

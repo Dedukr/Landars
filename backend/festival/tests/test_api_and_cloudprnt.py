@@ -29,6 +29,12 @@ def basic_auth(user, password):
     return f"Basic {token}"
 
 
+def place_order(test_case, **kwargs):
+    """place_festival_order + run on_commit print enqueue (TestCase-safe)."""
+    with test_case.captureOnCommitCallbacks(execute=True):
+        return place_festival_order(**kwargs)
+
+
 def make_staff(*, email="staff@example.com", festival=True):
     user = User.objects.create_user(
         email=email,
@@ -182,7 +188,8 @@ class CloudPRNTProtocolTests(TestCase):
         self.assertEqual(resp.data["jobReady"], False)
 
     def test_full_lifecycle_kitchen_then_customer(self):
-        place_festival_order(
+        place_order(
+            self,
             user=self.user,
             client_request_id=uuid.uuid4(),
             items=[{"product_id": self.product.id, "quantity": 1}],
@@ -249,12 +256,14 @@ class CloudPRNTProtocolTests(TestCase):
         )
 
     def test_no_interleaving_between_orders(self):
-        place_festival_order(
+        place_order(
+            self,
             user=self.user,
             client_request_id=uuid.uuid4(),
             items=[{"product_id": self.product.id, "quantity": 1}],
         )
-        place_festival_order(
+        place_order(
+            self,
             user=self.user,
             client_request_id=uuid.uuid4(),
             items=[{"product_id": self.product.id, "quantity": 1}],
@@ -286,7 +295,8 @@ class CloudPRNTProtocolTests(TestCase):
         self.assertLess(sequence[0][0], sequence[2][0])
 
     def test_lost_post_response_reoffers_same_token(self):
-        place_festival_order(
+        place_order(
+            self,
             user=self.user,
             client_request_id=uuid.uuid4(),
             items=[{"product_id": self.product.id, "quantity": 1}],
@@ -313,8 +323,9 @@ class CloudPRNTProtocolTests(TestCase):
         resp = self._post_poll(printerMAC="00:11:22:33:44:55")
         self.assertEqual(resp.status_code, 403)
 
-    def test_terminal_media_error_fails_job(self):
-        place_festival_order(
+    def test_terminal_media_error_sync_retries_kitchen_before_customer(self):
+        place_order(
+            self,
             user=self.user,
             client_request_id=uuid.uuid4(),
             items=[{"product_id": self.product.id, "quantity": 1}],
@@ -326,22 +337,31 @@ class CloudPRNTProtocolTests(TestCase):
             {"mac": "001C62000000", "type": "text/plain", "token": token},
             HTTP_AUTHORIZATION=self.auth,
         )
-        self.client.delete(
-            f"{self.url}?mac=001C62000000&token={token}&code=510%20Incompatible%20media%20type",
-            HTTP_AUTHORIZATION=self.auth,
-        )
+        with mock.patch("festival.tasks.send_festival_alert_task"):
+            with self.captureOnCommitCallbacks(execute=True):
+                self.client.delete(
+                    f"{self.url}?mac=001C62000000&token={token}"
+                    f"&code=510%20Incompatible%20media%20type",
+                    HTTP_AUTHORIZATION=self.auth,
+                )
         job = FestivalPrintJob.objects.get(job_token=token)
-        self.assertEqual(job.status, FestivalPrintJob.Status.FAILED)
-        # Customer job remains READY but blocked
+        self.assertEqual(job.status, FestivalPrintJob.Status.CANCELLED)
+        replacement = FestivalPrintJob.objects.get(retry_of=job)
+        self.assertEqual(replacement.status, FestivalPrintJob.Status.READY)
+        self.assertEqual(replacement.job_type, FestivalPrintJob.JobType.KITCHEN)
         customer = FestivalPrintJob.objects.get(
             order=job.order, job_type=FestivalPrintJob.JobType.CUSTOMER
         )
         self.assertEqual(customer.status, FestivalPrintJob.Status.READY)
-        blocked = self._post_poll()
-        self.assertFalse(blocked.data["jobReady"])
+        self.assertEqual(customer.batch_uuid, replacement.batch_uuid)
+        # Next claim must be kitchen retry, not customer.
+        nxt = self._post_poll()
+        self.assertTrue(nxt.data["jobReady"])
+        self.assertEqual(nxt.data["jobToken"], str(replacement.job_token))
 
     def test_reprint_contains_copy(self):
-        result = place_festival_order(
+        result = place_order(
+            self,
             user=self.user,
             client_request_id=uuid.uuid4(),
             items=[{"product_id": self.product.id, "quantity": 1}],
@@ -399,7 +419,8 @@ class PrintRecoveryTests(TestCase):
         )
 
     def _place_order(self):
-        return place_festival_order(
+        return place_order(
+            self,
             user=self.user,
             client_request_id=uuid.uuid4(),
             items=[{"product_id": self.product.id, "quantity": 1}],
@@ -540,3 +561,143 @@ class PrintRecoveryTests(TestCase):
             text = task.delay.call_args[0][0]
         self.assertIn("Ticket print FAILED", text)
         self.assertIn("Varenyky", text)
+
+    def test_lost_delete_requeues_not_inferred_printed(self):
+        self._place_order()
+        token = self._poll()["jobToken"]
+        from festival.services.cloudprnt import handle_job_get
+
+        handle_job_get(mac="001C62000000", media_type="text/plain", token=token)
+        job = FestivalPrintJob.objects.get(job_token=token)
+        self.assertEqual(job.status, FestivalPrintJob.Status.CLAIMED)
+        self.assertIsNotNone(job.fetched_at)
+
+        # Idle poll without jobToken after fetch → requeue (not PRINTED), then re-offer.
+        result = self._poll()
+        job.refresh_from_db()
+        self.assertNotEqual(job.status, FestivalPrintJob.Status.PRINTED)
+        self.assertEqual(job.completion_source, "")
+        self.assertGreaterEqual(job.stale_requeue_count, 1)
+        self.assertTrue(result["jobReady"])
+        self.assertEqual(result["jobToken"], str(job.job_token))
+        self.assertEqual(job.status, FestivalPrintJob.Status.CLAIMED)
+
+    def test_get_fetches_do_not_exhaust_stale_requeue_budget(self):
+        from festival.services.cloudprnt import handle_job_get
+        from festival.tasks import MAX_STALE_CLAIM_REQUEUES, recover_stale_festival_print_claims
+
+        self._place_order()
+        token = self._poll()["jobToken"]
+        for _ in range(MAX_STALE_CLAIM_REQUEUES + 2):
+            handle_job_get(mac="001C62000000", media_type="text/plain", token=token)
+        job = FestivalPrintJob.objects.get(job_token=token)
+        self.assertGreaterEqual(job.attempt_count, MAX_STALE_CLAIM_REQUEUES + 2)
+        self.assertEqual(job.stale_requeue_count, 0)
+        FestivalPrintJob.objects.filter(pk=job.pk).update(
+            claimed_at=timezone.now() - timedelta(minutes=11),
+            fetched_at=timezone.now() - timedelta(minutes=11),
+        )
+        with mock.patch("festival.services.alerts.send_festival_alert"):
+            recover_stale_festival_print_claims()
+        job.refresh_from_db()
+        self.assertEqual(job.status, FestivalPrintJob.Status.READY)
+        self.assertEqual(job.stale_requeue_count, 1)
+
+    def test_transient_delete_keeps_claimed(self):
+        from festival.services.cloudprnt import handle_job_delete
+
+        self._place_order()
+        token = self._poll()["jobToken"]
+        handle_job_delete(
+            mac="001C62000000",
+            token=token,
+            code="410 Paper empty",
+        )
+        job = FestivalPrintJob.objects.get(job_token=token)
+        self.assertEqual(job.status, FestivalPrintJob.Status.CLAIMED)
+        self.assertTrue("410" in job.last_result_code or "Paper" in job.last_error)
+
+    def test_busy_status_does_not_claim(self):
+        self._place_order()
+        result = handle_poll(
+            {
+                "printerMAC": "00:1C:62:00:00:00",
+                "statusCode": "220%20Printer%20busy",
+                "printingInProgress": False,
+            }
+        )
+        self.assertFalse(result["jobReady"])
+        self.assertEqual(
+            FestivalPrintJob.objects.filter(
+                status=FestivalPrintJob.Status.CLAIMED
+            ).count(),
+            0,
+        )
+
+    def test_cancel_while_claimed_clears_token_and_is_idempotent(self):
+        from festival.services.cancellations import cancel_festival_order
+        from festival.services.cloudprnt import handle_job_delete, handle_job_get
+
+        owner = make_staff(email="owner@example.com")
+        owner.user_permissions.add(
+            Permission.objects.get(codename="cancel_festival_order")
+        )
+        order = self._place_order()
+        # Re-assign creator so cancel perm path is clear; use superuser-style via perm.
+        token = self._poll()["jobToken"]
+        self.printer.refresh_from_db()
+        self.assertEqual(self.printer.current_job_token, uuid.UUID(str(token)))
+
+        cancel_festival_order(order=order, user=owner, reason="test cancel")
+        self.printer.refresh_from_db()
+        self.assertIsNone(self.printer.current_job_token)
+
+        cancelled = FestivalPrintJob.objects.get(job_token=token)
+        self.assertEqual(cancelled.status, FestivalPrintJob.Status.CANCELLED)
+
+        # Printer finishing the protocol must not 409.
+        payload = handle_job_get(
+            mac="001C62000000", media_type="text/plain", token=token
+        )
+        self.assertEqual(payload, b"")
+        handle_job_delete(mac="001C62000000", token=token, code="200 OK")
+
+        self.assertTrue(
+            FestivalPrintJob.objects.filter(
+                order=order,
+                job_type=FestivalPrintJob.JobType.KITCHEN_CANCELLATION,
+                status=FestivalPrintJob.Status.READY,
+            ).exists()
+        )
+
+    def test_auto_retry_keeps_kitchen_before_customer(self):
+        from festival.tasks import auto_retry_failed_festival_print_jobs
+
+        order = self._place_order()
+        failed = self._fail_claimed_job()
+        with mock.patch("festival.services.alerts.send_festival_alert"):
+            auto_retry_failed_festival_print_jobs()
+        replacement = FestivalPrintJob.objects.get(retry_of=failed)
+        customer = FestivalPrintJob.objects.get(
+            order=order, job_type=FestivalPrintJob.JobType.CUSTOMER
+        )
+        self.assertEqual(customer.batch_uuid, replacement.batch_uuid)
+        nxt = self._poll()
+        self.assertEqual(nxt["jobToken"], str(replacement.job_token))
+        self.assertEqual(replacement.job_type, FestivalPrintJob.JobType.KITCHEN)
+
+    def test_unfetched_stale_requeues_after_three_minutes(self):
+        from festival.tasks import recover_stale_festival_print_claims
+
+        self._place_order()
+        result = self._poll()
+        job = FestivalPrintJob.objects.get(job_token=result["jobToken"])
+        FestivalPrintJob.objects.filter(pk=job.pk).update(
+            claimed_at=timezone.now() - timedelta(minutes=4),
+            fetched_at=None,
+        )
+        with mock.patch("festival.services.alerts.send_festival_alert"):
+            recover_stale_festival_print_claims()
+        job.refresh_from_db()
+        self.assertEqual(job.status, FestivalPrintJob.Status.READY)
+        self.assertEqual(job.stale_requeue_count, 1)

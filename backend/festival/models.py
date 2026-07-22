@@ -572,6 +572,45 @@ class FestivalPrinter(models.Model):
         return 200 <= numeric < 300 and numeric not in (220, 221)
 
 
+class FestivalPrintBatch(models.Model):
+    """
+    Denormalized queue metadata for a print batch (batch_uuid).
+
+    Kept in sync on job status transitions so claim selection is a simple
+    indexed ORDER BY … LIMIT 1 instead of correlated Exists/Subquery scans.
+    """
+
+    id = models.UUIDField(primary_key=True, editable=False)
+    printer = models.ForeignKey(
+        FestivalPrinter,
+        on_delete=models.CASCADE,
+        related_name="print_batches",
+    )
+    has_failed = models.BooleanField(default=False)
+    has_progress = models.BooleanField(default=False)
+    ready_count = models.PositiveIntegerField(default=0)
+    queue_available_at = models.DateTimeField()
+    queue_created_at = models.DateTimeField()
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(
+                fields=[
+                    "printer",
+                    "has_failed",
+                    "ready_count",
+                    "has_progress",
+                    "queue_available_at",
+                ],
+                name="festival_batch_claim_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"PrintBatch {self.id} ready={self.ready_count}"
+
+
 class FestivalPrintJob(models.Model):
     class JobType(models.TextChoices):
         KITCHEN = "KITCHEN", "Kitchen"
@@ -634,6 +673,8 @@ class FestivalPrintJob(models.Model):
         default="",
     )
     attempt_count = models.PositiveIntegerField(default=0)
+    # Count of READY↔CLAIMED stale recoveries only (not GET fetch attempts).
+    stale_requeue_count = models.PositiveIntegerField(default=0)
     last_result_code = models.CharField(max_length=64, blank=True, default="")
     last_error = models.TextField(blank=True, default="")
     audit_note = models.TextField(blank=True, default="")

@@ -556,11 +556,12 @@ class FestivalCloudPRNTOrderTests(TestCase):
         )
 
     def test_order_creates_kitchen_then_customer_jobs(self):
-        result = place_festival_order(
-            user=self.user,
-            client_request_id=uuid.uuid4(),
-            items=[{"product_id": self.product.id, "quantity": 1}],
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            result = place_festival_order(
+                user=self.user,
+                client_request_id=uuid.uuid4(),
+                items=[{"product_id": self.product.id, "quantity": 1}],
+            )
         jobs = list(
             FestivalPrintJob.objects.filter(order=result.order).order_by("sequence")
         )

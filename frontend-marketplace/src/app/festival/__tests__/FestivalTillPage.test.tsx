@@ -156,6 +156,7 @@ describe("FestivalTillPage", () => {
       online: true,
       last_seen_at: null,
       queued_jobs: 0,
+      oldest_queued_seconds: null,
       can_accept_orders: true,
     });
     placeOrder.mockResolvedValue({
@@ -489,6 +490,7 @@ describe("FestivalTillPage", () => {
       online: false,
       last_seen_at: null,
       queued_jobs: 2,
+      oldest_queued_seconds: 90,
       can_accept_orders: false,
     });
     render(<FestivalTillPage />);
@@ -500,5 +502,21 @@ describe("FestivalTillPage", () => {
     expect(
       screen.getByRole("button", { name: /Place order/i })
     ).toBeDisabled();
+  });
+
+  it("shows oldest queue age when tickets are waiting", async () => {
+    fetchStatus.mockResolvedValue({
+      enabled: true,
+      mode: "cloudprnt",
+      online: true,
+      last_seen_at: new Date().toISOString(),
+      queued_jobs: 2,
+      oldest_queued_seconds: 45,
+      can_accept_orders: true,
+    });
+    render(<FestivalTillPage />);
+    expect(
+      await screen.findByText(/Printer online · 2 queued · oldest 45s/i)
+    ).toBeInTheDocument();
   });
 });

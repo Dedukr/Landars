@@ -606,6 +606,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "festival.tasks.report_missing_festival_document_pdfs",
         "schedule": crontab(minute=15),
     },
+    "festival-cleanup-ticket-payloads": {
+        "task": "festival.tasks.cleanup_old_festival_ticket_payloads",
+        "schedule": crontab(hour=3, minute=30),
+    },
 }
 
 # Simple logging configuration

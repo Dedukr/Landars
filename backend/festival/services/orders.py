@@ -366,18 +366,8 @@ def place_festival_order(
 
         invoice = create_paid_invoice(order=order, pricing=pricing)
 
-        if mode == "cloudprnt" and printer:
-            kitchen = render_kitchen_ticket(order)
-            customer = render_customer_ticket(order, invoice)
-            create_print_batch(
-                order=order,
-                printer=printer,
-                jobs=[
-                    (FestivalPrintJob.JobType.KITCHEN, 1, kitchen),
-                    (FestivalPrintJob.JobType.CUSTOMER, 2, customer),
-                ],
-            )
-
+        should_enqueue_prints = mode == "cloudprnt" and printer is not None
+        printer_id = printer.pk if should_enqueue_prints else None
         order_id = order.pk
         invoice_id = invoice.pk
 
@@ -392,6 +382,50 @@ def place_festival_order(
                     invoice_id,
                 )
 
+        def enqueue_prints():
+            if not printer_id:
+                return
+            try:
+                from festival.models import FestivalPrinter
+
+                fresh_order = (
+                    FestivalOrder.objects.select_related("invoice")
+                    .prefetch_related("items")
+                    .get(pk=order_id)
+                )
+                fresh_printer = FestivalPrinter.objects.get(pk=printer_id)
+                kitchen = render_kitchen_ticket(fresh_order)
+                customer = render_customer_ticket(fresh_order, fresh_order.invoice)
+                create_print_batch(
+                    order=fresh_order,
+                    printer=fresh_printer,
+                    jobs=[
+                        (FestivalPrintJob.JobType.KITCHEN, 1, kitchen),
+                        (FestivalPrintJob.JobType.CUSTOMER, 2, customer),
+                    ],
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to enqueue festival print jobs for order %s",
+                    order_id,
+                )
+                try:
+                    from festival.tasks import send_festival_alert_task
+
+                    send_festival_alert_task.delay(
+                        (
+                            f"Failed to queue print tickets for festival order "
+                            f"#{order_id}. Reprint from admin if needed."
+                        ),
+                        f"print-enqueue-failed:{order_id}",
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to alert about print enqueue failure for order %s",
+                        order_id,
+                    )
+
+        transaction.on_commit(enqueue_prints)
         transaction.on_commit(enqueue_pdf)
 
     order = FestivalOrder.objects.select_related("invoice").prefetch_related(
