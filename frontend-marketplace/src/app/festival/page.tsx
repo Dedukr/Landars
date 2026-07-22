@@ -317,10 +317,7 @@ export default function FestivalTillPage() {
   const needsAddition = Boolean(activeProduct?.addition_class_id);
 
   const canAddToCart =
-    Boolean(activeProduct) &&
-    quantity >= 1 &&
-    (!needsAddition || selectedAdditionId != null) &&
-    !submitting;
+    Boolean(activeProduct) && quantity >= 1 && !submitting;
 
   const canPlaceOrder =
     cart.length > 0 &&
@@ -335,9 +332,7 @@ export default function FestivalTillPage() {
     setActiveProduct(product);
     setActiveFilling(filling);
     setQuantity(1);
-    setSelectedAdditionId(
-      product.additions.length === 1 ? product.additions[0].id : null
-    );
+    setSelectedAdditionId(null);
     setLastOrderNumber(null);
   }
 
@@ -948,9 +943,31 @@ export default function FestivalTillPage() {
                     >
                       No additions configured for this class.
                     </p>
-                  ) : (
-                    <ul className="flex flex-col gap-2">
-                      {activeProduct.additions.map((addition) => {
+                  ) : null}
+                  <ul className="flex flex-col gap-2">
+                    <li>
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-left"
+                        style={{
+                          background:
+                            selectedAdditionId == null
+                              ? "color-mix(in srgb, var(--primary) 12%, var(--background))"
+                              : "var(--background)",
+                          border:
+                            selectedAdditionId == null
+                              ? "2px solid var(--primary)"
+                              : "1px solid var(--sidebar-border)",
+                          color: "var(--foreground)",
+                        }}
+                        aria-pressed={selectedAdditionId == null}
+                        onClick={() => setSelectedAdditionId(null)}
+                        disabled={submitting}
+                      >
+                        <span className="font-medium">None</span>
+                      </button>
+                    </li>
+                    {activeProduct.additions.map((addition) => {
                         const selected = selectedAdditionId === addition.id;
                         return (
                           <li key={addition.id}>
@@ -980,8 +997,7 @@ export default function FestivalTillPage() {
                           </li>
                         );
                       })}
-                    </ul>
-                  )}
+                  </ul>
                 </fieldset>
               )}
 
@@ -1058,11 +1074,6 @@ export default function FestivalTillPage() {
                 disabled={!canAddToCart}
                 onClick={handleAddToCart}
                 aria-label={`Add to cart for ${formatFestivalMoney(modalLineTotal)}`}
-                title={
-                  needsAddition && selectedAdditionId == null
-                    ? "Choose an addition"
-                    : undefined
-                }
               >
                 Add to cart
               </Button>

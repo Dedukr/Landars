@@ -5,7 +5,7 @@ from django.db import transaction
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
 from django.urls import path, reverse
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
 
 from festival.forms import FestivalCancelOrderForm, FestivalProductAdminForm
 from festival.models import (
@@ -39,14 +39,11 @@ class FestivalOrderItemInline(admin.TabularInline):
     extra = 0
     can_delete = False
     max_num = 0
-    readonly_fields = [
-        "product",
-        "filling",
-        "addition",
+    fields = [
+        "product_display",
+        "filling_display",
+        "addition_display",
         "quantity",
-        "product_name",
-        "filling_name",
-        "addition_name",
         "addition_unit_price",
         "unit_price",
         "vat_rate",
@@ -54,6 +51,50 @@ class FestivalOrderItemInline(admin.TabularInline):
         "line_vat",
         "line_total",
     ]
+    readonly_fields = fields
+
+    def get_queryset(self, request):
+        return (
+            super()
+            .get_queryset(request)
+            .select_related("product", "filling", "addition")
+        )
+
+    @staticmethod
+    def _catalog_or_snapshot(related, snapshot: str, *, admin_view: str):
+        """Show the live catalog object when present; otherwise the snapshot."""
+        if related is not None:
+            url = reverse(admin_view, args=[related.pk])
+            return format_html('<a href="{}">{}</a>', url, related)
+        return snapshot or "—"
+
+    @admin.display(description="Product")
+    def product_display(self, obj: FestivalOrderItem):
+        return self._catalog_or_snapshot(
+            obj.product,
+            obj.product_name,
+            admin_view="admin:festival_festivalproduct_change",
+        )
+
+    @admin.display(description="Filling")
+    def filling_display(self, obj: FestivalOrderItem):
+        # Fillings are edited on the product; link to the product when possible.
+        filling = obj.filling
+        if filling is not None:
+            url = reverse(
+                "admin:festival_festivalproduct_change",
+                args=[filling.product_id],
+            )
+            return format_html('<a href="{}">{}</a>', url, filling)
+        return obj.filling_name or "—"
+
+    @admin.display(description="Addition")
+    def addition_display(self, obj: FestivalOrderItem):
+        return self._catalog_or_snapshot(
+            obj.addition,
+            obj.addition_name,
+            admin_view="admin:festival_festivaladdition_change",
+        )
 
 
 class FestivalFillingInline(admin.TabularInline):
@@ -75,9 +116,14 @@ class FestivalCategoryAdmin(admin.ModelAdmin):
 
 @admin.register(FestivalAdditionClass)
 class FestivalAdditionClassAdmin(admin.ModelAdmin):
-    list_display = ["name", "addition_count", "product_count"]
+    list_display = ["name", "addition_count", "product_count", "products_list"]
     search_fields = ["name"]
     ordering = ["name"]
+    fields = ["name", "products_using_class"]
+    readonly_fields = ["products_using_class"]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related("products", "additions")
 
     @admin.display(description="Additions")
     def addition_count(self, obj: FestivalAdditionClass) -> int:
@@ -86,6 +132,34 @@ class FestivalAdditionClassAdmin(admin.ModelAdmin):
     @admin.display(description="Products")
     def product_count(self, obj: FestivalAdditionClass) -> int:
         return obj.products.count()
+
+    @admin.display(description="Used by")
+    def products_list(self, obj: FestivalAdditionClass) -> str:
+        names = [p.name for p in obj.products.all()]
+        if not names:
+            return "—"
+        # Keep the changelist compact.
+        preview = ", ".join(names[:5])
+        if len(names) > 5:
+            preview = f"{preview}, +{len(names) - 5} more"
+        return preview
+
+    @admin.display(description="Products using this class")
+    def products_using_class(self, obj: FestivalAdditionClass):
+        products = list(obj.products.order_by("name"))
+        if not products:
+            return "No products use this addition class."
+        return format_html_join(
+            "<br>",
+            '<a href="{}">{}</a>',
+            (
+                (
+                    reverse("admin:festival_festivalproduct_change", args=[p.pk]),
+                    p.name,
+                )
+                for p in products
+            ),
+        )
 
 
 @admin.register(FestivalAddition)
@@ -418,18 +492,18 @@ class FestivalInvoiceAdmin(admin.ModelAdmin):
 class FestivalCreditNoteAdmin(admin.ModelAdmin):
     list_display = [
         "credit_note_number",
-        "original_invoice_number",
+        "original_invoice_link",
         "total_gross",
         "issued_at",
         "pdf_link",
     ]
     search_fields = ["credit_note_number", "original_invoice_number"]
-    readonly_fields = [
+    fields = [
         "invoice",
         "credit_note_number",
         "issued_at",
         "reason",
-        "original_invoice_number",
+        "original_invoice_link",
         "subtotal_net",
         "vat_total",
         "total_gross",
@@ -438,6 +512,7 @@ class FestivalCreditNoteAdmin(admin.ModelAdmin):
         "pdf_key",
         "pdf_link",
     ]
+    readonly_fields = fields
     actions = ["retry_pdf_action"]
 
     def has_add_permission(self, request):
@@ -445,6 +520,14 @@ class FestivalCreditNoteAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+    @admin.display(description="Original invoice number", ordering="original_invoice_number")
+    def original_invoice_link(self, obj: FestivalCreditNote):
+        number = obj.original_invoice_number or "—"
+        if not obj.invoice_id:
+            return number
+        url = reverse("admin:festival_festivalinvoice_change", args=[obj.invoice_id])
+        return format_html('<a href="{}">{}</a>', url, number)
 
     def pdf_link(self, obj: FestivalCreditNote):
         if not obj.pdf_key:

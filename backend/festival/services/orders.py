@@ -278,20 +278,16 @@ def place_festival_order(
                 )
 
             if product.addition_class_id:
-                if addition_id is None:
-                    raise FestivalOrderError(
-                        f"Product {product.id} requires an addition_id.",
-                        code="addition_required",
-                    )
-                addition = additions[addition_id]
-                if addition.addition_class_id != product.addition_class_id:
-                    raise FestivalOrderError(
-                        f"Addition {addition_id} does not belong to product "
-                        f"{product.id}'s addition class.",
-                        code="invalid_addition",
-                    )
-                addition_name = addition.name
-                addition_unit_price = addition.price
+                if addition_id is not None:
+                    addition = additions[addition_id]
+                    if addition.addition_class_id != product.addition_class_id:
+                        raise FestivalOrderError(
+                            f"Addition {addition_id} does not belong to product "
+                            f"{product.id}'s addition class.",
+                            code="invalid_addition",
+                        )
+                    addition_name = addition.name
+                    addition_unit_price = addition.price
             elif addition_id is not None:
                 raise FestivalOrderError(
                     f"Product {product.id} does not accept an addition.",

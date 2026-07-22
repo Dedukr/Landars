@@ -313,7 +313,7 @@ class FestivalOrderServiceTests(TestCase):
         self.assertEqual(item.unit_price, Decimal("10.00"))
         self.assertEqual(item.display_name, "Varenyky + Cola")
 
-    def test_addition_required_when_product_has_class(self):
+    def test_addition_optional_when_product_has_class(self):
         addition_class = FestivalAdditionClass.objects.create(name="Drinks")
         FestivalAddition.objects.create(
             name="Cola",
@@ -322,13 +322,16 @@ class FestivalOrderServiceTests(TestCase):
         )
         self.product.addition_class = addition_class
         self.product.save(update_fields=["addition_class"])
-        with self.assertRaises(FestivalOrderError) as ctx:
-            place_festival_order(
-                user=self.user,
-                client_request_id=uuid.uuid4(),
-                items=[{"product_id": self.product.id, "quantity": 1}],
-            )
-        self.assertEqual(ctx.exception.code, "addition_required")
+        result = place_festival_order(
+            user=self.user,
+            client_request_id=uuid.uuid4(),
+            items=[{"product_id": self.product.id, "quantity": 1}],
+        )
+        item = result.order.items.get()
+        self.assertIsNone(item.addition_id)
+        self.assertEqual(item.addition_name, "")
+        self.assertEqual(item.display_name, "Varenyky")
+        self.assertEqual(item.unit_price, Decimal("8.50"))
 
     def test_order_with_filling_snapshots_name(self):
         potato = FestivalFilling.objects.create(

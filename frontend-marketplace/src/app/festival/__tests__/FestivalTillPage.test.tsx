@@ -193,7 +193,11 @@ describe("FestivalTillPage", () => {
     render(<FestivalTillPage />);
     fireEvent.click(await screen.findByRole("button", { name: "Order Varenyky" }));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Add to cart/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^None$/i })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    expect(screen.getByRole("button", { name: /Add to cart/i })).toBeEnabled();
   });
 
   it("hides price on free additions in the modal", async () => {
@@ -205,6 +209,24 @@ describe("FestivalTillPage", () => {
       "£0.00"
     );
     expect(screen.getByRole("button", { name: /^Water/i })).toHaveTextContent("Water");
+  });
+
+  it("adds to cart with None addition", async () => {
+    render(<FestivalTillPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Order Varenyky" }));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByRole("button", { name: /^None$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Add to cart/i }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    );
+    expect(screen.getByLabelText("Festival cart")).toHaveTextContent(/^Varenyky/);
+    expect(screen.getByLabelText("Quantity for Varenyky")).toHaveTextContent("1");
+    fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
+    await waitFor(() => expect(placeOrder).toHaveBeenCalled());
+    expect(placeOrder.mock.calls[0][0].items).toEqual([
+      { product_id: 1, quantity: 1 },
+    ]);
   });
 
   it("adds to cart with addition and updates total", async () => {
@@ -282,13 +304,17 @@ describe("FestivalTillPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("disables add to cart until addition chosen", async () => {
+  it("defaults addition choice to None", async () => {
     render(<FestivalTillPage />);
     fireEvent.click(await screen.findByRole("button", { name: "Order Varenyky" }));
     await screen.findByRole("dialog");
+    expect(screen.getByRole("button", { name: /^None$/i })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
     expect(
       screen.getByRole("button", { name: /Add to cart/i })
-    ).toBeDisabled();
+    ).toBeEnabled();
   });
 
   it("disables empty cart submit", async () => {
