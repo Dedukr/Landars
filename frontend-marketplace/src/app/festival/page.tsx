@@ -2,7 +2,14 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/contexts/AuthContext";
@@ -134,6 +141,30 @@ export default function FestivalTillPage() {
   const [lastOrderNumber, setLastOrderNumber] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
+  const [cartExpanded, setCartExpanded] = useState(false);
+  const [scrollToCartKey, setScrollToCartKey] = useState<string | null>(null);
+  const cartListRef = useRef<HTMLUListElement | null>(null);
+  const cartPanelRef = useRef<HTMLDivElement | null>(null);
+  const lastCartFocusKeyRef = useRef<string | null>(null);
+
+  const scrollCartToKey = useCallback((key: string) => {
+    const list = cartListRef.current;
+    if (!list) return;
+    const item = list.querySelector<HTMLElement>(
+      `[data-cart-key="${CSS.escape(key)}"]`
+    );
+    if (!item) return;
+    const itemTop = item.offsetTop;
+    const itemBottom = itemTop + item.offsetHeight;
+    if (itemTop < list.scrollTop) {
+      list.scrollTop = itemTop;
+    } else if (itemBottom > list.scrollTop + list.clientHeight) {
+      list.scrollTop = itemBottom - list.clientHeight;
+    }
+    if (typeof item.scrollIntoView === "function") {
+      item.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, []);
 
   const [activeProduct, setActiveProduct] = useState<FestivalProduct | null>(
     null
@@ -186,6 +217,48 @@ export default function FestivalTillPage() {
     }, 15000);
     return () => window.clearInterval(timer);
   }, [authLoading, user, canUse, load, router]);
+
+  useEffect(() => {
+    if (!scrollToCartKey) return;
+    scrollCartToKey(scrollToCartKey);
+    setScrollToCartKey(null);
+  }, [cart, scrollToCartKey, scrollCartToKey]);
+
+  useEffect(() => {
+    if (cartExpanded) return;
+    const key = lastCartFocusKeyRef.current;
+    if (!key || cart.length === 0) return;
+    // Re-scroll after the max-height collapse transition so the focused
+    // line is visible in the compact cart.
+    const frame = window.requestAnimationFrame(() => scrollCartToKey(key));
+    const timer = window.setTimeout(() => scrollCartToKey(key), 220);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [cartExpanded, cart.length, scrollCartToKey]);
+
+  useEffect(() => {
+    if (cart.length === 0 && cartExpanded) {
+      setCartExpanded(false);
+    }
+  }, [cart.length, cartExpanded]);
+
+  useEffect(() => {
+    if (!cartExpanded) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target as Node | null;
+      if (!target || !cartPanelRef.current) return;
+      // Outside the cart panel → shrink (product cards included).
+      if (!cartPanelRef.current.contains(target)) {
+        setCartExpanded(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [cartExpanded]);
 
   const productGroups = useMemo(
     () => groupProductsByCategory(products),
@@ -247,6 +320,56 @@ export default function FestivalTillPage() {
     setLastOrderNumber(null);
   }
 
+  function addProductToCart(
+    product: FestivalProduct,
+    opts: {
+      quantity: number;
+      additionId: number | null;
+      additionName: string;
+      unitPrice: number;
+    }
+  ) {
+    const key = cartLineKey(product.id, opts.additionId);
+    setCart((prev) => {
+      const existing = prev.find((line) => line.key === key);
+      if (existing) {
+        const nextQty = Math.min(MAX_QTY, existing.quantity + opts.quantity);
+        return prev.map((line) =>
+          line.key === key ? { ...line, quantity: nextQty } : line
+        );
+      }
+      return [
+        ...prev,
+        {
+          key,
+          productId: product.id,
+          additionId: opts.additionId,
+          productName: product.name,
+          additionName: opts.additionName,
+          unitPrice: opts.unitPrice,
+          quantity: opts.quantity,
+        },
+      ];
+    });
+    setScrollToCartKey(key);
+    lastCartFocusKeyRef.current = key;
+    setLastOrderNumber(null);
+    toast.success(`Added ${product.name}`);
+  }
+
+  function handleProductPress(product: FestivalProduct) {
+    if (product.addition_class_id) {
+      openProductModal(product);
+      return;
+    }
+    addProductToCart(product, {
+      quantity: 1,
+      additionId: null,
+      additionName: "",
+      unitPrice: Number(product.price),
+    });
+  }
+
   function closeProductModal() {
     if (submitting) return;
     setActiveProduct(null);
@@ -263,41 +386,43 @@ export default function FestivalTillPage() {
     if (!activeProduct || !canAddToCart) return;
     const additionId = selectedAdditionId;
     const additionName = selectedAddition?.name ?? "";
-    const key = cartLineKey(activeProduct.id, additionId);
-    setCart((prev) => {
-      const existing = prev.find((line) => line.key === key);
-      if (existing) {
-        const nextQty = Math.min(MAX_QTY, existing.quantity + quantity);
-        return prev.map((line) =>
-          line.key === key ? { ...line, quantity: nextQty } : line
-        );
-      }
-      return [
-        ...prev,
-        {
-          key,
-          productId: activeProduct.id,
-          additionId,
-          productName: activeProduct.name,
-          additionName,
-          unitPrice: unitTotal,
-          quantity,
-        },
-      ];
+    addProductToCart(activeProduct, {
+      quantity,
+      additionId,
+      additionName,
+      unitPrice: unitTotal,
     });
-    setLastOrderNumber(null);
-    toast.success(`Added ${activeProduct.name}`);
     closeProductModal();
   }
 
-  function removeCartLine(key: string) {
-    setCart((prev) => prev.filter((line) => line.key !== key));
+  function adjustCartQty(key: string, next: number) {
+    const clamped = Math.max(0, Math.min(MAX_QTY, Math.floor(next) || 0));
+    setCart((prev) => {
+      if (clamped < 1) {
+        return prev.filter((line) => line.key !== key);
+      }
+      return prev.map((line) =>
+        line.key === key ? { ...line, quantity: clamped } : line
+      );
+    });
     setLastOrderNumber(null);
   }
 
   function clearCart() {
     setCart([]);
+    setCartExpanded(false);
+    lastCartFocusKeyRef.current = null;
     setLastOrderNumber(null);
+  }
+
+  function handleCartPanelClick(event: ReactMouseEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
+    if (target.closest("button, a, input, textarea, select, [role='button']")) {
+      return;
+    }
+    if (cart.length === 0) return;
+    setCartExpanded((prev) => !prev);
   }
 
   async function handlePlaceOrder() {
@@ -329,6 +454,8 @@ export default function FestivalTillPage() {
           : `Order #${response.order_number} placed`
       );
       setCart([]);
+      setCartExpanded(false);
+      lastCartFocusKeyRef.current = null;
       setClientRequestId(crypto.randomUUID());
       const refreshed = await fetchFestivalStatus().catch(() => null);
       if (refreshed) setStatus(refreshed);
@@ -495,7 +622,7 @@ export default function FestivalTillPage() {
                           background: "var(--card-bg)",
                           border: "1px solid var(--sidebar-border)",
                         }}
-                        onClick={() => openProductModal(product)}
+                        onClick={() => handleProductPress(product)}
                         disabled={submitting}
                         aria-label={`Order ${product.name}`}
                       >
@@ -552,42 +679,75 @@ export default function FestivalTillPage() {
       </div>
 
       <div
+        ref={cartPanelRef}
         className="fixed bottom-0 inset-x-0 z-40 border-t px-3 py-2 md:px-4 md:py-3 backdrop-blur-md"
         style={{
           background: "color-mix(in srgb, var(--sidebar-bg) 92%, transparent)",
           borderColor: "var(--sidebar-border)",
         }}
+        onClick={handleCartPanelClick}
+        aria-expanded={cart.length > 0 ? cartExpanded : undefined}
       >
         <div className="mx-auto max-w-7xl flex flex-col gap-2">
           {cart.length > 0 && (
             <ul
-              className="max-h-28 overflow-y-auto flex flex-col gap-1"
+              ref={cartListRef}
+              className={`overflow-y-auto flex flex-col gap-1 transition-[max-height] duration-200 ${
+                cartExpanded ? "max-h-[min(60dvh,28rem)]" : "max-h-28"
+              }`}
               aria-label="Festival cart"
             >
               {cart.map((line) => (
                 <li
                   key={line.key}
+                  data-cart-key={line.key}
                   className="flex items-center justify-between gap-2 text-sm"
                   style={{ color: "var(--foreground)" }}
                 >
                   <span className="min-w-0 truncate">
-                    {line.quantity}× {line.productName}
+                    {line.productName}
                     {line.additionName ? ` + ${line.additionName}` : ""}
                   </span>
-                  <span className="flex shrink-0 items-center gap-2">
-                    <span className="tabular-nums font-semibold">
-                      {formatFestivalMoney(line.unitPrice * line.quantity)}
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <button
+                      type="button"
+                      className="flex items-center justify-center rounded-md border text-base font-bold min-w-8 min-h-8"
+                      style={{
+                        borderColor: "var(--sidebar-border)",
+                        color: "var(--foreground)",
+                      }}
+                      aria-label={`Decrease ${line.productName}`}
+                      onClick={() =>
+                        adjustCartQty(line.key, line.quantity - 1)
+                      }
+                      disabled={submitting}
+                    >
+                      −
+                    </button>
+                    <span
+                      className="min-w-6 text-center tabular-nums font-semibold"
+                      aria-label={`Quantity for ${line.productName}`}
+                    >
+                      {line.quantity}
                     </span>
                     <button
                       type="button"
-                      className="rounded-md px-2 py-0.5 text-xs font-medium"
-                      style={{ color: "var(--destructive)" }}
-                      aria-label={`Remove ${line.productName}`}
-                      onClick={() => removeCartLine(line.key)}
-                      disabled={submitting}
+                      className="flex items-center justify-center rounded-md border text-base font-bold min-w-8 min-h-8"
+                      style={{
+                        borderColor: "var(--sidebar-border)",
+                        color: "var(--foreground)",
+                      }}
+                      aria-label={`Increase ${line.productName}`}
+                      onClick={() =>
+                        adjustCartQty(line.key, line.quantity + 1)
+                      }
+                      disabled={submitting || line.quantity >= MAX_QTY}
                     >
-                      Remove
+                      +
                     </button>
+                    <span className="ml-1 min-w-14 text-right tabular-nums font-semibold">
+                      {formatFestivalMoney(line.unitPrice * line.quantity)}
+                    </span>
                   </span>
                 </li>
               ))}

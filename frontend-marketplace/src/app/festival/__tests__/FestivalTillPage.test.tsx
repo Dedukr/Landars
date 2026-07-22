@@ -144,15 +144,83 @@ describe("FestivalTillPage", () => {
     expect(screen.getByRole("heading", { name: "Kvas" })).toBeInTheDocument();
   });
 
+  it("adds product without addition class straight to cart", async () => {
+    render(<FestivalTillPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Order Kvas" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Festival cart")).toHaveTextContent(/Kvas/);
+    expect(screen.getByLabelText("Quantity for Kvas")).toHaveTextContent("1");
+    expect(
+      screen.getByRole("button", { name: /Place order for £3.00/i })
+    ).toBeEnabled();
+  });
+
+  it("opens modal only when product has addition class", async () => {
+    render(<FestivalTillPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Order Varenyky" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Add to cart/i })).toBeDisabled();
+  });
+
   it("adds to cart with addition and updates total", async () => {
     render(<FestivalTillPage />);
     await addVarenykyWithCola(2);
     expect(screen.getByLabelText("Festival cart")).toHaveTextContent(
-      /2× Varenyky \+ Cola/
+      /Varenyky \+ Cola/
+    );
+    expect(screen.getByLabelText("Quantity for Varenyky")).toHaveTextContent(
+      "2"
     );
     expect(
       screen.getByRole("button", { name: /Place order for £20.00/i })
     ).toBeEnabled();
+  });
+
+  it("expands cart on panel click and collapses on outside click", async () => {
+    render(<FestivalTillPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Order Kvas" }));
+    const cart = screen.getByLabelText("Festival cart");
+    expect(cart.className).toMatch(/max-h-28/);
+    fireEvent.click(cart);
+    expect(cart.className).toMatch(/max-h-\[min\(60dvh,28rem\)\]/);
+    fireEvent.pointerDown(screen.getByRole("heading", { name: "Festival Orders" }));
+    expect(cart.className).toMatch(/max-h-28/);
+  });
+
+  it("shrinks cart after placing order", async () => {
+    render(<FestivalTillPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Order Kvas" }));
+    const cart = screen.getByLabelText("Festival cart");
+    fireEvent.click(cart);
+    expect(cart.className).toMatch(/max-h-\[min\(60dvh,28rem\)\]/);
+    fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
+    await waitFor(() => expect(placeOrder).toHaveBeenCalled());
+    await screen.findByText("#7");
+    expect(screen.queryByLabelText("Festival cart")).not.toBeInTheDocument();
+  });
+
+  it("does not toggle cart when pressing plus or minus", async () => {
+    render(<FestivalTillPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Order Kvas" }));
+    const cart = screen.getByLabelText("Festival cart");
+    fireEvent.click(cart);
+    expect(cart.className).toMatch(/max-h-\[min\(60dvh,28rem\)\]/);
+    fireEvent.click(screen.getByRole("button", { name: "Increase Kvas" }));
+    expect(cart.className).toMatch(/max-h-\[min\(60dvh,28rem\)\]/);
+  });
+
+  it("adjusts cart quantity with plus and minus", async () => {
+    render(<FestivalTillPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Order Kvas" }));
+    expect(screen.getByLabelText("Quantity for Kvas")).toHaveTextContent("1");
+    fireEvent.click(screen.getByRole("button", { name: "Increase Kvas" }));
+    expect(screen.getByLabelText("Quantity for Kvas")).toHaveTextContent("2");
+    expect(
+      screen.getByRole("button", { name: /Place order for £6.00/i })
+    ).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Decrease Kvas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Decrease Kvas" }));
+    expect(screen.queryByLabelText("Festival cart")).not.toBeInTheDocument();
   });
 
   it("guards permission", async () => {
@@ -188,9 +256,10 @@ describe("FestivalTillPage", () => {
 
   it("clamps max quantity in modal", async () => {
     render(<FestivalTillPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Order Kvas" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Order Varenyky" }));
     await screen.findByRole("dialog");
-    const input = screen.getByLabelText("Quantity for Kvas");
+    fireEvent.click(screen.getByRole("button", { name: /Cola/i }));
+    const input = screen.getByLabelText("Quantity for Varenyky");
     fireEvent.change(input, { target: { value: "150" } });
     expect(input).toHaveValue(99);
   });
@@ -199,9 +268,7 @@ describe("FestivalTillPage", () => {
     render(<FestivalTillPage />);
     await addVarenykyWithCola(1);
     fireEvent.click(screen.getByRole("button", { name: "Order Kvas" }));
-    await screen.findByRole("dialog");
-    fireEvent.click(screen.getByRole("button", { name: /Add to cart/i }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
     await waitFor(() => expect(placeOrder).toHaveBeenCalled());
@@ -217,9 +284,6 @@ describe("FestivalTillPage", () => {
     expect(screen.queryByLabelText("Festival cart")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Order Kvas" }));
-    await screen.findByRole("dialog");
-    fireEvent.click(screen.getByRole("button", { name: /Add to cart/i }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
     await waitFor(() => expect(placeOrder).toHaveBeenCalledTimes(2));
     expect(placeOrder.mock.calls[1][0].client_request_id).not.toBe(firstId);
@@ -229,9 +293,7 @@ describe("FestivalTillPage", () => {
     placeOrder.mockRejectedValueOnce(new Error("Network down"));
     render(<FestivalTillPage />);
     fireEvent.click(await screen.findByRole("button", { name: "Order Kvas" }));
-    await screen.findByRole("dialog");
-    fireEvent.click(screen.getByRole("button", { name: /Add to cart/i }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByLabelText("Festival cart")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
     await waitFor(() => expect(placeOrder).toHaveBeenCalled());
     const firstId = placeOrder.mock.calls[0][0].client_request_id;
@@ -279,9 +341,7 @@ describe("FestivalTillPage", () => {
       await screen.findByText(/Printer offline — orders paused/i)
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Order Kvas" }));
-    await screen.findByRole("dialog");
-    fireEvent.click(screen.getByRole("button", { name: /Add to cart/i }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByLabelText("Festival cart")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Place order/i })
     ).toBeDisabled();
