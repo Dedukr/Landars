@@ -425,7 +425,7 @@ def failed_job_alert_text(job: FestivalPrintJob) -> str:
     ]
     for item in order.items.all():
         lines.append(
-            f"• {item.quantity} × {html.escape(item.product_name)} — "
+            f"• {item.quantity} × {html.escape(item.display_name)} — "
             f"£{item.line_total}"
         )
     lines.append(f"<b>Total: £{order.total_price}</b>")

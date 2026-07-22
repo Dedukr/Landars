@@ -152,6 +152,38 @@ class FestivalProduct(models.Model):
             raise ValidationError({"vat_rate": "VAT rate must be between 0 and 100."})
 
 
+class FestivalFilling(models.Model):
+    """
+    A variant of a product (e.g. Varenyky fillings: potato, cheese, meat).
+
+    Fillings share the parent product's price, VAT rate, image and addition
+    class. Deactivate a filling instead of deleting it once it has been
+    ordered (PROTECT blocks deletion).
+    """
+
+    product = models.ForeignKey(
+        FestivalProduct,
+        on_delete=models.PROTECT,
+        related_name="fillings",
+    )
+    name = models.CharField(max_length=100)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "Filling"
+        verbose_name_plural = "Fillings"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["product", "name"],
+                name="festival_filling_unique_per_product",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.product.name} — {self.name}"
+
+
 class FestivalNumberSequence(models.Model):
     """
     Per-document counter rows.
@@ -275,6 +307,13 @@ class FestivalOrderItem(models.Model):
         on_delete=models.PROTECT,
         related_name="order_items",
     )
+    filling = models.ForeignKey(
+        FestivalFilling,
+        on_delete=models.PROTECT,
+        related_name="order_items",
+        null=True,
+        blank=True,
+    )
     addition = models.ForeignKey(
         FestivalAddition,
         on_delete=models.PROTECT,
@@ -286,6 +325,7 @@ class FestivalOrderItem(models.Model):
         validators=[MinValueValidator(1)],
     )
     product_name = models.CharField(max_length=200)
+    filling_name = models.CharField(max_length=100, blank=True, default="")
     addition_name = models.CharField(max_length=200, blank=True, default="")
     addition_unit_price = models.DecimalField(
         max_digits=10,
@@ -311,8 +351,8 @@ class FestivalOrderItem(models.Model):
         ordering = ["id"]
         constraints = [
             models.UniqueConstraint(
-                fields=["order", "product", "addition"],
-                name="festival_order_item_unique_product_addition",
+                fields=["order", "product", "filling", "addition"],
+                name="festival_order_item_unique_product_filling_addition",
             ),
             models.CheckConstraint(
                 condition=Q(quantity__gte=1),
@@ -321,15 +361,16 @@ class FestivalOrderItem(models.Model):
         ]
 
     def __str__(self) -> str:
-        if self.addition_name:
-            return f"{self.quantity} × {self.product_name} + {self.addition_name}"
-        return f"{self.quantity} × {self.product_name}"
+        return f"{self.quantity} × {self.display_name}"
 
     @property
     def display_name(self) -> str:
+        name = self.product_name
+        if self.filling_name:
+            name = f"{name} ({self.filling_name})"
         if self.addition_name:
-            return f"{self.product_name} + {self.addition_name}"
-        return self.product_name
+            name = f"{name} + {self.addition_name}"
+        return name
 
     def clean(self):
         if self.pk:
@@ -337,9 +378,11 @@ class FestivalOrderItem(models.Model):
             for field in (
                 "order_id",
                 "product_id",
+                "filling_id",
                 "addition_id",
                 "quantity",
                 "product_name",
+                "filling_name",
                 "addition_name",
                 "addition_unit_price",
                 "unit_price",

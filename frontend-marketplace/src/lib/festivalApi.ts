@@ -6,6 +6,11 @@ export type FestivalAddition = {
   price: string;
 };
 
+export type FestivalFilling = {
+  id: number;
+  name: string;
+};
+
 export type FestivalProduct = {
   id: number;
   name: string;
@@ -14,6 +19,7 @@ export type FestivalProduct = {
   addition_class_id: number | null;
   addition_class: string | null;
   additions: FestivalAddition[];
+  fillings: FestivalFilling[];
   image: string;
   price: string;
   vat_rate: string;
@@ -42,6 +48,7 @@ export type FestivalOrderResponse = {
 export type FestivalOrderItemInput = {
   product_id: number;
   quantity: number;
+  filling_id?: number | null;
   addition_id?: number | null;
 };
 

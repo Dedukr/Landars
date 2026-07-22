@@ -14,8 +14,10 @@ from festival.models import (
     FestivalAddition,
     FestivalAdditionClass,
     FestivalCreditNote,
+    FestivalFilling,
     FestivalInvoice,
     FestivalOrder,
+    FestivalOrderItem,
     FestivalPrinter,
     FestivalPrintJob,
     FestivalProduct,
@@ -328,6 +330,179 @@ class FestivalOrderServiceTests(TestCase):
             )
         self.assertEqual(ctx.exception.code, "addition_required")
 
+    def test_order_with_filling_snapshots_name(self):
+        potato = FestivalFilling.objects.create(
+            product=self.product, name="Potato"
+        )
+        FestivalFilling.objects.create(product=self.product, name="Cheese")
+
+        result = place_festival_order(
+            user=self.user,
+            client_request_id=uuid.uuid4(),
+            items=[
+                {
+                    "product_id": self.product.id,
+                    "filling_id": potato.id,
+                    "quantity": 2,
+                }
+            ],
+        )
+        order = result.order
+        self.assertEqual(order.total_price, Decimal("17.00"))
+        item = order.items.get()
+        self.assertEqual(item.filling_id, potato.id)
+        self.assertEqual(item.filling_name, "Potato")
+        self.assertEqual(item.display_name, "Varenyky (Potato)")
+
+    def test_filling_required_when_product_has_fillings(self):
+        FestivalFilling.objects.create(product=self.product, name="Potato")
+        with self.assertRaises(FestivalOrderError) as ctx:
+            place_festival_order(
+                user=self.user,
+                client_request_id=uuid.uuid4(),
+                items=[{"product_id": self.product.id, "quantity": 1}],
+            )
+        self.assertEqual(ctx.exception.code, "filling_required")
+
+    def test_filling_must_belong_to_product(self):
+        FestivalFilling.objects.create(product=self.product, name="Potato")
+        other_filling = FestivalFilling.objects.create(
+            product=self.vat_product, name="Classic"
+        )
+        with self.assertRaises(FestivalOrderError) as ctx:
+            place_festival_order(
+                user=self.user,
+                client_request_id=uuid.uuid4(),
+                items=[
+                    {
+                        "product_id": self.product.id,
+                        "filling_id": other_filling.id,
+                        "quantity": 1,
+                    }
+                ],
+            )
+        self.assertEqual(ctx.exception.code, "invalid_filling")
+
+    def test_filling_rejected_on_product_without_fillings(self):
+        filling = FestivalFilling.objects.create(
+            product=self.vat_product, name="Classic"
+        )
+        with self.assertRaises(FestivalOrderError) as ctx:
+            place_festival_order(
+                user=self.user,
+                client_request_id=uuid.uuid4(),
+                items=[
+                    {
+                        "product_id": self.product.id,
+                        "filling_id": filling.id,
+                        "quantity": 1,
+                    }
+                ],
+            )
+        self.assertEqual(ctx.exception.code, "invalid_filling")
+
+    def test_inactive_filling_rejected(self):
+        FestivalFilling.objects.create(product=self.product, name="Potato")
+        inactive = FestivalFilling.objects.create(
+            product=self.product, name="Meat", is_active=False
+        )
+        with self.assertRaises(FestivalOrderError) as ctx:
+            place_festival_order(
+                user=self.user,
+                client_request_id=uuid.uuid4(),
+                items=[
+                    {
+                        "product_id": self.product.id,
+                        "filling_id": inactive.id,
+                        "quantity": 1,
+                    }
+                ],
+            )
+        self.assertEqual(ctx.exception.code, "invalid_filling")
+
+    def test_filling_with_addition_display_name_and_pricing(self):
+        addition_class = FestivalAdditionClass.objects.create(name="Drinks")
+        cola = FestivalAddition.objects.create(
+            name="Cola",
+            addition_class=addition_class,
+            price=Decimal("1.50"),
+        )
+        self.product.addition_class = addition_class
+        self.product.save(update_fields=["addition_class"])
+        potato = FestivalFilling.objects.create(
+            product=self.product, name="Potato"
+        )
+
+        result = place_festival_order(
+            user=self.user,
+            client_request_id=uuid.uuid4(),
+            items=[
+                {
+                    "product_id": self.product.id,
+                    "filling_id": potato.id,
+                    "addition_id": cola.id,
+                    "quantity": 1,
+                }
+            ],
+        )
+        item = result.order.items.get()
+        self.assertEqual(item.display_name, "Varenyky (Potato) + Cola")
+        self.assertEqual(item.unit_price, Decimal("10.00"))
+        self.assertEqual(result.order.total_price, Decimal("10.00"))
+
+    def test_idempotent_replay_with_filling(self):
+        potato = FestivalFilling.objects.create(
+            product=self.product, name="Potato"
+        )
+        rid = uuid.uuid4()
+        items = [
+            {
+                "product_id": self.product.id,
+                "filling_id": potato.id,
+                "quantity": 1,
+            }
+        ]
+        first = place_festival_order(
+            user=self.user, client_request_id=rid, items=items
+        )
+        second = place_festival_order(
+            user=self.user, client_request_id=rid, items=items
+        )
+        self.assertEqual(first.order.pk, second.order.pk)
+        self.assertTrue(second.replayed)
+        self.assertEqual(FestivalOrder.objects.count(), 1)
+
+    def test_same_product_different_fillings_separate_lines(self):
+        potato = FestivalFilling.objects.create(
+            product=self.product, name="Potato"
+        )
+        cheese = FestivalFilling.objects.create(
+            product=self.product, name="Cheese"
+        )
+        result = place_festival_order(
+            user=self.user,
+            client_request_id=uuid.uuid4(),
+            items=[
+                {
+                    "product_id": self.product.id,
+                    "filling_id": potato.id,
+                    "quantity": 1,
+                },
+                {
+                    "product_id": self.product.id,
+                    "filling_id": cheese.id,
+                    "quantity": 2,
+                },
+            ],
+        )
+        items = list(result.order.items.order_by("filling_name"))
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0].filling_name, "Cheese")
+        self.assertEqual(items[0].quantity, 2)
+        self.assertEqual(items[1].filling_name, "Potato")
+        self.assertEqual(items[1].quantity, 1)
+        self.assertEqual(result.order.total_price, Decimal("25.50"))
+
     def test_addition_must_match_product_class(self):
         soft = FestivalAdditionClass.objects.create(name="Soft")
         beer = FestivalAdditionClass.objects.create(name="Beer")
@@ -417,6 +592,96 @@ class FestivalCloudPRNTOrderTests(TestCase):
         self.assertEqual(
             FestivalPrintJob.objects.filter(order=result.order).count(), 0
         )
+
+
+@override_settings(
+    FESTIVAL_ENABLED=True,
+    FESTIVAL_PRINT_MODE="disabled",
+    FESTIVAL_PRINTER_REQUIRED=False,
+)
+class FestivalOrderAdminDeleteTests(TestCase):
+    def setUp(self):
+        from django.contrib.admin.sites import AdminSite
+        from django.test import RequestFactory
+
+        from festival.admin import FestivalOrderAdmin
+
+        self.admin = FestivalOrderAdmin(FestivalOrder, AdminSite())
+        self.factory = RequestFactory()
+        self.staff = _staff_user(cancel=True)
+        self.root = User.objects.create_superuser(
+            email="root@example.com",
+            password="pass12345",
+            first_name="Root",
+            surname="User",
+        )
+        self.product = FestivalProduct.objects.create(
+            name="Varenyky", price=Decimal("8.50"), vat_rate=Decimal("0")
+        )
+
+    def _request(self, user):
+        request = self.factory.get("/admin/festival/festivalorder/")
+        request.user = user
+        return request
+
+    def _place_order(self):
+        return place_festival_order(
+            user=self.staff,
+            client_request_id=uuid.uuid4(),
+            items=[{"product_id": self.product.id, "quantity": 1}],
+        ).order
+
+    def test_staff_cannot_delete_orders(self):
+        self.assertFalse(self.admin.has_delete_permission(self._request(self.staff)))
+
+    def test_superuser_can_delete_orders(self):
+        self.assertTrue(self.admin.has_delete_permission(self._request(self.root)))
+
+    def test_delete_model_removes_order_and_related_records(self):
+        order = self._place_order()
+        invoice_pk = order.invoice.pk
+
+        self.admin.delete_model(self._request(self.root), order)
+
+        self.assertFalse(FestivalOrder.objects.filter(pk=order.pk).exists())
+        self.assertFalse(FestivalOrderItem.objects.filter(order_id=order.pk).exists())
+        self.assertFalse(FestivalInvoice.objects.filter(pk=invoice_pk).exists())
+        self.assertFalse(FestivalPrintJob.objects.filter(order_id=order.pk).exists())
+        # Products stay untouched.
+        self.assertTrue(FestivalProduct.objects.filter(pk=self.product.pk).exists())
+
+    def test_delete_model_removes_cancelled_order_with_credit_note(self):
+        order = self._place_order()
+        cancel_festival_order(order=order, user=self.staff, reason="test")
+        order.refresh_from_db()
+        credit_note_pk = order.invoice.credit_note.pk
+
+        self.admin.delete_model(self._request(self.root), order)
+
+        self.assertFalse(FestivalOrder.objects.filter(pk=order.pk).exists())
+        self.assertFalse(
+            FestivalCreditNote.objects.filter(pk=credit_note_pk).exists()
+        )
+
+    def test_delete_queryset_removes_multiple_orders(self):
+        first = self._place_order()
+        second = self._place_order()
+
+        self.admin.delete_queryset(
+            self._request(self.root),
+            FestivalOrder.objects.filter(pk__in=[first.pk, second.pk]),
+        )
+
+        self.assertEqual(FestivalOrder.objects.count(), 0)
+        self.assertEqual(FestivalInvoice.objects.count(), 0)
+
+    def test_get_deleted_objects_not_blocked_for_superuser(self):
+        order = self._place_order()
+        _, _, perms_needed, protected = self.admin.get_deleted_objects(
+            [order], self._request(self.root)
+        )
+        self.assertEqual(perms_needed, set())
+        self.assertEqual(protected, [])
 
 
 @override_settings(FESTIVAL_ENABLED=True, FESTIVAL_PRINT_MODE="disabled")

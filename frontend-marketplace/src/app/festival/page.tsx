@@ -18,6 +18,7 @@ import {
   fetchFestivalStatus,
   formatFestivalMoney,
   placeFestivalOrder,
+  type FestivalFilling,
   type FestivalProduct,
   type FestivalStatus,
 } from "@/lib/festivalApi";
@@ -34,15 +35,28 @@ type ProductGroup = {
 type CartLine = {
   key: string;
   productId: number;
+  fillingId: number | null;
   additionId: number | null;
   productName: string;
+  fillingName: string;
   additionName: string;
   unitPrice: number;
   quantity: number;
 };
 
-function cartLineKey(productId: number, additionId: number | null): string {
-  return `${productId}:${additionId ?? "none"}`;
+function cartLineKey(
+  productId: number,
+  fillingId: number | null,
+  additionId: number | null
+): string {
+  return `${productId}:${fillingId ?? "none"}:${additionId ?? "none"}`;
+}
+
+function cartLineLabel(line: CartLine): string {
+  let label = line.productName;
+  if (line.fillingName) label = `${label} (${line.fillingName})`;
+  if (line.additionName) label = `${label} + ${line.additionName}`;
+  return label;
 }
 
 function PrinterBadge({ status }: { status: FestivalStatus | null }) {
@@ -167,6 +181,9 @@ export default function FestivalTillPage() {
   }, []);
 
   const [activeProduct, setActiveProduct] = useState<FestivalProduct | null>(
+    null
+  );
+  const [activeFilling, setActiveFilling] = useState<FestivalFilling | null>(
     null
   );
   const [selectedAdditionId, setSelectedAdditionId] = useState<number | null>(
@@ -311,8 +328,12 @@ export default function FestivalTillPage() {
     Boolean(status?.enabled) &&
     !submitting;
 
-  function openProductModal(product: FestivalProduct) {
+  function openProductModal(
+    product: FestivalProduct,
+    filling: FestivalFilling | null
+  ) {
     setActiveProduct(product);
+    setActiveFilling(filling);
     setQuantity(1);
     setSelectedAdditionId(
       product.additions.length === 1 ? product.additions[0].id : null
@@ -324,12 +345,14 @@ export default function FestivalTillPage() {
     product: FestivalProduct,
     opts: {
       quantity: number;
+      fillingId: number | null;
+      fillingName: string;
       additionId: number | null;
       additionName: string;
       unitPrice: number;
     }
   ) {
-    const key = cartLineKey(product.id, opts.additionId);
+    const key = cartLineKey(product.id, opts.fillingId, opts.additionId);
     setCart((prev) => {
       const existing = prev.find((line) => line.key === key);
       if (existing) {
@@ -343,8 +366,10 @@ export default function FestivalTillPage() {
         {
           key,
           productId: product.id,
+          fillingId: opts.fillingId,
           additionId: opts.additionId,
           productName: product.name,
+          fillingName: opts.fillingName,
           additionName: opts.additionName,
           unitPrice: opts.unitPrice,
           quantity: opts.quantity,
@@ -354,16 +379,23 @@ export default function FestivalTillPage() {
     setScrollToCartKey(key);
     lastCartFocusKeyRef.current = key;
     setLastOrderNumber(null);
-    toast.success(`Added ${product.name}`);
+    toast.success(
+      `Added ${product.name}${opts.fillingName ? ` (${opts.fillingName})` : ""}`
+    );
   }
 
-  function handleProductPress(product: FestivalProduct) {
+  function handleProductPress(
+    product: FestivalProduct,
+    filling: FestivalFilling | null = null
+  ) {
     if (product.addition_class_id) {
-      openProductModal(product);
+      openProductModal(product, filling);
       return;
     }
     addProductToCart(product, {
       quantity: 1,
+      fillingId: filling?.id ?? null,
+      fillingName: filling?.name ?? "",
       additionId: null,
       additionName: "",
       unitPrice: Number(product.price),
@@ -373,6 +405,7 @@ export default function FestivalTillPage() {
   function closeProductModal() {
     if (submitting) return;
     setActiveProduct(null);
+    setActiveFilling(null);
     setSelectedAdditionId(null);
     setQuantity(1);
   }
@@ -388,6 +421,8 @@ export default function FestivalTillPage() {
     const additionName = selectedAddition?.name ?? "";
     addProductToCart(activeProduct, {
       quantity,
+      fillingId: activeFilling?.id ?? null,
+      fillingName: activeFilling?.name ?? "",
       additionId,
       additionName,
       unitPrice: unitTotal,
@@ -415,6 +450,72 @@ export default function FestivalTillPage() {
     setLastOrderNumber(null);
   }
 
+  function renderProductCard(
+    product: FestivalProduct,
+    filling: FestivalFilling | null
+  ) {
+    const cardLabel = filling ? filling.name : product.name;
+    const ariaLabel = filling
+      ? `Order ${product.name} — ${filling.name}`
+      : `Order ${product.name}`;
+    return (
+      <button
+        type="button"
+        className="flex h-fit w-full flex-col rounded-xl overflow-hidden shadow-sm text-left transition-transform active:scale-[0.98]"
+        style={{
+          background: "var(--card-bg)",
+          border: "1px solid var(--sidebar-border)",
+        }}
+        onClick={() => handleProductPress(product, filling)}
+        disabled={submitting}
+        aria-label={ariaLabel}
+      >
+        <div
+          className="relative aspect-[3/2] md:aspect-[5/4] w-full shrink-0"
+          style={{ background: "var(--sidebar-bg)" }}
+        >
+          {product.image && !brokenImages[product.id] ? (
+            <Image
+              src={product.image}
+              alt=""
+              fill
+              className="object-cover"
+              sizes="108px"
+              unoptimized
+              onError={() =>
+                setBrokenImages((prev) => ({
+                  ...prev,
+                  [product.id]: true,
+                }))
+              }
+            />
+          ) : (
+            <div
+              className="absolute inset-0 flex items-center justify-center text-xs md:text-sm font-semibold px-1.5 md:px-2 text-center leading-snug"
+              style={{ color: "var(--accent)" }}
+            >
+              {cardLabel}
+            </div>
+          )}
+        </div>
+        <div className="flex flex-col gap-0.5 md:gap-1 p-1.5 md:p-2.5">
+          <h4
+            className="w-full font-semibold text-xs md:text-sm leading-snug text-left"
+            style={{ color: "var(--foreground)" }}
+          >
+            {cardLabel}
+          </h4>
+          <p
+            className="w-full text-xs md:text-sm font-bold text-right tabular-nums"
+            style={{ color: "var(--primary)" }}
+          >
+            {formatFestivalMoney(product.price)}
+          </p>
+        </div>
+      </button>
+    );
+  }
+
   function handleCartPanelClick(event: ReactMouseEvent<HTMLDivElement>) {
     const target = event.target as HTMLElement | null;
     if (!target) return;
@@ -433,11 +534,15 @@ export default function FestivalTillPage() {
         const item: {
           product_id: number;
           quantity: number;
+          filling_id?: number;
           addition_id?: number;
         } = {
           product_id: line.productId,
           quantity: line.quantity,
         };
+        if (line.fillingId != null) {
+          item.filling_id = line.fillingId;
+        }
         if (line.additionId != null) {
           item.addition_id = line.additionId;
         }
@@ -609,69 +714,42 @@ export default function FestivalTillPage() {
                 >
                   {group.label}
                 </h2>
-                <ul
-                  className="grid items-start gap-2 md:gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(6.75rem,1fr))]"
-                  aria-label={`${group.label} products`}
-                >
-                  {group.products.map((product) => (
-                    <li key={product.id}>
-                      <button
-                        type="button"
-                        className="flex h-fit w-full flex-col rounded-xl overflow-hidden shadow-sm text-left transition-transform active:scale-[0.98]"
-                        style={{
-                          background: "var(--card-bg)",
-                          border: "1px solid var(--sidebar-border)",
-                        }}
-                        onClick={() => handleProductPress(product)}
-                        disabled={submitting}
-                        aria-label={`Order ${product.name}`}
+                {group.products.some((p) => p.fillings.length === 0) && (
+                  <ul
+                    className="grid items-start gap-2 md:gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(6.75rem,1fr))]"
+                    aria-label={`${group.label} products`}
+                  >
+                    {group.products
+                      .filter((product) => product.fillings.length === 0)
+                      .map((product) => (
+                        <li key={product.id}>
+                          {renderProductCard(product, null)}
+                        </li>
+                      ))}
+                  </ul>
+                )}
+                {group.products
+                  .filter((product) => product.fillings.length > 0)
+                  .map((product) => (
+                    <div key={product.id} className="mt-4 first:mt-0">
+                      <h3
+                        className="mb-2 text-base md:text-lg font-semibold tracking-tight"
+                        style={{ color: "var(--foreground)" }}
                       >
-                        <div
-                          className="relative aspect-[3/2] md:aspect-[5/4] w-full shrink-0"
-                          style={{ background: "var(--sidebar-bg)" }}
-                        >
-                          {product.image && !brokenImages[product.id] ? (
-                            <Image
-                              src={product.image}
-                              alt=""
-                              fill
-                              className="object-cover"
-                              sizes="108px"
-                              unoptimized
-                              onError={() =>
-                                setBrokenImages((prev) => ({
-                                  ...prev,
-                                  [product.id]: true,
-                                }))
-                              }
-                            />
-                          ) : (
-                            <div
-                              className="absolute inset-0 flex items-center justify-center text-xs md:text-sm font-semibold px-1.5 md:px-2 text-center leading-snug"
-                              style={{ color: "var(--accent)" }}
-                            >
-                              {product.name}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex flex-col gap-0.5 md:gap-1 p-1.5 md:p-2.5">
-                          <h3
-                            className="w-full font-semibold text-xs md:text-sm leading-snug text-left"
-                            style={{ color: "var(--foreground)" }}
-                          >
-                            {product.name}
-                          </h3>
-                          <p
-                            className="w-full text-xs md:text-sm font-bold text-right tabular-nums"
-                            style={{ color: "var(--primary)" }}
-                          >
-                            {formatFestivalMoney(product.price)}
-                          </p>
-                        </div>
-                      </button>
-                    </li>
+                        {product.name}
+                      </h3>
+                      <ul
+                        className="grid items-start gap-2 md:gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(6.75rem,1fr))]"
+                        aria-label={`${product.name} fillings`}
+                      >
+                        {product.fillings.map((filling) => (
+                          <li key={filling.id}>
+                            {renderProductCard(product, filling)}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   ))}
-                </ul>
               </section>
             ))}
           </div>
@@ -704,10 +782,7 @@ export default function FestivalTillPage() {
                   className="flex items-center justify-between gap-2 text-sm"
                   style={{ color: "var(--foreground)" }}
                 >
-                  <span className="min-w-0 truncate">
-                    {line.productName}
-                    {line.additionName ? ` + ${line.additionName}` : ""}
-                  </span>
+                  <span className="min-w-0 truncate">{cartLineLabel(line)}</span>
                   <span className="flex shrink-0 items-center gap-1.5">
                     <button
                       type="button"
@@ -716,7 +791,7 @@ export default function FestivalTillPage() {
                         borderColor: "var(--sidebar-border)",
                         color: "var(--foreground)",
                       }}
-                      aria-label={`Decrease ${line.productName}`}
+                      aria-label={`Decrease ${cartLineLabel(line)}`}
                       onClick={() =>
                         adjustCartQty(line.key, line.quantity - 1)
                       }
@@ -726,7 +801,7 @@ export default function FestivalTillPage() {
                     </button>
                     <span
                       className="min-w-6 text-center tabular-nums font-semibold"
-                      aria-label={`Quantity for ${line.productName}`}
+                      aria-label={`Quantity for ${cartLineLabel(line)}`}
                     >
                       {line.quantity}
                     </span>
@@ -737,7 +812,7 @@ export default function FestivalTillPage() {
                         borderColor: "var(--sidebar-border)",
                         color: "var(--foreground)",
                       }}
-                      aria-label={`Increase ${line.productName}`}
+                      aria-label={`Increase ${cartLineLabel(line)}`}
                       onClick={() =>
                         adjustCartQty(line.key, line.quantity + 1)
                       }
@@ -834,6 +909,7 @@ export default function FestivalTillPage() {
                   style={{ color: "var(--foreground)" }}
                 >
                   {activeProduct.name}
+                  {activeFilling ? ` — ${activeFilling.name}` : ""}
                 </h2>
                 <p
                   className="mt-1 text-sm tabular-nums"

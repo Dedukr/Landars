@@ -3,8 +3,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import FestivalTillPage from "../page";
 
 const mockReplace = jest.fn();
+// Stable router identity (like the real Next.js router) so effects that
+// depend on `router` don't re-run on every render.
+const mockRouter = { replace: mockReplace, push: jest.fn() };
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
+  useRouter: () => mockRouter,
 }));
 
 jest.mock("next/image", () => ({
@@ -59,6 +62,7 @@ const products = [
       { id: 10, name: "Cola", price: "1.50" },
       { id: 11, name: "Water", price: "0.00" },
     ],
+    fillings: [],
     image: "",
     price: "8.50",
     vat_rate: "0",
@@ -71,9 +75,39 @@ const products = [
     addition_class_id: null,
     addition_class: null,
     additions: [],
+    fillings: [],
     image: "https://example.com/kvas.jpg",
     price: "3.00",
     vat_rate: "20",
+  },
+  {
+    id: 3,
+    name: "Pyrizhky",
+    category_id: 1,
+    category: "Mains",
+    addition_class_id: null,
+    addition_class: null,
+    additions: [],
+    fillings: [
+      { id: 31, name: "Potato" },
+      { id: 32, name: "Cabbage" },
+    ],
+    image: "",
+    price: "4.00",
+    vat_rate: "0",
+  },
+  {
+    id: 4,
+    name: "Mlyntsi",
+    category_id: 1,
+    category: "Mains",
+    addition_class_id: 1,
+    addition_class: "Soft drinks",
+    additions: [{ id: 10, name: "Cola", price: "1.50" }],
+    fillings: [{ id: 41, name: "Cherry" }],
+    image: "",
+    price: "5.00",
+    vat_rate: "0",
   },
 ];
 
@@ -168,9 +202,9 @@ describe("FestivalTillPage", () => {
     expect(screen.getByLabelText("Festival cart")).toHaveTextContent(
       /Varenyky \+ Cola/
     );
-    expect(screen.getByLabelText("Quantity for Varenyky")).toHaveTextContent(
-      "2"
-    );
+    expect(
+      screen.getByLabelText("Quantity for Varenyky + Cola")
+    ).toHaveTextContent("2");
     expect(
       screen.getByRole("button", { name: /Place order for £20.00/i })
     ).toBeEnabled();
@@ -325,6 +359,90 @@ describe("FestivalTillPage", () => {
     });
     expect(screen.queryByText(/Landar's Food/)).not.toBeInTheDocument();
     expect(screen.getAllByText("Kvas").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("renders filling group with title and one card per filling", async () => {
+    render(<FestivalTillPage />);
+    expect(
+      await screen.findByRole("heading", { name: "Pyrizhky" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Order Pyrizhky — Potato" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Order Pyrizhky — Cabbage" })
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Pyrizhky fillings")).toBeInTheDocument();
+  });
+
+  it("adds filling card straight to cart and sends filling_id", async () => {
+    render(<FestivalTillPage />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Order Pyrizhky — Potato" })
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Festival cart")).toHaveTextContent(
+      /Pyrizhky \(Potato\)/
+    );
+    expect(
+      screen.getByLabelText("Quantity for Pyrizhky (Potato)")
+    ).toHaveTextContent("1");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Order Pyrizhky — Cabbage" })
+    );
+    expect(screen.getByLabelText("Festival cart")).toHaveTextContent(
+      /Pyrizhky \(Cabbage\)/
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
+    await waitFor(() => expect(placeOrder).toHaveBeenCalled());
+    expect(placeOrder.mock.calls[0][0].items).toEqual([
+      { product_id: 3, quantity: 1, filling_id: 31 },
+      { product_id: 3, quantity: 1, filling_id: 32 },
+    ]);
+  });
+
+  it("keeps different fillings as separate cart lines", async () => {
+    render(<FestivalTillPage />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Order Pyrizhky — Potato" })
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Order Pyrizhky — Potato" })
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Order Pyrizhky — Cabbage" })
+    );
+    expect(
+      screen.getByLabelText("Quantity for Pyrizhky (Potato)")
+    ).toHaveTextContent("2");
+    expect(
+      screen.getByLabelText("Quantity for Pyrizhky (Cabbage)")
+    ).toHaveTextContent("1");
+  });
+
+  it("opens modal for filling card when product has addition class", async () => {
+    render(<FestivalTillPage />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Order Mlyntsi — Cherry" })
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("Mlyntsi — Cherry");
+    fireEvent.click(screen.getByRole("button", { name: /Cola/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Add to cart/i }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    );
+    expect(screen.getByLabelText("Festival cart")).toHaveTextContent(
+      /Mlyntsi \(Cherry\) \+ Cola/
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
+    await waitFor(() => expect(placeOrder).toHaveBeenCalled());
+    expect(placeOrder.mock.calls[0][0].items).toEqual([
+      { product_id: 4, quantity: 1, filling_id: 41, addition_id: 10 },
+    ]);
   });
 
   it("disables place when printer offline and required", async () => {

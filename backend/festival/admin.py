@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.contrib import admin, messages
+from django.db import transaction
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
 from django.urls import path, reverse
@@ -12,6 +13,7 @@ from festival.models import (
     FestivalAdditionClass,
     FestivalCategory,
     FestivalCreditNote,
+    FestivalFilling,
     FestivalInvoice,
     FestivalNumberSequence,
     FestivalOrder,
@@ -39,9 +41,11 @@ class FestivalOrderItemInline(admin.TabularInline):
     max_num = 0
     readonly_fields = [
         "product",
+        "filling",
         "addition",
         "quantity",
         "product_name",
+        "filling_name",
         "addition_name",
         "addition_unit_price",
         "unit_price",
@@ -50,6 +54,12 @@ class FestivalOrderItemInline(admin.TabularInline):
         "line_vat",
         "line_total",
     ]
+
+
+class FestivalFillingInline(admin.TabularInline):
+    model = FestivalFilling
+    extra = 0
+    fields = ["name", "is_active"]
 
 
 @admin.register(FestivalCategory)
@@ -90,6 +100,7 @@ class FestivalAdditionAdmin(admin.ModelAdmin):
 @admin.register(FestivalProduct)
 class FestivalProductAdmin(admin.ModelAdmin):
     form = FestivalProductAdminForm
+    inlines = [FestivalFillingInline]
     list_display = [
         "name",
         "category",
@@ -172,7 +183,41 @@ class FestivalOrderAdmin(admin.ModelAdmin):
         return False
 
     def has_delete_permission(self, request, obj=None):
-        return False
+        # Orders are immutable accounting records; only root may delete them.
+        return request.user.is_superuser
+
+    def get_deleted_objects(self, objs, request):
+        deleted_objects, model_count, perms_needed, protected = (
+            super().get_deleted_objects(objs, request)
+        )
+        if request.user.is_superuser:
+            # Related festival records (items, invoice, credit note, print
+            # jobs) use PROTECT; delete_model removes them deliberately, so
+            # don't let the collector block the confirmation page.
+            perms_needed = set()
+            protected = []
+        return deleted_objects, model_count, perms_needed, protected
+
+    def delete_model(self, request, obj):
+        self._hard_delete_order(obj)
+
+    def delete_queryset(self, request, queryset):
+        for order in queryset:
+            self._hard_delete_order(order)
+
+    @staticmethod
+    def _hard_delete_order(order: FestivalOrder) -> None:
+        """Delete an order together with its PROTECT-related records."""
+        with transaction.atomic():
+            order.print_jobs.all().delete()
+            invoice = FestivalOrderAdmin._invoice(order)
+            if invoice is not None:
+                credit_note = FestivalOrderAdmin._credit_note(order)
+                if credit_note is not None:
+                    credit_note.delete()
+                invoice.delete()
+            order.items.all().delete()
+            order.delete()
 
     def get_urls(self):
         urls = super().get_urls()

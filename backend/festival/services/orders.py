@@ -12,6 +12,7 @@ from django.db import IntegrityError, transaction
 
 from festival.models import (
     FestivalAddition,
+    FestivalFilling,
     FestivalOrder,
     FestivalOrderItem,
     FestivalPrintJob,
@@ -47,10 +48,24 @@ def _max_item_qty() -> int:
     return int(getattr(settings, "FESTIVAL_MAX_ITEM_QUANTITY", 99))
 
 
+def _optional_id(raw_value, *, field: str) -> int | None:
+    if raw_value is None or raw_value == "":
+        return None
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise FestivalOrderError(
+            f"{field} must be an integer when provided."
+        ) from exc
+    if value < 1:
+        raise FestivalOrderError(f"{field} must be at least 1.")
+    return value
+
+
 def normalize_items(items: list[dict]) -> list[dict]:
     if not items:
         raise FestivalOrderError("Order must contain at least one item.")
-    normalized: dict[tuple[int, int | None], int] = {}
+    normalized: dict[tuple[int, int | None, int | None], int] = {}
     for raw in items:
         try:
             product_id = int(raw["product_id"])
@@ -59,25 +74,15 @@ def normalize_items(items: list[dict]) -> list[dict]:
             raise FestivalOrderError(
                 "Each item requires integer product_id and quantity."
             ) from exc
-        raw_addition = raw.get("addition_id", None)
-        if raw_addition is None or raw_addition == "":
-            addition_id: int | None = None
-        else:
-            try:
-                addition_id = int(raw_addition)
-            except (TypeError, ValueError) as exc:
-                raise FestivalOrderError(
-                    "addition_id must be an integer when provided."
-                ) from exc
-            if addition_id < 1:
-                raise FestivalOrderError("addition_id must be at least 1.")
+        filling_id = _optional_id(raw.get("filling_id"), field="filling_id")
+        addition_id = _optional_id(raw.get("addition_id"), field="addition_id")
         if quantity < 1:
             raise FestivalOrderError("Item quantity must be at least 1.")
         if quantity > _max_item_qty():
             raise FestivalOrderError(
                 f"Item quantity cannot exceed {_max_item_qty()}."
             )
-        key = (product_id, addition_id)
+        key = (product_id, filling_id, addition_id)
         normalized[key] = normalized.get(key, 0) + quantity
         if normalized[key] > _max_item_qty():
             raise FestivalOrderError(
@@ -86,12 +91,13 @@ def normalize_items(items: list[dict]) -> list[dict]:
     return [
         {
             "product_id": product_id,
+            "filling_id": filling_id,
             "addition_id": addition_id,
             "quantity": qty,
         }
-        for (product_id, addition_id), qty in sorted(
+        for (product_id, filling_id, addition_id), qty in sorted(
             normalized.items(),
-            key=lambda pair: (pair[0][0], pair[0][1] or 0),
+            key=lambda pair: (pair[0][0], pair[0][1] or 0, pair[0][2] or 0),
         )
     ]
 
@@ -178,6 +184,9 @@ def place_festival_order(
     _ensure_printer_available()
 
     product_ids = [row["product_id"] for row in normalized]
+    filling_ids = [
+        row["filling_id"] for row in normalized if row["filling_id"] is not None
+    ]
     addition_ids = [
         row["addition_id"] for row in normalized if row["addition_id"] is not None
     ]
@@ -194,6 +203,27 @@ def place_festival_order(
                 f"Inactive or unknown products: {missing}.",
                 code="inactive_product",
             )
+
+        fillings = {
+            f.id: f
+            for f in FestivalFilling.objects.select_for_update(of=("self",)).filter(
+                id__in=filling_ids
+            )
+        }
+        missing_fillings = [
+            fid for fid in filling_ids if fid not in fillings
+        ]
+        if missing_fillings:
+            raise FestivalOrderError(
+                f"Unknown fillings: {missing_fillings}.",
+                code="invalid_filling",
+            )
+
+        products_with_fillings = set(
+            FestivalFilling.objects.filter(
+                product_id__in=product_ids, is_active=True
+            ).values_list("product_id", flat=True)
+        )
 
         additions = {
             a.id: a
@@ -214,10 +244,38 @@ def place_festival_order(
         resolved_lines = []
         for row in normalized:
             product = products[row["product_id"]]
+            filling_id = row["filling_id"]
             addition_id = row["addition_id"]
+            filling = None
+            filling_name = ""
             addition = None
             addition_name = ""
             addition_unit_price = Decimal("0.00")
+
+            if product.id in products_with_fillings:
+                if filling_id is None:
+                    raise FestivalOrderError(
+                        f"Product {product.id} requires a filling_id.",
+                        code="filling_required",
+                    )
+                filling = fillings[filling_id]
+                if filling.product_id != product.id:
+                    raise FestivalOrderError(
+                        f"Filling {filling_id} does not belong to product "
+                        f"{product.id}.",
+                        code="invalid_filling",
+                    )
+                if not filling.is_active:
+                    raise FestivalOrderError(
+                        f"Filling {filling_id} is inactive.",
+                        code="invalid_filling",
+                    )
+                filling_name = filling.name
+            elif filling_id is not None:
+                raise FestivalOrderError(
+                    f"Product {product.id} does not accept a filling.",
+                    code="invalid_filling",
+                )
 
             if product.addition_class_id:
                 if addition_id is None:
@@ -253,6 +311,8 @@ def place_festival_order(
             resolved_lines.append(
                 {
                     "product_id": product.id,
+                    "filling_id": filling.id if filling else None,
+                    "filling_name": filling_name,
                     "addition_id": addition.id if addition else None,
                     "addition_name": addition_name,
                     "addition_unit_price": addition_unit_price,
@@ -294,9 +354,11 @@ def place_festival_order(
             FestivalOrderItem.objects.create(
                 order=order,
                 product_id=line.product_id,
+                filling_id=resolved["filling_id"],
                 addition_id=resolved["addition_id"],
                 quantity=line.quantity,
                 product_name=line.product_name,
+                filling_name=resolved["filling_name"],
                 addition_name=resolved["addition_name"],
                 addition_unit_price=resolved["addition_unit_price"],
                 unit_price=line.unit_price,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from festival.models import FestivalAddition, FestivalProduct
+from festival.models import FestivalAddition, FestivalFilling, FestivalProduct
 from festival.services.orders import order_print_status
 
 
@@ -12,11 +12,18 @@ class FestivalAdditionSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "price"]
 
 
+class FestivalFillingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FestivalFilling
+        fields = ["id", "name"]
+
+
 class FestivalProductSerializer(serializers.ModelSerializer):
     image = serializers.CharField(source="image_url", read_only=True)
     category = serializers.SerializerMethodField()
     addition_class = serializers.SerializerMethodField()
     additions = serializers.SerializerMethodField()
+    fillings = serializers.SerializerMethodField()
 
     class Meta:
         model = FestivalProduct
@@ -28,6 +35,7 @@ class FestivalProductSerializer(serializers.ModelSerializer):
             "addition_class_id",
             "addition_class",
             "additions",
+            "fillings",
             "image",
             "price",
             "vat_rate",
@@ -45,10 +53,15 @@ class FestivalProductSerializer(serializers.ModelSerializer):
         additions = obj.addition_class.additions.all()
         return FestivalAdditionSerializer(additions, many=True).data
 
+    def get_fillings(self, obj: FestivalProduct) -> list[dict]:
+        fillings = [f for f in obj.fillings.all() if f.is_active]
+        return FestivalFillingSerializer(fillings, many=True).data
+
 
 class FestivalOrderItemInputSerializer(serializers.Serializer):
     product_id = serializers.IntegerField(min_value=1)
     quantity = serializers.IntegerField(min_value=1)
+    filling_id = serializers.IntegerField(min_value=1, required=False, allow_null=True)
     addition_id = serializers.IntegerField(min_value=1, required=False, allow_null=True)
 
 
