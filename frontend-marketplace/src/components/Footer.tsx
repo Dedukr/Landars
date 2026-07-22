@@ -1,6 +1,9 @@
+"use client";
+
 import React from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import { MapPin, MessageCircle, Mail, Heart } from "lucide-react";
 import { ContactLink } from "@/components/ContactLink";
 import { getWhatsAppHref } from "@/lib/supportWhatsApp";
@@ -21,6 +24,11 @@ const supportLinks = [
 ];
 
 export default function Footer() {
+  const pathname = usePathname();
+  if (pathname === "/festival" || pathname?.startsWith("/festival/")) {
+    return null;
+  }
+
   const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL;
   const whatsappHref = getWhatsAppHref();
 

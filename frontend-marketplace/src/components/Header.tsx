@@ -17,6 +17,7 @@ import {
   Package,
   LogOut,
   LayoutDashboard,
+  UtensilsCrossed,
 } from "lucide-react";
 
 const navLinks = [
@@ -36,6 +37,9 @@ export default function Header() {
     { name: "My Orders", href: "/orders", icon: Package },
     ...(user?.is_staff
       ? [{ name: "Admin Panel", href: "/admin/", icon: LayoutDashboard }]
+      : []),
+    ...(user?.can_use_festival
+      ? [{ name: "Festival Till", href: "/festival", icon: UtensilsCrossed }]
       : []),
     { name: "Log Out", action: "logout", icon: LogOut },
   ];

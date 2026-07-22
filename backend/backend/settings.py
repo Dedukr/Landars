@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     "shipping",
     "reconciliation",
     "notifications",
+    "festival.apps.FestivalConfig",
 ]
 
 MIDDLEWARE = [
@@ -547,6 +548,66 @@ TELEGRAM_ORDER_ALERTS_TIMEOUT_SECONDS = int(
     os.getenv("TELEGRAM_ORDER_ALERTS_TIMEOUT_SECONDS", "10")
 )
 
+# Festival ordering (staff till + CloudPRNT remote printing)
+FESTIVAL_ENABLED = os.getenv("FESTIVAL_ENABLED", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+FESTIVAL_PRINT_MODE = os.getenv("FESTIVAL_PRINT_MODE", "disabled").strip().lower()
+if FESTIVAL_PRINT_MODE not in ("disabled", "cloudprnt"):
+    FESTIVAL_PRINT_MODE = "disabled"
+FESTIVAL_PRINTER_REQUIRED = os.getenv("FESTIVAL_PRINTER_REQUIRED", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+FESTIVAL_ALLOW_ORDERS_WHEN_PRINTER_OFFLINE = os.getenv(
+    "FESTIVAL_ALLOW_ORDERS_WHEN_PRINTER_OFFLINE", "false"
+).lower() in ("1", "true", "yes")
+FESTIVAL_PRINTER_STALE_SECONDS = int(os.getenv("FESTIVAL_PRINTER_STALE_SECONDS", "60"))
+FESTIVAL_CLOUDPRNT_ENDPOINT = os.getenv(
+    "FESTIVAL_CLOUDPRNT_ENDPOINT", "/api/festival/cloudprnt/"
+)
+FESTIVAL_CLOUDPRNT_POLL_SECONDS = int(os.getenv("FESTIVAL_CLOUDPRNT_POLL_SECONDS", "5"))
+FESTIVAL_TICKET_COLUMNS = int(os.getenv("FESTIVAL_TICKET_COLUMNS", "48"))
+FESTIVAL_TICKET_MAX_BYTES = int(os.getenv("FESTIVAL_TICKET_MAX_BYTES", "32768"))
+FESTIVAL_MAX_ITEM_QUANTITY = int(os.getenv("FESTIVAL_MAX_ITEM_QUANTITY", "99"))
+FESTIVAL_CLOUDPRNT_USERNAME = os.getenv("FESTIVAL_CLOUDPRNT_USERNAME", "festival-printer")
+FESTIVAL_CLOUDPRNT_PASSWORD = os.getenv("FESTIVAL_CLOUDPRNT_PASSWORD", "")
+FESTIVAL_VAT_REGISTERED = os.getenv("FESTIVAL_VAT_REGISTERED", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+# Festival documents reuse BUSINESS_INFO["tax_code"] (TAX_CODE env) as the VAT
+# number, the same source as the main invoice/credit-note system.
+FESTIVAL_ORDER_PREFIX = os.getenv("FESTIVAL_ORDER_PREFIX", "FEST")
+FESTIVAL_INVOICE_PREFIX = os.getenv("FESTIVAL_INVOICE_PREFIX", "FINV")
+FESTIVAL_CREDIT_NOTE_PREFIX = os.getenv("FESTIVAL_CREDIT_NOTE_PREFIX", "FCN")
+
+# Celery Beat: festival recovery (optional; used when celery-beat service runs)
+from celery.schedules import crontab  # noqa: E402
+
+CELERY_BEAT_SCHEDULE = {
+    "festival-recover-stale-claims": {
+        "task": "festival.tasks.recover_stale_festival_print_claims",
+        "schedule": crontab(minute="*/5"),
+    },
+    "festival-auto-retry-failed-print-jobs": {
+        "task": "festival.tasks.auto_retry_failed_festival_print_jobs",
+        "schedule": crontab(minute="*/2"),
+    },
+    "festival-printer-health": {
+        "task": "festival.tasks.check_festival_printer_health",
+        "schedule": crontab(minute="*/5"),
+    },
+    "festival-missing-pdfs": {
+        "task": "festival.tasks.report_missing_festival_document_pdfs",
+        "schedule": crontab(minute=15),
+    },
+}
+
 # Simple logging configuration
 LOGGING = {
     "version": 1,
@@ -579,6 +640,16 @@ LOGGING = {
         },
         "weasyprint": {
             "level": "ERROR",
+            "propagate": False,
+        },
+        # Quiet healthy Celery ticks; failures/exceptions still surface.
+        # Festival beat tasks only emit app WARNING/INFO when counts > 0.
+        "celery.app.trace": {
+            "level": "WARNING",
+            "propagate": False,
+        },
+        "celery.worker.strategy": {
+            "level": "WARNING",
             "propagate": False,
         },
         # Scanner traffic with bogus Host headers — Django already returns 400.

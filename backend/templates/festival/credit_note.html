@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <title>Festival Credit Note {{ credit_note.credit_note_number }}</title>
+  <style>
+    body { font-family: Helvetica, Arial, sans-serif; font-size: 12px; color: #111; line-height: 1.4; }
+    h1 { font-size: 20px; margin: 0 0 8px; }
+    h2 { font-size: 14px; margin: 16px 0 8px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid #ddd; }
+    th { font-size: 11px; text-transform: uppercase; color: #555; }
+    .right { text-align: right; }
+    .muted { color: #666; }
+    .credit { color: #dc3545; }
+    .totals { width: auto; margin-left: auto; margin-top: 16px; }
+    .totals td { border-bottom: none; padding: 4px 0 4px 16px; white-space: nowrap; }
+    .totals td:first-child { padding-left: 0; text-align: right; }
+    .reference {
+      margin: 12px 0 16px;
+      padding: 10px 12px;
+      border: 1px solid #f5c2c7;
+      background: #fff5f5;
+      border-radius: 4px;
+    }
+    .reference .label { color: #666; font-size: 11px; text-transform: uppercase; }
+    .reference .value { font-weight: 700; margin-top: 2px; }
+    .meta { width: auto; margin: 0; border-collapse: collapse; }
+    .meta td { border: none; padding: 2px 16px 2px 0; vertical-align: top; }
+    .meta td:first-child { color: #666; white-space: nowrap; }
+    .credited {
+      margin-top: 20px;
+      padding-top: 12px;
+      border-top: 1px solid #ddd;
+    }
+    .credited .amount { font-size: 18px; font-weight: 700; color: #dc3545; }
+  </style>
+</head>
+<body>
+  <h1>Festival credit note</h1>
+
+  <div class="reference">
+    <div class="label">This credit note cancels</div>
+    <div class="value">
+      Invoice {{ credit_note.original_invoice_number }}
+      {% if invoice.issued_at %}dated {{ invoice.issued_at|date:"d M Y" }}{% endif %}
+    </div>
+  </div>
+
+  <table class="meta">
+    <tr>
+      <td>Credit note number</td>
+      <td><strong>{{ credit_note.credit_note_number }}</strong></td>
+    </tr>
+    <tr>
+      <td>Original invoice</td>
+      <td>{{ credit_note.original_invoice_number }}</td>
+    </tr>
+    <tr>
+      <td>Order REF</td>
+      <td>{{ order.id }} &nbsp; Ticket: {{ order.order_number }}</td>
+    </tr>
+    <tr>
+      <td>Credit note date</td>
+      <td>{{ credit_note.issued_at|date:"d/m/Y H:i" }}</td>
+    </tr>
+    {% if credit_note.reason %}
+    <tr>
+      <td>Reason</td>
+      <td>{{ credit_note.reason }}</td>
+    </tr>
+    {% endif %}
+  </table>
+
+  <h2>Seller</h2>
+  <p>
+    {{ business.name }}<br />
+    {% if business.address %}{{ business.address }}<br />{% endif %}
+    {% if business.city or business.postal_code %}
+      {{ business.city }} {{ business.postal_code }}<br />
+    {% endif %}
+    {% if business.country %}{{ business.country }}<br />{% endif %}
+    {% if vat_registered and business.vat_number %}
+      VAT No: {{ business.vat_number }}
+    {% endif %}
+  </p>
+
+  {% if business.account_name or business.account_number or business.sort_code %}
+  <h2>Bank details</h2>
+  <p>
+    {% if business.account_name %}Business Name: {{ business.account_name }}<br />{% endif %}
+    {% if business.account_number %}Account Number: {{ business.account_number }}<br />{% endif %}
+    {% if business.sort_code %}Sort Code: {{ business.sort_code }}{% endif %}
+  </p>
+  {% endif %}
+
+  <div class="credited">
+    <div class="amount">£{{ credit_note.total_gross }} credited</div>
+    <div class="muted">This credit note cancels Invoice {{ credit_note.original_invoice_number }}</div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Product</th>
+        <th class="right">Qty</th>
+        <th class="right">Unit price</th>
+        <th class="right">VAT</th>
+        <th class="right">Credit</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td>{{ item.display_name }}</td>
+        <td class="right">{{ item.quantity }}</td>
+        <td class="right">£{{ item.unit_price }}</td>
+        <td class="right">£{{ item.line_vat }}</td>
+        <td class="right credit">-£{{ item.line_total }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <table class="totals">
+    <tr>
+      <td class="muted">Net</td>
+      <td class="right credit">-£{{ credit_note.subtotal_net }}</td>
+    </tr>
+    <tr>
+      <td class="muted">VAT</td>
+      <td class="right credit">-£{{ credit_note.vat_total }}</td>
+    </tr>
+    <tr>
+      <td><strong>Total credit (inc. VAT)</strong></td>
+      <td class="right credit"><strong>-£{{ credit_note.total_gross }}</strong></td>
+    </tr>
+  </table>
+</body>
+</html>

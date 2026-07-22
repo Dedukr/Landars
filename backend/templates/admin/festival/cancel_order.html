@@ -1,0 +1,15 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>{{ title }}</h1>
+<p>
+  This will cancel festival order <strong>#{{ original.order_number }}</strong>
+  (REF {{ original.id }}), retain the invoice, issue a full credit note, and queue
+  cancellation/credit tickets. This cannot be undone from the till.
+</p>
+<form method="post">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <input type="submit" value="Cancel order and issue credit note" class="default" />
+  <a href="{% url 'admin:festival_festivalorder_change' original.pk %}" class="button cancel-link">Back</a>
+</form>
+{% endblock %}

@@ -19,6 +19,7 @@ interface User {
   surname?: string | null;
   email: string;
   is_staff?: boolean;
+  can_use_festival?: boolean;
 }
 
 interface AuthTokens {
@@ -79,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             surname: data.user.surname ?? null,
             email: data.user.email,
             is_staff: data.user.is_staff || false,
+            can_use_festival: Boolean(data.user.can_use_festival),
           };
         }
 
