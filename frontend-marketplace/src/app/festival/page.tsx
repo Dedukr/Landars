@@ -59,6 +59,14 @@ function cartLineLabel(line: CartLine): string {
   return label;
 }
 
+function formatQueueAge(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h`;
+}
+
 function PrinterBadge({ status }: { status: FestivalStatus | null }) {
   if (!status) {
     return (
@@ -80,15 +88,22 @@ function PrinterBadge({ status }: { status: FestivalStatus | null }) {
       : delayed
         ? "#d97706"
         : "var(--success)";
-  const label = !status.enabled
-    ? "Festival disabled"
-    : status.mode === "disabled"
-      ? "Print mode off (dev)"
-      : !status.online
-        ? "Printer offline"
-        : delayed
-          ? `Printer online · ${status.queued_jobs} queued`
-          : "Printer online";
+  let label: string;
+  if (!status.enabled) {
+    label = "Festival disabled";
+  } else if (status.mode === "disabled") {
+    label = "Print mode off (dev)";
+  } else if (!status.online) {
+    label = "Printer offline";
+  } else if (delayed) {
+    const age =
+      status.oldest_queued_seconds != null
+        ? ` · oldest ${formatQueueAge(status.oldest_queued_seconds)}`
+        : "";
+    label = `Printer online · ${status.queued_jobs} queued${age}`;
+  } else {
+    label = "Printer online";
+  }
   return (
     <span
       className="inline-flex items-center gap-2 text-sm font-medium"

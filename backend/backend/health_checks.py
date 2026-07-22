@@ -118,7 +118,8 @@ def check_festival_optional():
         payload = printer_status_payload()
         return True, (
             f"enabled mode={payload['mode']} online={payload['online']} "
-            f"queued={payload['queued_jobs']}"
+            f"queued={payload['queued_jobs']} "
+            f"oldest_queued_s={payload.get('oldest_queued_seconds')}"
         )
     except Exception as e:
         logger.warning("Festival health probe failed: %s", e)

@@ -5,14 +5,15 @@ import secrets
 import urllib.parse
 import uuid
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Q
 from django.utils import timezone
 
 from festival.models import (
+    FestivalPrintBatch,
     FestivalPrintJob,
     FestivalPrinter,
     normalize_mac_address,
@@ -20,6 +21,12 @@ from festival.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Shared with Celery recovery tasks.
+MAX_AUTO_RETRIES = 3
+MAX_STALE_CLAIM_REQUEUES = 5
+# Skip rewriting last_seen_at on idle polls more often than this.
+PRINTER_LAST_SEEN_MIN_INTERVAL = timedelta(seconds=20)
 
 
 class CloudPRNTAuthError(Exception):
@@ -103,6 +110,104 @@ def get_active_printer_for_mac(mac_raw: str) -> FestivalPrinter:
     return printer
 
 
+def _printer_snapshot(printer: FestivalPrinter) -> dict:
+    return {
+        "last_seen_at": printer.last_seen_at,
+        "last_status_code": printer.last_status_code,
+        "last_status_text": printer.last_status_text,
+        "printing_in_progress": printer.printing_in_progress,
+        "current_job_token": printer.current_job_token,
+        "unique_id": printer.unique_id,
+        "supported_media_types": list(printer.supported_media_types or []),
+        "last_error": printer.last_error,
+    }
+
+
+def _persist_printer(printer: FestivalPrinter, before: dict) -> None:
+    """
+    Write only changed fields. Throttle last_seen_at updates on otherwise-idle polls.
+    """
+    now = timezone.now()
+    fields: list[str] = []
+    for name in (
+        "last_status_code",
+        "last_status_text",
+        "printing_in_progress",
+        "current_job_token",
+        "unique_id",
+        "last_error",
+    ):
+        if getattr(printer, name) != before.get(name):
+            fields.append(name)
+    if list(printer.supported_media_types or []) != before.get("supported_media_types"):
+        fields.append("supported_media_types")
+
+    prev_seen = before.get("last_seen_at")
+    seen_stale = prev_seen is None or (
+        (now - prev_seen).total_seconds() >= PRINTER_LAST_SEEN_MIN_INTERVAL.total_seconds()
+    )
+    if fields or seen_stale:
+        printer.last_seen_at = now
+        fields.append("last_seen_at")
+    else:
+        printer.last_seen_at = prev_seen
+
+    if not fields:
+        return
+    # updated_at is auto_now — include it when saving.
+    printer.save(update_fields=list(dict.fromkeys([*fields, "updated_at"])))
+
+
+def sync_print_batch(batch_uuid) -> FestivalPrintBatch | None:
+    """Recompute denormalized batch row from its jobs. Deletes row if no jobs."""
+    from django.db.models import Count, Min, Q
+
+    base = FestivalPrintJob.objects.filter(batch_uuid=batch_uuid)
+    meta = base.aggregate(
+        job_count=Count("id"),
+        printer_id=Min("printer_id"),
+        ready_count=Count("id", filter=Q(status=FestivalPrintJob.Status.READY)),
+        failed_count=Count("id", filter=Q(status=FestivalPrintJob.Status.FAILED)),
+        progress_count=Count(
+            "id",
+            filter=Q(
+                status__in=[
+                    FestivalPrintJob.Status.CLAIMED,
+                    FestivalPrintJob.Status.PRINTED,
+                ]
+            ),
+        ),
+        queue_available_at=Min(
+            "available_at", filter=Q(status=FestivalPrintJob.Status.READY)
+        ),
+        queue_created_at=Min(
+            "created_at", filter=Q(status=FestivalPrintJob.Status.READY)
+        ),
+        any_created_at=Min("created_at"),
+    )
+    if not meta["job_count"]:
+        FestivalPrintBatch.objects.filter(pk=batch_uuid).delete()
+        return None
+
+    now = timezone.now()
+    defaults = {
+        "printer_id": meta["printer_id"],
+        "has_failed": (meta["failed_count"] or 0) > 0,
+        "has_progress": (meta["progress_count"] or 0) > 0,
+        "ready_count": meta["ready_count"] or 0,
+        "queue_available_at": meta["queue_available_at"]
+        or meta["any_created_at"]
+        or now,
+        "queue_created_at": meta["queue_created_at"]
+        or meta["any_created_at"]
+        or now,
+    }
+    batch, _ = FestivalPrintBatch.objects.update_or_create(
+        pk=batch_uuid, defaults=defaults
+    )
+    return batch
+
+
 def create_print_batch(
     *,
     order,
@@ -137,87 +242,69 @@ def create_print_batch(
             available_at=now,
         )
         created.append(job)
+    sync_print_batch(batch_uuid)
     return created
 
 
-def _queue_blocked_by_failed(batch_uuid) -> bool:
-    return FestivalPrintJob.objects.filter(
-        batch_uuid=batch_uuid,
-        status=FestivalPrintJob.Status.FAILED,
-    ).exists()
+def _ensure_batches_for_printer(printer: FestivalPrinter) -> None:
+    """Backfill denorm rows for any READY jobs missing a FestivalPrintBatch."""
+    ready_batches = (
+        FestivalPrintJob.objects.filter(
+            printer=printer,
+            status=FestivalPrintJob.Status.READY,
+        )
+        .values_list("batch_uuid", flat=True)
+        .distinct()
+    )
+    existing = set(
+        FestivalPrintBatch.objects.filter(pk__in=ready_batches).values_list(
+            "pk", flat=True
+        )
+    )
+    for batch_uuid in ready_batches:
+        if batch_uuid not in existing:
+            sync_print_batch(batch_uuid)
 
 
 def _next_ready_job(printer: FestivalPrinter) -> FestivalPrintJob | None:
     """
-    Select the next READY job for the printer.
+    Select the next READY job for the printer using denormalized batch rows.
 
     Priority:
-    1. Continue an in-progress batch (has PRINTED/CLAIMED siblings)
-    2. Otherwise the oldest READY batch (by available_at, then created_at)
-    3. Lowest sequence within that batch, with earlier sequences already PRINTED
+    1. Continue an in-progress batch (has_progress)
+    2. Otherwise the oldest READY batch (queue_available_at, queue_created_at)
+    3. Lowest sequence within that batch
     """
-    ready_jobs = list(
-        FestivalPrintJob.objects.filter(
+    now = timezone.now()
+    _ensure_batches_for_printer(printer)
+
+    batches = (
+        FestivalPrintBatch.objects.select_for_update()
+        .filter(
             printer=printer,
-            status=FestivalPrintJob.Status.READY,
-            available_at__lte=timezone.now(),
+            has_failed=False,
+            ready_count__gt=0,
+            queue_available_at__lte=now,
         )
-        .order_by("available_at", "created_at", "sequence")
-        .only("id", "batch_uuid", "sequence", "available_at", "created_at")
+        .order_by("-has_progress", "queue_available_at", "queue_created_at", "id")
     )
-    if not ready_jobs:
-        return None
-
-    batch_meta: dict = {}
-    for job in ready_jobs:
-        meta = batch_meta.setdefault(
-            job.batch_uuid,
-            {
-                "available_at": job.available_at,
-                "created_at": job.created_at,
-                "has_progress": False,
-            },
-        )
-        meta["available_at"] = min(meta["available_at"], job.available_at)
-        meta["created_at"] = min(meta["created_at"], job.created_at)
-
-    for batch_uuid in batch_meta:
-        batch_meta[batch_uuid]["has_progress"] = FestivalPrintJob.objects.filter(
-            batch_uuid=batch_uuid,
-            status__in=[
-                FestivalPrintJob.Status.CLAIMED,
-                FestivalPrintJob.Status.PRINTED,
-            ],
-        ).exists()
-
-    ordered_batches = sorted(
-        batch_meta.items(),
-        key=lambda item: (
-            0 if item[1]["has_progress"] else 1,
-            item[1]["available_at"],
-            item[1]["created_at"],
-            str(item[0]),
-        ),
-    )
-
-    for batch_uuid, _meta in ordered_batches:
-        if _queue_blocked_by_failed(batch_uuid):
-            continue
+    for batch in batches:
         job = (
             FestivalPrintJob.objects.select_for_update()
             .filter(
                 printer=printer,
-                batch_uuid=batch_uuid,
+                batch_uuid=batch.pk,
                 status=FestivalPrintJob.Status.READY,
-                available_at__lte=timezone.now(),
+                available_at__lte=now,
             )
             .order_by("sequence")
             .first()
         )
         if not job:
+            sync_print_batch(batch.pk)
             continue
         earlier_pending = FestivalPrintJob.objects.filter(
-            batch_uuid=batch_uuid,
+            batch_uuid=batch.pk,
             sequence__lt=job.sequence,
         ).exclude(
             status__in=[
@@ -231,24 +318,50 @@ def _next_ready_job(printer: FestivalPrinter) -> FestivalPrintJob | None:
     return None
 
 
-def _mark_inferred_printed(job: FestivalPrintJob, note: str) -> None:
-    job.status = FestivalPrintJob.Status.PRINTED
-    job.acknowledged_at = timezone.now()
-    job.completed_at = timezone.now()
-    job.completion_source = FestivalPrintJob.CompletionSource.INFERRED_FROM_POLL
+def _requeue_claimed_job(job: FestivalPrintJob, note: str) -> None:
+    """Return a CLAIMED job to READY (prefer duplicate print over silent loss)."""
+    job.stale_requeue_count += 1
     job.audit_note = (job.audit_note + "\n" if job.audit_note else "") + note
+    if job.stale_requeue_count >= MAX_STALE_CLAIM_REQUEUES:
+        job.status = FestivalPrintJob.Status.FAILED
+        job.last_error = "Claimed repeatedly but never acknowledged."
+        job.claimed_at = None
+        job.fetched_at = None
+        job.save(
+            update_fields=[
+                "status",
+                "claimed_at",
+                "fetched_at",
+                "stale_requeue_count",
+                "last_error",
+                "audit_note",
+                "updated_at",
+            ]
+        )
+        sync_print_batch(job.batch_uuid)
+        logger.warning(
+            "Failed festival print job %s after repeated lost-ack requeues",
+            job.job_token,
+        )
+        _alert_job_failed_after_commit(job)
+        return
+
+    job.status = FestivalPrintJob.Status.READY
+    job.claimed_at = None
+    job.fetched_at = None
     job.save(
         update_fields=[
             "status",
-            "acknowledged_at",
-            "completed_at",
-            "completion_source",
+            "claimed_at",
+            "fetched_at",
+            "stale_requeue_count",
             "audit_note",
             "updated_at",
         ]
     )
+    sync_print_batch(job.batch_uuid)
     logger.warning(
-        "Inferred print completion for job %s: %s",
+        "Requeued claimed festival print job %s: %s",
         job.job_token,
         note,
     )
@@ -258,13 +371,13 @@ def _mark_inferred_printed(job: FestivalPrintJob, note: str) -> None:
 def handle_poll(payload: dict, *, mac_override: str | None = None) -> dict:
     mac_raw = mac_override or payload.get("printerMAC") or ""
     printer = get_active_printer_for_mac(mac_raw)
+    before = _printer_snapshot(printer)
 
     status_code, status_text = decode_status_code(payload.get("statusCode"))
     printing_in_progress = bool(payload.get("printingInProgress"))
     client_token = payload.get("jobToken") or None
     unique_id = payload.get("uniqueID") or ""
 
-    printer.last_seen_at = timezone.now()
     printer.last_status_code = status_code
     printer.last_status_text = status_text
     printer.printing_in_progress = printing_in_progress
@@ -291,7 +404,7 @@ def handle_poll(payload: dict, *, mac_override: str | None = None) -> dict:
     if claimed:
         if client_token and str(client_token) == str(claimed.job_token):
             printer.current_job_token = claimed.job_token
-            printer.save()
+            _persist_printer(printer, before)
             return {
                 "jobReady": True,
                 "mediaTypes": [claimed.media_type],
@@ -299,20 +412,23 @@ def handle_poll(payload: dict, *, mac_override: str | None = None) -> dict:
                 "deleteMethod": "DELETE",
             }
 
-        # Lost POST response: re-advertise same claimed job when idle for that token.
+        # Lost DELETE or crash after fetch: requeue rather than infer PRINTED
+        # (prefer a possible duplicate ticket over a silent kitchen miss).
         if not client_token and not printing_in_progress and claimed.fetched_at:
-            # Official lost-DELETE inference: previously fetched, now idle without token.
-            _mark_inferred_printed(
+            _requeue_claimed_job(
                 claimed,
-                "Lost DELETE inferred: poll without jobToken after fetch "
-                "with printingInProgress=false.",
+                "Lost DELETE / idle after fetch: requeued to READY "
+                "(printingInProgress=false, no jobToken).",
             )
             printer.current_job_token = None
+            if claimed.status == FestivalPrintJob.Status.FAILED:
+                _persist_printer(printer, before)
+                return {"jobReady": False}
             claimed = None
         elif not client_token and not printing_in_progress and not claimed.fetched_at:
             # Re-advertise the unfetched claimed job (lost jobReady response).
             printer.current_job_token = claimed.job_token
-            printer.save()
+            _persist_printer(printer, before)
             return {
                 "jobReady": True,
                 "mediaTypes": [claimed.media_type],
@@ -321,7 +437,7 @@ def handle_poll(payload: dict, *, mac_override: str | None = None) -> dict:
             }
         else:
             printer.current_job_token = claimed.job_token
-            printer.save()
+            _persist_printer(printer, before)
             return {"jobReady": False}
 
     if client_token and not claimed:
@@ -331,7 +447,7 @@ def handle_poll(payload: dict, *, mac_override: str | None = None) -> dict:
         ).first()
         if existing and existing.status == FestivalPrintJob.Status.PRINTED:
             printer.current_job_token = None
-            printer.save()
+            _persist_printer(printer, before)
             return {"jobReady": False}
 
     if printing_in_progress or not printer_is_operational(status_code):
@@ -341,30 +457,32 @@ def handle_poll(payload: dict, *, mac_override: str | None = None) -> dict:
                 printer.current_job_token = uuid.UUID(str(printer.current_job_token))
             except ValueError:
                 printer.current_job_token = None
-        printer.save()
+        _persist_printer(printer, before)
         return {"jobReady": False}
 
     job = _next_ready_job(printer)
     if not job:
         printer.current_job_token = None
-        printer.save()
+        _persist_printer(printer, before)
         return {"jobReady": False}
 
     if payload_sha256(job.payload_text) != job.payload_checksum:
         job.status = FestivalPrintJob.Status.FAILED
         job.last_error = "Payload checksum mismatch before claim."
         job.save(update_fields=["status", "last_error", "updated_at"])
+        sync_print_batch(job.batch_uuid)
         printer.last_error = job.last_error
         printer.current_job_token = None
-        printer.save()
+        _persist_printer(printer, before)
         _alert_job_failed_after_commit(job)
         return {"jobReady": False}
 
     job.status = FestivalPrintJob.Status.CLAIMED
     job.claimed_at = timezone.now()
     job.save(update_fields=["status", "claimed_at", "updated_at"])
+    sync_print_batch(job.batch_uuid)
     printer.current_job_token = job.job_token
-    printer.save()
+    _persist_printer(printer, before)
     logger.info(
         "Claimed festival print job %s type=%s order=%s",
         job.job_token,
@@ -395,6 +513,14 @@ def handle_job_get(*, mac: str, media_type: str, token: str) -> bytes:
         )
     except FestivalPrintJob.DoesNotExist as exc:
         raise CloudPRNTError("Unknown job token.", status=404) from exc
+
+    if job.status == FestivalPrintJob.Status.CANCELLED:
+        # Order cancel or superseded retry — let the printer finish the protocol.
+        printer.last_seen_at = timezone.now()
+        if printer.current_job_token == job.job_token:
+            printer.current_job_token = None
+        printer.save(update_fields=["last_seen_at", "current_job_token", "updated_at"])
+        return b""
 
     if job.status != FestivalPrintJob.Status.CLAIMED:
         raise CloudPRNTError("Job is not available for download.", status=409)
@@ -494,6 +620,13 @@ def handle_job_delete(
         printer.save()
         return
 
+    if job.status == FestivalPrintJob.Status.CANCELLED:
+        # Cancelled mid-flight or superseded — acknowledge without error.
+        printer.current_job_token = None
+        printer.printing_in_progress = False
+        printer.save()
+        return
+
     if job.status not in (
         FestivalPrintJob.Status.CLAIMED,
         FestivalPrintJob.Status.FAILED,
@@ -509,10 +642,21 @@ def handle_job_delete(
         job.completion_source = FestivalPrintJob.CompletionSource.DELETE
         job.last_error = ""
         job.save()
+        sync_print_batch(job.batch_uuid)
         printer.current_job_token = None
         printer.printing_in_progress = False
         printer.last_error = ""
-        printer.save()
+        printer.save(
+            update_fields=[
+                "last_seen_at",
+                "last_status_code",
+                "last_status_text",
+                "current_job_token",
+                "printing_in_progress",
+                "last_error",
+                "updated_at",
+            ]
+        )
         logger.info("Printed festival job %s (retry=%s)", job.job_token, retry)
         return
 
@@ -520,23 +664,51 @@ def handle_job_delete(
         job.status = FestivalPrintJob.Status.FAILED
         job.last_error = status_text or status_code
         job.save()
+        sync_print_batch(job.batch_uuid)
         printer.current_job_token = None
         printer.printing_in_progress = False
         printer.last_error = job.last_error
-        printer.save()
+        printer.save(
+            update_fields=[
+                "last_seen_at",
+                "last_status_code",
+                "last_status_text",
+                "current_job_token",
+                "printing_in_progress",
+                "last_error",
+                "updated_at",
+            ]
+        )
         logger.error(
             "Festival print job %s failed with %s",
             job.job_token,
             status_code,
         )
         _alert_job_failed_after_commit(job)
+        if retry_chain_depth(job) < MAX_AUTO_RETRIES:
+            try:
+                create_retry_job(job)
+            except CloudPRNTError as exc:
+                logger.warning(
+                    "Inline retry skipped for %s: %s",
+                    job.job_token,
+                    exc,
+                )
         return
 
     # Transient printer conditions (paper out, cover open): keep CLAIMED for retry.
     job.last_error = status_text or status_code
     job.save(update_fields=["last_result_code", "last_error", "updated_at"])
     printer.last_error = job.last_error
-    printer.save()
+    printer.save(
+        update_fields=[
+            "last_seen_at",
+            "last_status_code",
+            "last_status_text",
+            "last_error",
+            "updated_at",
+        ]
+    )
 
 
 def server_settings_http_only() -> dict:
@@ -563,12 +735,28 @@ def queue_depth(printer: FestivalPrinter | None = None) -> int:
     return qs.count()
 
 
+def oldest_queued_seconds(printer: FestivalPrinter | None = None) -> int | None:
+    qs = FestivalPrintJob.objects.filter(
+        status__in=[
+            FestivalPrintJob.Status.READY,
+            FestivalPrintJob.Status.CLAIMED,
+        ]
+    )
+    if printer:
+        qs = qs.filter(printer=printer)
+    oldest = qs.order_by("created_at").values_list("created_at", flat=True).first()
+    if oldest is None:
+        return None
+    return max(0, int((timezone.now() - oldest).total_seconds()))
+
+
 def printer_status_payload() -> dict:
     enabled = bool(getattr(settings, "FESTIVAL_ENABLED", False))
     mode = getattr(settings, "FESTIVAL_PRINT_MODE", "disabled")
     printer = get_active_printer()
     online = bool(printer and printer.is_online)
     queued = queue_depth(printer) if printer else 0
+    oldest_age = oldest_queued_seconds(printer) if printer else None
     require_printer = bool(getattr(settings, "FESTIVAL_PRINTER_REQUIRED", True))
     allow_offline = bool(
         getattr(settings, "FESTIVAL_ALLOW_ORDERS_WHEN_PRINTER_OFFLINE", False)
@@ -589,6 +777,7 @@ def printer_status_payload() -> dict:
             else None
         ),
         "queued_jobs": queued,
+        "oldest_queued_seconds": oldest_age,
         "can_accept_orders": can_accept,
         "status_code": printer.last_status_code if printer else "",
         "status_text": printer.last_status_text if printer else "",
@@ -605,6 +794,35 @@ def retry_chain_depth(job: FestivalPrintJob) -> int:
     return depth
 
 
+def _payload_for_retry(failed_job: FestivalPrintJob) -> str:
+    """Use stored payload, or re-render from order when payload was cleaned."""
+    if failed_job.payload_text:
+        return failed_job.payload_text
+
+    from festival.services.tickets import (
+        render_cancellation_kitchen_ticket,
+        render_customer_credit_ticket,
+        render_customer_ticket,
+        render_kitchen_ticket,
+    )
+
+    order = failed_job.order
+    is_copy = failed_job.is_reprint
+    job_type = failed_job.job_type
+    if job_type == FestivalPrintJob.JobType.KITCHEN:
+        return render_kitchen_ticket(order, is_copy=is_copy)
+    if job_type == FestivalPrintJob.JobType.CUSTOMER:
+        return render_customer_ticket(order, order.invoice, is_copy=is_copy)
+    if job_type == FestivalPrintJob.JobType.KITCHEN_CANCELLATION:
+        return render_cancellation_kitchen_ticket(
+            order, reason=order.cancellation_reason or ""
+        )
+    if job_type == FestivalPrintJob.JobType.CUSTOMER_CREDIT:
+        credit_note = order.invoice.credit_note
+        return render_customer_credit_ticket(order, credit_note)
+    raise CloudPRNTError(f"Cannot re-render payload for job type {job_type}.")
+
+
 @transaction.atomic
 def create_retry_job(failed_job: FestivalPrintJob) -> FestivalPrintJob:
     if failed_job.status != FestivalPrintJob.Status.FAILED:
@@ -617,10 +835,8 @@ def create_retry_job(failed_job: FestivalPrintJob) -> FestivalPrintJob:
     if sibling_ready:
         raise CloudPRNTError("A replacement job is already ready.")
 
-    # Create a replacement in a new single-job batch that preserves sequence ordering
-    # relative to the unfinished remainder by using a new batch only for the failed
-    # sequence, then requeue remaining READY jobs stay as-is.
-    payload = failed_job.payload_text
+    old_batch = failed_job.batch_uuid
+    payload = _payload_for_retry(failed_job)
     jobs = create_print_batch(
         order=failed_job.order,
         printer=failed_job.printer,
@@ -629,6 +845,17 @@ def create_retry_job(failed_job: FestivalPrintJob) -> FestivalPrintJob:
         retry_of_map={failed_job.sequence: failed_job},
     )
     replacement = jobs[0]
+
+    # Re-home unfinished siblings so kitchen-before-customer survives the new
+    # batch_uuid (unique constraint prevents same-batch sequence reuse).
+    FestivalPrintJob.objects.filter(
+        batch_uuid=old_batch,
+        status=FestivalPrintJob.Status.READY,
+    ).exclude(pk=replacement.pk).update(
+        batch_uuid=replacement.batch_uuid,
+        available_at=replacement.available_at,
+    )
+
     # Supersede the failed job so it no longer blocks the rest of its batch
     # and cannot be retried twice.
     failed_job.status = FestivalPrintJob.Status.CANCELLED
@@ -636,6 +863,8 @@ def create_retry_job(failed_job: FestivalPrintJob) -> FestivalPrintJob:
         failed_job.audit_note + "\n" if failed_job.audit_note else ""
     ) + f"Superseded by retry job {replacement.job_token}."
     failed_job.save(update_fields=["status", "audit_note", "updated_at"])
+    sync_print_batch(old_batch)
+    sync_print_batch(replacement.batch_uuid)
     return replacement
 
 

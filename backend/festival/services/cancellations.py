@@ -13,7 +13,7 @@ from festival.models import (
     FestivalOrder,
     FestivalPrintJob,
 )
-from festival.services.cloudprnt import create_print_batch, get_active_printer
+from festival.services.cloudprnt import create_print_batch, get_active_printer, sync_print_batch
 from festival.services.documents import create_credit_note_from_invoice
 from festival.services.tickets import (
     render_cancellation_kitchen_ticket,
@@ -93,6 +93,17 @@ def cancel_festival_order(
         invoice.save(update_fields=["status", "credited_at"])
 
         # Cancel any unfinished print jobs for the original order batch.
+        unfinished_jobs = list(
+            FestivalPrintJob.objects.filter(
+                order=order,
+                status__in=[
+                    FestivalPrintJob.Status.READY,
+                    FestivalPrintJob.Status.CLAIMED,
+                ],
+            ).values_list("job_token", "batch_uuid")
+        )
+        unfinished = [token for token, _ in unfinished_jobs]
+        unfinished_batches = {batch for _, batch in unfinished_jobs}
         FestivalPrintJob.objects.filter(
             order=order,
             status__in=[
@@ -104,8 +115,21 @@ def cancel_festival_order(
             last_error="Cancelled with order.",
             updated_at=now,
         )
+        for batch_uuid in unfinished_batches:
+            sync_print_batch(batch_uuid)
 
         printer = get_active_printer()
+        if printer and printer.current_job_token in unfinished:
+            printer.current_job_token = None
+            printer.printing_in_progress = False
+            printer.save(
+                update_fields=[
+                    "current_job_token",
+                    "printing_in_progress",
+                    "updated_at",
+                ]
+            )
+
         if printer:
             kitchen = render_cancellation_kitchen_ticket(order, reason=reason)
             customer = render_customer_credit_ticket(order, credit_note)
