@@ -44,6 +44,7 @@ dist/
 # Database backups  and data
 *.sql
 db_backups/*
+landars_backup
 wal_archive/*
 
 # Database data (ensure local data isn't tracked)
