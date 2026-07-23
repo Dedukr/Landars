@@ -14,7 +14,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from festival.models import FestivalProduct
+from django.db.models import Prefetch
+
+from festival.models import FestivalAddition, FestivalProduct
 from festival.permissions import IsFestivalStaff
 from festival.serializers import (
     FestivalOrderCreateSerializer,
@@ -49,7 +51,13 @@ class FestivalProductsView(APIView):
         products = (
             FestivalProduct.objects.filter(is_active=True)
             .select_related("category", "addition_class")
-            .prefetch_related("addition_class__additions", "fillings")
+            .prefetch_related(
+                Prefetch(
+                    "addition_class__additions",
+                    queryset=FestivalAddition.objects.order_by("created_at", "id"),
+                ),
+                "fillings",
+            )
             .order_by("category__created_at", "category__id", "created_at", "id")
         )
         data = FestivalProductSerializer(products, many=True).data

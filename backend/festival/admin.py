@@ -165,11 +165,12 @@ class FestivalAdditionClassAdmin(admin.ModelAdmin):
 
 @admin.register(FestivalAddition)
 class FestivalAdditionAdmin(admin.ModelAdmin):
-    list_display = ["name", "addition_class", "price"]
+    list_display = ["name", "addition_class", "price", "created_at"]
     list_filter = ["addition_class"]
     search_fields = ["name", "addition_class__name"]
     autocomplete_fields = ["addition_class"]
-    ordering = ["addition_class__name", "name"]
+    ordering = ["created_at", "id"]
+    fields = ["addition_class", "name", "price", "created_at"]
 
 
 @admin.register(FestivalProduct)

@@ -69,9 +69,10 @@ class FestivalAddition(models.Model):
         validators=[MinValueValidator(Decimal("0.00"))],
         help_text="VAT-inclusive addition price (default £0.00).",
     )
+    created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
-        ordering = ["addition_class__name", "name"]
+        ordering = ["created_at", "id"]
         verbose_name = "Addition"
         verbose_name_plural = "Additions"
         constraints = [
