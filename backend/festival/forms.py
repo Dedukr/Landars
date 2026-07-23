@@ -19,6 +19,7 @@ class FestivalProductAdminForm(forms.ModelForm):
             "price",
             "vat_rate",
             "is_active",
+            "created_at",
         ]
 
     def save(self, commit=True):

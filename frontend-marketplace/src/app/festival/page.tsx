@@ -143,9 +143,8 @@ function groupProductsByCategory(products: FestivalProduct[]): ProductGroup[] {
     }
   }
 
-  const ordered = Array.from(groups.values()).sort((a, b) =>
-    a.label.localeCompare(b.label)
-  );
+  // Preserve API order (category created_at); do not re-sort alphabetically.
+  const ordered = Array.from(groups.values());
   if (uncategorised.length > 0) {
     ordered.push({
       key: "uncategorised",

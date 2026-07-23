@@ -105,9 +105,10 @@ class FestivalFillingInline(admin.TabularInline):
 
 @admin.register(FestivalCategory)
 class FestivalCategoryAdmin(admin.ModelAdmin):
-    list_display = ["name", "product_count"]
+    list_display = ["name", "product_count", "created_at"]
     search_fields = ["name"]
-    ordering = ["name"]
+    ordering = ["created_at", "id"]
+    fields = ["name", "created_at"]
 
     @admin.display(description="Products")
     def product_count(self, obj: FestivalCategory) -> int:
@@ -188,7 +189,7 @@ class FestivalProductAdmin(admin.ModelAdmin):
     list_filter = ["category", "addition_class", "is_active", "vat_rate"]
     search_fields = ["name", "category__name", "addition_class__name"]
     autocomplete_fields = ["category", "addition_class"]
-    readonly_fields = ["created_at", "updated_at", "image_preview"]
+    readonly_fields = ["updated_at", "image_preview"]
     fields = [
         "category",
         "addition_class",

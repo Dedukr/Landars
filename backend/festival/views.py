@@ -50,7 +50,7 @@ class FestivalProductsView(APIView):
             FestivalProduct.objects.filter(is_active=True)
             .select_related("category", "addition_class")
             .prefetch_related("addition_class__additions", "fillings")
-            .order_by("category__name", "name")
+            .order_by("category__created_at", "category__id", "created_at", "id")
         )
         data = FestivalProductSerializer(products, many=True).data
         return Response({"results": data})

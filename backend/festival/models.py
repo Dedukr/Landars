@@ -32,9 +32,10 @@ FESTIVAL_TICKET_SEQUENCE_MAX = 99
 
 class FestivalCategory(models.Model):
     name = models.CharField(max_length=100, unique=True)
+    created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
-        ordering = ["name"]
+        ordering = ["created_at", "id"]
         verbose_name = "Festival category"
         verbose_name_plural = "Festival categories"
 
@@ -120,11 +121,11 @@ class FestivalProduct(models.Model):
         help_text="VAT-inclusive retail price.",
     )
     is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["category__name", "name"]
+        ordering = ["category__created_at", "category__id", "created_at", "id"]
         permissions = [
             ("place_festival_order", "Can place festival orders"),
             ("cancel_festival_order", "Can cancel festival orders"),
