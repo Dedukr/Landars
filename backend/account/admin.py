@@ -1,8 +1,9 @@
 from api.models import Order
 from django.contrib import admin
-from django.contrib.auth.admin import UserAdmin
+from django.contrib.auth.admin import GroupAdmin, UserAdmin
+from django.contrib.auth.models import Group
 from django.urls import reverse
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
 from django.utils.translation import gettext_lazy as _
 
 from .billing_address import upsert_profile_billing_address
@@ -36,6 +37,42 @@ class OrderInline(admin.TabularInline):  # or StackedInline if you want vertical
         return obj.total_price
 
     total_price.short_description = "Total Price"
+
+
+admin.site.unregister(Group)
+
+
+@admin.register(Group)
+class CustomGroupAdmin(GroupAdmin):
+    """Django Group admin with a read-only list of member users on the change form."""
+
+    readonly_fields = ("users_in_group",)
+
+    def get_fieldsets(self, request, obj=None):
+        fieldsets = list(super().get_fieldsets(request, obj))
+        if obj is not None:
+            fieldsets.append(
+                (_("Users in this group"), {"fields": ("users_in_group",)})
+            )
+        return fieldsets
+
+    @admin.display(description="Members")
+    def users_in_group(self, obj: Group):
+        users = list(obj.user_set.all().order_by("email", "id"))
+        if not users:
+            return "No users in this group."
+        return format_html_join(
+            format_html("<br>"),
+            '<a href="{}">{}</a>{}',
+            (
+                (
+                    reverse("admin:account_customuser_change", args=[user.pk]),
+                    user.get_display_name() or user.email or f"User #{user.pk}",
+                    format_html(" ({})", user.email) if user.email else "",
+                )
+                for user in users
+            ),
+        )
 
 
 @admin.register(CustomUser)
