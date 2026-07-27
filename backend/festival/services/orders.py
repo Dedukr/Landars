@@ -13,6 +13,7 @@ from django.db import IntegrityError, transaction
 from festival.models import (
     FestivalAddition,
     FestivalFilling,
+    FestivalInvoice,
     FestivalOrder,
     FestivalOrderItem,
     FestivalPrintJob,
@@ -23,7 +24,6 @@ from festival.services.cloudprnt import (
     get_active_printer,
     printer_status_payload,
 )
-from festival.services.documents import create_paid_invoice
 from festival.services.numbering import allocate_ticket_number
 from festival.services.pricing import price_line, price_order
 from festival.services.tickets import render_customer_ticket, render_kitchen_ticket
@@ -364,23 +364,11 @@ def place_festival_order(
                 line_total=line.line_total,
             )
 
-        invoice = create_paid_invoice(order=order, pricing=pricing)
-
+        # Invoices are created manually from the admin panel (same pattern as
+        # credit notes), not automatically on order placement.
         should_enqueue_prints = mode == "cloudprnt" and printer is not None
         printer_id = printer.pk if should_enqueue_prints else None
         order_id = order.pk
-        invoice_id = invoice.pk
-
-        def enqueue_pdf():
-            from festival.tasks import generate_festival_invoice_pdf_task
-
-            try:
-                generate_festival_invoice_pdf_task.delay(invoice_id)
-            except Exception:
-                logger.exception(
-                    "Failed to enqueue festival invoice PDF for invoice %s",
-                    invoice_id,
-                )
 
         def enqueue_prints():
             if not printer_id:
@@ -395,7 +383,11 @@ def place_festival_order(
                 )
                 fresh_printer = FestivalPrinter.objects.get(pk=printer_id)
                 kitchen = render_kitchen_ticket(fresh_order)
-                customer = render_customer_ticket(fresh_order, fresh_order.invoice)
+                try:
+                    invoice = fresh_order.invoice
+                except FestivalInvoice.DoesNotExist:
+                    invoice = None
+                customer = render_customer_ticket(fresh_order, invoice)
                 create_print_batch(
                     order=fresh_order,
                     printer=fresh_printer,
@@ -426,7 +418,6 @@ def place_festival_order(
                     )
 
         transaction.on_commit(enqueue_prints)
-        transaction.on_commit(enqueue_pdf)
 
     order = FestivalOrder.objects.select_related("invoice").prefetch_related(
         "items", "print_jobs"

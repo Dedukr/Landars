@@ -799,6 +799,7 @@ def _payload_for_retry(failed_job: FestivalPrintJob) -> str:
     if failed_job.payload_text:
         return failed_job.payload_text
 
+    from festival.models import FestivalCreditNote, FestivalInvoice
     from festival.services.tickets import (
         render_cancellation_kitchen_ticket,
         render_customer_credit_ticket,
@@ -812,13 +813,22 @@ def _payload_for_retry(failed_job: FestivalPrintJob) -> str:
     if job_type == FestivalPrintJob.JobType.KITCHEN:
         return render_kitchen_ticket(order, is_copy=is_copy)
     if job_type == FestivalPrintJob.JobType.CUSTOMER:
-        return render_customer_ticket(order, order.invoice, is_copy=is_copy)
+        try:
+            invoice = order.invoice
+        except FestivalInvoice.DoesNotExist:
+            invoice = None
+        return render_customer_ticket(order, invoice, is_copy=is_copy)
     if job_type == FestivalPrintJob.JobType.KITCHEN_CANCELLATION:
         return render_cancellation_kitchen_ticket(
             order, reason=order.cancellation_reason or ""
         )
     if job_type == FestivalPrintJob.JobType.CUSTOMER_CREDIT:
-        credit_note = order.invoice.credit_note
+        try:
+            credit_note = order.invoice.credit_note
+        except (FestivalInvoice.DoesNotExist, FestivalCreditNote.DoesNotExist) as exc:
+            raise CloudPRNTError(
+                "Cannot reprint credit ticket: invoice/credit note missing."
+            ) from exc
         return render_customer_credit_ticket(order, credit_note)
     raise CloudPRNTError(f"Cannot re-render payload for job type {job_type}.")
 
@@ -869,6 +879,7 @@ def create_retry_job(failed_job: FestivalPrintJob) -> FestivalPrintJob:
 
 
 def create_reprint_batch(order, *, is_copy: bool = True) -> list[FestivalPrintJob]:
+    from festival.models import FestivalInvoice
     from festival.services.tickets import (
         render_customer_ticket,
         render_kitchen_ticket,
@@ -877,7 +888,10 @@ def create_reprint_batch(order, *, is_copy: bool = True) -> list[FestivalPrintJo
     printer = get_active_printer()
     if not printer:
         raise CloudPRNTError("No active festival printer.")
-    invoice = order.invoice
+    try:
+        invoice = order.invoice
+    except FestivalInvoice.DoesNotExist:
+        invoice = None
     kitchen = render_kitchen_ticket(order, is_copy=is_copy)
     customer = render_customer_ticket(order, invoice, is_copy=is_copy)
     return create_print_batch(

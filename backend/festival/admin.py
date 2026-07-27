@@ -31,7 +31,11 @@ from festival.services.cloudprnt import (
     create_reprint_batch,
     create_retry_job,
 )
-from festival.services.documents import get_presigned_pdf_url
+from festival.services.documents import (
+    generate_invoice_pdf_sync,
+    get_presigned_pdf_url,
+    issue_invoice_for_order,
+)
 
 
 class FestivalOrderItemInline(admin.TabularInline):
@@ -301,6 +305,11 @@ class FestivalOrderAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self.cancel_view),
                 name="festival_festivalorder_cancel",
             ),
+            path(
+                "<path:object_id>/create-invoice/",
+                self.admin_site.admin_view(self.create_invoice_view),
+                name="festival_festivalorder_create_invoice",
+            ),
         ]
         return custom + urls
 
@@ -322,23 +331,43 @@ class FestivalOrderAdmin(admin.ModelAdmin):
             return None
 
     def invoice_pdf_link(self, obj: FestivalOrder):
-        invoice = self._invoice(obj)
-        if invoice is None or not invoice.pdf_key:
+        if not obj.pk:
             return "—"
+        invoice = self._invoice(obj)
+        if invoice is None:
+            url = reverse(
+                "admin:festival_festivalorder_create_invoice", args=[obj.pk]
+            )
+            return format_html(
+                '<a class="button" href="{}">Create invoice</a>',
+                url,
+            )
+        if not invoice.pdf_key:
+            return format_html(
+                "Invoice {} (PDF pending)",
+                invoice.invoice_number,
+            )
         try:
             url = get_presigned_pdf_url(invoice.pdf_key)
         except Exception:
-            return "—"
+            return format_html(
+                "Invoice {} (PDF unavailable)",
+                invoice.invoice_number,
+            )
         return format_html(
-            '<a href="{}" target="_blank" rel="noopener">Open PDF</a>', url
+            '<a href="{}" target="_blank" rel="noopener">Open PDF ({})</a>',
+            url,
+            invoice.invoice_number,
         )
 
-    invoice_pdf_link.short_description = "Invoice PDF"
+    invoice_pdf_link.short_description = "Invoice"
 
     def credit_note_pdf_link(self, obj: FestivalOrder):
         if not obj.pk:
             return "—"
         if obj.status != FestivalOrder.Status.CANCELLED:
+            if self._invoice(obj) is None:
+                return "Create invoice before cancelling"
             url = reverse("admin:festival_festivalorder_cancel", args=[obj.pk])
             return format_html(
                 '<a class="button" href="{}">Cancel order and issue credit note</a>',
@@ -364,6 +393,48 @@ class FestivalOrderAdmin(admin.ModelAdmin):
         return ", ".join(f"{j.job_type}:{j.status}" for j in jobs)
 
     print_status_summary.short_description = "Print jobs"
+
+    def create_invoice_view(self, request, object_id):
+        order = get_object_or_404(FestivalOrder, pk=object_id)
+        redirect_url = reverse(
+            "admin:festival_festivalorder_change", args=[order.pk]
+        )
+        if not (
+            request.user.is_superuser
+            or request.user.has_perm("festival.add_festivalinvoice")
+            or request.user.has_perm("festival.change_festivalorder")
+        ):
+            messages.error(
+                request, "You do not have permission to create festival invoices."
+            )
+            return HttpResponseRedirect(redirect_url)
+
+        try:
+            invoice = issue_invoice_for_order(order=order)
+        except ValueError as exc:
+            messages.error(request, str(exc))
+            return HttpResponseRedirect(redirect_url)
+        except Exception as exc:
+            messages.error(request, f"Failed to create invoice: {exc}")
+            return HttpResponseRedirect(redirect_url)
+
+        # Wait for PDF so the redirected page already has a working Open PDF link.
+        invoice = generate_invoice_pdf_sync(invoice.pk)
+        if invoice.pdf_key:
+            messages.success(
+                request,
+                f"Invoice #{invoice.invoice_number} created for order "
+                f"#{order.order_number}.",
+            )
+        else:
+            messages.warning(
+                request,
+                (
+                    f"Invoice #{invoice.invoice_number} created, but PDF is still "
+                    "pending. Refresh shortly or use Retry PDF generation."
+                ),
+            )
+        return HttpResponseRedirect(redirect_url)
 
     def cancel_view(self, request, object_id):
         order = get_object_or_404(FestivalOrder, pk=object_id)

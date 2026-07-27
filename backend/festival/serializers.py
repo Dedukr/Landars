@@ -76,9 +76,13 @@ class FestivalOrderCreateSerializer(serializers.Serializer):
 
 
 def serialize_order_response(order, *, replayed: bool = False) -> dict:
+    from festival.models import FestivalInvoice
+
     invoice_number = ""
-    if hasattr(order, "invoice") and order.invoice:
+    try:
         invoice_number = order.invoice.invoice_number
+    except FestivalInvoice.DoesNotExist:
+        invoice_number = ""
     return {
         "id": order.pk,
         "order_number": str(order.order_number),

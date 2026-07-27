@@ -45,6 +45,45 @@ def create_paid_invoice(*, order, pricing: OrderPricing) -> FestivalInvoice:
     )
 
 
+def pricing_from_order(order) -> OrderPricing:
+    """Rebuild OrderPricing from immutable order line snapshots."""
+    from festival.services.pricing import PricedLine, price_order
+
+    lines = [
+        PricedLine(
+            product_id=item.product_id or 0,
+            product_name=item.product_name,
+            quantity=item.quantity,
+            unit_price=item.unit_price,
+            vat_rate=item.vat_rate,
+            line_net=item.line_net,
+            line_vat=item.line_vat,
+            line_total=item.line_total,
+        )
+        for item in order.items.all()
+    ]
+    return price_order(lines)
+
+
+def issue_invoice_for_order(*, order) -> FestivalInvoice:
+    """
+    Create a paid invoice for an order that does not yet have one.
+
+    Raises ValueError if the order already has an invoice or is cancelled.
+    """
+    if order.status == order.Status.CANCELLED:
+        raise ValueError("Cannot create an invoice for a cancelled order.")
+    try:
+        existing = order.invoice
+    except FestivalInvoice.DoesNotExist:
+        existing = None
+    if existing is not None:
+        raise ValueError(
+            f"Order already has invoice {existing.invoice_number}."
+        )
+    return create_paid_invoice(order=order, pricing=pricing_from_order(order))
+
+
 def create_credit_note_from_invoice(
     *, invoice: FestivalInvoice, reason: str = ""
 ) -> FestivalCreditNote:
@@ -91,6 +130,33 @@ def _render_pdf(template_name: str, context: dict) -> bytes:
             Path(tmp_path).unlink(missing_ok=True)
         except OSError:
             pass
+
+
+def generate_invoice_pdf_sync(invoice_id: int) -> FestivalInvoice:
+    """
+    Generate invoice PDF now so admin can show a working link immediately.
+
+    Falls back to Celery if sync generation fails. Returns the refreshed invoice.
+    """
+    from festival.tasks import generate_festival_invoice_pdf_task
+
+    invoice = FestivalInvoice.objects.get(pk=invoice_id)
+    try:
+        generate_invoice_pdf(invoice)
+    except Exception:
+        logger.exception(
+            "Sync festival invoice PDF failed for %s; enqueueing retry",
+            invoice_id,
+        )
+        try:
+            generate_festival_invoice_pdf_task.delay(invoice_id)
+        except Exception:
+            logger.exception(
+                "Failed to enqueue festival invoice PDF for %s",
+                invoice_id,
+            )
+    invoice.refresh_from_db()
+    return invoice
 
 
 def generate_invoice_pdf(invoice: FestivalInvoice) -> str:

@@ -69,7 +69,9 @@ def cancel_festival_order(
         try:
             invoice = FestivalInvoice.objects.select_for_update().get(order=order)
         except FestivalInvoice.DoesNotExist as exc:
-            raise FestivalCancellationError("Order has no invoice.") from exc
+            raise FestivalCancellationError(
+                "Order has no invoice. Create an invoice before cancelling."
+            ) from exc
 
         if invoice.status == FestivalInvoice.Status.CREDITED:
             raise FestivalCancellationError("Invoice is already credited.")

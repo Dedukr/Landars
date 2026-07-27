@@ -153,13 +153,27 @@ def render_kitchen_ticket(
 
 def render_customer_ticket(
     order: FestivalOrder,
-    invoice: FestivalInvoice,
+    invoice: FestivalInvoice | None = None,
     *,
     is_copy: bool = False,
 ) -> str:
     width = _columns()
-    created = _local_dt(invoice.issued_at)
+    issued_at = invoice.issued_at if invoice is not None else order.created_at
+    created = _local_dt(issued_at)
     vat_registered = bool(getattr(settings, "FESTIVAL_VAT_REGISTERED", False))
+    if invoice is not None:
+        total_gross = invoice.total_gross
+        vat_breakdown = invoice.vat_breakdown or {}
+        seller = invoice.seller_snapshot or {}
+    else:
+        from festival.services.documents import seller_snapshot
+        from festival.services.documents import pricing_from_order
+
+        pricing = pricing_from_order(order)
+        total_gross = pricing.total_gross
+        vat_breakdown = pricing.vat_breakdown or {}
+        seller = seller_snapshot()
+
     lines = [
         _center("CUSTOMER COPY", width),
         _center("PAID", width),
@@ -170,7 +184,10 @@ def render_customer_ticket(
     lines += [
         _center(f"TICKET {order.order_number}", width),
         f"REF {order.pk}",
-        f"Invoice {invoice.invoice_number}",
+    ]
+    if invoice is not None:
+        lines.append(f"Invoice {invoice.invoice_number}")
+    lines += [
         f"Tax point {created.strftime('%d/%m/%Y %H:%M')}",
         _rule(width),
     ]
@@ -182,24 +199,24 @@ def render_customer_ticket(
         )
     lines += [
         _rule(width),
-        f"{'TOTAL':<{width - 12}}{_money(invoice.total_gross):>12}",
+        f"{'TOTAL':<{width - 12}}{_money(total_gross):>12}",
     ]
-    if invoice.vat_breakdown:
+    if vat_breakdown:
         lines.append(_rule(width))
         if vat_registered:
             lines.append("VAT summary")
         else:
             lines.append("Tax summary")
-        for rate, bucket in invoice.vat_breakdown.items():
+        for rate, bucket in vat_breakdown.items():
             lines.append(
                 f"VAT {rate}%  net {_money(bucket['net'])}  "
                 f"vat {_money(bucket['vat'])}"
             )
     lines.append(_rule(width))
-    lines.extend(_seller_lines(invoice.seller_snapshot, width))
+    lines.extend(_seller_lines(seller, width))
     if vat_registered:
         vat_number = (
-            (invoice.seller_snapshot or {}).get("vat_number")
+            seller.get("vat_number")
             or (getattr(settings, "BUSINESS_INFO", {}) or {}).get("tax_code", "")
             or ""
         )
