@@ -26,6 +26,7 @@ from festival.services.cancellations import (
     FestivalCancellationError,
     cancel_festival_order,
 )
+from festival.services.documents import issue_invoice_for_order
 from festival.services.numbering import (
     allocate_credit_note_number,
     allocate_invoice_number,
@@ -78,7 +79,7 @@ class FestivalOrderServiceTests(TestCase):
         p = FestivalProduct.objects.create(name="X", price=Decimal("1.00"))
         self.assertEqual(p.vat_rate, Decimal("0"))
 
-    def test_place_order_paid_with_invoice_and_snapshots(self):
+    def test_place_order_paid_without_automatic_invoice(self):
         result = place_festival_order(
             user=self.user,
             client_request_id=uuid.uuid4(),
@@ -92,12 +93,26 @@ class FestivalOrderServiceTests(TestCase):
         item = order.items.get()
         self.assertEqual(item.product_name, "Varenyky")
         self.assertEqual(item.unit_price, Decimal("8.50"))
-        invoice = order.invoice
+        with self.assertRaises(FestivalInvoice.DoesNotExist):
+            _ = order.invoice
+
+    def test_issue_invoice_for_order_from_snapshots(self):
+        order = place_festival_order(
+            user=self.user,
+            client_request_id=uuid.uuid4(),
+            items=[{"product_id": self.product.id, "quantity": 2}],
+        ).order
+        with mock.patch(
+            "festival.tasks.generate_festival_invoice_pdf_task.delay"
+        ):
+            invoice = issue_invoice_for_order(order=order)
         self.assertTrue(invoice.invoice_number.startswith("FINV-"))
         self.assertEqual(invoice.status, FestivalInvoice.Status.PAID)
+        self.assertEqual(invoice.total_gross, Decimal("17.00"))
         self.assertNotIn("email", invoice.seller_snapshot or {})
-        # No customer fields on invoice model / snapshots
         self.assertFalse(hasattr(invoice, "customer_snapshot"))
+        with self.assertRaises(ValueError):
+            issue_invoice_for_order(order=order)
 
     def test_idempotent_replay(self):
         rid = uuid.uuid4()
@@ -165,6 +180,7 @@ class FestivalOrderServiceTests(TestCase):
                 client_request_id=uuid.uuid4(),
                 items=[{"product_id": self.vat_product.id, "quantity": 1}],
             )
+            issue_invoice_for_order(order=result.order)
             order = cancel_festival_order(
                 order=result.order, user=owner, reason="Test cancel"
             )
@@ -182,6 +198,22 @@ class FestivalOrderServiceTests(TestCase):
             "festival.services.documents.generate_credit_note_pdf"
         ), self.assertRaises(FestivalCancellationError):
             cancel_festival_order(order=order, user=owner, reason="again")
+
+    def test_cancellation_without_invoice(self):
+        owner = _staff_user("owner2@example.com", cancel=True)
+        result = place_festival_order(
+            user=self.user,
+            client_request_id=uuid.uuid4(),
+            items=[{"product_id": self.product.id, "quantity": 1}],
+        )
+        with self.assertRaises(FestivalCancellationError) as ctx:
+            cancel_festival_order(
+                order=result.order, user=owner, reason="No invoice yet"
+            )
+        self.assertIn("no invoice", str(ctx.exception).lower())
+        result.order.refresh_from_db()
+        self.assertEqual(result.order.status, FestivalOrder.Status.PAID)
+        self.assertEqual(FestivalCreditNote.objects.count(), 0)
 
     def test_quantity_9999_rejected(self):
         with self.assertRaises(FestivalOrderError) as ctx:
@@ -643,7 +675,8 @@ class FestivalOrderAdminDeleteTests(TestCase):
 
     def test_delete_model_removes_order_and_related_records(self):
         order = self._place_order()
-        invoice_pk = order.invoice.pk
+        invoice = issue_invoice_for_order(order=order)
+        invoice_pk = invoice.pk
 
         self.admin.delete_model(self._request(self.root), order)
 
@@ -656,6 +689,7 @@ class FestivalOrderAdminDeleteTests(TestCase):
 
     def test_delete_model_removes_cancelled_order_with_credit_note(self):
         order = self._place_order()
+        issue_invoice_for_order(order=order)
         cancel_festival_order(order=order, user=self.staff, reason="test")
         order.refresh_from_db()
         credit_note_pk = order.invoice.credit_note.pk
@@ -729,7 +763,8 @@ class FestivalProductDeletionTests(TestCase):
         self.assertEqual(item.unit_price, Decimal("8.50"))
         self.assertEqual(item.line_total, Decimal("17.00"))
         self.assertEqual(order.total_price, Decimal("17.00"))
-        self.assertEqual(order.invoice.total_gross, Decimal("17.00"))
+        invoice = issue_invoice_for_order(order=order)
+        self.assertEqual(invoice.total_gross, Decimal("17.00"))
         self.assertEqual(str(item), "2 × Varenyky")
 
     def test_delete_product_with_filling_and_addition_keeps_snapshots(self):
