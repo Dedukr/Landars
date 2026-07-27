@@ -36,7 +36,7 @@ export default function Header() {
     { name: "My Profile", href: "/profile", icon: User },
     { name: "My Orders", href: "/orders", icon: Package },
     ...(user?.is_staff
-      ? [{ name: "Admin Panel", href: "/admin-panel/reviews", icon: LayoutDashboard }]
+      ? [{ name: "Admin Panel", href: "/admin/", icon: LayoutDashboard }]
       : []),
     ...(user?.can_use_festival
       ? [{ name: "Festival Till", href: "/festival", icon: UtensilsCrossed }]
@@ -278,14 +278,13 @@ export default function Header() {
                       {userMenu.map((item) => {
                         const Icon = "icon" in item ? item.icon : undefined;
                         const isLogout = item.name === "Log Out";
-                        return item.href ? (
-                          <Link
-                            key={item.name}
-                            href={item.href}
-                            className={`flex items-center px-4 py-2.5 text-sm transition-colors hover:opacity-80 ${Icon ? "gap-3" : ""}`}
-                            style={{ color: "var(--foreground)" }}
-                            onClick={() => setMenuOpen(false)}
-                          >
+                        const isDjangoAdmin =
+                          typeof item.href === "string" &&
+                          (item.href === "/admin" || item.href.startsWith("/admin/"));
+                        const linkClassName = `flex items-center px-4 py-2.5 text-sm transition-colors hover:opacity-80 ${Icon ? "gap-3" : ""}`;
+                        const linkStyle = { color: "var(--foreground)" };
+                        const linkChildren = (
+                          <>
                             {Icon ? (
                               <Icon
                                 className="w-4 h-4 flex-shrink-0"
@@ -293,7 +292,30 @@ export default function Header() {
                               />
                             ) : null}
                             {item.name}
-                          </Link>
+                          </>
+                        );
+                        return item.href ? (
+                          isDjangoAdmin ? (
+                            <a
+                              key={item.name}
+                              href={item.href}
+                              className={linkClassName}
+                              style={linkStyle}
+                              onClick={() => setMenuOpen(false)}
+                            >
+                              {linkChildren}
+                            </a>
+                          ) : (
+                            <Link
+                              key={item.name}
+                              href={item.href}
+                              className={linkClassName}
+                              style={linkStyle}
+                              onClick={() => setMenuOpen(false)}
+                            >
+                              {linkChildren}
+                            </Link>
+                          )
                         ) : (
                           <button
                             key={item.name}
@@ -382,19 +404,41 @@ export default function Header() {
                   {userMenu.map((item) => {
                     const Icon = "icon" in item ? item.icon : undefined;
                     const isLogout = item.name === "Log Out";
-                    return item.href ? (
-                      <Link
-                        key={item.name}
-                        href={item.href}
-                        className={`flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 hover:opacity-80 ${Icon ? "gap-3" : ""}`}
-                        style={{ color: "var(--foreground)" }}
-                        onClick={closeMobileMenu}
-                      >
+                    const isDjangoAdmin =
+                      typeof item.href === "string" &&
+                      (item.href === "/admin" || item.href.startsWith("/admin/"));
+                    const linkClassName = `flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 hover:opacity-80 ${Icon ? "gap-3" : ""}`;
+                    const linkStyle = { color: "var(--foreground)" };
+                    const linkChildren = (
+                      <>
                         {Icon ? (
                           <Icon className="w-4 h-4" style={{ color: "var(--accent)" }} />
                         ) : null}
                         {item.name}
-                      </Link>
+                      </>
+                    );
+                    return item.href ? (
+                      isDjangoAdmin ? (
+                        <a
+                          key={item.name}
+                          href={item.href}
+                          className={linkClassName}
+                          style={linkStyle}
+                          onClick={closeMobileMenu}
+                        >
+                          {linkChildren}
+                        </a>
+                      ) : (
+                        <Link
+                          key={item.name}
+                          href={item.href}
+                          className={linkClassName}
+                          style={linkStyle}
+                          onClick={closeMobileMenu}
+                        >
+                          {linkChildren}
+                        </Link>
+                      )
                     ) : (
                       <button
                         key={item.name}
