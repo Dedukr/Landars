@@ -49,12 +49,16 @@ class CustomGroupAdmin(GroupAdmin):
     readonly_fields = ("users_in_group",)
 
     def get_fieldsets(self, request, obj=None):
-        fieldsets = list(super().get_fieldsets(request, obj))
-        if obj is not None:
-            fieldsets.append(
-                (_("Users in this group"), {"fields": ("users_in_group",)})
-            )
-        return fieldsets
+        fieldsets = super().get_fieldsets(request, obj)
+        if obj is None:
+            return fieldsets
+        title, options = fieldsets[0]
+        fields = [
+            field for field in options["fields"] if field != "users_in_group"
+        ]
+        perm_index = fields.index("permissions")
+        fields.insert(perm_index, "users_in_group")
+        return [(title, {**options, "fields": fields}), *fieldsets[1:]]
 
     @admin.display(description="Members")
     def users_in_group(self, obj: Group):
