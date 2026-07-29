@@ -30,6 +30,7 @@ from festival.services.cloudprnt import (
     CloudPRNTError,
     create_reprint_batch,
     create_retry_job,
+    create_test_print_job,
 )
 from festival.services.documents import (
     generate_invoice_pdf_sync,
@@ -630,6 +631,7 @@ class FestivalPrinterAdmin(admin.ModelAdmin):
         "last_status_code",
         "printing_in_progress",
         "current_job_token",
+        "print_test_page_button",
     ]
     list_filter = ["is_active"]
     search_fields = ["name", "mac_address", "serial_number"]
@@ -643,7 +645,55 @@ class FestivalPrinterAdmin(admin.ModelAdmin):
         "last_error",
         "created_at",
         "updated_at",
+        "print_test_page_button",
     ]
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path(
+                "<path:object_id>/print-test-page/",
+                self.admin_site.admin_view(self.print_test_page_view),
+                name="festival_festivalprinter_print_test_page",
+            ),
+        ]
+        return custom + urls
+
+    def print_test_page_button(self, obj: FestivalPrinter):
+        if not obj.pk:
+            return "—"
+        if not obj.is_active:
+            return "Printer inactive"
+        url = reverse(
+            "admin:festival_festivalprinter_print_test_page", args=[obj.pk]
+        )
+        return format_html('<a class="button" href="{}">Print test page</a>', url)
+
+    print_test_page_button.short_description = "Test page"
+
+    def print_test_page_view(self, request, object_id):
+        printer = get_object_or_404(FestivalPrinter, pk=object_id)
+        redirect_url = reverse(
+            "admin:festival_festivalprinter_change", args=[printer.pk]
+        )
+        if not self.has_change_permission(request, printer):
+            messages.error(
+                request, "You do not have permission to queue a test page."
+            )
+            return HttpResponseRedirect(redirect_url)
+        try:
+            job = create_test_print_job(printer)
+        except CloudPRNTError as exc:
+            messages.error(request, f"Test page not queued: {exc}")
+            return HttpResponseRedirect(redirect_url)
+        messages.success(
+            request,
+            (
+                f"Test page queued (job {job.job_token}). The printer picks it "
+                "up on its next poll — usually within a few seconds."
+            ),
+        )
+        return HttpResponseRedirect(redirect_url)
 
 
 @admin.register(FestivalPrintJob)
@@ -684,7 +734,11 @@ class FestivalPrintJobAdmin(admin.ModelAdmin):
 
     @admin.action(description="Reprint order tickets as COPY (new batch)")
     def reprint_order_action(self, request, queryset):
-        orders = {job.order_id: job.order for job in queryset.select_related("order")}
+        orders = {
+            job.order_id: job.order
+            for job in queryset.select_related("order")
+            if job.order_id is not None
+        }
         ok = 0
         for order in orders.values():
             try:
@@ -694,6 +748,12 @@ class FestivalPrintJobAdmin(admin.ModelAdmin):
                 messages.error(request, f"Order {order.pk}: {exc}")
         if ok:
             messages.success(request, f"Queued COPY reprints for {ok} order(s).")
+        skipped = queryset.filter(order__isnull=True).count()
+        if skipped:
+            messages.warning(
+                request,
+                f"Skipped {skipped} test-page job(s) — they have no order to reprint.",
+            )
 
 
 @admin.register(FestivalNumberSequence)

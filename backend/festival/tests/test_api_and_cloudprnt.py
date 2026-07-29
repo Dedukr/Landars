@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 import uuid
 from datetime import timedelta
 from decimal import Decimal
@@ -409,6 +410,65 @@ class CloudPRNTProtocolTests(TestCase):
                 create_reprint_batch(result.order, is_copy=True)
         self.assertEqual(FestivalPrintJob.objects.count(), existing_jobs)
 
+    def test_create_test_print_job_queued_and_pollable(self):
+        from festival.services.cloudprnt import create_test_print_job
+
+        job = create_test_print_job(self.printer)
+        self.assertEqual(job.job_type, FestivalPrintJob.JobType.TEST)
+        self.assertIsNone(job.order_id)
+        self.assertEqual(job.status, FestivalPrintJob.Status.READY)
+        self.assertIn("TEST PAGE", job.payload_text)
+        self.assertIn(self.printer.mac_address, job.payload_text)
+
+        resp = self._post_poll()
+        self.assertTrue(resp.data["jobReady"])
+        self.assertEqual(resp.data["jobToken"], str(job.job_token))
+
+        get = self.client.get(
+            self.url,
+            {"mac": "001C62000000", "type": "text/plain", "token": job.job_token},
+            HTTP_AUTHORIZATION=self.auth,
+            HTTP_ACCEPT="text/plain",
+        )
+        self.assertEqual(get.status_code, 200)
+        self.assertIn(b"TEST PAGE", get.content)
+        self.assertIn(b"CloudPRNT printing works", get.content)
+
+    def test_create_test_print_job_rejected_when_disabled(self):
+        from festival.services.cloudprnt import CloudPRNTError, create_test_print_job
+
+        with override_settings(FESTIVAL_PRINT_MODE="disabled"):
+            with self.assertRaisesMessage(
+                CloudPRNTError, "Festival print mode is disabled"
+            ):
+                create_test_print_job(self.printer)
+
+    def test_create_test_print_job_rejected_when_inactive(self):
+        from festival.services.cloudprnt import CloudPRNTError, create_test_print_job
+
+        self.printer.is_active = False
+        self.printer.save(update_fields=["is_active"])
+        with self.assertRaisesMessage(CloudPRNTError, "Printer is not active"):
+            create_test_print_job(self.printer)
+
+    def test_admin_print_test_page_button_queues_job(self):
+        from django.urls import reverse
+
+        staff = make_staff(email="printer-admin@example.com")
+        staff.user_permissions.add(
+            Permission.objects.get(codename="change_festivalprinter")
+        )
+        self.client.force_login(staff)
+        url = reverse(
+            "admin:festival_festivalprinter_print_test_page",
+            args=[self.printer.pk],
+        )
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 302)
+        job = FestivalPrintJob.objects.get(job_type=FestivalPrintJob.JobType.TEST)
+        self.assertEqual(job.printer_id, self.printer.pk)
+        self.assertIsNone(job.order_id)
+
     def test_orders_rejected_when_printer_stale(self):
         self.printer.last_seen_at = timezone.now() - timedelta(minutes=10)
         self.printer.save(update_fields=["last_seen_at"])
@@ -743,3 +803,56 @@ class PrintRecoveryTests(TestCase):
         job.refresh_from_db()
         self.assertEqual(job.status, FestivalPrintJob.Status.READY)
         self.assertEqual(job.stale_requeue_count, 1)
+
+
+class SuppressCloudPRNTAuthChallengeTests(TestCase):
+    def setUp(self):
+        from festival.logging_filters import SuppressCloudPRNTAuthChallenge
+
+        self.filter = SuppressCloudPRNTAuthChallenge()
+
+    def _record(self, *, path, status_code, authorization=None):
+        record = logging.LogRecord(
+            name="django.request",
+            level=logging.WARNING,
+            pathname=__file__,
+            lineno=1,
+            msg="Unauthorized: %s",
+            args=(path,),
+            exc_info=None,
+        )
+        record.status_code = status_code
+        request = mock.Mock()
+        request.path = path
+        request.META = {}
+        if authorization is not None:
+            request.META["HTTP_AUTHORIZATION"] = authorization
+        record.request = request
+        return record
+
+    def test_suppresses_cloudprnt_401_without_authorization(self):
+        record = self._record(
+            path="/api/festival/cloudprnt/",
+            status_code=401,
+        )
+        self.assertFalse(self.filter.filter(record))
+
+    def test_keeps_cloudprnt_401_with_bad_credentials(self):
+        record = self._record(
+            path="/api/festival/cloudprnt/",
+            status_code=401,
+            authorization="Basic d3Jvbmc6d3Jvbmc=",
+        )
+        self.assertTrue(self.filter.filter(record))
+
+    def test_keeps_other_paths_and_statuses(self):
+        self.assertTrue(
+            self.filter.filter(
+                self._record(path="/api/orders/", status_code=401)
+            )
+        )
+        self.assertTrue(
+            self.filter.filter(
+                self._record(path="/api/festival/cloudprnt/", status_code=403)
+            )
+        )

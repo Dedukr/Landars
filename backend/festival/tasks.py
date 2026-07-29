@@ -106,10 +106,14 @@ def auto_retry_failed_festival_print_jobs() -> dict | None:
         )
 
     for job in exhausted:
-        order_number = getattr(job.order, "order_number", job.order_id)
+        if job.order_id is None:
+            target = f"test page on printer '{job.printer.name}'"
+        else:
+            order_number = getattr(job.order, "order_number", job.order_id)
+            target = f"order #{order_number}"
         send_festival_alert(
             (
-                f"Print job for order #{order_number} ({job.job_type}) failed "
+                f"Print job for {target} ({job.job_type}) failed "
                 f"{MAX_AUTO_RETRIES + 1} times and will NOT be retried "
                 f"automatically.\nLast error: {job.last_error or 'unknown'}\n"
                 "Retry it manually from the admin once the printer is fixed."

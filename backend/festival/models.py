@@ -617,6 +617,7 @@ class FestivalPrintJob(models.Model):
         CUSTOMER = "CUSTOMER", "Customer"
         KITCHEN_CANCELLATION = "KITCHEN_CANCELLATION", "Kitchen cancellation"
         CUSTOMER_CREDIT = "CUSTOMER_CREDIT", "Customer credit"
+        TEST = "TEST", "Test page"
 
     class Status(models.TextChoices):
         READY = "READY", "Ready"
@@ -632,10 +633,13 @@ class FestivalPrintJob(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     job_token = models.UUIDField(unique=True, default=uuid.uuid4, editable=False)
     batch_uuid = models.UUIDField(db_index=True)
+    # Null for TEST pages, which are not tied to an order.
     order = models.ForeignKey(
         FestivalOrder,
         on_delete=models.PROTECT,
         related_name="print_jobs",
+        null=True,
+        blank=True,
     )
     printer = models.ForeignKey(
         FestivalPrinter,

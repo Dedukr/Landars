@@ -229,6 +229,30 @@ def render_customer_ticket(
     return _finalize(lines)
 
 
+def render_test_ticket(printer) -> str:
+    """Manual test page queued from the printer admin."""
+    width = _columns()
+    now = _local_dt()
+    lines = [
+        _center("TEST PAGE", width),
+        _rule(width, "="),
+        _center(printer.name, width),
+        _center(f"MAC {printer.mac_address}", width),
+        _rule(width),
+        now.strftime("%d/%m/%Y %H:%M:%S"),
+        _rule(width),
+        "Characters: ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        "            abcdefghijklmnopqrstuvwxyz",
+        "Digits:     0123456789",
+        f"Currency:   {_money(Decimal('12.34'))}",
+        _rule(width),
+        _center("If you can read this,", width),
+        _center("CloudPRNT printing works.", width),
+        _rule(width, "="),
+    ]
+    return _finalize(lines)
+
+
 def render_cancellation_kitchen_ticket(
     order: FestivalOrder, *, reason: str = "", is_copy: bool = False
 ) -> str:

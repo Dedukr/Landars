@@ -622,10 +622,22 @@ LOGGING = {
             "style": "{",
         },
     },
+    "filters": {
+        # Star CloudPRNT probes without Authorization, gets 401 + WWW-Authenticate,
+        # then retries with Basic auth. Suppress only that expected challenge.
+        "suppress_cloudprnt_auth_challenge": {
+            "()": "festival.logging_filters.SuppressCloudPRNTAuthChallenge",
+        },
+    },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "simple",
+        },
+        "console_django_request": {
+            "class": "logging.StreamHandler",
+            "formatter": "simple",
+            "filters": ["suppress_cloudprnt_auth_challenge"],
         },
     },
     "root": {
@@ -659,6 +671,11 @@ LOGGING = {
         # Scanner traffic with bogus Host headers — Django already returns 400.
         "django.security.DisallowedHost": {
             "level": "CRITICAL",
+            "propagate": False,
+        },
+        "django.request": {
+            "handlers": ["console_django_request"],
+            "level": "WARNING",
             "propagate": False,
         },
     },
