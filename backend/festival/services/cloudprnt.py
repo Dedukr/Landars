@@ -23,7 +23,6 @@ from festival.models import (
 logger = logging.getLogger(__name__)
 
 # Shared with Celery recovery tasks.
-MAX_AUTO_RETRIES = 3
 MAX_STALE_CLAIM_REQUEUES = 5
 # Skip rewriting last_seen_at on idle polls more often than this.
 PRINTER_LAST_SEEN_MIN_INTERVAL = timedelta(seconds=20)
@@ -339,39 +338,17 @@ def _requeue_claimed_job(job: FestivalPrintJob, note: str) -> None:
     """Return a CLAIMED job to READY (prefer duplicate print over silent loss)."""
     job.stale_requeue_count += 1
     job.audit_note = (job.audit_note + "\n" if job.audit_note else "") + note
-    if job.stale_requeue_count >= MAX_STALE_CLAIM_REQUEUES:
-        job.status = FestivalPrintJob.Status.FAILED
-        job.last_error = "Claimed repeatedly but never acknowledged."
-        job.claimed_at = None
-        job.fetched_at = None
-        job.save(
-            update_fields=[
-                "status",
-                "claimed_at",
-                "fetched_at",
-                "stale_requeue_count",
-                "last_error",
-                "audit_note",
-                "updated_at",
-            ]
-        )
-        sync_print_batch(job.batch_uuid)
-        logger.warning(
-            "Failed festival print job %s after repeated lost-ack requeues",
-            job.job_token,
-        )
-        _alert_job_failed_after_commit(job)
-        return
-
     job.status = FestivalPrintJob.Status.READY
     job.claimed_at = None
     job.fetched_at = None
+    job.last_error = ""
     job.save(
         update_fields=[
             "status",
             "claimed_at",
             "fetched_at",
             "stale_requeue_count",
+            "last_error",
             "audit_note",
             "updated_at",
         ]
@@ -440,9 +417,6 @@ def handle_poll(payload: dict, *, mac_override: str | None = None) -> dict:
                 "(printingInProgress=false, no jobToken).",
             )
             printer.current_job_token = None
-            if claimed.status == FestivalPrintJob.Status.FAILED:
-                _persist_printer(printer, before)
-                return {"jobReady": False}
             claimed = None
         elif not client_token and not printing_in_progress and not claimed.fetched_at:
             # Re-advertise the unfetched claimed job (lost jobReady response).
@@ -478,6 +452,10 @@ def handle_poll(payload: dict, *, mac_override: str | None = None) -> dict:
                 printer.current_job_token = None
         _persist_printer(printer, before)
         return {"jobReady": False}
+
+    # Printer is online and idle: keep FAILED tickets in the queue by recreating
+    # READY replacements until they finally print (no periodic auto-retry beat).
+    ensure_failed_jobs_retried(printer)
 
     job = _next_ready_job(printer)
     if not job:
@@ -734,15 +712,15 @@ def handle_job_delete(
             status_code,
         )
         _alert_job_failed_after_commit(job)
-        if retry_chain_depth(job) < MAX_AUTO_RETRIES:
-            try:
-                create_retry_job(job)
-            except CloudPRNTError as exc:
-                logger.warning(
-                    "Inline retry skipped for %s: %s",
-                    job.job_token,
-                    exc,
-                )
+        # Keep trying while the printer is talking to us — no retry cap.
+        try:
+            create_retry_job(job)
+        except CloudPRNTError as exc:
+            logger.warning(
+                "Inline retry skipped for %s: %s",
+                job.job_token,
+                exc,
+            )
         return
 
     # Transient printer conditions (paper out, cover open): keep CLAIMED for retry.
@@ -841,6 +819,35 @@ def retry_chain_depth(job: FestivalPrintJob) -> int:
         depth += 1
         current = current.retry_of
     return depth
+
+
+def ensure_failed_jobs_retried(printer: FestivalPrinter) -> int:
+    """
+    Recreate READY replacements for FAILED jobs on this printer.
+
+    Called from CloudPRNT poll when the printer is online and operational so
+    tickets keep being offered until they print — without a Celery beat loop.
+    """
+    failed_jobs = list(
+        FestivalPrintJob.objects.filter(
+            printer=printer,
+            status=FestivalPrintJob.Status.FAILED,
+        )
+        .select_related("order")
+        .order_by("created_at")
+    )
+    retried = 0
+    for job in failed_jobs:
+        try:
+            create_retry_job(job)
+            retried += 1
+        except CloudPRNTError as exc:
+            logger.warning(
+                "Poll retry skipped for failed job %s: %s",
+                job.job_token,
+                exc,
+            )
+    return retried
 
 
 def _payload_for_retry(failed_job: FestivalPrintJob) -> str:

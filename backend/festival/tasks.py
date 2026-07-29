@@ -9,18 +9,16 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from festival.models import FestivalCreditNote, FestivalInvoice, FestivalPrintJob
-from festival.services.cloudprnt import MAX_AUTO_RETRIES, MAX_STALE_CLAIM_REQUEUES
+from festival.services.cloudprnt import MAX_STALE_CLAIM_REQUEUES
 
 logger = logging.getLogger(__name__)
 
 # Re-export for tests / callers that imported these from tasks.
 __all__ = [
-    "MAX_AUTO_RETRIES",
     "MAX_STALE_CLAIM_REQUEUES",
     "send_festival_alert_task",
     "generate_festival_invoice_pdf_task",
     "generate_festival_credit_note_pdf_task",
-    "auto_retry_failed_festival_print_jobs",
     "recover_stale_festival_print_claims",
     "check_festival_printer_health",
     "verify_festival_order_prints",
@@ -121,65 +119,6 @@ def generate_festival_credit_note_pdf_task(self, credit_note_id: int) -> str | N
 
 
 @shared_task(ignore_result=True)
-def auto_retry_failed_festival_print_jobs() -> dict | None:
-    """
-    Create replacement jobs for FAILED tickets so a failure never blocks its
-    batch indefinitely. Each payload is retried up to MAX_AUTO_RETRIES times;
-    beyond that we alert and leave the job FAILED for manual handling.
-    """
-    from festival.services.alerts import send_festival_alert
-    from festival.services.cloudprnt import (
-        CloudPRNTError,
-        create_retry_job,
-        retry_chain_depth,
-    )
-
-    retried: list[str] = []
-    exhausted: list[FestivalPrintJob] = []
-    failed_jobs = (
-        FestivalPrintJob.objects.filter(status=FestivalPrintJob.Status.FAILED)
-        .select_related("order", "retry_of")
-        .order_by("created_at")
-    )
-    for job in failed_jobs:
-        if retry_chain_depth(job) >= MAX_AUTO_RETRIES:
-            exhausted.append(job)
-            continue
-        try:
-            replacement = create_retry_job(job)
-        except CloudPRNTError as exc:
-            logger.warning("Auto-retry skipped for %s: %s", job.job_token, exc)
-            continue
-        retried.append(str(replacement.job_token))
-        logger.info(
-            "Auto-retried festival print job %s -> %s",
-            job.job_token,
-            replacement.job_token,
-        )
-
-    for job in exhausted:
-        if job.order_id is None:
-            target = f"test page on printer '{job.printer.name}'"
-        else:
-            order_number = getattr(job.order, "order_number", job.order_id)
-            target = f"order #{order_number}"
-        send_festival_alert(
-            (
-                f"Print job for {target} ({job.job_type}) failed "
-                f"{MAX_AUTO_RETRIES + 1} times and will NOT be retried "
-                f"automatically.\nLast error: {job.last_error or 'unknown'}\n"
-                "Retry it manually from the admin once the printer is fixed."
-            ),
-            throttle_key=f"retries-exhausted:{job.job_token}",
-            throttle_seconds=3600,
-        )
-
-    if not retried and not exhausted:
-        return None
-    return {"retried": len(retried), "exhausted": len(exhausted)}
-
-
-@shared_task(ignore_result=True)
 def recover_stale_festival_print_claims() -> dict | None:
     """
     Auto-fix stale CLAIMED jobs. Unfetched claims stale after 3 minutes;
@@ -195,7 +134,6 @@ def recover_stale_festival_print_claims() -> dict | None:
     unfetched_cutoff = now - timedelta(minutes=3)
     fetched_cutoff = now - timedelta(minutes=10)
     requeued = 0
-    failed = 0
     with transaction.atomic():
         stale_jobs = list(
             FestivalPrintJob.objects.select_for_update(of=("self",))
@@ -218,17 +156,13 @@ def recover_stale_festival_print_claims() -> dict | None:
             )
             job.audit_note = (job.audit_note + "\n" if job.audit_note else "") + note
             job.stale_requeue_count += 1
-            if job.stale_requeue_count >= MAX_STALE_CLAIM_REQUEUES:
-                job.status = FestivalPrintJob.Status.FAILED
-                job.last_error = "Claimed repeatedly but never acknowledged."
-                job.claimed_at = None
-                job.fetched_at = None
-                failed += 1
-            else:
-                job.status = FestivalPrintJob.Status.READY
-                job.claimed_at = None
-                job.fetched_at = None
-                requeued += 1
+            # Keep requeueing until the printer finally acknowledges — do not
+            # abandon as FAILED (retries happen on poll while online).
+            job.status = FestivalPrintJob.Status.READY
+            job.claimed_at = None
+            job.fetched_at = None
+            job.last_error = ""
+            requeued += 1
             job.save(
                 update_fields=[
                     "status",
@@ -246,17 +180,16 @@ def recover_stale_festival_print_claims() -> dict | None:
                 printer.current_job_token = None
                 printer.save(update_fields=["current_job_token", "updated_at"])
 
-    if not requeued and not failed:
+    if not requeued:
         return None
     logger.warning(
-        "Recovered stale CLAIMED festival print jobs: requeued=%s failed=%s",
+        "Recovered stale CLAIMED festival print jobs: requeued=%s",
         requeued,
-        failed,
     )
     if alert_jobs:
         payloads = format_stuck_ticket_payloads(alert_jobs)
         body = (
-            f"Recovered stale print jobs: {requeued} requeued, {failed} failed "
+            f"Recovered stale print jobs: {requeued} requeued "
             f"({len(alert_jobs)} newly stale).\n"
             "The printer stopped acknowledging jobs — check it is powered on "
             "and connected."
@@ -268,7 +201,7 @@ def recover_stale_festival_print_claims() -> dict | None:
             throttle_key=f"stale-claims:{alert_jobs[0].job_token}",
             throttle_seconds=3600,
         )
-    return {"requeued": requeued, "failed": failed}
+    return {"requeued": requeued}
 
 
 @shared_task(ignore_result=True)
