@@ -48,11 +48,11 @@ class CloudPRNTPollResult:
 def authenticate_cloudprnt(request) -> None:
     username = getattr(settings, "FESTIVAL_CLOUDPRNT_USERNAME", "") or ""
     password = getattr(settings, "FESTIVAL_CLOUDPRNT_PASSWORD", "") or ""
-    mode = getattr(settings, "FESTIVAL_PRINT_MODE", "disabled")
 
-    if mode == "cloudprnt":
-        if not username or not password or password in {"", "changeme", "password"}:
-            raise CloudPRNTAuthError("CloudPRNT credentials are not configured.")
+    # Required in every mode: with an empty default password the default
+    # username + empty password would otherwise authenticate.
+    if not username or not password or password in {"changeme", "password"}:
+        raise CloudPRNTAuthError("CloudPRNT credentials are not configured.")
 
     header = request.META.get("HTTP_AUTHORIZATION", "")
     if not header.startswith("Basic "):
@@ -66,16 +66,33 @@ def authenticate_cloudprnt(request) -> None:
     except Exception as exc:
         raise CloudPRNTAuthError("Invalid Basic authentication.") from exc
 
-    user_ok = secrets.compare_digest(provided_user, username)
-    pass_ok = secrets.compare_digest(provided_pass, password)
+    # Compare bytes: compare_digest raises TypeError on non-ASCII str,
+    # which would surface as a 500 instead of a 401.
+    user_ok = secrets.compare_digest(
+        provided_user.encode("utf-8"), username.encode("utf-8")
+    )
+    pass_ok = secrets.compare_digest(
+        provided_pass.encode("utf-8"), password.encode("utf-8")
+    )
     if not (user_ok and pass_ok):
         raise CloudPRNTAuthError("Invalid credentials.")
 
 
-def decode_status_code(raw: str | None) -> tuple[str, str]:
+def decode_status_code(raw: str | None, *, unquote: bool = False) -> tuple[str, str]:
+    """
+    Split a Star status string into (code, text).
+
+    Pass ``unquote=True`` only for values that are still percent-encoded,
+    e.g. ``statusCode`` inside the poll JSON body (``"200%20OK"``). Query
+    params (DELETE ``code``) are already decoded by Django; unquoting them
+    again would corrupt any literal ``%`` in the status text.
+    """
     if not raw:
         return "", ""
-    decoded = urllib.parse.unquote(str(raw)).strip()
+    decoded = str(raw)
+    if unquote:
+        decoded = urllib.parse.unquote(decoded)
+    decoded = decoded.strip()
     parts = decoded.split(None, 1)
     code = parts[0] if parts else ""
     text = parts[1] if len(parts) > 1 else decoded
@@ -373,7 +390,9 @@ def handle_poll(payload: dict, *, mac_override: str | None = None) -> dict:
     printer = get_active_printer_for_mac(mac_raw)
     before = _printer_snapshot(printer)
 
-    status_code, status_text = decode_status_code(payload.get("statusCode"))
+    status_code, status_text = decode_status_code(
+        payload.get("statusCode"), unquote=True
+    )
     printing_in_progress = bool(payload.get("printingInProgress"))
     client_token = payload.get("jobToken") or None
     unique_id = payload.get("uniqueID") or ""
@@ -885,6 +904,11 @@ def create_reprint_batch(order, *, is_copy: bool = True) -> list[FestivalPrintJo
         render_kitchen_ticket,
     )
 
+    if getattr(settings, "FESTIVAL_PRINT_MODE", "disabled") != "cloudprnt":
+        raise CloudPRNTError(
+            "Festival print mode is disabled — reprint jobs would never be "
+            "picked up by a printer. Set FESTIVAL_PRINT_MODE=cloudprnt first."
+        )
     printer = get_active_printer()
     if not printer:
         raise CloudPRNTError("No active festival printer.")

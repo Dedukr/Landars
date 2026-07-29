@@ -143,7 +143,7 @@ def recover_stale_festival_print_claims() -> dict | None:
             .filter(status=FestivalPrintJob.Status.CLAIMED)
             .filter(
                 Q(fetched_at__isnull=True, claimed_at__lt=unfetched_cutoff)
-                | Q(fetched_at__isnull=False, claimed_at__lt=fetched_cutoff)
+                | Q(fetched_at__isnull=False, fetched_at__lt=fetched_cutoff)
             )
             .select_related("printer")
         )
