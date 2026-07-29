@@ -205,6 +205,7 @@ class CloudPRNTProtocolTests(TestCase):
             self.url,
             {"mac": "001C62000000", "type": "text/plain", "token": token},
             HTTP_AUTHORIZATION=self.auth,
+            HTTP_ACCEPT="text/plain",
         )
         self.assertEqual(get.status_code, 200)
         self.assertIn("text/plain", get["Content-Type"])
@@ -294,6 +295,27 @@ class CloudPRNTProtocolTests(TestCase):
         self.assertEqual(sequence[3][2], 2)
         self.assertLess(sequence[0][0], sequence[2][0])
 
+    def test_job_get_accepts_star_text_plain_accept_header(self):
+        """TSP100IV sends Accept: text/plain; DRF must not 406 before the handler."""
+        place_order(
+            self,
+            user=self.user,
+            client_request_id=uuid.uuid4(),
+            items=[{"product_id": self.product.id, "quantity": 1}],
+        )
+        resp = self._post_poll()
+        token = resp.data["jobToken"]
+        get = self.client.get(
+            self.url,
+            {"mac": "001C62000000", "type": "text/plain", "token": token},
+            HTTP_AUTHORIZATION=self.auth,
+            HTTP_ACCEPT="text/plain",
+        )
+        self.assertEqual(get.status_code, 200)
+        self.assertIn(b"KITCHEN", get.content)
+        job = FestivalPrintJob.objects.get(job_token=token)
+        self.assertIsNotNone(job.fetched_at)
+
     def test_lost_post_response_reoffers_same_token(self):
         place_order(
             self,
@@ -369,6 +391,23 @@ class CloudPRNTProtocolTests(TestCase):
         jobs = create_reprint_batch(result.order, is_copy=True)
         self.assertTrue(all(j.is_reprint for j in jobs))
         self.assertIn("COPY", jobs[0].payload_text)
+
+    def test_reprint_rejected_when_print_mode_disabled(self):
+        from festival.services.cloudprnt import CloudPRNTError
+
+        result = place_order(
+            self,
+            user=self.user,
+            client_request_id=uuid.uuid4(),
+            items=[{"product_id": self.product.id, "quantity": 1}],
+        )
+        existing_jobs = FestivalPrintJob.objects.count()
+        with override_settings(FESTIVAL_PRINT_MODE="disabled"):
+            with self.assertRaisesMessage(
+                CloudPRNTError, "Festival print mode is disabled"
+            ):
+                create_reprint_batch(result.order, is_copy=True)
+        self.assertEqual(FestivalPrintJob.objects.count(), existing_jobs)
 
     def test_orders_rejected_when_printer_stale(self):
         self.printer.last_seen_at = timezone.now() - timedelta(minutes=10)
@@ -637,12 +676,15 @@ class PrintRecoveryTests(TestCase):
     def test_cancel_while_claimed_clears_token_and_is_idempotent(self):
         from festival.services.cancellations import cancel_festival_order
         from festival.services.cloudprnt import handle_job_delete, handle_job_get
+        from festival.services.documents import issue_invoice_for_order
 
         owner = make_staff(email="owner@example.com")
         owner.user_permissions.add(
             Permission.objects.get(codename="cancel_festival_order")
         )
         order = self._place_order()
+        # Cancellation requires an invoice (created manually from the admin).
+        issue_invoice_for_order(order=order)
         # Re-assign creator so cancel perm path is clear; use superuser-style via perm.
         token = self._poll()["jobToken"]
         self.printer.refresh_from_db()

@@ -9,7 +9,9 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.authentication import SessionAuthentication
+from rest_framework.negotiation import BaseContentNegotiation
 from rest_framework.permissions import AllowAny
+from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
@@ -142,12 +144,31 @@ def _extract_token(request) -> str:
     )
 
 
+class _CloudPRNTContentNegotiation(BaseContentNegotiation):
+    """
+    Star TSP printers GET jobs with ``Accept: text/plain``.
+
+    DRF's default negotiation only offers JSON and raises 406 before the
+    handler runs, which the printer reports as ``520 Download failed``.
+    Ignore Accept and keep JSON for poll responses; job GET/DELETE return
+    raw ``HttpResponse`` and never use the selected renderer.
+    """
+
+    def select_parser(self, request, parsers):
+        return parsers[0] if parsers else None
+
+    def select_renderer(self, request, renderers, format_suffix):
+        return (JSONRenderer(), JSONRenderer.media_type)
+
+
 @method_decorator(csrf_exempt, name="dispatch")
 class FestivalCloudPRNTView(APIView):
     """Star CloudPRNT Version HTTP endpoint (printer is the client)."""
 
     authentication_classes = []
     permission_classes = [AllowAny]
+    content_negotiation_class = _CloudPRNTContentNegotiation
+    renderer_classes = [JSONRenderer]
 
     def dispatch(self, request, *args, **kwargs):
         try:
