@@ -8,15 +8,19 @@ from zoneinfo import ZoneInfo
 from django.conf import settings
 from django.utils import timezone
 
-from festival.models import FestivalCreditNote, FestivalInvoice, FestivalOrder
+from festival.models import FestivalCreditNote, FestivalInvoice, FestivalOrder, FestivalOrderItem
 from festival.services.pricing import money
 
 LONDON = ZoneInfo("Europe/London")
 CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
+# 76mm printable width ≈ 42 columns at Star Font A (~1.5mm/char).
+# Leave a small margin vs a hard 48-col 80mm layout.
+DEFAULT_TICKET_COLUMNS = 42
+
 
 def _columns() -> int:
-    return int(getattr(settings, "FESTIVAL_TICKET_COLUMNS", 48))
+    return int(getattr(settings, "FESTIVAL_TICKET_COLUMNS", DEFAULT_TICKET_COLUMNS))
 
 
 def _max_bytes() -> int:
@@ -40,6 +44,13 @@ def _rule(width: int, char: str = "-") -> str:
 
 
 def _money(value: Decimal | str) -> str:
+    """
+    Format money with a pound sign.
+
+    Uses the Unicode pound (U+00A3). CloudPRNT GET must send
+    ``Content-Type: text/plain; charset=utf-8`` so the TSP100IV renders it
+    instead of two garbage glyphs from a single-byte code page.
+    """
     return f"£{money(value):.2f}"
 
 
@@ -68,30 +79,78 @@ def _wrap_words(text: str, width: int) -> list[str]:
     return lines or [""]
 
 
-def _qty_name_line(quantity: int, name: str, width: int) -> list[str]:
-    prefix = f"{quantity} x "
-    avail = max(8, width - len(prefix))
-    wrapped = _wrap_words(name, avail)
-    lines = [f"{prefix}{wrapped[0]}"]
-    indent = " " * len(prefix)
-    for part in wrapped[1:]:
-        lines.append(f"{indent}{part}")
-    return [line[:width] for line in lines]
+def _product_label(item: FestivalOrderItem) -> str:
+    """Product (+ filling); addition is rendered on its own line."""
+    name = item.product_name or ""
+    if item.filling_name:
+        name = f"{name} ({item.filling_name})"
+    return name
 
 
-def _qty_name_price_line(
-    quantity: int, name: str, line_total: Decimal, width: int
+def _addition_label(item: FestivalOrderItem) -> str:
+    if not item.addition_name:
+        return ""
+    return f"+ {item.addition_name}"
+
+
+# Extra indent so additions read as nested under the meal name, not a peer line.
+_ADDITION_TAB = "    "
+
+
+def _amount_line(label: str, amount: Decimal | str, width: int) -> str:
+    """Right-align amount on the same line as label; never overflow width."""
+    price = _money(amount)
+    gap = width - len(label) - len(price)
+    if gap < 1:
+        # Prefer keeping the amount intact on the next line.
+        return f"{label[:width]}\n{price[:width]}"
+    return f"{label}{' ' * gap}{price}"
+
+
+def _qty_item_lines(
+    quantity: int,
+    item: FestivalOrderItem,
+    width: int,
+    *,
+    line_total: Decimal | None = None,
 ) -> list[str]:
-    price = _money(line_total)
-    right = f" {price}"
-    avail = max(8, width - len(right))
-    body_lines = _qty_name_line(quantity, name, avail)
-    first = body_lines[0]
-    pad = max(1, avail - len(first))
-    lines = [f"{first}{' ' * pad}{price}".rstrip()]
-    for extra in body_lines[1:]:
-        lines.append(extra[:width])
-    return [line[:width] for line in lines]
+    """
+    Item block::
+
+        1 x Deep Fried Pelmeni          £9.99
+            + Sparkling water
+    """
+    prefix = f"{quantity} x "
+    indent = " " * len(prefix)
+    addition_indent = indent + _ADDITION_TAB
+    product = _product_label(item)
+    addition = _addition_label(item)
+    lines: list[str] = []
+
+    if line_total is None:
+        avail = max(8, width - len(prefix))
+        wrapped = _wrap_words(product, avail)
+        lines.append(f"{prefix}{wrapped[0]}"[:width])
+        for part in wrapped[1:]:
+            lines.append(f"{indent}{part}"[:width])
+    else:
+        price = _money(line_total)
+        # Reserve space for " £9.99" on the first product line.
+        right = f" {price}"
+        avail = max(8, width - len(prefix) - len(right))
+        wrapped = _wrap_words(product, avail)
+        first = f"{prefix}{wrapped[0]}"
+        pad = max(1, width - len(first) - len(price))
+        lines.append(f"{first}{' ' * pad}{price}"[:width])
+        for part in wrapped[1:]:
+            lines.append(f"{indent}{part}"[:width])
+
+    if addition:
+        add_avail = max(8, width - len(addition_indent))
+        for part in _wrap_words(addition, add_avail):
+            lines.append(f"{addition_indent}{part}"[:width])
+
+    return lines
 
 
 def _local_dt(dt: datetime | None = None) -> datetime:
@@ -103,7 +162,11 @@ def _local_dt(dt: datetime | None = None) -> datetime:
 
 def _finalize(lines: list[str]) -> str:
     width = _columns()
-    cleaned = [sanitize_text(line)[:width] for line in lines]
+    cleaned: list[str] = []
+    for line in lines:
+        # Allow helpers to emit an intentional newline (e.g. overflowed totals).
+        for part in sanitize_text(line).split("\n"):
+            cleaned.append(part[:width])
     text = "\n".join(cleaned)
     if not text.endswith("\n"):
         text += "\n"
@@ -113,6 +176,16 @@ def _finalize(lines: list[str]) -> str:
             f"Ticket payload exceeds FESTIVAL_TICKET_MAX_BYTES ({_max_bytes()})."
         )
     return text
+
+
+def _spread_line(left: str, right: str, width: int) -> str:
+    """Put ``left`` at the start and ``right`` at the end of one line."""
+    left = left[:width]
+    right = right[:width]
+    gap = width - len(left) - len(right)
+    if gap < 1:
+        return f"{left}\n{right}"
+    return f"{left}{' ' * gap}{right}"
 
 
 def _seller_lines(seller: dict, width: int) -> list[str]:
@@ -137,17 +210,17 @@ def render_kitchen_ticket(
         lines += [_center("*** COPY ***", width), _rule(width)]
     lines += [
         _center(f"TICKET {order.order_number}", width),
-        _center(f"REF {order.pk}", width),
         _rule(width),
-        created.strftime("%d/%m/%Y %H:%M"),
+        _spread_line(
+            created.strftime("%d/%m/%Y %H:%M"),
+            f"REF {order.pk}",
+            width,
+        ),
         _rule(width),
     ]
     for item in order.items.all():
-        lines.extend(_qty_name_line(item.quantity, item.display_name, width))
-    lines += [
-        _rule(width, "="),
-        _center(f"TICKET {order.order_number}", width),
-    ]
+        lines.extend(_qty_item_lines(item.quantity, item, width))
+    lines.append(_rule(width, "="))
     return _finalize(lines)
 
 
@@ -183,7 +256,6 @@ def render_customer_ticket(
         lines += [_center("*** COPY ***", width), _rule(width)]
     lines += [
         _center(f"TICKET {order.order_number}", width),
-        f"REF {order.pk}",
     ]
     if invoice is not None:
         lines.append(f"Invoice {invoice.invoice_number}")
@@ -193,13 +265,13 @@ def render_customer_ticket(
     ]
     for item in order.items.all():
         lines.extend(
-            _qty_name_price_line(
-                item.quantity, item.display_name, item.line_total, width
+            _qty_item_lines(
+                item.quantity, item, width, line_total=item.line_total
             )
         )
     lines += [
         _rule(width),
-        f"{'TOTAL':<{width - 12}}{_money(total_gross):>12}",
+        _amount_line("TOTAL", total_gross, width),
     ]
     if vat_breakdown:
         lines.append(_rule(width))
@@ -208,10 +280,11 @@ def render_customer_ticket(
         else:
             lines.append("Tax summary")
         for rate, bucket in vat_breakdown.items():
-            lines.append(
+            vat_line = (
                 f"VAT {rate}%  net {_money(bucket['net'])}  "
                 f"vat {_money(bucket['vat'])}"
             )
+            lines.extend(_wrap_words(vat_line, width))
     lines.append(_rule(width))
     lines.extend(_seller_lines(seller, width))
     if vat_registered:
@@ -222,9 +295,29 @@ def render_customer_ticket(
         )
         if vat_number:
             lines.append(f"VAT No {vat_number}")
-    lines += [
+    lines.append(_rule(width, "="))
+    return _finalize(lines)
+
+
+def render_test_ticket(printer) -> str:
+    """Manual test page queued from the printer admin."""
+    width = _columns()
+    now = _local_dt()
+    lines = [
+        _center("TEST PAGE", width),
         _rule(width, "="),
-        _center(f"TICKET {order.order_number}", width),
+        _center(printer.name, width),
+        _rule(width),
+        now.strftime("%d/%m/%Y %H:%M:%S"),
+        _rule(width),
+        "Characters: ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        "            abcdefghijklmnopqrstuvwxyz",
+        "Digits:     0123456789",
+        f"Currency:   {_money(Decimal('12.34'))}",
+        _rule(width),
+        _center("If you can read this,", width),
+        _center("CloudPRNT printing works.", width),
+        _rule(width, "="),
     ]
     return _finalize(lines)
 
@@ -251,11 +344,8 @@ def render_cancellation_kitchen_ticket(
         lines.extend(_wrap_words(f"Reason: {reason}", width))
     lines.append(_rule(width))
     for item in order.items.all():
-        lines.extend(_qty_name_line(item.quantity, item.display_name, width))
-    lines += [
-        _rule(width, "*"),
-        _center(f"TICKET {order.order_number}", width),
-    ]
+        lines.extend(_qty_item_lines(item.quantity, item, width))
+    lines.append(_rule(width, "*"))
     return _finalize(lines)
 
 
@@ -285,21 +375,22 @@ def render_customer_credit_ticket(
     lines.append(_rule(width))
     for item in order.items.all():
         lines.extend(
-            _qty_name_price_line(
-                item.quantity, item.display_name, item.line_total, width
+            _qty_item_lines(
+                item.quantity, item, width, line_total=item.line_total
             )
         )
     lines += [
         _rule(width),
-        f"{'CREDITED TOTAL':<{width - 12}}{_money(credit_note.total_gross):>12}",
+        _amount_line("CREDITED TOTAL", credit_note.total_gross, width),
     ]
     if credit_note.vat_breakdown:
         lines.append(_rule(width))
         for rate, bucket in credit_note.vat_breakdown.items():
-            lines.append(
+            vat_line = (
                 f"VAT {rate}%  net {_money(bucket['net'])}  "
                 f"vat {_money(bucket['vat'])}"
             )
+            lines.extend(_wrap_words(vat_line, width))
     lines.append(_rule(width))
     lines.extend(_seller_lines(credit_note.seller_snapshot, width))
     lines.append(_rule(width, "="))

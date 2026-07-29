@@ -197,8 +197,11 @@ class FestivalCloudPRNTView(APIView):
         try:
             payload = handle_job_get(mac=mac, media_type=media_type, token=token)
         except CloudPRNTError as exc:
-            return HttpResponse(str(exc), status=exc.status, content_type="text/plain")
-        return HttpResponse(payload, content_type="text/plain")
+            return HttpResponse(
+                str(exc), status=exc.status, content_type="text/plain; charset=utf-8"
+            )
+        # charset=utf-8 is required so TSP100IV prints £ correctly for text/plain.
+        return HttpResponse(payload, content_type="text/plain; charset=utf-8")
 
     def post(self, request):
         try:

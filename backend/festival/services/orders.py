@@ -388,7 +388,7 @@ def place_festival_order(
                 except FestivalInvoice.DoesNotExist:
                     invoice = None
                 customer = render_customer_ticket(fresh_order, invoice)
-                create_print_batch(
+                jobs = create_print_batch(
                     order=fresh_order,
                     printer=fresh_printer,
                     jobs=[
@@ -396,6 +396,25 @@ def place_festival_order(
                         (FestivalPrintJob.JobType.CUSTOMER, 2, customer),
                     ],
                 )
+                # Offline: alert immediately. Online: a delayed verify alerts
+                # if tickets are still unprinted after the grace window.
+                try:
+                    from festival.services.alerts import alert_unprinted_print_jobs
+                    from festival.tasks import verify_festival_order_prints
+
+                    alert_unprinted_print_jobs(jobs, printer=fresh_printer)
+                    verify_seconds = int(
+                        getattr(settings, "FESTIVAL_PRINT_VERIFY_SECONDS", 90)
+                    )
+                    verify_festival_order_prints.apply_async(
+                        args=[order_id],
+                        countdown=max(15, verify_seconds),
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to schedule unprinted-job alerts for order %s",
+                        order_id,
+                    )
             except Exception:
                 logger.exception(
                     "Failed to enqueue festival print jobs for order %s",

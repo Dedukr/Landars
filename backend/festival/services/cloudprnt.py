@@ -556,12 +556,39 @@ def handle_job_get(*, mac: str, media_type: str, token: str) -> bytes:
     return job.payload_text.encode("utf-8")
 
 
+def create_test_print_job(printer: FestivalPrinter) -> FestivalPrintJob:
+    """Queue a manual test page for the given printer (admin button)."""
+    from festival.services.tickets import render_test_ticket
+
+    if getattr(settings, "FESTIVAL_PRINT_MODE", "disabled") != "cloudprnt":
+        raise CloudPRNTError(
+            "Festival print mode is disabled — the test page would never be "
+            "picked up by a printer. Set FESTIVAL_PRINT_MODE=cloudprnt first."
+        )
+    if not printer.is_active:
+        raise CloudPRNTError("Printer is not active.")
+    payload = render_test_ticket(printer)
+    jobs = create_print_batch(
+        order=None,
+        printer=printer,
+        jobs=[(FestivalPrintJob.JobType.TEST, 1, payload)],
+    )
+    return jobs[0]
+
+
 def failed_job_alert_text(job: FestivalPrintJob) -> str:
     """Human-readable ticket details for a failed print job."""
     import html
 
     order = job.order
     job_type = job.get_job_type_display()
+    if order is None:
+        # TEST pages have no order.
+        return (
+            f"❌ {html.escape(job_type)} print FAILED on printer "
+            f"{html.escape(job.printer.name)}.\n"
+            f"Error: {html.escape(job.last_error or 'unknown error')}"
+        )
     lines = [
         f"❌ Ticket print FAILED: {html.escape(job_type)} ticket "
         f"#{order.order_number}",
@@ -584,7 +611,10 @@ def _alert_job_failed_after_commit(job: FestivalPrintJob) -> None:
     """Queue a Telegram alert for a FAILED job once the transaction commits."""
     text = failed_job_alert_text(job)
     # One alert per ticket per window, even if retries of it also fail.
-    throttle_key = f"job-failed:{job.order_id}:{job.job_type}"
+    if job.order_id is None:
+        throttle_key = f"job-failed:test:{job.printer_id}:{job.job_type}"
+    else:
+        throttle_key = f"job-failed:{job.order_id}:{job.job_type}"
 
     def enqueue() -> None:
         from festival.tasks import send_festival_alert_task
@@ -824,11 +854,14 @@ def _payload_for_retry(failed_job: FestivalPrintJob) -> str:
         render_customer_credit_ticket,
         render_customer_ticket,
         render_kitchen_ticket,
+        render_test_ticket,
     )
 
     order = failed_job.order
     is_copy = failed_job.is_reprint
     job_type = failed_job.job_type
+    if job_type == FestivalPrintJob.JobType.TEST:
+        return render_test_ticket(failed_job.printer)
     if job_type == FestivalPrintJob.JobType.KITCHEN:
         return render_kitchen_ticket(order, is_copy=is_copy)
     if job_type == FestivalPrintJob.JobType.CUSTOMER:

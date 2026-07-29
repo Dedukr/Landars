@@ -566,11 +566,14 @@ FESTIVAL_ALLOW_ORDERS_WHEN_PRINTER_OFFLINE = os.getenv(
     "FESTIVAL_ALLOW_ORDERS_WHEN_PRINTER_OFFLINE", "false"
 ).lower() in ("1", "true", "yes")
 FESTIVAL_PRINTER_STALE_SECONDS = int(os.getenv("FESTIVAL_PRINTER_STALE_SECONDS", "60"))
+# After order placement, wait this long then alert if tickets are still unprinted.
+FESTIVAL_PRINT_VERIFY_SECONDS = int(os.getenv("FESTIVAL_PRINT_VERIFY_SECONDS", "90"))
 FESTIVAL_CLOUDPRNT_ENDPOINT = os.getenv(
     "FESTIVAL_CLOUDPRNT_ENDPOINT", "/api/festival/cloudprnt/"
 )
 FESTIVAL_CLOUDPRNT_POLL_SECONDS = int(os.getenv("FESTIVAL_CLOUDPRNT_POLL_SECONDS", "5"))
-FESTIVAL_TICKET_COLUMNS = int(os.getenv("FESTIVAL_TICKET_COLUMNS", "48"))
+# 76mm printable width ≈ 42 cols at Star Font A (~1.5mm/char). Override via env.
+FESTIVAL_TICKET_COLUMNS = int(os.getenv("FESTIVAL_TICKET_COLUMNS", "42"))
 FESTIVAL_TICKET_MAX_BYTES = int(os.getenv("FESTIVAL_TICKET_MAX_BYTES", "32768"))
 FESTIVAL_MAX_ITEM_QUANTITY = int(os.getenv("FESTIVAL_MAX_ITEM_QUANTITY", "99"))
 FESTIVAL_CLOUDPRNT_USERNAME = os.getenv("FESTIVAL_CLOUDPRNT_USERNAME", "festival-printer")
@@ -622,10 +625,22 @@ LOGGING = {
             "style": "{",
         },
     },
+    "filters": {
+        # Star CloudPRNT probes without Authorization, gets 401 + WWW-Authenticate,
+        # then retries with Basic auth. Suppress only that expected challenge.
+        "suppress_cloudprnt_auth_challenge": {
+            "()": "festival.logging_filters.SuppressCloudPRNTAuthChallenge",
+        },
+    },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "simple",
+        },
+        "console_django_request": {
+            "class": "logging.StreamHandler",
+            "formatter": "simple",
+            "filters": ["suppress_cloudprnt_auth_challenge"],
         },
     },
     "root": {
@@ -659,6 +674,11 @@ LOGGING = {
         # Scanner traffic with bogus Host headers — Django already returns 400.
         "django.security.DisallowedHost": {
             "level": "CRITICAL",
+            "propagate": False,
+        },
+        "django.request": {
+            "handlers": ["console_django_request"],
+            "level": "WARNING",
             "propagate": False,
         },
     },
