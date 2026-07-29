@@ -418,7 +418,9 @@ class CloudPRNTProtocolTests(TestCase):
         self.assertIsNone(job.order_id)
         self.assertEqual(job.status, FestivalPrintJob.Status.READY)
         self.assertIn("TEST PAGE", job.payload_text)
-        self.assertIn(self.printer.mac_address, job.payload_text)
+        self.assertIn(self.printer.name, job.payload_text)
+        self.assertNotIn(self.printer.mac_address, job.payload_text)
+        self.assertNotIn("MAC ", job.payload_text)
 
         resp = self._post_poll()
         self.assertTrue(resp.data["jobReady"])
@@ -595,6 +597,11 @@ class PrintRecoveryTests(TestCase):
         with mock.patch("festival.services.alerts.send_festival_alert") as alert:
             recover_stale_festival_print_claims()
             self.assertTrue(alert.called)
+            alert_text = alert.call_args[0][0]
+            self.assertIn("KITCHEN", alert_text)
+            self.assertIn("Varenyky", alert_text)
+            self.assertIn("<pre>", alert_text)
+            self.assertIn("Tickets in this event", alert_text)
 
         job.refresh_from_db()
         self.assertEqual(job.status, FestivalPrintJob.Status.READY)
@@ -603,6 +610,24 @@ class PrintRecoveryTests(TestCase):
         self.assertIsNone(self.printer.current_job_token)
         # Next poll re-offers the recovered job.
         self.assertTrue(self._poll()["jobReady"])
+
+    def test_stale_claim_repeat_recovery_silent(self):
+        from festival.tasks import recover_stale_festival_print_claims
+
+        self._place_order()
+        result = self._poll()
+        job = FestivalPrintJob.objects.get(job_token=result["jobToken"])
+        # Already recovered once — repeat recovery must not Telegram again.
+        FestivalPrintJob.objects.filter(pk=job.pk).update(
+            claimed_at=timezone.now() - timedelta(minutes=11),
+            stale_requeue_count=1,
+        )
+        with mock.patch("festival.services.alerts.send_festival_alert") as alert:
+            recover_stale_festival_print_claims()
+            self.assertFalse(alert.called)
+        job.refresh_from_db()
+        self.assertEqual(job.status, FestivalPrintJob.Status.READY)
+        self.assertEqual(job.stale_requeue_count, 2)
 
     def test_fresh_claim_not_requeued(self):
         from festival.tasks import recover_stale_festival_print_claims
@@ -615,15 +640,141 @@ class PrintRecoveryTests(TestCase):
         job = FestivalPrintJob.objects.get(job_token=result["jobToken"])
         self.assertEqual(job.status, FestivalPrintJob.Status.CLAIMED)
 
-    def test_printer_offline_alert_when_jobs_pending(self):
-        from festival.tasks import check_festival_printer_health
+    @override_settings(FESTIVAL_ALLOW_ORDERS_WHEN_PRINTER_OFFLINE=True)
+    def test_order_while_printer_offline_alerts_immediately(self):
+        from django.core.cache import cache
 
-        self._place_order()
+        cache.delete("festival:alert:printer-offline:watermark")
         self.printer.last_seen_at = timezone.now() - timedelta(minutes=10)
         self.printer.save(update_fields=["last_seen_at"])
+        with mock.patch(
+            "festival.services.alerts.send_festival_alert", return_value=True
+        ) as alert, mock.patch(
+            "festival.tasks.verify_festival_order_prints.apply_async"
+        ):
+            order = self._place_order()
+            self.assertTrue(alert.called)
+            alert_text = alert.call_args[0][0]
+            self.assertIn("Printing is stuck", alert_text)
+            self.assertIn(f"(order {order.pk})", alert_text)
+            self.assertIn("Varenyky", alert_text)
+            self.assertIn("<pre>", alert_text)
+
+    def test_verify_alerts_when_online_but_unprinted(self):
+        from django.core.cache import cache
+
+        from festival.tasks import verify_festival_order_prints
+
+        cache.delete("festival:alert:printer-offline:watermark")
+        with mock.patch("festival.tasks.verify_festival_order_prints.apply_async"):
+            order = self._place_order()
+        # Printer stays online; tickets never fetched — delayed verify must alert.
+        with mock.patch(
+            "festival.services.alerts.send_festival_alert", return_value=True
+        ) as alert:
+            result = verify_festival_order_prints(order.pk)
+            self.assertIsNotNone(result)
+            self.assertTrue(alert.called)
+            alert_text = alert.call_args[0][0]
+            self.assertIn("not printed in time", alert_text)
+            self.assertIn(f"(order {order.pk})", alert_text)
+            self.assertIn("Varenyky", alert_text)
+
+    def test_verify_silent_when_already_printed(self):
+        from festival.tasks import verify_festival_order_prints
+
+        with mock.patch("festival.tasks.verify_festival_order_prints.apply_async"):
+            order = self._place_order()
+        FestivalPrintJob.objects.filter(order=order).update(
+            status=FestivalPrintJob.Status.PRINTED
+        )
         with mock.patch("festival.services.alerts.send_festival_alert") as alert:
+            self.assertIsNone(verify_festival_order_prints(order.pk))
+            self.assertFalse(alert.called)
+
+    def test_verify_skips_when_offline_already_alerted(self):
+        from django.core.cache import cache
+
+        from festival.services.alerts import advance_printer_offline_watermark
+        from festival.tasks import verify_festival_order_prints
+
+        cache.delete("festival:alert:printer-offline:watermark")
+        with mock.patch("festival.tasks.verify_festival_order_prints.apply_async"):
+            order = self._place_order()
+        jobs = list(FestivalPrintJob.objects.filter(order=order))
+        advance_printer_offline_watermark(max(j.created_at for j in jobs))
+        with mock.patch("festival.services.alerts.send_festival_alert") as alert:
+            self.assertIsNone(verify_festival_order_prints(order.pk))
+            self.assertFalse(alert.called)
+
+    def test_printer_offline_alert_when_jobs_pending(self):
+        from django.core.cache import cache
+
+        from festival.tasks import check_festival_printer_health
+
+        cache.delete("festival:alert:printer-offline:watermark")
+        with mock.patch("festival.tasks.verify_festival_order_prints.apply_async"):
+            self._place_order()
+        self.printer.last_seen_at = timezone.now() - timedelta(minutes=10)
+        self.printer.save(update_fields=["last_seen_at"])
+        with mock.patch(
+            "festival.services.alerts.send_festival_alert", return_value=True
+        ) as alert:
             check_festival_printer_health()
             self.assertTrue(alert.called)
+            alert_text = alert.call_args[0][0]
+            self.assertIn("Printing is stuck", alert_text)
+            self.assertIn("ready", alert_text)
+            self.assertIn("claimed", alert_text)
+            # Newly placed unprinted tickets include payload details.
+            self.assertIn("<pre>", alert_text)
+            self.assertIn("Varenyky", alert_text)
+            self.assertIn("Tickets in this event", alert_text)
+
+    def test_printer_offline_alert_only_new_tickets(self):
+        from django.core.cache import cache
+
+        from festival.services.alerts import advance_printer_offline_watermark
+        from festival.tasks import check_festival_printer_health
+
+        first = self._place_order()
+        first_jobs = list(
+            FestivalPrintJob.objects.filter(order=first).order_by("created_at")
+        )
+        self.assertTrue(first_jobs)
+        advance_printer_offline_watermark(
+            max(j.created_at for j in first_jobs)
+        )
+        cache.delete("festival:alert:printer-offline")
+
+        second = self._place_order()
+        self.printer.last_seen_at = timezone.now() - timedelta(minutes=10)
+        self.printer.save(update_fields=["last_seen_at"])
+        with mock.patch(
+            "festival.services.alerts.send_festival_alert", return_value=True
+        ) as alert:
+            check_festival_printer_health()
+            self.assertTrue(alert.called)
+            alert_text = alert.call_args[0][0]
+            self.assertIn("Printing is stuck", alert_text)
+            self.assertIn(f"(order {second.pk})", alert_text)
+            # Past order tickets are not re-dumped.
+            self.assertNotIn(f"(order {first.pk})", alert_text)
+
+    def test_printer_offline_no_alert_when_no_new_jobs(self):
+        from festival.services.alerts import advance_printer_offline_watermark
+        from festival.tasks import check_festival_printer_health
+
+        order = self._place_order()
+        jobs = list(FestivalPrintJob.objects.filter(order=order))
+        advance_printer_offline_watermark(max(j.created_at for j in jobs))
+        self.printer.last_seen_at = timezone.now() - timedelta(minutes=10)
+        self.printer.save(update_fields=["last_seen_at"])
+        with mock.patch(
+            "festival.services.alerts.send_festival_alert", return_value=True
+        ) as alert:
+            check_festival_printer_health()
+            self.assertFalse(alert.called)
 
     def test_printer_online_no_alert(self):
         from festival.tasks import check_festival_printer_health

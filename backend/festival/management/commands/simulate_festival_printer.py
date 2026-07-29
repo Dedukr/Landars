@@ -199,7 +199,7 @@ class Command(BaseCommand):
         return path
 
     def _validate_width(self, text: str) -> None:
-        width = int(getattr(settings, "FESTIVAL_TICKET_COLUMNS", 48))
+        width = int(getattr(settings, "FESTIVAL_TICKET_COLUMNS", 42))
         for line in text.splitlines():
             if len(line) > width:
                 raise CommandError(

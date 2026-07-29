@@ -759,7 +759,18 @@ class FestivalPrintJobAdmin(admin.ModelAdmin):
 @admin.register(FestivalNumberSequence)
 class FestivalNumberSequenceAdmin(admin.ModelAdmin):
     list_display = ["document_type", "last_number"]
-    readonly_fields = ["document_type", "last_number"]
+    fields = ["document_type", "last_number"]
+
+    def get_readonly_fields(self, request, obj=None):
+        # Superusers can reset/adjust last_number; document type is identity.
+        if request.user.is_superuser:
+            return ["document_type"]
+        return ["document_type", "last_number"]
+
+    def has_change_permission(self, request, obj=None):
+        if request.user.is_superuser:
+            return True
+        return super().has_change_permission(request, obj)
 
     def has_add_permission(self, request):
         return False

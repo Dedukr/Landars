@@ -8,7 +8,6 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
-
 from festival.models import FestivalCreditNote, FestivalInvoice, FestivalPrintJob
 from festival.services.cloudprnt import MAX_AUTO_RETRIES, MAX_STALE_CLAIM_REQUEUES
 
@@ -24,6 +23,7 @@ __all__ = [
     "auto_retry_failed_festival_print_jobs",
     "recover_stale_festival_print_claims",
     "check_festival_printer_health",
+    "verify_festival_order_prints",
     "report_missing_festival_document_pdfs",
     "cleanup_old_festival_ticket_payloads",
 ]
@@ -34,6 +34,58 @@ def send_festival_alert_task(text: str, throttle_key: str) -> None:
     from festival.services.alerts import send_festival_alert
 
     send_festival_alert(text, throttle_key=throttle_key)
+
+
+@shared_task(ignore_result=True)
+def verify_festival_order_prints(order_id: int) -> dict | None:
+    """
+    After a short grace period, alert if this order's tickets are still
+    unprinted (printer online or not). Skips tickets already covered by a
+    prior unprinted alert (watermark).
+    """
+    from festival.services.alerts import (
+        alert_unprinted_print_jobs,
+        get_printer_offline_watermark,
+    )
+    from festival.services.cloudprnt import get_active_printer
+
+    if getattr(settings, "FESTIVAL_PRINT_MODE", "disabled") != "cloudprnt":
+        return None
+
+    pending_jobs = list(
+        FestivalPrintJob.objects.filter(
+            order_id=order_id,
+            status__in=[
+                FestivalPrintJob.Status.READY,
+                FestivalPrintJob.Status.CLAIMED,
+            ],
+        )
+        .select_related("order", "printer")
+        .order_by("created_at", "pk")
+    )
+    if not pending_jobs:
+        return None
+
+    watermark = get_printer_offline_watermark()
+    if watermark is not None:
+        pending_jobs = [j for j in pending_jobs if j.created_at > watermark]
+    if not pending_jobs:
+        return None
+
+    printer = pending_jobs[0].printer or get_active_printer()
+    if printer is None:
+        return None
+
+    sent = alert_unprinted_print_jobs(
+        pending_jobs, printer=printer, require_offline=False
+    )
+    if sent:
+        logger.warning(
+            "Festival order %s still unprinted after verify window (%s jobs)",
+            order_id,
+            len(pending_jobs),
+        )
+    return {"order_id": order_id, "pending": len(pending_jobs), "alerted": sent}
 
 
 @shared_task(bind=True, max_retries=5, default_retry_delay=60, ignore_result=True)
@@ -133,7 +185,10 @@ def recover_stale_festival_print_claims() -> dict | None:
     Auto-fix stale CLAIMED jobs. Unfetched claims stale after 3 minutes;
     fetched claims after 10 minutes (printer may still be printing).
     """
-    from festival.services.alerts import send_festival_alert
+    from festival.services.alerts import (
+        format_stuck_ticket_payloads,
+        send_festival_alert,
+    )
     from festival.services.cloudprnt import sync_print_batch
 
     now = timezone.now()
@@ -142,23 +197,26 @@ def recover_stale_festival_print_claims() -> dict | None:
     requeued = 0
     failed = 0
     with transaction.atomic():
-        stale_jobs = (
-            FestivalPrintJob.objects.select_for_update()
+        stale_jobs = list(
+            FestivalPrintJob.objects.select_for_update(of=("self",))
             .filter(status=FestivalPrintJob.Status.CLAIMED)
             .filter(
                 Q(fetched_at__isnull=True, claimed_at__lt=unfetched_cutoff)
                 | Q(fetched_at__isnull=False, fetched_at__lt=fetched_cutoff)
             )
-            .select_related("printer")
+            .select_related("printer", "order")
+            .order_by("claimed_at")
         )
+        # Capture payloads before status changes (text itself is unchanged).
+        # Telegram only for jobs hitting stale recovery for the first time —
+        # repeated recoveries of the same claim are silent.
+        alert_jobs = [job for job in stale_jobs if job.stale_requeue_count == 0]
         for job in stale_jobs:
             note = (
                 f"Stale claim recovered at {now.isoformat()} "
                 f"(claimed {job.claimed_at.isoformat() if job.claimed_at else '?'})."
             )
-            job.audit_note = (
-                job.audit_note + "\n" if job.audit_note else ""
-            ) + note
+            job.audit_note = (job.audit_note + "\n" if job.audit_note else "") + note
             job.stale_requeue_count += 1
             if job.stale_requeue_count >= MAX_STALE_CLAIM_REQUEUES:
                 job.status = FestivalPrintJob.Status.FAILED
@@ -195,15 +253,21 @@ def recover_stale_festival_print_claims() -> dict | None:
         requeued,
         failed,
     )
-    send_festival_alert(
-        (
-            f"Recovered stale print jobs: {requeued} requeued, {failed} failed.\n"
+    if alert_jobs:
+        payloads = format_stuck_ticket_payloads(alert_jobs)
+        body = (
+            f"Recovered stale print jobs: {requeued} requeued, {failed} failed "
+            f"({len(alert_jobs)} newly stale).\n"
             "The printer stopped acknowledging jobs — check it is powered on "
             "and connected."
-        ),
-        throttle_key="stale-claims",
-        throttle_seconds=900,
-    )
+        )
+        if payloads:
+            body = f"{body}\n\n{payloads}"
+        send_festival_alert(
+            body,
+            throttle_key=f"stale-claims:{alert_jobs[0].job_token}",
+            throttle_seconds=3600,
+        )
     return {"requeued": requeued, "failed": failed}
 
 
@@ -212,8 +276,16 @@ def check_festival_printer_health() -> dict | None:
     """
     Alert when tickets are queued but the printer has stopped polling
     (offline) so printing breaks are noticed without watching the admin.
+
+    Alerts only when new unprinted jobs appear since the last offline alert
+    (no periodic reminders while the same backlog sits there).
     """
-    from festival.services.alerts import send_festival_alert
+    from festival.services.alerts import (
+        advance_printer_offline_watermark,
+        format_stuck_ticket_payloads,
+        get_printer_offline_watermark,
+        send_festival_alert,
+    )
     from festival.services.cloudprnt import get_active_printer
 
     if getattr(settings, "FESTIVAL_PRINT_MODE", "disabled") != "cloudprnt":
@@ -231,6 +303,17 @@ def check_festival_printer_health() -> dict | None:
     if printer and printer.is_online:
         return None
 
+    watermark = get_printer_offline_watermark()
+    new_qs = pending.select_related("order").order_by("created_at", "pk")
+    if watermark is not None:
+        new_qs = new_qs.filter(created_at__gt=watermark)
+    new_jobs = list(new_qs)
+    if not new_jobs:
+        # Same stuck queue as last alert — do not nag Telegram again.
+        return {"pending": pending_count}
+
+    ready_count = pending.filter(status=FestivalPrintJob.Status.READY).count()
+    claimed_count = pending_count - ready_count
     oldest = pending.order_by("created_at").first()
     waiting_minutes = (
         int((timezone.now() - oldest.created_at).total_seconds() // 60)
@@ -244,16 +327,27 @@ def check_festival_printer_health() -> dict | None:
         detail = f"Printer '{printer.name}' is offline (last seen {last_seen})."
     else:
         detail = "No active festival printer is configured."
-    send_festival_alert(
-        (
-            f"Printing is stuck: {pending_count} ticket(s) queued, oldest "
-            f"waiting {waiting_minutes} min.\n{detail}"
-        ),
-        throttle_key="printer-offline",
-        throttle_seconds=900,
+
+    body = (
+        f"Printing is stuck: {pending_count} ticket(s) queued "
+        f"({ready_count} ready, {claimed_count} claimed), oldest "
+        f"waiting {waiting_minutes} min.\n{detail}"
     )
+    payloads = format_stuck_ticket_payloads(new_jobs)
+    if payloads:
+        body = f"{body}\n\n{payloads}"
+    newest = new_jobs[-1]
+    sent = send_festival_alert(
+        body,
+        throttle_key=f"unprinted:{newest.pk}",
+        throttle_seconds=3600,
+    )
+    if sent:
+        advance_printer_offline_watermark(max(job.created_at for job in new_jobs))
     logger.warning(
-        "Festival printer unhealthy with %s pending jobs", pending_count
+        "Festival printer unhealthy with %s pending jobs (%s new)",
+        pending_count,
+        len(new_jobs),
     )
     return {"pending": pending_count}
 
