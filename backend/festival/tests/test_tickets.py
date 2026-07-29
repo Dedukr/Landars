@@ -7,6 +7,7 @@ from unittest import mock
 from django.test import SimpleTestCase, override_settings
 
 from festival.services.tickets import (
+    encode_print_payload,
     render_customer_ticket,
     render_kitchen_ticket,
 )
@@ -95,3 +96,8 @@ class TicketLayoutTests(SimpleTestCase):
         self.assertEqual(text.count("TICKET 2"), 1)
         for line in text.splitlines():
             self.assertLessEqual(len(line), 42, msg=repr(line))
+
+    def test_print_payload_encodes_pound_as_cp437(self):
+        raw = encode_print_payload("TOTAL £8.50\n")
+        self.assertEqual(raw, b"TOTAL \x9c8.50\n")
+        self.assertNotIn(b"\xc2\xa3", raw)

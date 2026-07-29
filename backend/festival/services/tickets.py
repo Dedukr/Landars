@@ -47,11 +47,31 @@ def _money(value: Decimal | str) -> str:
     """
     Format money with a pound sign.
 
-    Uses the Unicode pound (U+00A3). CloudPRNT GET must send
-    ``Content-Type: text/plain; charset=utf-8`` so the TSP100IV renders it
-    instead of two garbage glyphs from a single-byte code page.
+    Stored as Unicode U+00A3 in ``payload_text``. CloudPRNT GET encodes the
+    job as CP437 (see ``encode_print_payload``) so the printer's default
+    code page prints a real £ instead of UTF-8 mojibake.
     """
     return f"£{money(value):.2f}"
+
+
+def encode_print_payload(text: str) -> bytes:
+    """
+    Encode ticket text for CloudPRNT ``text/plain`` download.
+
+    Star prints text/plain with the device default code page (``std``), not
+    as UTF-8 — even when Content-Type says charset=utf-8. CP437 maps £ to
+    a single byte (0x9C) that TSP100IV / Star thermal fonts render correctly.
+    Override with ``FESTIVAL_TICKET_ENCODING`` (e.g. ``utf-8``) if needed.
+    """
+    encoding = (
+        getattr(settings, "FESTIVAL_TICKET_ENCODING", None) or "cp437"
+    ).strip().lower()
+    if encoding in ("utf-8", "utf8"):
+        return text.encode("utf-8")
+    try:
+        return text.encode(encoding, errors="replace")
+    except LookupError:
+        return text.encode("cp437", errors="replace")
 
 
 def _wrap_words(text: str, width: int) -> list[str]:
@@ -248,8 +268,7 @@ def render_customer_ticket(
         seller = seller_snapshot()
 
     lines = [
-        _center("CUSTOMER COPY", width),
-        _center("PAID", width),
+        _center("INVOICE", width),
         _rule(width, "="),
     ]
     if is_copy:
@@ -260,7 +279,7 @@ def render_customer_ticket(
     if invoice is not None:
         lines.append(f"Invoice {invoice.invoice_number}")
     lines += [
-        f"Tax point {created.strftime('%d/%m/%Y %H:%M')}",
+        created.strftime("%d/%m/%Y %H:%M"),
         _rule(width),
     ]
     for item in order.items.all():

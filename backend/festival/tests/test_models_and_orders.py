@@ -602,8 +602,8 @@ class FestivalCloudPRNTOrderTests(TestCase):
         self.assertEqual(jobs[1].job_type, FestivalPrintJob.JobType.CUSTOMER)
         self.assertEqual(jobs[0].batch_uuid, jobs[1].batch_uuid)
         self.assertIn("KITCHEN", jobs[0].payload_text)
-        self.assertIn("CUSTOMER COPY", jobs[1].payload_text)
-        self.assertIn("PAID", jobs[1].payload_text)
+        self.assertIn("INVOICE", jobs[1].payload_text)
+        self.assertNotIn("PAID", jobs[1].payload_text)
         self.assertNotIn("£", jobs[0].payload_text)
 
     def test_missing_printer_rejected_when_required(self):

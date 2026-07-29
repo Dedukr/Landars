@@ -245,7 +245,10 @@ class CloudPRNTProtocolTests(TestCase):
             {"mac": "001C62000000", "type": "text/plain", "token": token2},
             HTTP_AUTHORIZATION=self.auth,
         )
-        self.assertIn(b"CUSTOMER COPY", get.content)
+        self.assertIn(b"INVOICE", get.content)
+        # £ must be CP437 0x9C on the wire (not UTF-8 C2 A3 mojibake).
+        self.assertIn("£".encode("cp437"), get.content)
+        self.assertNotIn("£".encode("utf-8"), get.content)
         self.client.delete(
             f"{self.url}?mac=001C62000000&token={token2}&code=200%20OK",
             HTTP_AUTHORIZATION=self.auth,

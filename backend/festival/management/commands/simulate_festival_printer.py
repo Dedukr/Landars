@@ -142,8 +142,9 @@ class Command(BaseCommand):
                 payload = get_resp.content
                 if payload.startswith(b"\xef\xbb\xbf"):
                     raise CommandError("Payload unexpectedly includes UTF-8 BOM.")
-                payload.decode("utf-8")
-                self._validate_width(payload.decode("utf-8"))
+                # CloudPRNT text/plain is CP437 on the wire (Star std code page).
+                text = payload.decode("cp437")
+                self._validate_width(text)
 
             if payload is None:
                 if not watch:

@@ -531,7 +531,9 @@ def handle_job_get(*, mac: str, media_type: str, token: str) -> bytes:
     printer.last_seen_at = timezone.now()
     printer.current_job_token = job.job_token
     printer.save(update_fields=["last_seen_at", "current_job_token", "updated_at"])
-    return job.payload_text.encode("utf-8")
+    from festival.services.tickets import encode_print_payload
+
+    return encode_print_payload(job.payload_text)
 
 
 def create_test_print_job(printer: FestivalPrinter) -> FestivalPrintJob:

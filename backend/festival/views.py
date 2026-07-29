@@ -200,8 +200,9 @@ class FestivalCloudPRNTView(APIView):
             return HttpResponse(
                 str(exc), status=exc.status, content_type="text/plain; charset=utf-8"
             )
-        # charset=utf-8 is required so TSP100IV prints £ correctly for text/plain.
-        return HttpResponse(payload, content_type="text/plain; charset=utf-8")
+        # text/plain is rendered with the printer's std code page; payload is
+        # CP437-encoded so £ is a single device glyph (not UTF-8 mojibake).
+        return HttpResponse(payload, content_type="text/plain")
 
     def post(self, request):
         try:

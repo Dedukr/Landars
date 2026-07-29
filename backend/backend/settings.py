@@ -575,6 +575,9 @@ FESTIVAL_CLOUDPRNT_POLL_SECONDS = int(os.getenv("FESTIVAL_CLOUDPRNT_POLL_SECONDS
 # 76mm printable width ≈ 42 cols at Star Font A (~1.5mm/char). Override via env.
 FESTIVAL_TICKET_COLUMNS = int(os.getenv("FESTIVAL_TICKET_COLUMNS", "42"))
 FESTIVAL_TICKET_MAX_BYTES = int(os.getenv("FESTIVAL_TICKET_MAX_BYTES", "32768"))
+# Wire encoding for CloudPRNT text/plain GET. Default cp437 so £ prints on
+# Star std code page; set utf-8 only if the device truly renders UTF-8 text.
+FESTIVAL_TICKET_ENCODING = os.getenv("FESTIVAL_TICKET_ENCODING", "cp437").strip()
 FESTIVAL_MAX_ITEM_QUANTITY = int(os.getenv("FESTIVAL_MAX_ITEM_QUANTITY", "99"))
 FESTIVAL_CLOUDPRNT_USERNAME = os.getenv("FESTIVAL_CLOUDPRNT_USERNAME", "festival-printer")
 FESTIVAL_CLOUDPRNT_PASSWORD = os.getenv("FESTIVAL_CLOUDPRNT_PASSWORD", "")
