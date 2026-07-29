@@ -539,49 +539,51 @@ class PrintRecoveryTests(TestCase):
         self.printer.save(update_fields=["current_job_token"])
         return job
 
-    def test_auto_retry_unblocks_batch(self):
-        from festival.tasks import auto_retry_failed_festival_print_jobs
-
+    def test_poll_retries_failed_job_while_online(self):
         order = self._place_order()
         failed = self._fail_claimed_job()
 
         # Batch is blocked while the job is FAILED.
-        self.assertFalse(self._poll()["jobReady"])
-
         with mock.patch("festival.services.alerts.send_festival_alert"):
-            auto_retry_failed_festival_print_jobs()
+            # First poll recreates a READY replacement and claims it.
+            result = self._poll()
 
         failed.refresh_from_db()
         self.assertEqual(failed.status, FestivalPrintJob.Status.CANCELLED)
         replacement = FestivalPrintJob.objects.get(retry_of=failed)
-        self.assertEqual(replacement.status, FestivalPrintJob.Status.READY)
+        self.assertEqual(replacement.status, FestivalPrintJob.Status.CLAIMED)
+        self.assertEqual(result["jobToken"], str(replacement.job_token))
         self.assertEqual(replacement.payload_text, failed.payload_text)
 
-        # Queue is unblocked again; both remaining jobs can be printed.
         remaining = FestivalPrintJob.objects.filter(
             order=order, status=FestivalPrintJob.Status.READY
         ).count()
-        self.assertEqual(remaining, 2)
-        self.assertTrue(self._poll()["jobReady"])
+        self.assertEqual(remaining, 1)  # customer still waiting
 
-    def test_auto_retry_gives_up_after_max_attempts(self):
-        from festival.tasks import MAX_AUTO_RETRIES, auto_retry_failed_festival_print_jobs
-
+    def test_failed_jobs_keep_retrying_without_cap(self):
         self._place_order()
         job = self._fail_claimed_job()
-        with mock.patch("festival.services.alerts.send_festival_alert") as alert:
-            for _ in range(MAX_AUTO_RETRIES):
-                auto_retry_failed_festival_print_jobs()
-                job = FestivalPrintJob.objects.get(retry_of=job)
+        with mock.patch("festival.services.alerts.send_festival_alert"):
+            for _ in range(6):
+                result = self._poll()
+                self.assertTrue(result["jobReady"])
+                job = FestivalPrintJob.objects.get(job_token=result["jobToken"])
+                self.assertEqual(job.status, FestivalPrintJob.Status.CLAIMED)
                 job.status = FestivalPrintJob.Status.FAILED
-                job.save(update_fields=["status", "updated_at"])
-            self.assertFalse(alert.called)
-            auto_retry_failed_festival_print_jobs()
-            self.assertTrue(alert.called)
-        job.refresh_from_db()
-        self.assertEqual(job.status, FestivalPrintJob.Status.FAILED)
-        self.assertFalse(
-            FestivalPrintJob.objects.filter(retry_of=job).exists()
+                job.last_error = "510 Incompatible media type"
+                job.save(update_fields=["status", "last_error", "updated_at"])
+                self.printer.current_job_token = None
+                self.printer.save(update_fields=["current_job_token"])
+
+        # Still gets another replacement — no give-up after N failures.
+        with mock.patch("festival.services.alerts.send_festival_alert"):
+            result = self._poll()
+        self.assertTrue(result["jobReady"])
+        self.assertTrue(
+            FestivalPrintJob.objects.filter(
+                job_token=result["jobToken"],
+                status=FestivalPrintJob.Status.CLAIMED,
+            ).exists()
         )
 
     def test_stale_claim_requeued(self):
@@ -923,19 +925,16 @@ class PrintRecoveryTests(TestCase):
             ).exists()
         )
 
-    def test_auto_retry_keeps_kitchen_before_customer(self):
-        from festival.tasks import auto_retry_failed_festival_print_jobs
-
+    def test_poll_retry_keeps_kitchen_before_customer(self):
         order = self._place_order()
         failed = self._fail_claimed_job()
         with mock.patch("festival.services.alerts.send_festival_alert"):
-            auto_retry_failed_festival_print_jobs()
+            nxt = self._poll()
         replacement = FestivalPrintJob.objects.get(retry_of=failed)
         customer = FestivalPrintJob.objects.get(
             order=order, job_type=FestivalPrintJob.JobType.CUSTOMER
         )
         self.assertEqual(customer.batch_uuid, replacement.batch_uuid)
-        nxt = self._poll()
         self.assertEqual(nxt["jobToken"], str(replacement.job_token))
         self.assertEqual(replacement.job_type, FestivalPrintJob.JobType.KITCHEN)
 

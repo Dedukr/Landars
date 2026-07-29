@@ -597,10 +597,6 @@ CELERY_BEAT_SCHEDULE = {
         "task": "festival.tasks.recover_stale_festival_print_claims",
         "schedule": crontab(minute="*/5"),
     },
-    "festival-auto-retry-failed-print-jobs": {
-        "task": "festival.tasks.auto_retry_failed_festival_print_jobs",
-        "schedule": crontab(minute="*/2"),
-    },
     "festival-printer-health": {
         "task": "festival.tasks.check_festival_printer_health",
         "schedule": crontab(minute="*/5"),
