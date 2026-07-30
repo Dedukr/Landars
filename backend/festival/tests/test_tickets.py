@@ -97,8 +97,12 @@ class TicketLayoutTests(SimpleTestCase):
         self.assertLessEqual(len(total_lines[0]), 42)
         self.assertIn("   + Sparkling water", text)
         self.assertEqual(text.count("TICKET 2"), 1)
-        # Invoice has date only (no REF); business block centered.
-        self.assertFalse(any("REF " in line for line in text.splitlines()))
+        # Date left, REF right; business block centered.
+        date_ref_lines = [
+            line for line in text.splitlines() if "REF 2" in line
+        ]
+        self.assertEqual(len(date_ref_lines), 1)
+        self.assertTrue(date_ref_lines[0].endswith("REF 2"))
         self.assertTrue(_center_landars(text))
         for line in text.splitlines():
             self.assertLessEqual(len(line), 42, msg=repr(line))
@@ -167,10 +171,11 @@ class TicketLayoutTests(SimpleTestCase):
             text,
         )
         self.assertIn("[column: vl; left TOTAL; right £9.99]", text)
-        self.assertNotIn("REF 2", text)
+        self.assertIn("right REF 2]", text)
         self.assertRegex(
             text,
-            r"\[align: left\]\d{2}/\d{2}/\d{4} \d{2}:\d{2}\n"
+            r"\[align: left\]\[column: vl; left \d{2}/\d{2}/\d{4} \d{2}:\d{2}; "
+            r"right REF 2\]\n"
             r"\[align: center\]-{48}\n\[align: left\]\n",
         )
         # VAT section fully left — no right-column split for vat amount.

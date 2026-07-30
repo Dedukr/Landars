@@ -76,7 +76,9 @@ class Command(BaseCommand):
 
         while True:
             cycles += 1
-            status_code = "410 Out of paper" if options["report_paper_empty"] else "200 OK"
+            status_code = (
+                "410 Out of paper" if options["report_paper_empty"] else "200 OK"
+            )
             body = {
                 "status": "23 6 0 0 0 0 0 0 0 ",
                 "printerMAC": self._format_mac(mac),
@@ -126,7 +128,11 @@ class Command(BaseCommand):
                 if options["unsupported_media"]
                 else media_types[0]
             )
-            token_for_get = "00000000-0000-0000-0000-000000000000" if options["unknown_token"] else job_token
+            token_for_get = (
+                "00000000-0000-0000-0000-000000000000"
+                if options["unknown_token"]
+                else job_token
+            )
 
             query = urlencode({"mac": mac, "type": media, "token": token_for_get})
             get_url = f"{endpoint}?{query}"
@@ -231,6 +237,4 @@ class Command(BaseCommand):
         width = int(getattr(settings, "FESTIVAL_TICKET_COLUMNS", 42))
         for line in text.splitlines():
             if len(line) > width:
-                raise CommandError(
-                    f"Ticket line exceeds {width} columns: {line!r}"
-                )
+                raise CommandError(f"Ticket line exceeds {width} columns: {line!r}")

@@ -441,7 +441,11 @@ def render_customer_ticket(
     lines += [
         _center(f"TICKET {order.order_number}", width),
         _rule(width),
-        created.strftime("%d/%m/%Y %H:%M"),
+        _spread_line(
+            created.strftime("%d/%m/%Y %H:%M"),
+            f"REF {order.pk}",
+            width,
+        ),
         _rule(width),
     ]
     if invoice is not None:
@@ -645,7 +649,12 @@ def render_customer_ticket_markup(
     lines += [
         _magnified_center_title(f"TICKET {order.order_number}"),
         _rule(width),
-        _align_left(created.strftime("%d/%m/%Y %H:%M")),
+        _align_left(
+            _markup_column(
+                created.strftime("%d/%m/%Y %H:%M"),
+                f"REF {order.pk}",
+            )
+        ),
         _rule(width),
     ]
     if invoice is not None:
