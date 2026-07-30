@@ -1,4 +1,23 @@
 # Multi-stage build for smaller production image
+# Star CPUtil (self-contained .NET) for Festival CloudPRNT markup → StarPRNT.
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS cputil-builder
+ARG TARGETARCH
+SHELL ["/bin/bash", "-c"]
+RUN set -euo pipefail; \
+    apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && git clone --depth 1 --branch v2.0.1 \
+         https://github.com/star-micronics/cloudprnt-sdk.git /src/cloudprnt-sdk \
+    && case "${TARGETARCH}" in \
+         amd64) RID=linux-musl-x64 ;; \
+         arm64) RID=linux-musl-arm64 ;; \
+         *) echo "Unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+       esac \
+    && cd /src/cloudprnt-sdk/CloudPRNTSDKSamples/cputil \
+    && dotnet publish -c Release -r "${RID}" --self-contained true \
+         -p:PublishSingleFile=true -o /out \
+    && test -x /out/cputil
+
 FROM python:3.12-alpine AS builder
 
 # Install build dependencies
@@ -66,6 +85,7 @@ RUN set -euo pipefail; \
     libxslt \
     glib \
     postgresql-libs \
+    icu-libs \
     font-noto \
     font-noto-cjk \
     font-noto-emoji || \
@@ -99,6 +119,12 @@ ENV PATH=/opt/py/bin:$PATH
 # pip --user layout: /opt/py/lib/python3.12/site-packages (image Python must see it).
 ENV PYTHONPATH=/opt/py/lib/python3.12/site-packages
 
+# Star CPUtil for Festival CloudPRNT (markup → application/vnd.star.starprnt).
+COPY --from=cputil-builder /out/cputil /opt/star/cputil/cputil
+RUN chmod 755 /opt/star/cputil/cputil \
+    && /opt/star/cputil/cputil mediatypes-mime text/vnd.star.markup >/dev/null
+ENV FESTIVAL_CPUTIL_PATH=/opt/star/cputil/cputil
+
 # Copy application code
 COPY . .
 
@@ -108,7 +134,7 @@ RUN python manage.py collectstatic --noinput
 # Run Gunicorn/Celery as non-root — avoids Celery's "superuser privileges" warning.
 RUN addgroup -g 1000 django && \
     adduser -D -u 1000 -G django django && \
-    chown -R django:django /backend /opt/py
+    chown -R django:django /backend /opt/py /opt/star
 
 USER django
 

@@ -26,7 +26,10 @@ from festival.services.cloudprnt import (
 )
 from festival.services.numbering import allocate_ticket_number
 from festival.services.pricing import price_line, price_order
-from festival.services.tickets import render_customer_ticket, render_kitchen_ticket
+from festival.services.tickets import (
+    render_customer_ticket_for_print,
+    render_kitchen_ticket_for_print,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -382,12 +385,12 @@ def place_festival_order(
                     .get(pk=order_id)
                 )
                 fresh_printer = FestivalPrinter.objects.get(pk=printer_id)
-                kitchen = render_kitchen_ticket(fresh_order)
+                kitchen = render_kitchen_ticket_for_print(fresh_order)
                 try:
                     invoice = fresh_order.invoice
                 except FestivalInvoice.DoesNotExist:
                     invoice = None
-                customer = render_customer_ticket(fresh_order, invoice)
+                customer = render_customer_ticket_for_print(fresh_order, invoice)
                 jobs = create_print_batch(
                     order=fresh_order,
                     printer=fresh_printer,

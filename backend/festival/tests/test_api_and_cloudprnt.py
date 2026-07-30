@@ -134,6 +134,7 @@ class FestivalAPITests(TestCase):
     FESTIVAL_CLOUDPRNT_USERNAME="festival-printer",
     FESTIVAL_CLOUDPRNT_PASSWORD="test-secret-password",
     FESTIVAL_PRINTER_STALE_SECONDS=60,
+    FESTIVAL_CLOUDPRNT_JOB_FORMAT="plain",
 )
 class CloudPRNTProtocolTests(TestCase):
     def setUp(self):
@@ -497,6 +498,7 @@ class CloudPRNTProtocolTests(TestCase):
     FESTIVAL_CLOUDPRNT_USERNAME="festival-printer",
     FESTIVAL_CLOUDPRNT_PASSWORD="test-secret-password",
     FESTIVAL_PRINTER_STALE_SECONDS=60,
+    FESTIVAL_CLOUDPRNT_JOB_FORMAT="plain",
 )
 class PrintRecoveryTests(TestCase):
     def setUp(self):
@@ -822,7 +824,9 @@ class PrintRecoveryTests(TestCase):
         token = self._poll()["jobToken"]
         from festival.services.cloudprnt import handle_job_get
 
-        handle_job_get(mac="001C62000000", media_type="text/plain", token=token)
+        handle_job_get(
+            mac="001C62000000", media_type="text/plain", token=token
+        )
         job = FestivalPrintJob.objects.get(job_token=token)
         self.assertEqual(job.status, FestivalPrintJob.Status.CLAIMED)
         self.assertIsNotNone(job.fetched_at)
@@ -844,7 +848,9 @@ class PrintRecoveryTests(TestCase):
         self._place_order()
         token = self._poll()["jobToken"]
         for _ in range(MAX_STALE_CLAIM_REQUEUES + 2):
-            handle_job_get(mac="001C62000000", media_type="text/plain", token=token)
+            handle_job_get(
+                mac="001C62000000", media_type="text/plain", token=token
+            )
         job = FestivalPrintJob.objects.get(job_token=token)
         self.assertGreaterEqual(job.attempt_count, MAX_STALE_CLAIM_REQUEUES + 2)
         self.assertEqual(job.stale_requeue_count, 0)
@@ -914,10 +920,11 @@ class PrintRecoveryTests(TestCase):
         self.assertEqual(cancelled.status, FestivalPrintJob.Status.CANCELLED)
 
         # Printer finishing the protocol must not 409.
-        payload = handle_job_get(
+        payload, ctype = handle_job_get(
             mac="001C62000000", media_type="text/plain", token=token
         )
         self.assertEqual(payload, b"")
+        self.assertEqual(ctype, "text/plain")
         handle_job_delete(mac="001C62000000", token=token, code="200 OK")
 
         self.assertTrue(
@@ -1009,3 +1016,133 @@ class SuppressCloudPRNTAuthChallengeTests(TestCase):
                 self._record(path="/api/festival/cloudprnt/", status_code=403)
             )
         )
+
+
+@override_settings(
+    FESTIVAL_ENABLED=True,
+    FESTIVAL_PRINT_MODE="cloudprnt",
+    FESTIVAL_PRINTER_REQUIRED=True,
+    FESTIVAL_ALLOW_ORDERS_WHEN_PRINTER_OFFLINE=False,
+    FESTIVAL_CLOUDPRNT_USERNAME="festival-printer",
+    FESTIVAL_CLOUDPRNT_PASSWORD="test-secret-password",
+    FESTIVAL_CLOUDPRNT_JOB_FORMAT="markup",
+)
+class CloudPRNTMarkupTests(TestCase):
+    def setUp(self):
+        from festival.services.cputil import reset_cputil_cache
+
+        reset_cputil_cache()
+        self.client = APIClient()
+        self.user = make_staff()
+        self.product = FestivalProduct.objects.create(
+            name="Varenyky", price=Decimal("8.50"), vat_rate=0
+        )
+        self.printer = FestivalPrinter.objects.create(
+            name="Main",
+            mac_address="001C62000000",
+            is_active=True,
+            last_seen_at=timezone.now(),
+            last_status_code="200",
+            last_status_text="OK",
+        )
+        self.auth = basic_auth("festival-printer", "test-secret-password")
+        self.url = "/api/festival/cloudprnt/"
+
+    def tearDown(self):
+        from festival.services.cputil import reset_cputil_cache
+
+        reset_cputil_cache()
+
+    def _post_poll(self, **extra):
+        body = {
+            "printerMAC": "00:1C:62:00:00:00",
+            "statusCode": "200%20OK",
+            "printingInProgress": False,
+        }
+        body.update(extra)
+        return self.client.post(
+            self.url,
+            body,
+            format="json",
+            HTTP_AUTHORIZATION=self.auth,
+        )
+
+    @mock.patch("festival.services.cputil.cputil_available", return_value=True)
+    @mock.patch(
+        "festival.services.cputil.convert_markup",
+        return_value=b"\x1b@STARPRNT-TEST",
+    )
+    def test_markup_poll_advertises_starprnt_and_get_returns_bytes(
+        self, mock_convert, _mock_avail
+    ):
+        with self.captureOnCommitCallbacks(execute=True):
+            place_festival_order(
+                user=self.user,
+                client_request_id=uuid.uuid4(),
+                items=[{"product_id": self.product.id, "quantity": 1}],
+            )
+        job = FestivalPrintJob.objects.filter(
+            job_type=FestivalPrintJob.JobType.KITCHEN
+        ).first()
+        self.assertEqual(job.media_type, "text/vnd.star.markup")
+        self.assertIn("[magnify:", job.payload_text)
+        self.assertIn("£", FestivalPrintJob.objects.filter(
+            job_type=FestivalPrintJob.JobType.CUSTOMER
+        ).first().payload_text)
+
+        resp = self._post_poll()
+        self.assertTrue(resp.data["jobReady"])
+        self.assertEqual(
+            resp.data["mediaTypes"],
+            [
+                "application/vnd.star.starprnt",
+                "text/vnd.star.markup",
+                "text/plain",
+            ],
+        )
+        token = resp.data["jobToken"]
+        get = self.client.get(
+            self.url,
+            {
+                "mac": "001C62000000",
+                "type": "application/vnd.star.starprnt",
+                "token": token,
+            },
+            HTTP_AUTHORIZATION=self.auth,
+            HTTP_ACCEPT="application/vnd.star.starprnt",
+        )
+        self.assertEqual(get.status_code, 200)
+        self.assertEqual(get["Content-Type"], "application/vnd.star.starprnt")
+        self.assertEqual(get.content, b"\x1b@STARPRNT-TEST")
+        mock_convert.assert_called()
+        # Repeated GET is deterministic.
+        get2 = self.client.get(
+            self.url,
+            {
+                "mac": "001C62000000",
+                "type": "application/vnd.star.starprnt",
+                "token": token,
+            },
+            HTTP_AUTHORIZATION=self.auth,
+        )
+        self.assertEqual(get2.content, get.content)
+
+    @mock.patch("festival.services.cputil.cputil_available", return_value=False)
+    def test_markup_format_falls_back_to_plain_when_cputil_missing(
+        self, _mock_avail
+    ):
+        from festival.services.cputil import active_job_format, reset_cputil_cache
+
+        reset_cputil_cache()
+        self.assertEqual(active_job_format(), "plain")
+        with self.captureOnCommitCallbacks(execute=True):
+            place_festival_order(
+                user=self.user,
+                client_request_id=uuid.uuid4(),
+                items=[{"product_id": self.product.id, "quantity": 1}],
+            )
+        job = FestivalPrintJob.objects.filter(
+            job_type=FestivalPrintJob.JobType.KITCHEN
+        ).first()
+        self.assertEqual(job.media_type, "text/plain")
+        self.assertNotIn("[magnify:", job.payload_text)

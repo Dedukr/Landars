@@ -4,7 +4,14 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from festival.models import FestivalNumberSequence, FestivalPrinter, FestivalProduct
-from festival.services.tickets import render_kitchen_ticket
+from festival.services.cputil import (
+    active_job_format,
+    configured_job_format,
+    cputil_available,
+    cputil_path,
+    reset_cputil_cache,
+)
+from festival.services.tickets import render_kitchen_ticket_for_print
 
 
 class Command(BaseCommand):
@@ -18,6 +25,9 @@ class Command(BaseCommand):
         mode = settings.FESTIVAL_PRINT_MODE
         self.stdout.write(f"FESTIVAL_ENABLED={enabled}")
         self.stdout.write(f"FESTIVAL_PRINT_MODE={mode}")
+        job_format = configured_job_format()
+        self.stdout.write(f"FESTIVAL_CLOUDPRNT_JOB_FORMAT={job_format}")
+        self.stdout.write(f"FESTIVAL_CPUTIL_PATH={cputil_path()}")
 
         business = getattr(settings, "BUSINESS_INFO", {}) or {}
         for key in ("name", "address", "city", "postal_code", "country"):
@@ -73,14 +83,30 @@ class Command(BaseCommand):
                     class _Item:
                         quantity = 1
                         product_name = "Test Product O'Reilly — £"
+                        filling_name = ""
+                        addition_name = ""
 
                     return [_Item()]
+
+        if mode == "cloudprnt" and job_format == "markup":
+            reset_cputil_cache()
+            if not cputil_available():
+                errors.append(
+                    f"CPUtil unavailable at {cputil_path()!r} while "
+                    "FESTIVAL_CLOUDPRNT_JOB_FORMAT=markup."
+                )
+            else:
+                self.stdout.write(
+                    f"CPUtil OK (active format={active_job_format()})"
+                )
+        elif job_format == "plain":
+            warnings.append("CloudPRNT job format is plain (CP437 text/plain).")
 
         try:
             from django.utils import timezone
 
             _DummyOrder.created_at = timezone.now()
-            text = render_kitchen_ticket(_DummyOrder())
+            text = render_kitchen_ticket_for_print(_DummyOrder())
             encoded = text.encode("utf-8")
             if len(encoded) > settings.FESTIVAL_TICKET_MAX_BYTES:
                 errors.append("Sample ticket exceeds max payload bytes.")

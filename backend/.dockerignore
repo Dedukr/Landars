@@ -45,6 +45,9 @@ htmlcov/
 cache/
 .cache/
 
+# Local CPUtil builds (image builds its own linux-musl binary)
+vendor/cputil-*/
+
 # Environment files
 .env
 .env.*

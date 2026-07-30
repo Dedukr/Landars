@@ -195,14 +195,16 @@ class FestivalCloudPRNTView(APIView):
             return Response(server_settings_http_only(), status=200)
 
         try:
-            payload = handle_job_get(mac=mac, media_type=media_type, token=token)
+            payload, content_type = handle_job_get(
+                mac=mac, media_type=media_type, token=token
+            )
         except CloudPRNTError as exc:
             return HttpResponse(
                 str(exc), status=exc.status, content_type="text/plain; charset=utf-8"
             )
-        # text/plain is rendered with the printer's std code page; payload is
-        # CP437-encoded so £ is a single device glyph (not UTF-8 mojibake).
-        return HttpResponse(payload, content_type="text/plain")
+        # Markup jobs → StarPRNT (or passthrough markup / CP437 plain fallback).
+        # Plain jobs → CP437 text/plain for the printer std code page.
+        return HttpResponse(payload, content_type=content_type)
 
     def post(self, request):
         try:

@@ -241,6 +241,9 @@ def create_print_batch(
     now = timezone.now()
     created: list[FestivalPrintJob] = []
     retry_of_map = retry_of_map or {}
+    from festival.services.cputil import job_source_media_type
+
+    media_type = job_source_media_type()
     for job_type, sequence, payload in jobs:
         checksum = payload_sha256(payload)
         job = FestivalPrintJob.objects.create(
@@ -250,7 +253,7 @@ def create_print_batch(
             job_type=job_type,
             sequence=sequence,
             status=FestivalPrintJob.Status.READY,
-            media_type="text/plain",
+            media_type=media_type,
             payload_text=payload,
             payload_checksum=checksum,
             is_reprint=is_reprint,
@@ -397,13 +400,15 @@ def handle_poll(payload: dict, *, mac_override: str | None = None) -> dict:
         .first()
     )
 
+    from festival.services.cputil import advertised_media_types
+
     if claimed:
         if client_token and str(client_token) == str(claimed.job_token):
             printer.current_job_token = claimed.job_token
             _persist_printer(printer, before)
             return {
                 "jobReady": True,
-                "mediaTypes": [claimed.media_type],
+                "mediaTypes": advertised_media_types(claimed.media_type),
                 "jobToken": str(claimed.job_token),
                 "deleteMethod": "DELETE",
             }
@@ -424,7 +429,7 @@ def handle_poll(payload: dict, *, mac_override: str | None = None) -> dict:
             _persist_printer(printer, before)
             return {
                 "jobReady": True,
-                "mediaTypes": [claimed.media_type],
+                "mediaTypes": advertised_media_types(claimed.media_type),
                 "jobToken": str(claimed.job_token),
                 "deleteMethod": "DELETE",
             }
@@ -488,16 +493,30 @@ def handle_poll(payload: dict, *, mac_override: str | None = None) -> dict:
     )
     return {
         "jobReady": True,
-        "mediaTypes": [job.media_type],
+        "mediaTypes": advertised_media_types(job.media_type),
         "jobToken": str(job.job_token),
         "deleteMethod": "DELETE",
     }
 
 
 @transaction.atomic
-def handle_job_get(*, mac: str, media_type: str, token: str) -> bytes:
+def handle_job_get(*, mac: str, media_type: str, token: str) -> tuple[bytes, str]:
+    """
+    Return ``(payload_bytes, content_type)`` for the claimed job.
+
+    Markup jobs are converted with CPUtil to the printer-requested type.
+    """
+    from festival.services.cputil import (
+        ALLOWED_OUTPUT_TYPES,
+        CPUtilError,
+        MARKUP_MEDIA_TYPE,
+        PLAIN_MEDIA_TYPE,
+        convert_markup,
+    )
+    from festival.services.tickets import encode_print_payload
+
     printer = get_active_printer_for_mac(mac)
-    if media_type != "text/plain":
+    if media_type not in ALLOWED_OUTPUT_TYPES:
         raise CloudPRNTError("Unsupported media type.", status=415)
     try:
         token_uuid = uuid.UUID(str(token))
@@ -517,7 +536,7 @@ def handle_job_get(*, mac: str, media_type: str, token: str) -> bytes:
         if printer.current_job_token == job.job_token:
             printer.current_job_token = None
         printer.save(update_fields=["last_seen_at", "current_job_token", "updated_at"])
-        return b""
+        return b"", media_type or PLAIN_MEDIA_TYPE
 
     if job.status != FestivalPrintJob.Status.CLAIMED:
         raise CloudPRNTError("Job is not available for download.", status=409)
@@ -525,20 +544,37 @@ def handle_job_get(*, mac: str, media_type: str, token: str) -> bytes:
     if payload_sha256(job.payload_text) != job.payload_checksum:
         raise CloudPRNTError("Payload checksum mismatch.", status=500)
 
+    source_type = job.media_type or PLAIN_MEDIA_TYPE
+    if source_type == MARKUP_MEDIA_TYPE:
+        try:
+            payload = convert_markup(job.payload_text, media_type)
+        except CPUtilError as exc:
+            logger.error(
+                "CPUtil convert failed for job %s type=%s: %s",
+                job.job_token,
+                media_type,
+                exc,
+            )
+            raise CloudPRNTError(
+                "Print job conversion failed.", status=415
+            ) from exc
+    else:
+        if media_type != PLAIN_MEDIA_TYPE:
+            raise CloudPRNTError("Unsupported media type.", status=415)
+        payload = encode_print_payload(job.payload_text)
+
     job.fetched_at = timezone.now()
     job.attempt_count += 1
     job.save(update_fields=["fetched_at", "attempt_count", "updated_at"])
     printer.last_seen_at = timezone.now()
     printer.current_job_token = job.job_token
     printer.save(update_fields=["last_seen_at", "current_job_token", "updated_at"])
-    from festival.services.tickets import encode_print_payload
-
-    return encode_print_payload(job.payload_text)
+    return payload, media_type
 
 
 def create_test_print_job(printer: FestivalPrinter) -> FestivalPrintJob:
     """Queue a manual test page for the given printer (admin button)."""
-    from festival.services.tickets import render_test_ticket
+    from festival.services.tickets import render_test_ticket_for_print
 
     if getattr(settings, "FESTIVAL_PRINT_MODE", "disabled") != "cloudprnt":
         raise CloudPRNTError(
@@ -547,7 +583,7 @@ def create_test_print_job(printer: FestivalPrinter) -> FestivalPrintJob:
         )
     if not printer.is_active:
         raise CloudPRNTError("Printer is not active.")
-    payload = render_test_ticket(printer)
+    payload = render_test_ticket_for_print(printer)
     jobs = create_print_batch(
         order=None,
         printer=printer,
@@ -859,28 +895,28 @@ def _payload_for_retry(failed_job: FestivalPrintJob) -> str:
 
     from festival.models import FestivalCreditNote, FestivalInvoice
     from festival.services.tickets import (
-        render_cancellation_kitchen_ticket,
-        render_customer_credit_ticket,
-        render_customer_ticket,
-        render_kitchen_ticket,
-        render_test_ticket,
+        render_cancellation_kitchen_ticket_for_print,
+        render_customer_credit_ticket_for_print,
+        render_customer_ticket_for_print,
+        render_kitchen_ticket_for_print,
+        render_test_ticket_for_print,
     )
 
     order = failed_job.order
     is_copy = failed_job.is_reprint
     job_type = failed_job.job_type
     if job_type == FestivalPrintJob.JobType.TEST:
-        return render_test_ticket(failed_job.printer)
+        return render_test_ticket_for_print(failed_job.printer)
     if job_type == FestivalPrintJob.JobType.KITCHEN:
-        return render_kitchen_ticket(order, is_copy=is_copy)
+        return render_kitchen_ticket_for_print(order, is_copy=is_copy)
     if job_type == FestivalPrintJob.JobType.CUSTOMER:
         try:
             invoice = order.invoice
         except FestivalInvoice.DoesNotExist:
             invoice = None
-        return render_customer_ticket(order, invoice, is_copy=is_copy)
+        return render_customer_ticket_for_print(order, invoice, is_copy=is_copy)
     if job_type == FestivalPrintJob.JobType.KITCHEN_CANCELLATION:
-        return render_cancellation_kitchen_ticket(
+        return render_cancellation_kitchen_ticket_for_print(
             order, reason=order.cancellation_reason or ""
         )
     if job_type == FestivalPrintJob.JobType.CUSTOMER_CREDIT:
@@ -890,7 +926,7 @@ def _payload_for_retry(failed_job: FestivalPrintJob) -> str:
             raise CloudPRNTError(
                 "Cannot reprint credit ticket: invoice/credit note missing."
             ) from exc
-        return render_customer_credit_ticket(order, credit_note)
+        return render_customer_credit_ticket_for_print(order, credit_note)
     raise CloudPRNTError(f"Cannot re-render payload for job type {job_type}.")
 
 
@@ -942,8 +978,8 @@ def create_retry_job(failed_job: FestivalPrintJob) -> FestivalPrintJob:
 def create_reprint_batch(order, *, is_copy: bool = True) -> list[FestivalPrintJob]:
     from festival.models import FestivalInvoice
     from festival.services.tickets import (
-        render_customer_ticket,
-        render_kitchen_ticket,
+        render_customer_ticket_for_print,
+        render_kitchen_ticket_for_print,
     )
 
     if getattr(settings, "FESTIVAL_PRINT_MODE", "disabled") != "cloudprnt":
@@ -958,8 +994,8 @@ def create_reprint_batch(order, *, is_copy: bool = True) -> list[FestivalPrintJo
         invoice = order.invoice
     except FestivalInvoice.DoesNotExist:
         invoice = None
-    kitchen = render_kitchen_ticket(order, is_copy=is_copy)
-    customer = render_customer_ticket(order, invoice, is_copy=is_copy)
+    kitchen = render_kitchen_ticket_for_print(order, is_copy=is_copy)
+    customer = render_customer_ticket_for_print(order, invoice, is_copy=is_copy)
     return create_print_batch(
         order=order,
         printer=printer,

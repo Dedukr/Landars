@@ -16,8 +16,8 @@ from festival.models import (
 from festival.services.cloudprnt import create_print_batch, get_active_printer, sync_print_batch
 from festival.services.documents import create_credit_note_from_invoice
 from festival.services.tickets import (
-    render_cancellation_kitchen_ticket,
-    render_customer_credit_ticket,
+    render_cancellation_kitchen_ticket_for_print,
+    render_customer_credit_ticket_for_print,
 )
 
 logger = logging.getLogger(__name__)
@@ -133,8 +133,10 @@ def cancel_festival_order(
             )
 
         if printer:
-            kitchen = render_cancellation_kitchen_ticket(order, reason=reason)
-            customer = render_customer_credit_ticket(order, credit_note)
+            kitchen = render_cancellation_kitchen_ticket_for_print(
+                order, reason=reason
+            )
+            customer = render_customer_credit_ticket_for_print(order, credit_note)
             create_print_batch(
                 order=order,
                 printer=printer,

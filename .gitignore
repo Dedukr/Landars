@@ -76,6 +76,9 @@ __snapshots__/
 backend/cache/
 cache/
 
+# Star CPUtil local builds (Docker image builds its own linux-musl binary)
+backend/vendor/cputil-*/
+
 .github_*
 *.md
 *.pdf

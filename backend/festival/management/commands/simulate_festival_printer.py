@@ -131,20 +131,28 @@ class Command(BaseCommand):
             query = urlencode({"mac": mac, "type": media, "token": token_for_get})
             get_url = f"{endpoint}?{query}"
             payload = None
+            content_type = ""
             for _ in range(max(1, options["repeat_get"])):
                 get_resp = requests.get(get_url, headers=headers, timeout=30)
                 if get_resp.status_code != 200:
                     self.stderr.write(f"GET failed: {get_resp.status_code}")
                     break
-                ctype = get_resp.headers.get("Content-Type", "")
-                if "text/plain" not in ctype:
-                    raise CommandError(f"Unexpected Content-Type: {ctype}")
+                content_type = get_resp.headers.get("Content-Type", "")
                 payload = get_resp.content
                 if payload.startswith(b"\xef\xbb\xbf"):
                     raise CommandError("Payload unexpectedly includes UTF-8 BOM.")
-                # CloudPRNT text/plain is CP437 on the wire (Star std code page).
-                text = payload.decode("cp437")
-                self._validate_width(text)
+                if "starprnt" in content_type or media.endswith("starprnt"):
+                    if not payload:
+                        raise CommandError("Empty StarPRNT payload.")
+                elif "markup" in content_type or "star.markup" in media:
+                    text = payload.decode("utf-8")
+                    self._validate_width(self._strip_markup(text))
+                elif "text/plain" in content_type or media == "text/plain":
+                    # Plain mode: CP437 on the wire (Star std code page).
+                    text = payload.decode("cp437")
+                    self._validate_width(text)
+                else:
+                    raise CommandError(f"Unexpected Content-Type: {content_type}")
 
             if payload is None:
                 if not watch:
@@ -152,7 +160,9 @@ class Command(BaseCommand):
                 time.sleep(options["poll_seconds"])
                 continue
 
-            path = self._write_ticket(output_dir, token_for_get, payload)
+            path = self._write_ticket(
+                output_dir, token_for_get, payload, media_type=media
+            )
             self.stdout.write(f"Saved ticket preview: {path}")
 
             printing = True
@@ -189,15 +199,33 @@ class Command(BaseCommand):
         parts = [cleaned[i : i + 2] for i in range(0, 12, 2)]
         return ":".join(parts)
 
-    def _write_ticket(self, output_dir: Path, token: str, payload: bytes) -> Path:
+    def _write_ticket(
+        self,
+        output_dir: Path,
+        token: str,
+        payload: bytes,
+        *,
+        media_type: str = "text/plain",
+    ) -> Path:
         safe = str(token).replace("/", "_")
-        path = output_dir / f"{safe}.txt"
+        if "starprnt" in media_type:
+            ext = ".bin"
+        elif "markup" in media_type:
+            ext = ".stm"
+        else:
+            ext = ".txt"
+        path = output_dir / f"{safe}{ext}"
         n = 1
         while path.exists():
-            path = output_dir / f"{safe}-{n}.txt"
+            path = output_dir / f"{safe}-{n}{ext}"
             n += 1
         path.write_bytes(payload)
         return path
+
+    def _strip_markup(self, text: str) -> str:
+        import re
+
+        return re.sub(r"\[[^\]]*\]", "", text)
 
     def _validate_width(self, text: str) -> None:
         width = int(getattr(settings, "FESTIVAL_TICKET_COLUMNS", 42))

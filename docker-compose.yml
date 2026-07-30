@@ -79,6 +79,8 @@ services:
     # No host ports — only nginx (and other services) reach Django on the Docker network.
     expose:
       - "8000"
+    ports:
+      - "8000:8000"
     env_file:
       - .env
     volumes:

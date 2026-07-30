@@ -138,6 +138,8 @@ def format_stuck_ticket_payloads(
     Escapes HTML for Telegram ``parse_mode=HTML``. Truncates when many jobs
     or long payloads would exceed Telegram's message limit.
     """
+    from festival.services.tickets import strip_markup_tags
+
     job_list = list(jobs)
     shown = job_list[:max_jobs]
     if not shown:
@@ -153,7 +155,8 @@ def format_stuck_ticket_payloads(
             label = f"{job_type} · ticket #{order.order_number} (order {order.pk})"
         else:
             label = f"{job_type} · no order"
-        body = (job.payload_text or "(empty payload)").rstrip()
+        raw = job.payload_text or "(empty payload)"
+        body = strip_markup_tags(raw).rstrip()
         section = (
             f"<b>{html.escape(str(label))}</b>\n"
             f"<pre>{html.escape(body)}</pre>"

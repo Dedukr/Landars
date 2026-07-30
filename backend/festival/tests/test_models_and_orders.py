@@ -571,6 +571,7 @@ class FestivalOrderServiceTests(TestCase):
     FESTIVAL_ALLOW_ORDERS_WHEN_PRINTER_OFFLINE=False,
     FESTIVAL_CLOUDPRNT_USERNAME="festival-printer",
     FESTIVAL_CLOUDPRNT_PASSWORD="test-secret-password",
+    FESTIVAL_CLOUDPRNT_JOB_FORMAT="plain",
 )
 class FestivalCloudPRNTOrderTests(TestCase):
     def setUp(self):
