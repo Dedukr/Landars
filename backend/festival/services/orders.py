@@ -289,6 +289,11 @@ def place_festival_order(
                             f"{product.id}'s addition class.",
                             code="invalid_addition",
                         )
+                    if not addition.is_active:
+                        raise FestivalOrderError(
+                            f"Addition {addition_id} is inactive.",
+                            code="invalid_addition",
+                        )
                     addition_name = addition.name
                     addition_unit_price = addition.price
             elif addition_id is not None:

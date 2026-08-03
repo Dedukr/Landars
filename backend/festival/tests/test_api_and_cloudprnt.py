@@ -94,6 +94,31 @@ class FestivalAPITests(TestCase):
         self.assertEqual(len(resp.data["results"]), 1)
         self.assertEqual(resp.data["results"][0]["image"], "")
 
+    def test_products_list_omits_inactive_additions(self):
+        from festival.models import FestivalAddition, FestivalAdditionClass
+
+        addition_class = FestivalAdditionClass.objects.create(name="Soft drinks")
+        FestivalAddition.objects.create(
+            name="Cola",
+            addition_class=addition_class,
+            price=Decimal("1.50"),
+            is_active=True,
+        )
+        FestivalAddition.objects.create(
+            name="Retired drink",
+            addition_class=addition_class,
+            price=Decimal("2.00"),
+            is_active=False,
+        )
+        self.product.addition_class = addition_class
+        self.product.save(update_fields=["addition_class"])
+
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.get("/api/festival/products/")
+        self.assertEqual(resp.status_code, 200)
+        additions = resp.data["results"][0]["additions"]
+        self.assertEqual([a["name"] for a in additions], ["Cola"])
+
     def test_place_order(self):
         self.client.force_authenticate(user=self.staff)
         rid = str(uuid.uuid4())

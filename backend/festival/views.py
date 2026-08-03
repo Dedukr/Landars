@@ -56,7 +56,9 @@ class FestivalProductsView(APIView):
             .prefetch_related(
                 Prefetch(
                     "addition_class__additions",
-                    queryset=FestivalAddition.objects.order_by("created_at", "id"),
+                    queryset=FestivalAddition.objects.filter(is_active=True).order_by(
+                        "created_at", "id"
+                    ),
                 ),
                 "fillings",
             )

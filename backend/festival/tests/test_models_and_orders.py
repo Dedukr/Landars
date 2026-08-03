@@ -455,6 +455,30 @@ class FestivalOrderServiceTests(TestCase):
             )
         self.assertEqual(ctx.exception.code, "invalid_filling")
 
+    def test_inactive_addition_rejected(self):
+        addition_class = FestivalAdditionClass.objects.create(name="Drinks")
+        inactive = FestivalAddition.objects.create(
+            name="Cola",
+            addition_class=addition_class,
+            price=Decimal("1.50"),
+            is_active=False,
+        )
+        self.product.addition_class = addition_class
+        self.product.save(update_fields=["addition_class"])
+        with self.assertRaises(FestivalOrderError) as ctx:
+            place_festival_order(
+                user=self.user,
+                client_request_id=uuid.uuid4(),
+                items=[
+                    {
+                        "product_id": self.product.id,
+                        "addition_id": inactive.id,
+                        "quantity": 1,
+                    }
+                ],
+            )
+        self.assertEqual(ctx.exception.code, "invalid_addition")
+
     def test_filling_with_addition_display_name_and_pricing(self):
         addition_class = FestivalAdditionClass.objects.create(name="Drinks")
         cola = FestivalAddition.objects.create(
