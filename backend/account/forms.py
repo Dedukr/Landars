@@ -24,11 +24,28 @@ NAME_AND_ADDRESS_LATIN_FIELDS = (
 )
 
 
+def _is_staff_user_form(form, cleaned_data=None):
+    """Staff change/add forms hide address fields; treat them as staff accounts."""
+    instance = getattr(form, "instance", None)
+    if instance is not None and getattr(instance, "is_staff", False):
+        return True
+    if cleaned_data is not None and cleaned_data.get("is_staff"):
+        return True
+    return False
+
+
 def _validate_billing_street_when_required(form, cleaned_data):
     """
     When not using delivery as billing, require street fields
     (same rules as delivery: line2 optional, UK postcode).
     """
+    # Staff admin forms omit address/billing widgets. An unchecked checkbox is
+    # absent from POST and would otherwise become False, failing validation on
+    # fields the admin never sees.
+    if _is_staff_user_form(form, cleaned_data):
+        cleaned_data["bill_use_delivery_address"] = True
+        return cleaned_data
+
     if cleaned_data.get("bill_use_delivery_address", True):
         return cleaned_data
 
@@ -56,10 +73,7 @@ def _validate_delivery_street_when_required(form, cleaned_data):
 
     Staff change forms do not show these fields, so validation is skipped for staff.
     """
-    instance = getattr(form, "instance", None)
-    if instance is not None and getattr(instance, "is_staff", False):
-        return cleaned_data
-    if cleaned_data.get("is_staff"):
+    if _is_staff_user_form(form, cleaned_data):
         return cleaned_data
     if "address_line" not in getattr(form, "fields", {}):
         return cleaned_data
@@ -144,6 +158,8 @@ class CustomUserForm(UserChangeForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        if _is_staff_user_form(self, cleaned_data):
+            cleaned_data["bill_use_delivery_address"] = True
         _validate_latin_name_and_address_fields(self)
         _validate_delivery_street_when_required(self, cleaned_data)
         return _validate_billing_street_when_required(self, cleaned_data)
@@ -160,6 +176,11 @@ class CustomUserForm(UserChangeForm):
 
         if commit:
             user.save()
+
+        # Staff admin forms do not show profile/address fields; skip so missing
+        # POST values cannot wipe or invent empty profiles.
+        if user.is_staff or self.cleaned_data.get("is_staff"):
+            return user
 
         profile, _ = Profile.objects.get_or_create(user=user)
         profile.phone = self.cleaned_data.get("phone")

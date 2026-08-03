@@ -294,6 +294,39 @@ class CustomUserModelTest(TestCase):
         self.assertIsNotNone(user.profile.billing_address)
         self.assertEqual(user.profile.billing_address.address_line2, "Suite 2")
 
+    def test_admin_form_allows_staff_verify_without_address_fields(self):
+        """
+        Staff change forms omit address widgets. Missing bill_use_delivery_address
+        in POST must not block saving (e.g. toggling is_email_verified).
+        """
+        from .forms import CustomUserForm
+
+        staff = User.objects.create_user(
+            first_name="Lan",
+            surname="Dar",
+            email="landar-staff@example.com",
+            password="testpass123",
+            is_staff=True,
+            is_email_verified=False,
+        )
+        form = CustomUserForm(
+            data={
+                "first_name": staff.first_name,
+                "surname": staff.surname,
+                "email": staff.email,
+                "password": staff.password,
+                "is_email_verified": True,
+                "is_staff": True,
+                "is_active": True,
+            },
+            instance=staff,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertTrue(form.cleaned_data["bill_use_delivery_address"])
+        updated = form.save()
+        self.assertTrue(updated.is_email_verified)
+        self.assertFalse(Profile.objects.filter(user=staff).exists())
+
     def test_profile_billing_address_empty_without_saved_row(self):
         user = User.objects.create_user(**self.user_data)
         profile = Profile.objects.create(user=user)
