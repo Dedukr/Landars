@@ -13,16 +13,6 @@ interface VerificationResponse {
   };
 }
 
-// interface VerificationStatusResponse {
-//   valid: boolean;
-//   user: {
-//     id: number;
-//     name: string;
-//     email: string;
-//   };
-//   is_verified: boolean;
-// }
-
 export default function VerifyEmailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -35,6 +25,7 @@ export default function VerifyEmailPage() {
   const [user, setUser] = useState<{ name: string; email: string } | null>(
     null
   );
+  const [resendEmail, setResendEmail] = useState("");
   const [isResending, setIsResending] = useState(false);
 
   const verifyEmail = useCallback(async () => {
@@ -43,7 +34,8 @@ export default function VerifyEmailPage() {
         "/api/auth/verify-email/",
         {
           token,
-        }
+        },
+        { skipAuth: true, skipCSRF: true }
       );
 
       setStatus("success");
@@ -57,11 +49,30 @@ export default function VerifyEmailPage() {
       }, 3000);
     } catch (error: unknown) {
       console.error("Verification error:", error);
-      const errorMessage = (error as Error).message || "";
+      const errorMessage =
+        error instanceof Error ? error.message || "" : "";
+      const apiData =
+        error &&
+        typeof error === "object" &&
+        "response" in error
+          ? (
+              error as {
+                response?: {
+                  data?: { email?: string; can_resend?: boolean; error?: string };
+                };
+              }
+            ).response?.data
+          : undefined;
+
+      if (apiData?.email) {
+        setResendEmail(apiData.email);
+        setUser({ name: "", email: apiData.email });
+      }
 
       if (
         errorMessage.includes("expired") ||
-        errorMessage.includes("already been used")
+        errorMessage.includes("already been used") ||
+        apiData?.can_resend
       ) {
         setStatus("expired");
         setMessage(
@@ -69,9 +80,7 @@ export default function VerifyEmailPage() {
         );
       } else {
         setStatus("error");
-        setMessage(
-          (error as Error).message || "Failed to verify email address"
-        );
+        setMessage(errorMessage || "Failed to verify email address");
       }
     }
   }, [token, router]);
@@ -87,60 +96,40 @@ export default function VerifyEmailPage() {
   }, [token, verifyEmail]);
 
   const resendVerification = async () => {
-    if (!user?.email) return;
+    const email = user?.email || resendEmail;
+    if (!email) return;
 
     setIsResending(true);
     try {
-      await httpClient.post("/api/auth/resend-verification/", {
-        email: user.email,
-      });
+      await httpClient.post(
+        "/api/auth/resend-verification/",
+        { email },
+        { skipAuth: true, skipCSRF: true }
+      );
       setMessage(
         "A new verification email has been sent to your email address."
       );
     } catch (error: unknown) {
       setMessage(
-        (error as Error).message || "Failed to resend verification email"
+        error instanceof Error
+          ? error.message
+          : "Failed to resend verification email"
       );
     } finally {
       setIsResending(false);
     }
   };
 
-  // const checkVerificationStatus = async () => {
-  //   if (!token) return;
-
-  //   try {
-  //     const response = await httpClient.get<VerificationStatusResponse>(
-  //       `/api/auth/check-verification/?token=${token}`
-  //     );
-
-  //     if (response.valid) {
-  //       setUser(response.user);
-  //       if (response.is_verified) {
-  //         setStatus("success");
-  //         setMessage("Your email has already been verified!");
-  //         setTimeout(() => {
-  //           router.push("/dashboard");
-  //         }, 2000);
-  //       }
-  //     }
-  //   } catch (error) {
-  //     console.error("Status check error:", error);
-  //   }
-  // };
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-lg shadow-xl p-8">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+      <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8">
         {status === "loading" && (
           <div className="text-center">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4" />
             <h1 className="text-2xl font-bold text-gray-900 mb-2">
-              Verifying Your Email
+              Verifying email…
             </h1>
-            <p className="text-gray-600">
-              Please wait while we verify your email address...
-            </p>
+            <p className="text-gray-600">Please wait a moment.</p>
           </div>
         )}
 
@@ -162,46 +151,21 @@ export default function VerifyEmailPage() {
               </svg>
             </div>
             <h1 className="text-2xl font-bold text-gray-900 mb-2">
-              Email Verified!
+              Email verified
             </h1>
-            <p className="text-gray-600 mb-4">{message}</p>
-            {user && (
-              <p className="text-sm text-gray-500 mb-6">
-                Welcome, {user.name}! You will be redirected to sign in with
-                your email prefilled shortly.
-              </p>
-            )}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <p className="text-sm text-blue-800">
-                🎉 Your account is now fully activated! You can start using all
-                our features.
-              </p>
-            </div>
+            <p className="text-gray-600 mb-6">{message}</p>
+            <p className="text-sm text-gray-500">Redirecting to sign in…</p>
           </div>
         )}
 
         {status === "error" && (
           <div className="text-center">
-            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg
-                className="w-8 h-8 text-red-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </div>
             <h1 className="text-2xl font-bold text-gray-900 mb-2">
               Verification Failed
             </h1>
             <p className="text-gray-600 mb-6">{message}</p>
             <button
+              type="button"
               onClick={() => router.push("/auth")}
               className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
             >
@@ -232,30 +196,31 @@ export default function VerifyEmailPage() {
             </h1>
             <p className="text-gray-600 mb-6">{message}</p>
 
-            {user && (
-              <div className="space-y-4">
+            <div className="space-y-4">
+              {(user?.email || resendEmail) ? (
                 <button
+                  type="button"
                   onClick={resendVerification}
                   disabled={isResending}
                   className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
                 >
                   {isResending ? "Sending..." : "Resend Verification Email"}
                 </button>
+              ) : (
+                <p className="text-sm text-gray-500">
+                  Sign in and use “Resend verification email”, or request a new
+                  link from the sign-in page.
+                </p>
+              )}
 
-                <button
-                  onClick={() => router.push("/auth")}
-                  className="w-full bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 transition-colors"
-                >
-                  Back to Login
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {message && status !== "loading" && (
-          <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-            <p className="text-sm text-gray-600">{message}</p>
+              <button
+                type="button"
+                onClick={() => router.push("/auth")}
+                className="w-full bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                Back to Login
+              </button>
+            </div>
           </div>
         )}
       </div>

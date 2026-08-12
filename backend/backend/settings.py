@@ -281,7 +281,7 @@ AUTH_PASSWORD_VALIDATORS = [
         "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
-        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "NAME": "account.validators.CustomPasswordValidator",
     },
     {
         "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
@@ -414,7 +414,7 @@ PASSWORD_RESET_EMAIL_RATE_LIMIT = "3/hour"
 EMAIL_VERIFICATION_TIMEOUT = 86400  # 24 hours in seconds
 EMAIL_VERIFICATION_COOLDOWN = 60  # 1 minute cooldown between resend requests
 EMAIL_VERIFICATION_RATE_LIMIT = "5/hour"  # 5 verification requests per hour per IP
-EMAIL_VERIFICATION_RESEND_RATE_LIMIT = "3/hour"  # 3 resend requests per hour per IP
+EMAIL_VERIFICATION_RESEND_RATE_LIMIT = "10/hour"  # 10 resend requests per hour per IP
 
 # Stripe Configuration
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")

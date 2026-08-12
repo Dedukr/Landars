@@ -213,6 +213,49 @@ function getAuthToken(): string | null {
 }
 
 /**
+ * Normalize DRF / custom API error payloads into a readable string.
+ * Handles ``{error: string|string[]}``, ``{detail: ...}``, and field maps.
+ */
+function formatApiErrorMessage(
+  errorData: unknown,
+  status: number,
+  statusText = ""
+): string {
+  if (!errorData || typeof errorData !== "object") {
+    return `HTTP ${status}${statusText ? `: ${statusText}` : ""}`;
+  }
+
+  const data = errorData as Record<string, unknown>;
+
+  const fromValue = (value: unknown): string | null => {
+    if (typeof value === "string" && value.trim()) return value;
+    if (Array.isArray(value)) {
+      const parts = value
+        .map((item) => (typeof item === "string" ? item : null))
+        .filter((item): item is string => Boolean(item));
+      return parts.length ? parts.join(" ") : null;
+    }
+    return null;
+  };
+
+  const primary =
+    fromValue(data.error) ||
+    fromValue(data.detail) ||
+    fromValue(data.message);
+  if (primary) return primary;
+
+  const fieldMessages: string[] = [];
+  for (const [key, value] of Object.entries(data)) {
+    if (key === "error" || key === "detail" || key === "message") continue;
+    const msg = fromValue(value);
+    if (msg) fieldMessages.push(`${key}: ${msg}`);
+  }
+  if (fieldMessages.length) return fieldMessages.join(" ");
+
+  return `HTTP ${status}${statusText ? `: ${statusText}` : ""}`;
+}
+
+/**
  * Professional HTTP Client with automatic token refresh
  */
 export class HttpClient {
@@ -305,8 +348,10 @@ export class HttpClient {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       const error = new Error(
-        errorData.error || `HTTP ${response.status}: ${response.statusText}`
-      ) as Error & { response?: { data: unknown; status: number } };
+        formatApiErrorMessage(errorData, response.status, response.statusText)
+      ) as Error & {
+        response?: { data: unknown; status: number };
+      };
       // Preserve the full response data for error handling
       error.response = {
         data: errorData,

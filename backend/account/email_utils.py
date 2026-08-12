@@ -69,8 +69,11 @@ def send_templated_email(
     reply_to: Optional[Sequence[str]] = None,
     headers: Optional[Mapping[str, str]] = None,
     connection=None,
-) -> None:
+) -> bool:
     """Send a transactional email using Django's SMTP framework.
+
+    Returns True when the message was accepted by SMTP, False on send failure.
+    Callers that start cooldowns must only do so when this returns True.
 
     - Renders both text and HTML bodies
     - Reuses the supplied connection when provided
@@ -105,19 +108,20 @@ def send_templated_email(
             "Transactional email sent",
             extra={"to": list(to), "template": template_base},
         )
+        return True
     except Exception as exc:
-        # Do not leak SMTP errors to end-users; log for ops
+        # Do not leak SMTP errors to end-users; log for ops and signal failure
+        # to callers so they can avoid starting cooldowns / false "sent" claims.
         logger.error(
             f"Failed to send email to {to} using template {template_base}: {exc}"
         )
-        # In security-sensitive flows we intentionally swallow the error
-        # and proceed with a generic success response to avoid info leaks.
+        return False
 
 
 def send_email_verification_email(
     *, to_email: str, user_name: str, verification_url: str
-) -> None:
-    """Send email verification email to new user"""
+) -> bool:
+    """Send email verification email to new user. Returns True if SMTP accepted."""
     context = {
         "user_name": user_name,
         "user_email": to_email,
@@ -125,7 +129,7 @@ def send_email_verification_email(
         "current_year": timezone.now().year,
     }
 
-    send_templated_email(
+    return send_templated_email(
         to=[to_email],
         subject="Verify Your Email Address",
         template_base="email_verification",
@@ -135,8 +139,8 @@ def send_email_verification_email(
 
 def send_email_verification_confirmation_email(
     *, to_email: str, user_name: str, home_url: str
-) -> None:
-    """Send email verification confirmation email"""
+) -> bool:
+    """Send email verification confirmation email. Returns True if SMTP accepted."""
     context = {
         "user_name": user_name,
         "user_email": to_email,
@@ -144,7 +148,7 @@ def send_email_verification_confirmation_email(
         "current_year": timezone.now().year,
     }
 
-    send_templated_email(
+    return send_templated_email(
         to=[to_email],
         subject="Email Verified - Welcome to Landars Food!",
         template_base="email_verification_confirmation",
@@ -152,7 +156,7 @@ def send_email_verification_confirmation_email(
     )
 
 
-def send_password_reset_email(*, to_email: str, user_name: str, reset_url: str) -> None:
+def send_password_reset_email(*, to_email: str, user_name: str, reset_url: str) -> bool:
     """High-level helper dedicated to password reset emails."""
     context = {
         "user_name": user_name,
@@ -163,7 +167,7 @@ def send_password_reset_email(*, to_email: str, user_name: str, reset_url: str) 
     }
 
     with smtp_connection() as conn:
-        send_templated_email(
+        return send_templated_email(
             to=[to_email],
             subject="Password Reset Request",
             template_base="password_reset",
@@ -174,7 +178,7 @@ def send_password_reset_email(*, to_email: str, user_name: str, reset_url: str) 
 
 def send_password_reset_confirmation_email(
     *, to_email: str, user_name: str, login_url: str
-) -> None:
+) -> bool:
     """High-level helper dedicated to password reset confirmation emails."""
     context = {
         "user_name": user_name,
@@ -184,7 +188,7 @@ def send_password_reset_confirmation_email(
     }
 
     with smtp_connection() as conn:
-        send_templated_email(
+        return send_templated_email(
             to=[to_email],
             subject="Password Reset Confirmation",
             template_base="password_reset_confirmation",

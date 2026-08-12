@@ -56,6 +56,7 @@
   --muted-foreground: #6b7280; /* muted text for secondary content */
   --destructive: #dc2626; /* red for errors */
   --success: #16a34a; /* green for success states */
+  --warning: #d97706; /* amber for warnings */
   --info-bg: #eff6ff; /* light blue background for info */
   --info-border: #bfdbfe; /* light blue border for info */
   --info-text: #1e40af; /* dark blue text for info */

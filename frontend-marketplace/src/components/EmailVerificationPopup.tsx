@@ -74,9 +74,13 @@ const EmailVerificationPopup: React.FC<EmailVerificationPopupProps> = ({
     setResendSuccess(false);
 
     try {
-      await httpClient.post("/api/auth/resend-verification/", {
-        email: userEmail,
-      });
+      await httpClient.post(
+        "/api/auth/resend-verification/",
+        {
+          email: userEmail,
+        },
+        { skipAuth: true, skipCSRF: true }
+      );
 
       setResendSuccess(true);
       // Clear success message after 3 seconds

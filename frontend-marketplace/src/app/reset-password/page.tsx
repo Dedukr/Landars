@@ -145,9 +145,6 @@ function ResetPasswordForm() {
 
     const hasLetter = /[a-zA-Z]/.test(password);
     const hasNumber = /[0-9]/.test(password);
-    const hasSpecialChar = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(
-      password
-    );
 
     if (!hasLetter) {
       return "Password must contain at least one letter";
@@ -155,10 +152,6 @@ function ResetPasswordForm() {
 
     if (!hasNumber) {
       return "Password must contain at least one number";
-    }
-
-    if (!hasSpecialChar) {
-      return "Password must contain at least one special character (!@#$%^&*()_+-=[]{}|;':\",./<>?)";
     }
 
     return null;

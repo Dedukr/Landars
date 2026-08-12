@@ -10,7 +10,7 @@ from django.middleware.csrf import get_token
 from django.template.loader import render_to_string
 from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
-from rest_framework import status
+from rest_framework import status, serializers
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import (
     api_view,
@@ -21,8 +21,10 @@ from rest_framework.decorators import (
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from django.db import IntegrityError
 
 from .email_utils import (
     send_email_verification_confirmation_email,
@@ -31,6 +33,7 @@ from .email_utils import (
     send_password_reset_email,
 )
 from .email_validators import validate_email_comprehensive, validate_email_field
+from .frontend_urls import get_public_frontend_base_url
 from .name_utils import split_legacy_name
 from .user_payload import user_payload, user_profile_payload
 from .models import (
@@ -61,22 +64,43 @@ class LoginThrottle(AnonRateThrottle):
 
 # Custom throttle for password reset requests
 class PasswordResetThrottle(AnonRateThrottle):
+    scope = "password_reset"
     rate = getattr(settings, "PASSWORD_RESET_RATE_LIMIT", "5/hour")
 
 
 # Custom throttle for password reset by email
 class PasswordResetEmailThrottle(UserRateThrottle):
+    scope = "password_reset_email"
     rate = getattr(settings, "PASSWORD_RESET_EMAIL_RATE_LIMIT", "3/hour")
 
 
 # Custom throttle for email verification
 class EmailVerificationThrottle(AnonRateThrottle):
+    scope = "email_verify"
     rate = getattr(settings, "EMAIL_VERIFICATION_RATE_LIMIT", "5/hour")
 
 
 # Custom throttle for email verification resend
 class EmailVerificationResendThrottle(AnonRateThrottle):
+    scope = "email_resend"
     rate = getattr(settings, "EMAIL_VERIFICATION_RESEND_RATE_LIMIT", "3/hour")
+
+
+class VerifiedEmailTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """JWT obtain that enforces the same email-verification gate as login_view."""
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        user = self.user
+        if user is not None and not getattr(user, "is_email_verified", True):
+            raise serializers.ValidationError(
+                "Please verify your email address before logging in."
+            )
+        return data
+
+
+class VerifiedEmailTokenObtainPairView(TokenObtainPairView):
+    serializer_class = VerifiedEmailTokenObtainPairSerializer
 
 
 # Create your views here.
@@ -146,7 +170,7 @@ def register(request):
             validate_password(password)
         except ValidationError as e:
             return Response(
-                {"error": list(e.messages)},
+                {"error": " ".join(e.messages)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -172,16 +196,20 @@ def register(request):
                 is_email_verified=False,
                 created_source=CustomUser.CREATED_SOURCE_WEBSITE,
             )
-        except ValueError as e:
-            if "email already exists" in str(e):
+        except (ValueError, ValidationError, IntegrityError) as e:
+            message = str(e).lower()
+            if (
+                "email already exists" in message
+                or "already exists" in message
+                or "unique" in message
+            ):
                 return Response(
                     {
                         "error": "A user with this email address already exists. Please use a different email or try logging in."
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            else:
-                raise e
+            raise
 
         # Create email verification token with security context
         verification_token = EmailVerificationToken.objects.create(
@@ -190,28 +218,24 @@ def register(request):
             user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],  # Limit length
         )
 
-        # Send verification email
-
-        # Use URL_BASE configuration for consistent URL generation
-        url_base = getattr(settings, "URL_BASE", "https://localhost")
-        home_url = url_base  # Use URL_BASE directly as home_url
-
-        # Extract base domain and construct frontend URL for verification
-
-        frontend_url = url_base
-
+        frontend_url = get_public_frontend_base_url()
         verification_url = (
             f"{frontend_url}/verify-email?token={verification_token.token}"
         )
-        send_email_verification_email(
+        email_sent = send_email_verification_email(
             to_email=email,
             user_name=user.get_display_name(),
             verification_url=verification_url,
         )
-        # Set email_sent_at timestamp after successfully sending the email
-        # This ensures cooldown starts when email is sent, not when button is pressed
-        verification_token.email_sent_at = timezone.now()
-        verification_token.save(update_fields=["email_sent_at"])
+        # Only start resend cooldown when SMTP actually accepted the message
+        if email_sent:
+            verification_token.email_sent_at = timezone.now()
+            verification_token.save(update_fields=["email_sent_at"])
+        else:
+            logger.error(
+                "Registration succeeded but verification email failed for %s",
+                email,
+            )
 
         # Log successful registration
         logger.info(
@@ -220,8 +244,13 @@ def register(request):
 
         return Response(
             {
-                "message": "User created successfully. Please check your email to verify your account.",
+                "message": (
+                    "User created successfully. Please check your email to verify your account."
+                    if email_sent
+                    else "User created successfully, but we could not send the verification email. Please use Resend verification from the sign-in page."
+                ),
                 "email_verification_required": True,
+                "email_sent": email_sent,
                 "user": user_payload(user),
             },
             status=status.HTTP_201_CREATED,
@@ -257,9 +286,9 @@ def login_view(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Check if user exists first
+        # Check if user exists first (case-insensitive for legacy rows)
         try:
-            user = CustomUser.objects.get(email=email)
+            user = CustomUser.objects.get(email__iexact=email)
         except CustomUser.DoesNotExist:
             logger.warning(
                 f"Login attempt for non-existent email: {email} from IP: {request.META.get('REMOTE_ADDR')}"
@@ -272,8 +301,10 @@ def login_view(request):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        # Authenticate user (this will be checked by django-axes for lockout)
-        authenticated_user = authenticate(request, username=email, password=password)
+        # Authenticate against the stored email (preserves legacy mixed-case rows)
+        authenticated_user = authenticate(
+            request, username=user.email, password=password
+        )
 
         if authenticated_user is None:
             logger.warning(
@@ -713,7 +744,7 @@ def request_password_reset(request):
 
         user_exists = False
         try:
-            user = CustomUser.objects.get(email=email)
+            user = CustomUser.objects.get(email__iexact=email)
             user_exists = True
             logger.info(f"User found: {user.email} - Sending reset email")
         except CustomUser.DoesNotExist:
@@ -743,14 +774,11 @@ def request_password_reset(request):
             )
 
             # Send reset email with HTML template
-            # Use URL_BASE configuration for consistent URL generation
-            url_base = getattr(settings, "URL_BASE", "https://localhost")
+            url_base = get_public_frontend_base_url()
 
             reset_url = f"{url_base}/reset-password?token={reset_token.token}"
-            login_url = f"{url_base}/auth"
 
             try:
-                # Centralized SMTP utility handles connection reuse and templating
                 send_password_reset_email(
                     to_email=user.email, user_name=user.get_display_name(), reset_url=reset_url
                 )
@@ -847,9 +875,7 @@ def confirm_password_reset(request):
 
         # Send confirmation email
         try:
-            # Point to frontend for login page
-            frontend_host = request.get_host().replace(":8000", ":3000")
-            login_url = f"{request.scheme}://{frontend_host}/auth"
+            login_url = f"{get_public_frontend_base_url()}/auth"
             send_password_reset_confirmation_email(
                 to_email=reset_token.user.email,
                 user_name=reset_token.user.get_display_name(),
@@ -1124,7 +1150,12 @@ def verify_email(request):
                 f"Expired email verification token attempted for user: {verification_token.user.email} from IP: {request.META.get('REMOTE_ADDR')}"
             )
             return Response(
-                {"error": "Verification token has expired or has already been used"},
+                {
+                    "error": "Verification token has expired or has already been used",
+                    # Safe to return: holder already received this address via email.
+                    "email": verification_token.user.email,
+                    "can_resend": not verification_token.user.is_email_verified,
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -1147,10 +1178,7 @@ def verify_email(request):
         user.save()
 
         # Send confirmation email
-        # Use URL_BASE configuration for consistent URL generation
-
-        url_base = getattr(settings, "URL_BASE", "https://localhost")
-        home_url = url_base  # Use URL_BASE directly as home_url
+        home_url = get_public_frontend_base_url()
 
         send_email_verification_confirmation_email(
             to_email=user.email, user_name=user.get_display_name(), home_url=home_url
@@ -1248,7 +1276,7 @@ def resend_verification_email(request):
 
         user_exists = False
         try:
-            user = CustomUser.objects.get(email=email)
+            user = CustomUser.objects.get(email__iexact=email)
             user_exists = True
             logger.info(f"User found: {user.email} - Checking verification status")
         except CustomUser.DoesNotExist:
@@ -1286,42 +1314,25 @@ def resend_verification_email(request):
             )
 
             # Send verification email with HTML template
-            # Use URL_BASE configuration for consistent URL generation
-            url_base = getattr(settings, "URL_BASE", "https://localhost")
-
-            # Extract base domain and construct frontend URL
-            if url_base.startswith("https://"):
-                base_domain = url_base.replace("https://", "")
-                frontend_url = f"http://{base_domain}:3000"
-            elif url_base.startswith("http://"):
-                base_domain = url_base.replace("http://", "")
-                frontend_url = f"http://{base_domain}:3000"
-            else:
-                # Fallback to localhost if URL_BASE doesn't have protocol
-                frontend_url = "http://localhost:3000"
-
+            frontend_url = get_public_frontend_base_url()
             verification_url = (
                 f"{frontend_url}/verify-email?token={verification_token.token}"
             )
 
-            try:
-                # Centralized SMTP utility handles connection reuse and templating
-                send_email_verification_email(
-                    to_email=user.email,
-                    user_name=user.get_display_name(),
-                    verification_url=verification_url,
-                )
-                # Set email_sent_at timestamp after successfully sending the email
-                # This ensures cooldown starts when email is sent, not when button is pressed
+            email_sent = send_email_verification_email(
+                to_email=user.email,
+                user_name=user.get_display_name(),
+                verification_url=verification_url,
+            )
+            # Only start cooldown when SMTP accepted the message
+            if email_sent:
                 verification_token.email_sent_at = timezone.now()
                 verification_token.save(update_fields=["email_sent_at"])
                 logger.info(f"Email verification email sent to: {email}")
-            except Exception as e:
+            else:
                 logger.error(
-                    f"Failed to send email verification email to {email}: {str(e)}"
+                    f"Failed to send email verification email to {email}"
                 )
-                # Still return success to prevent information leakage
-                # Note: email_sent_at is not set if email fails to send, so cooldown won't apply
 
         # Always return success message regardless of whether user exists
         return Response(
@@ -1351,7 +1362,7 @@ def debug_email(request):
 
         # Try to find user
         try:
-            user = CustomUser.objects.get(email=email)
+            user = CustomUser.objects.get(email__iexact=email)
             logger.info(
                 f"DEBUG ENDPOINT: Found user with email: '{user.email}' (length: {len(user.email) if user.email else 0})"
             )
