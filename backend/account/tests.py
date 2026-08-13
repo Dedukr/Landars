@@ -160,7 +160,7 @@ class CustomUserModelTest(TestCase):
         self.assertEqual(user.name, "José García")
         self.assertEqual(user.get_display_name(), "José García")
 
-    def test_admin_form_requires_delivery_address_fields(self):
+    def test_admin_form_allows_empty_delivery_address(self):
         from .forms import CustomUserForm
 
         user = User.objects.create_user(**self.user_data)
@@ -181,10 +181,7 @@ class CustomUserModelTest(TestCase):
             },
             instance=user,
         )
-        self.assertFalse(form.is_valid())
-        self.assertIn("address_line", form.errors)
-        self.assertIn("city", form.errors)
-        self.assertIn("postal_code", form.errors)
+        self.assertTrue(form.is_valid(), form.errors)
 
     def test_admin_form_rejects_non_latin_names(self):
         from .forms import CustomUserForm
@@ -236,7 +233,7 @@ class CustomUserModelTest(TestCase):
         self.assertIn("address_line", form.errors)
         self.assertIn("city", form.errors)
 
-    def test_admin_form_requires_complete_billing_street_when_partial(self):
+    def test_admin_form_allows_partial_billing_street(self):
         from .forms import CustomUserForm
 
         user = User.objects.create_user(**self.user_data)
@@ -262,8 +259,7 @@ class CustomUserModelTest(TestCase):
             },
             instance=user,
         )
-        self.assertFalse(form.is_valid())
-        self.assertIn("bill_address_line", form.errors)
+        self.assertTrue(form.is_valid(), form.errors)
 
     def test_admin_form_accepts_complete_billing_address(self):
         from .forms import CustomUserForm
@@ -404,12 +400,13 @@ class ProfileBillingValidationApiTest(TestCase):
         Profile.objects.get_or_create(user=self.user)
         self.client.force_authenticate(user=self.user)
 
-    def test_partial_billing_street_requires_complete_fields(self):
+    def test_partial_billing_street_allowed_on_profile(self):
         response = self.client.put(
             "/api/auth/profile/update/",
             {
                 "first_name": "Bill",
                 "surname": "User",
+                "bill_use_delivery_address": False,
                 "billing_address": {
                     "bill_company_name": "",
                     "bill_contact_name": "",
@@ -421,9 +418,48 @@ class ProfileBillingValidationApiTest(TestCase):
             },
             format="json",
         )
+        self.assertEqual(response.status_code, 200)
+        self.user.profile.refresh_from_db()
+        self.assertEqual(
+            self.user.profile.billing_address.address_line, "1 Billing St"
+        )
+        self.assertIn(self.user.profile.billing_address.city, (None, ""))
+
+    def test_empty_delivery_address_allowed_on_profile(self):
+        response = self.client.put(
+            "/api/auth/profile/update/",
+            {
+                "first_name": "Bill",
+                "surname": "User",
+                "address": {
+                    "address_line": "",
+                    "address_line2": "",
+                    "city": "",
+                    "postal_code": "",
+                },
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_invalid_postal_code_rejected_on_profile(self):
+        response = self.client.put(
+            "/api/auth/profile/update/",
+            {
+                "first_name": "Bill",
+                "surname": "User",
+                "address": {
+                    "address_line": "",
+                    "address_line2": "",
+                    "city": "",
+                    "postal_code": "NOTAPost",
+                },
+            },
+            format="json",
+        )
         self.assertEqual(response.status_code, 400)
         self.assertIn("errors", response.data)
-        self.assertIn("bill_city", response.data["errors"])
+        self.assertIn("postal_code", response.data["errors"])
 
     def test_billing_accepts_complete_address(self):
         response = self.client.put(

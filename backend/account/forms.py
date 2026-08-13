@@ -34,10 +34,11 @@ def _is_staff_user_form(form, cleaned_data=None):
     return False
 
 
-def _validate_billing_street_when_required(form, cleaned_data):
+def _validate_billing_street_optional(form, cleaned_data):
     """
-    When not using delivery as billing, require street fields
-    (same rules as delivery: line2 optional, UK postcode).
+    Profile/account billing fields are optional. When a separate billing address
+    is entered, only validate format of provided values (Latin, UK postcode).
+    Full completeness is enforced at order placement.
     """
     # Staff admin forms omit address/billing widgets. An unchecked checkbox is
     # absent from POST and would otherwise become False, failing validation on
@@ -55,6 +56,7 @@ def _validate_billing_street_when_required(form, cleaned_data):
         city=cleaned_data.get("bill_city"),
         postal_code=cleaned_data.get("bill_postal_code"),
         require_line2=False,
+        require_complete=False,
     )
     field_map = {
         "address_line": "bill_address_line",
@@ -67,9 +69,10 @@ def _validate_billing_street_when_required(form, cleaned_data):
     return cleaned_data
 
 
-def _validate_delivery_street_when_required(form, cleaned_data):
+def _validate_delivery_street_optional(form, cleaned_data):
     """
-    Require delivery address line, city, and UK postal code for customer accounts.
+    Delivery address on user accounts is optional. Validate format of any
+    non-empty fields only; completeness is enforced at order placement.
 
     Staff change forms do not show these fields, so validation is skipped for staff.
     """
@@ -84,6 +87,7 @@ def _validate_delivery_street_when_required(form, cleaned_data):
         city=cleaned_data.get("city"),
         postal_code=cleaned_data.get("postal_code"),
         require_line2=False,
+        require_complete=False,
     )
     for key, message in errors.items():
         form.add_error(key, message)
@@ -161,8 +165,8 @@ class CustomUserForm(UserChangeForm):
         if _is_staff_user_form(self, cleaned_data):
             cleaned_data["bill_use_delivery_address"] = True
         _validate_latin_name_and_address_fields(self)
-        _validate_delivery_street_when_required(self, cleaned_data)
-        return _validate_billing_street_when_required(self, cleaned_data)
+        _validate_delivery_street_optional(self, cleaned_data)
+        return _validate_billing_street_optional(self, cleaned_data)
 
     def save(self, commit=True):
         user = super().save(commit=False)
@@ -253,5 +257,5 @@ class CustomUserCreationForm(forms.ModelForm):
     def clean(self):
         cleaned_data = super().clean()
         _validate_latin_name_and_address_fields(self)
-        _validate_delivery_street_when_required(self, cleaned_data)
-        return _validate_billing_street_when_required(self, cleaned_data)
+        _validate_delivery_street_optional(self, cleaned_data)
+        return _validate_billing_street_optional(self, cleaned_data)

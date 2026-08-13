@@ -978,6 +978,28 @@ class OrderListView(APIView):
 
         shipping_method_id = request.data.get("shipping_method_id")
         address_data = request.data.get("address") or {}
+        if not isinstance(address_data, dict):
+            address_data = {}
+
+        # Delivery address is required and fully validated when placing an order.
+        from account.address_validation import validate_street_address
+
+        delivery_errors = validate_street_address(
+            address_line=address_data.get("address_line"),
+            address_line2=address_data.get("address_line2"),
+            city=address_data.get("city"),
+            postal_code=address_data.get("postal_code"),
+            require_line2=False,
+            require_complete=True,
+        )
+        if delivery_errors:
+            return Response(
+                {
+                    "error": "Please fix delivery address fields.",
+                    "errors": delivery_errors,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # Delivery fee: home delivery recalculated server-side; post uses Sendcloud re-quote.
         delivery_fee_value = Decimal("0.00")
@@ -1039,16 +1061,14 @@ class OrderListView(APIView):
         if payment_intent_id:
             order_data["payment_intent_id"] = payment_intent_id
 
-        # Handle address from form data
-        if address_data:
-            # Create a new address instance for this order
-            address = Address.objects.create(
-                address_line=address_data.get("address_line", ""),
-                address_line2=address_data.get("address_line2", ""),
-                city=address_data.get("city", ""),
-                postal_code=address_data.get("postal_code", ""),
-            )
-            order_data["address"] = address
+        # Handle address from form data — already validated above
+        address = Address.objects.create(
+            address_line=(address_data.get("address_line") or "").strip(),
+            address_line2=(address_data.get("address_line2") or "").strip(),
+            city=(address_data.get("city") or "").strip(),
+            postal_code=(address_data.get("postal_code") or "").strip(),
+        )
+        order_data["address"] = address
 
         # Billing address: when use-delivery is checked, leave order billing empty.
         bill_use_delivery = request.data.get("bill_use_delivery_address")
@@ -1072,7 +1092,9 @@ class OrderListView(APIView):
             order_data["billing_address"] = None
         else:
             billing_fields = billing_payload_from_request(request.data)
-            street_errors = validate_billing_street(billing_fields)
+            street_errors = validate_billing_street(
+                billing_fields, require_complete=True
+            )
             if street_errors:
                 return Response(
                     {

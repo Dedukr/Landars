@@ -6,7 +6,11 @@ import tempfile
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
-from account.address_validation import validate_street_address
+from account.address_validation import (
+    PROFILE_DELIVERY_ADDRESS_REQUIRED_MESSAGE,
+    profile_delivery_address_errors,
+    validate_street_address,
+)
 from account.billing_address import upsert_profile_billing_address
 from account.latin_validation import add_latin_script_errors
 from account.models import CustomUser, Profile
@@ -236,10 +240,21 @@ class OrderAdminForm(ModelForm):
                 if not result.ok:
                     self.add_error("status", result.message)
 
+        customer = cleaned_data.get("customer")
+        # Admin orders use the customer's profile delivery address when the
+        # order has no address of its own. Require a complete profile address.
+        if customer and not getattr(self.instance, "address_id", None):
+            profile = getattr(customer, "profile", None)
+            if profile_delivery_address_errors(profile):
+                self.add_error(
+                    "customer",
+                    PROFILE_DELIVERY_ADDRESS_REQUIRED_MESSAGE,
+                )
+
         if cleaned_data.get("bill_use_delivery_address", True):
             return cleaned_data
 
-        if not cleaned_data.get("customer"):
+        if not customer:
             self.add_error(
                 "customer",
                 "Select a customer before setting a separate billing address.",

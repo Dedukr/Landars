@@ -92,6 +92,64 @@ class OrderCustomerBillingAdminTest(TestCase):
         self.assertIn("customer-billing", content)
         self.assertIn("fetchBilling", content)
 
+    def test_order_form_rejects_customer_without_profile_address(self):
+        from api.admin import OrderAdminForm
+
+        customer = CustomUser.objects.create_user(
+            email="no-address@example.com",
+            password="pass",
+            first_name="No",
+            surname="Address",
+        )
+        Profile.objects.get_or_create(user=customer)
+
+        form = OrderAdminForm(
+            data={
+                "customer": customer.pk,
+                "status": "pending",
+                "notes": "",
+                "delivery_date": "",
+                "delivery_fee_manual": False,
+                "delivery_fee": "0",
+                "holiday_fee": "0",
+                "discount": "0",
+                "bill_use_delivery_address": True,
+                "bill_company_name": "",
+                "bill_contact_name": "",
+                "bill_address_line": "",
+                "bill_address_line2": "",
+                "bill_city": "",
+                "bill_postal_code": "",
+            }
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("customer", form.errors)
+        self.assertIn("complete delivery address", form.errors["customer"][0])
+
+    def test_order_form_accepts_customer_with_complete_profile_address(self):
+        from api.admin import OrderAdminForm
+
+        form = OrderAdminForm(
+            data={
+                "customer": self.customer.pk,
+                "status": "pending",
+                "notes": "",
+                "delivery_date": "",
+                "delivery_fee_manual": False,
+                "delivery_fee": "0",
+                "holiday_fee": "0",
+                "discount": "0",
+                "bill_use_delivery_address": True,
+                "bill_company_name": "",
+                "bill_contact_name": "",
+                "bill_address_line": "",
+                "bill_address_line2": "",
+                "bill_city": "",
+                "bill_postal_code": "",
+            }
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+
     def test_order_change_page_includes_billing_prefetch_script(self):
         from api.models import Order
 

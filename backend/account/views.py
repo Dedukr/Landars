@@ -625,29 +625,28 @@ def update_profile(request):
         if "notes" in data:
             profile.notes = data.get("notes", "").strip()
 
-        # Handle address information
+        # Handle address information (optional on profile; full checks at checkout)
         address_data = data.get("address", {})
         if address_data:
-            from account.latin_validation import LATIN_SCRIPT_ERROR, is_latin_script_text
+            from account.address_validation import validate_street_address
 
             address_line = (address_data.get("address_line") or "").strip()
             address_line2 = (address_data.get("address_line2") or "").strip()
             city = (address_data.get("city") or "").strip()
             postal_code = (address_data.get("postal_code") or "").strip()
-            latin_errors = {}
-            for key, value in (
-                ("address_line", address_line),
-                ("address_line2", address_line2),
-                ("city", city),
-                ("postal_code", postal_code),
-            ):
-                if value and not is_latin_script_text(value):
-                    latin_errors[key] = LATIN_SCRIPT_ERROR
-            if latin_errors:
+            street_errors = validate_street_address(
+                address_line=address_line,
+                address_line2=address_line2,
+                city=city,
+                postal_code=postal_code,
+                require_line2=False,
+                require_complete=False,
+            )
+            if street_errors:
                 return Response(
                     {
                         "error": "Please fix address fields.",
-                        "errors": latin_errors,
+                        "errors": street_errors,
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
@@ -690,7 +689,9 @@ def update_profile(request):
         if has_billing_input:
             billing_fields = billing_payload_from_request(data)
             if not profile.bill_use_delivery_address:
-                street_errors = validate_billing_street(billing_fields)
+                street_errors = validate_billing_street(
+                    billing_fields, require_complete=False
+                )
                 if street_errors:
                     return Response(
                         {
@@ -700,23 +701,6 @@ def update_profile(request):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
             upsert_profile_billing_address(profile, billing_fields)
-        elif not profile.bill_use_delivery_address:
-            saved = profile.billing_address
-            check_fields = {
-                "address_line": saved.address_line if saved else None,
-                "address_line2": saved.address_line2 if saved else None,
-                "city": saved.city if saved else None,
-                "postal_code": saved.postal_code if saved else None,
-            }
-            street_errors = validate_billing_street(check_fields)
-            if street_errors:
-                return Response(
-                    {
-                        "error": "Please fix billing address fields.",
-                        "errors": street_errors,
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
 
         profile.save()
 
