@@ -871,6 +871,79 @@ class FestivalProductDeletionTests(TestCase):
         self.assertEqual(item.product_id, self.product.id)
 
 
+@override_settings(
+    FESTIVAL_ENABLED=True,
+    FESTIVAL_PRINT_MODE="disabled",
+    FESTIVAL_PRINTER_REQUIRED=False,
+)
+class FestivalPrintJobAdminTests(TestCase):
+    def setUp(self):
+        from django.contrib.admin.sites import AdminSite
+        from django.test import RequestFactory
+
+        from festival.admin import FestivalPrintJobAdmin
+
+        self.admin = FestivalPrintJobAdmin(FestivalPrintJob, AdminSite())
+        self.factory = RequestFactory()
+        self.staff = _staff_user()
+        self.root = User.objects.create_superuser(
+            email="print-root@example.com",
+            password="pass12345",
+            first_name="Root",
+            surname="User",
+        )
+        self.printer = FestivalPrinter.objects.create(
+            name="Till",
+            mac_address="112233445566",
+            is_active=True,
+        )
+
+    def _request(self, user):
+        request = self.factory.get("/admin/festival/festivalprintjob/")
+        request.user = user
+        return request
+
+    def _job(self, **kwargs):
+        defaults = {
+            "batch_uuid": uuid.uuid4(),
+            "printer": self.printer,
+            "job_type": FestivalPrintJob.JobType.TEST,
+            "sequence": 1,
+            "status": FestivalPrintJob.Status.READY,
+            "payload_text": "test",
+            "payload_checksum": "abc",
+        }
+        defaults.update(kwargs)
+        return FestivalPrintJob.objects.create(**defaults)
+
+    def test_staff_cannot_delete_print_jobs(self):
+        self.assertFalse(self.admin.has_delete_permission(self._request(self.staff)))
+
+    def test_superuser_can_delete_print_jobs(self):
+        self.assertTrue(self.admin.has_delete_permission(self._request(self.root)))
+
+    def test_superuser_can_edit_status_field(self):
+        readonly = self.admin.get_readonly_fields(self._request(self.root))
+        self.assertNotIn("status", readonly)
+        staff_readonly = self.admin.get_readonly_fields(self._request(self.staff))
+        self.assertIn("status", staff_readonly)
+
+    def test_delete_model_clears_retry_of_and_deletes(self):
+        original = self._job(status=FestivalPrintJob.Status.FAILED)
+        retry = self._job(
+            batch_uuid=uuid.uuid4(),
+            sequence=1,
+            retry_of=original,
+            status=FestivalPrintJob.Status.READY,
+        )
+
+        self.admin.delete_model(self._request(self.root), original)
+
+        self.assertFalse(FestivalPrintJob.objects.filter(pk=original.pk).exists())
+        retry.refresh_from_db()
+        self.assertIsNone(retry.retry_of_id)
+
+
 @override_settings(FESTIVAL_ENABLED=True, FESTIVAL_PRINT_MODE="disabled")
 class ConcurrentTicketAllocationTests(TransactionTestCase):
     def test_allocate_unique_under_contention(self):

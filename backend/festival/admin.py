@@ -714,14 +714,51 @@ class FestivalPrintJobAdmin(admin.ModelAdmin):
     ]
     list_filter = ["status", "job_type", "is_reprint", "printer", "created_at"]
     search_fields = ["job_token", "batch_uuid", "order__id"]
-    readonly_fields = [f.name for f in FestivalPrintJob._meta.fields]
     actions = ["retry_failed_action", "reprint_order_action"]
+
+    def get_readonly_fields(self, request, obj=None):
+        # Superusers can change status; everything else stays audit-locked.
+        fields = [f.name for f in FestivalPrintJob._meta.fields]
+        if request.user.is_superuser:
+            return [name for name in fields if name != "status"]
+        return fields
+
+    def get_changelist_instance(self, request):
+        """Status is list-editable for superusers only."""
+        self.list_editable = ("status",) if request.user.is_superuser else ()
+        return super().get_changelist_instance(request)
 
     def has_add_permission(self, request):
         return False
 
     def has_delete_permission(self, request, obj=None):
-        return False
+        return bool(request.user.is_superuser)
+
+    def has_change_permission(self, request, obj=None):
+        if request.user.is_superuser:
+            return True
+        return super().has_change_permission(request, obj)
+
+    def get_deleted_objects(self, objs, request):
+        deleted_objects, model_count, perms_needed, protected = (
+            super().get_deleted_objects(objs, request)
+        )
+        if request.user.is_superuser:
+            # retry_of uses PROTECT; delete_model clears those refs first.
+            perms_needed = set()
+            protected = []
+        return deleted_objects, model_count, perms_needed, protected
+
+    def delete_model(self, request, obj):
+        with transaction.atomic():
+            FestivalPrintJob.objects.filter(retry_of=obj).update(retry_of=None)
+            obj.delete()
+
+    def delete_queryset(self, request, queryset):
+        with transaction.atomic():
+            ids = list(queryset.values_list("pk", flat=True))
+            FestivalPrintJob.objects.filter(retry_of_id__in=ids).update(retry_of=None)
+            queryset.delete()
 
     @admin.action(description="Retry selected FAILED jobs (new tokens)")
     def retry_failed_action(self, request, queryset):
