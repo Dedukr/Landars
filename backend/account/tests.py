@@ -1,6 +1,9 @@
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import TestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .name_utils import split_legacy_name
@@ -15,7 +18,7 @@ from .merge_service import (
     normalize_name,
     select_canonical_user,
 )
-from .models import Address, CustomUser, Profile
+from .models import Address, CustomUser, EmailVerificationToken, Profile
 
 User = get_user_model()
 
@@ -926,3 +929,137 @@ class MergeUsersIntegrationTest(TestCase):
             merge_users(new_user)
         except RecursionError:
             self.fail("merge_users caused infinite recursion")
+
+
+class VerifyEmailIdempotentTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            name="Verify User",
+            email="verify@example.com",
+            password="testpass123",
+        )
+        self.user.is_email_verified = False
+        self.user.save(update_fields=["is_email_verified"])
+
+        # Shared Redis cache makes AnonRateThrottle flaky across test runs
+        from account import views as account_views
+
+        self._verify_cls = getattr(account_views.verify_email, "cls", None)
+        self._saved_verify_throttles = None
+        if self._verify_cls is not None:
+            self._saved_verify_throttles = self._verify_cls.throttle_classes
+            self._verify_cls.throttle_classes = []
+
+    def tearDown(self):
+        if self._verify_cls is not None and self._saved_verify_throttles is not None:
+            self._verify_cls.throttle_classes = self._saved_verify_throttles
+
+    @patch("account.views.send_email_verification_confirmation_email")
+    def test_first_verify_succeeds_and_sends_confirmation(self, mock_confirm):
+        token = EmailVerificationToken.objects.create(user=self.user)
+        response = self.client.post(
+            "/api/auth/verify-email/",
+            {"token": token.token},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["message"], "Email verified successfully")
+        self.assertIn("user", response.data)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.is_email_verified)
+        mock_confirm.assert_called_once()
+
+    @patch("account.views.send_email_verification_confirmation_email")
+    def test_reused_token_when_already_verified_returns_200(self, mock_confirm):
+        token = EmailVerificationToken.objects.create(user=self.user)
+        token.mark_as_used()
+        self.user.is_email_verified = True
+        self.user.save(update_fields=["is_email_verified"])
+
+        response = self.client.post(
+            "/api/auth/verify-email/",
+            {"token": token.token},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["message"], "Email verified successfully")
+        self.assertIn("user", response.data)
+        mock_confirm.assert_not_called()
+
+    @patch("account.views.send_email_verification_confirmation_email")
+    def test_valid_token_when_already_verified_cleans_up_without_email(
+        self, mock_confirm
+    ):
+        self.user.is_email_verified = True
+        self.user.save(update_fields=["is_email_verified"])
+        token = EmailVerificationToken.objects.create(user=self.user)
+        other = EmailVerificationToken.objects.create(user=self.user)
+
+        response = self.client.post(
+            "/api/auth/verify-email/",
+            {"token": token.token},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["message"], "Email verified successfully")
+        token.refresh_from_db()
+        other.refresh_from_db()
+        self.assertTrue(token.is_used)
+        self.assertTrue(other.is_used)
+        mock_confirm.assert_not_called()
+
+    def test_used_token_when_unverified_returns_400_with_can_resend(self):
+        token = EmailVerificationToken.objects.create(user=self.user)
+        token.mark_as_used()
+
+        response = self.client.post(
+            "/api/auth/verify-email/",
+            {"token": token.token},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["email"], self.user.email)
+        self.assertTrue(response.data["can_resend"])
+
+    def test_expired_token_when_unverified_returns_400(self):
+        token = EmailVerificationToken.objects.create(user=self.user)
+        EmailVerificationToken.objects.filter(pk=token.pk).update(
+            expires_at=timezone.now() - timezone.timedelta(hours=1)
+        )
+
+        response = self.client.post(
+            "/api/auth/verify-email/",
+            {"token": token.token},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["email"], self.user.email)
+        self.assertTrue(response.data["can_resend"])
+
+
+class DebugEmailGatingTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    @override_settings(DEBUG=False)
+    def test_debug_email_returns_404_when_not_debug(self):
+        # URL may still be registered if DEBUG was True at URLconf import;
+        # view must still refuse to probe emails outside DEBUG.
+        response = self.client.post(
+            "/api/auth/debug-email/",
+            {"email": "anyone@example.com"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_debug_email_url_only_registered_when_debug(self):
+        from django.conf import settings as django_settings
+
+        from . import urls as account_urls
+
+        names = [getattr(p, "name", None) for p in account_urls.urlpatterns]
+        if django_settings.DEBUG:
+            self.assertIn("debug_email", names)
+        else:
+            self.assertNotIn("debug_email", names)

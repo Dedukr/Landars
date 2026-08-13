@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
 import { httpClient } from "@/utils/httpClient";
 import { getSafeNextRedirect } from "@/utils/authHelpers";
+import { hasSolidAuthSession } from "@/utils/authSessionGuard";
 import EmailVerificationPopup from "@/components/EmailVerificationPopup";
 import { latinScriptError } from "@/utils/latinValidation";
 import { validateEmail } from "@/utils/emailValidation";
@@ -53,7 +54,16 @@ function AuthForm() {
   const [emailFieldError, setEmailFieldError] = useState("");
   const [resendCooldown, setResendCooldown] = useState(0);
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, user, token, loading: authLoading } = useAuth();
+
+  // Redirect only when both user + token are present (avoid half-session bounce)
+  useEffect(() => {
+    if (authLoading) return;
+    if (hasSolidAuthSession(token, user)) {
+      const next = getSafeNextRedirect(searchParams.get("next"));
+      router.replace(next || "/");
+    }
+  }, [authLoading, user, token, searchParams, router]);
 
   useEffect(() => {
     const mode = searchParams.get("mode");
@@ -228,25 +238,16 @@ function AuthForm() {
           { skipAuth: true, skipCSRF: true }
         );
 
-        // Check if email verification is required
+        // Register always requires email verification (no immediate JWT)
         if (data.email_verification_required) {
-          setError(""); // Clear any previous errors
+          setError("");
           setVerificationEmail(formData.email);
           setShowEmailVerificationPopup(true);
-          setLoading(false); // Re-enable the button
-          // Don't log in yet - wait for email verification
+          setLoading(false);
           return;
         }
 
-        // Handle JWT tokens for immediate login (if verification not required)
-        if (data.access && data.refresh) {
-          login({ access: data.access, refresh: data.refresh }, data.user);
-          const next = getSafeNextRedirect(searchParams.get("next"));
-          router.replace(next || "/");
-          return;
-        } else if (!data.email_verification_required) {
-          setError("Unexpected registration response. Please try signing in.");
-        }
+        setError("Unexpected registration response. Please try signing in.");
       } catch (error: unknown) {
         // Prefer structured API payload when present (e.g. password validator list)
         const apiData =
@@ -294,9 +295,9 @@ function AuthForm() {
           return;
         }
 
-        // Handle JWT tokens for successful login
-        if (data.access && data.refresh) {
-          login({ access: data.access, refresh: data.refresh }, data.user);
+        // Access in SPA; refresh is set as httpOnly cookie by the API
+        if (data.access) {
+          login({ access: data.access }, data.user);
           const next = getSafeNextRedirect(searchParams.get("next"));
           // replace avoids stacking /auth in history; safe next never loops to /auth
           router.replace(next || "/");
@@ -498,6 +499,19 @@ function AuthForm() {
     const newUrl = newMode ? `/auth?mode=signup${next}` : `/auth?mode=signin${next}`;
     router.replace(newUrl);
   };
+
+  // Wait for auth bootstrap; solid session keeps spinner while redirecting
+  if (authLoading || hasSolidAuthSession(token, user)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center auth-container">
+        <div
+          className="animate-spin rounded-full h-10 w-10 border-b-2"
+          style={{ borderColor: "var(--btn-primary)" }}
+          aria-label="Loading"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 auth-container">
@@ -1315,6 +1329,7 @@ function AuthForm() {
           onClose={() => setShowEmailVerificationPopup(false)}
           userEmail={verificationEmail}
           userName={`${formData.first_name} ${formData.surname}`.trim()}
+          next={searchParams.get("next")}
         />
       </div>
     </div>

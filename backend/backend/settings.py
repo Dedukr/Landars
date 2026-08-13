@@ -87,13 +87,38 @@ if DEBUG:
 ROOT_URLCONF = "backend.urls"
 # Allow Django to append trailing slashes for API consistency
 APPEND_SLASH = False
-# CORS settings - derive from URL_BASE for email links
+# CORS / CSRF origins - derive from URL_BASE when env overrides are unset.
+# When CSRF_TRUSTED_ORIGINS or CORS_ALLOWED_ORIGINS is set, list every real SPA
+# origin (scheme + host [+ port]); cookie-based JWT refresh requires CSRF.
 URL_BASE = os.getenv("URL_BASE", "https://localhost")
 
-# Generate CORS origins from URL_BASE
-cors_origins = f"{URL_BASE}:3000"
-CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", cors_origins).split(",")
-CSRF_TRUSTED_ORIGINS = os.getenv("CSRF_TRUSTED_ORIGINS", cors_origins).split(",")
+
+def _default_browser_origins(url_base: str) -> str:
+    """Build default CORS/CSRF origins from URL_BASE (no invented domains)."""
+    from urllib.parse import urlparse
+
+    base = url_base.rstrip("/")
+    origins = [base]
+    parsed = urlparse(base)
+    host = (parsed.hostname or "").lower()
+    # Dev convenience: Next on :3000 when URL_BASE is bare localhost/127.0.0.1.
+    if host in ("localhost", "127.0.0.1") and parsed.port != 3000:
+        scheme = parsed.scheme or "https"
+        origins.append(f"{scheme}://{host}:3000")
+    return ",".join(dict.fromkeys(origins))
+
+
+_default_origins = _default_browser_origins(URL_BASE)
+CORS_ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.getenv("CORS_ALLOWED_ORIGINS", _default_origins).split(",")
+    if o.strip()
+]
+CSRF_TRUSTED_ORIGINS = [
+    o.strip()
+    for o in os.getenv("CSRF_TRUSTED_ORIGINS", _default_origins).split(",")
+    if o.strip()
+]
 
 # Additional CORS settings for proper functionality``
 CORS_ALLOW_CREDENTIALS = True
@@ -188,6 +213,15 @@ SIMPLE_JWT = {
     "SLIDING_TOKEN_LIFETIME": timedelta(minutes=5),
     "SLIDING_TOKEN_REFRESH_LIFETIME": timedelta(days=1),
 }
+
+# Refresh JWT in httpOnly cookie (not readable by XSS). Path limited to auth API.
+JWT_REFRESH_COOKIE_NAME = os.getenv("JWT_REFRESH_COOKIE_NAME", "refresh_token")
+JWT_REFRESH_COOKIE_PATH = os.getenv("JWT_REFRESH_COOKIE_PATH", "/api/auth/")
+JWT_REFRESH_COOKIE_SAMESITE = os.getenv("JWT_REFRESH_COOKIE_SAMESITE", "Lax")
+JWT_REFRESH_COOKIE_SECURE = os.getenv(
+    "JWT_REFRESH_COOKIE_SECURE",
+    "False" if DEBUG else "True",
+).lower() in ("1", "true", "yes")
 
 TEMPLATES = [
     {

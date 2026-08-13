@@ -9,6 +9,12 @@
  */
 
 import { getClientApiBaseUrl } from "@/config/api";
+import {
+  clearAccessToken,
+  clearLegacyTokenStorage,
+  getAccessToken,
+  setAccessToken,
+} from "@/utils/authTokenStore";
 
 // Types for the HTTP client
 interface RequestConfig extends RequestInit {
@@ -107,14 +113,25 @@ function processQueue(error: unknown, success: boolean = false) {
 }
 
 /**
- * Attempt to refresh the JWT token
+ * Clear auth markers after a failed refresh.
+ * Wishlist keys are only cleared when a prior access token existed so a
+ * cookie-only probe for anonymous visitors does not wipe guest wishlist.
+ */
+function clearAuthAfterFailedRefresh(hadAccessToken: boolean): void {
+  clearAccessToken();
+  clearLegacyTokenStorage();
+  localStorage.removeItem("user");
+  if (hadAccessToken) {
+    localStorage.removeItem("wishlist");
+    localStorage.removeItem("guest_wishlist");
+  }
+}
+
+/**
+ * Attempt to refresh the access JWT via httpOnly refresh cookie.
  */
 async function refreshJWTToken(): Promise<boolean> {
-  const refreshToken = localStorage.getItem("refreshToken");
-
-  if (!refreshToken) {
-    return false;
-  }
+  const hadAccessToken = Boolean(getAccessToken());
 
   try {
     const response = await fetch(`${getClientApiBaseUrl()}/api/auth/token/refresh/`, {
@@ -124,52 +141,29 @@ async function refreshJWTToken(): Promise<boolean> {
         "X-CSRFToken": csrfToken || (await fetchCSRFToken()),
       },
       credentials: "include",
-      body: JSON.stringify({ refresh: refreshToken }),
+      body: JSON.stringify({}),
     });
 
     if (response.ok) {
       const data: RefreshTokenResponse = await response.json();
-
-      // Update the access token in localStorage
-      localStorage.setItem("authToken", data.access);
-
-      // Update refresh token if provided (token rotation)
-      if (data.refresh) {
-        localStorage.setItem("refreshToken", data.refresh);
-      }
-
-      // Token refresh successful
-
+      setAccessToken(data.access);
+      clearLegacyTokenStorage();
       return true;
-    } else {
-      // Refresh failed, clear tokens
-      localStorage.removeItem("authToken");
-      localStorage.removeItem("refreshToken");
-      localStorage.removeItem("user");
-      localStorage.removeItem("wishlist");
-      localStorage.removeItem("guest_wishlist");
-
-      // Token refresh failed
-
-      return false;
     }
+
+    clearAuthAfterFailedRefresh(hadAccessToken);
+    return false;
   } catch (error) {
     console.error("Token refresh error:", error);
-    // Clear tokens on error
-    localStorage.removeItem("authToken");
-    localStorage.removeItem("refreshToken");
-    localStorage.removeItem("user");
-    localStorage.removeItem("wishlist");
-    localStorage.removeItem("guest_wishlist");
-
-    // Token refresh failed
-
+    clearAuthAfterFailedRefresh(hadAccessToken);
     return false;
   }
 }
 
 /**
- * Handle token refresh with queue management
+ * Handle token refresh with queue management.
+ * Concurrent callers wait for the in-flight refresh and receive the same result
+ * (never a spurious false from "already refreshing").
  */
 async function handleTokenRefresh(): Promise<boolean> {
   if (isRefreshing) {
@@ -196,6 +190,14 @@ async function handleTokenRefresh(): Promise<boolean> {
 }
 
 /**
+ * Shared single-flight JWT refresh for AuthContext and HTTP 401 retry.
+ * Uses httpOnly refresh cookie; updates in-memory / sessionStorage access token.
+ */
+export function refreshAuthTokens(): Promise<boolean> {
+  return handleTokenRefresh();
+}
+
+/**
  * Check if an error response indicates token expiration
  */
 function isTokenExpired(response: Response): boolean {
@@ -203,13 +205,10 @@ function isTokenExpired(response: Response): boolean {
 }
 
 /**
- * Get current auth token from localStorage
+ * Get current access token (memory / sessionStorage; not localStorage).
  */
 function getAuthToken(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  return localStorage.getItem("authToken");
+  return getAccessToken();
 }
 
 /**

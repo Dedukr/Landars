@@ -91,8 +91,7 @@ async function stubFestivalApis(page: Page, opts?: { offline?: boolean }) {
 
 async function seedAuth(page: Page) {
   await page.addInitScript(() => {
-    localStorage.setItem("authToken", "test-access");
-    localStorage.setItem("refreshToken", "test-refresh");
+    sessionStorage.setItem("authToken", "test-access");
     localStorage.setItem(
       "user",
       JSON.stringify({

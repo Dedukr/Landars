@@ -1,22 +1,55 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { httpClient } from "@/utils/httpClient";
+import { getAuthUrl, getSafeNextRedirect } from "@/utils/authHelpers";
 
 interface VerificationResponse {
   message: string;
-  user: {
+  user?: {
     id: number;
     name: string;
     email: string;
   };
 }
 
+type VerifyApiError = Error & {
+  response?: {
+    data?: {
+      email?: string;
+      can_resend?: boolean;
+      error?: string;
+      message?: string;
+      user?: VerificationResponse["user"];
+    };
+  };
+};
+
+/**
+ * One POST per token across Strict Mode remounts.
+ * Remounts await the same in-flight (or settled) promise.
+ */
+const verifyPromises = new Map<string, Promise<VerificationResponse>>();
+
+function postVerifyEmail(token: string): Promise<VerificationResponse> {
+  let promise = verifyPromises.get(token);
+  if (!promise) {
+    promise = httpClient.post<VerificationResponse>(
+      "/api/auth/verify-email/",
+      { token },
+      { skipAuth: true, skipCSRF: true }
+    );
+    verifyPromises.set(token, promise);
+  }
+  return promise;
+}
+
 export default function VerifyEmailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
+  const nextParam = searchParams.get("next");
 
   const [status, setStatus] = useState<
     "loading" | "success" | "error" | "expired"
@@ -28,41 +61,76 @@ export default function VerifyEmailPage() {
   const [resendEmail, setResendEmail] = useState("");
   const [isResending, setIsResending] = useState(false);
 
-  const verifyEmail = useCallback(async () => {
-    try {
-      const response = await httpClient.post<VerificationResponse>(
-        "/api/auth/verify-email/",
-        {
-          token,
-        },
-        { skipAuth: true, skipCSRF: true }
-      );
+  // Prevents duplicate apply/redirect scheduling within a single mount
+  const appliedResultRef = useRef(false);
 
+  const redirectToAuth = useCallback(
+    (email?: string) => {
+      const safeNext = getSafeNextRedirect(nextParam);
+      const authUrl = getAuthUrl({
+        mode: "signin",
+        next: safeNext,
+      });
+      const url = new URL(authUrl, window.location.origin);
+      if (email) {
+        url.searchParams.set("email", email);
+        url.searchParams.set("verified", "true");
+      }
+      router.push(`${url.pathname}${url.search}`);
+    },
+    [nextParam, router]
+  );
+
+  const handleVerifiedSuccess = useCallback(
+    (responseMessage: string, verifiedUser?: VerificationResponse["user"]) => {
       setStatus("success");
-      setMessage(response.message);
-      setUser(response.user);
+      setMessage(responseMessage || "Email verified successfully");
+      if (verifiedUser) {
+        setUser(verifiedUser);
+      }
 
-      // Redirect to sign-in with email prefilled after 3 seconds
       setTimeout(() => {
-        const encodedEmail = encodeURIComponent(response.user.email);
-        router.push(`/auth?email=${encodedEmail}&verified=true`);
+        redirectToAuth(verifiedUser?.email);
       }, 3000);
-    } catch (error: unknown) {
+    },
+    [redirectToAuth]
+  );
+
+  const applyVerifyError = useCallback(
+    (error: unknown) => {
       console.error("Verification error:", error);
       const errorMessage =
         error instanceof Error ? error.message || "" : "";
       const apiData =
-        error &&
-        typeof error === "object" &&
-        "response" in error
-          ? (
-              error as {
-                response?: {
-                  data?: { email?: string; can_resend?: boolean; error?: string };
-                };
-              }
-            ).response?.data
+        error && typeof error === "object" && "response" in error
+          ? (error as VerifyApiError).response?.data
           : undefined;
+
+      const combinedMessage = (
+        apiData?.message ||
+        apiData?.error ||
+        errorMessage ||
+        ""
+      ).toLowerCase();
+
+      // Idempotent / already-verified responses (success-like UX)
+      const alreadyVerified =
+        combinedMessage.includes("already verified") ||
+        (combinedMessage.includes("already been used") &&
+          apiData?.can_resend === false);
+
+      if (alreadyVerified) {
+        const email = apiData?.email || apiData?.user?.email;
+        if (email) {
+          setUser({ name: apiData?.user?.name || "", email });
+        }
+        handleVerifiedSuccess(
+          apiData?.message ||
+            "Your email is already verified. You can sign in.",
+          apiData?.user || (email ? { id: 0, name: "", email } : undefined)
+        );
+        return;
+      }
 
       if (apiData?.email) {
         setResendEmail(apiData.email);
@@ -82,8 +150,16 @@ export default function VerifyEmailPage() {
         setStatus("error");
         setMessage(errorMessage || "Failed to verify email address");
       }
-    }
-  }, [token, router]);
+    },
+    [handleVerifiedSuccess]
+  );
+
+  // Keep latest handlers without re-firing verify when they change
+  const handlersRef = useRef({
+    handleVerifiedSuccess,
+    applyVerifyError,
+  });
+  handlersRef.current = { handleVerifiedSuccess, applyVerifyError };
 
   useEffect(() => {
     if (!token) {
@@ -92,8 +168,29 @@ export default function VerifyEmailPage() {
       return;
     }
 
-    verifyEmail();
-  }, [token, verifyEmail]);
+    let cancelled = false;
+    appliedResultRef.current = false;
+
+    (async () => {
+      try {
+        const response = await postVerifyEmail(token);
+        if (cancelled || appliedResultRef.current) return;
+        appliedResultRef.current = true;
+        handlersRef.current.handleVerifiedSuccess(
+          response.message,
+          response.user
+        );
+      } catch (error: unknown) {
+        if (cancelled || appliedResultRef.current) return;
+        appliedResultRef.current = true;
+        handlersRef.current.applyVerifyError(error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   const resendVerification = async () => {
     const email = user?.email || resendEmail;
@@ -166,7 +263,7 @@ export default function VerifyEmailPage() {
             <p className="text-gray-600 mb-6">{message}</p>
             <button
               type="button"
-              onClick={() => router.push("/auth")}
+              onClick={() => redirectToAuth()}
               className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
             >
               Back to Login
@@ -197,7 +294,7 @@ export default function VerifyEmailPage() {
             <p className="text-gray-600 mb-6">{message}</p>
 
             <div className="space-y-4">
-              {(user?.email || resendEmail) ? (
+              {user?.email || resendEmail ? (
                 <button
                   type="button"
                   onClick={resendVerification}
@@ -215,7 +312,7 @@ export default function VerifyEmailPage() {
 
               <button
                 type="button"
-                onClick={() => router.push("/auth")}
+                onClick={() => redirectToAuth()}
                 className="w-full bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 transition-colors"
               >
                 Back to Login

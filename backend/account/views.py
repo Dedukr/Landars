@@ -21,11 +21,22 @@ from rest_framework.decorators import (
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework.authentication import SessionAuthentication
+from rest_framework_simplejwt.exceptions import InvalidToken
+from rest_framework_simplejwt.serializers import (
+    TokenObtainPairSerializer,
+    TokenRefreshSerializer,
+)
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from django.db import IntegrityError
 
+from .jwt_cookies import (
+    clear_refresh_cookie,
+    get_refresh_from_request,
+    refresh_cookie_name,
+    set_refresh_cookie,
+)
 from .email_utils import (
     send_email_verification_confirmation_email,
     send_email_verification_email,
@@ -101,6 +112,55 @@ class VerifiedEmailTokenObtainPairSerializer(TokenObtainPairSerializer):
 
 class VerifiedEmailTokenObtainPairView(TokenObtainPairView):
     serializer_class = VerifiedEmailTokenObtainPairSerializer
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        """Move refresh into httpOnly cookie; keep access in JSON for the SPA."""
+        if response.status_code == 200 and isinstance(response.data, dict):
+            refresh = response.data.pop("refresh", None)
+            if refresh:
+                set_refresh_cookie(response, refresh)
+        return super().finalize_response(request, response, *args, **kwargs)
+
+
+class EnforceCSRFAuthentication(SessionAuthentication):
+    """
+    Trigger DRF CSRF checks for cookie-authenticated refresh without requiring
+    a Django session user (APIView is otherwise csrf_exempt).
+    """
+
+    def authenticate(self, request):
+        self.enforce_csrf(request)
+        return None
+
+
+class CookieTokenRefreshSerializer(TokenRefreshSerializer):
+    """Accept refresh from JSON body (legacy) or httpOnly cookie."""
+
+    refresh = serializers.CharField(required=False, allow_blank=False)
+
+    def validate(self, attrs):
+        request = self.context["request"]
+        if not attrs.get("refresh"):
+            cookie_token = request.COOKIES.get(refresh_cookie_name())
+            if cookie_token:
+                attrs["refresh"] = cookie_token
+        if not attrs.get("refresh"):
+            raise InvalidToken("No valid refresh token found")
+        return super().validate(attrs)
+
+
+class CookieTokenRefreshView(TokenRefreshView):
+    """Refresh access token; rotate refresh into httpOnly cookie."""
+
+    serializer_class = CookieTokenRefreshSerializer
+    authentication_classes = [EnforceCSRFAuthentication]
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        if response.status_code == 200 and isinstance(response.data, dict):
+            refresh = response.data.pop("refresh", None)
+            if refresh:
+                set_refresh_cookie(response, refresh)
+        return super().finalize_response(request, response, *args, **kwargs)
 
 
 # Create your views here.
@@ -352,15 +412,17 @@ def login_view(request):
             f"Successful login for user: {email} from IP: {request.META.get('REMOTE_ADDR')}"
         )
 
-        return Response(
+        # Access stays in JSON (SPA memory/sessionStorage); refresh in httpOnly cookie.
+        response = Response(
             {
                 "message": "Login successful",
                 "access": str(refresh.access_token),
-                "refresh": str(refresh),
                 "user": user_payload(user, include_staff=True),
             },
             status=status.HTTP_200_OK,
         )
+        set_refresh_cookie(response, str(refresh))
+        return response
 
     except Exception as e:
         logger.error(
@@ -373,12 +435,11 @@ def login_view(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def logout_view(request):
-    """Logout a user and blacklist refresh token"""
+    """Logout: blacklist refresh (body or httpOnly cookie) and clear cookie."""
     try:
-        # Blacklist the refresh token if provided
-        refresh_token = request.data.get("refresh")
+        refresh_token = get_refresh_from_request(request)
         if refresh_token:
             try:
                 token = RefreshToken(refresh_token)
@@ -386,22 +447,26 @@ def logout_view(request):
             except Exception:
                 pass
 
-        # Log logout
         if request.user.is_authenticated:
             logger.info(
                 f"User logged out: {request.user.email} from IP: {request.META.get('REMOTE_ADDR')}"
             )
-            # Delete old-style token if exists
             Token.objects.filter(user=request.user).delete()
 
-        return Response({"message": "Logout successful"}, status=status.HTTP_200_OK)
+        response = Response(
+            {"message": "Logout successful"}, status=status.HTTP_200_OK
+        )
+        clear_refresh_cookie(response)
+        return response
 
     except Exception as e:
         logger.error(f"Logout error: {str(e)}")
-        return Response(
+        response = Response(
             {"error": "An error occurred during logout"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+        clear_refresh_cookie(response)
+        return response
 
 
 @api_view(["GET"])
@@ -1144,40 +1209,70 @@ def verify_email(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        user = verification_token.user
+
+        # Idempotent success: already-used token for an already-verified user
+        if verification_token.is_used and user.is_email_verified:
+            logger.info(
+                f"Idempotent email verification for already-verified user: {user.email} "
+                f"from IP: {request.META.get('REMOTE_ADDR')}"
+            )
+            return Response(
+                {
+                    "message": "Email verified successfully",
+                    "user": user_payload(user),
+                },
+                status=status.HTTP_200_OK,
+            )
+
         # Check if token is valid and not expired
         if not verification_token.is_valid():
             logger.warning(
-                f"Expired email verification token attempted for user: {verification_token.user.email} from IP: {request.META.get('REMOTE_ADDR')}"
+                f"Expired email verification token attempted for user: {user.email} from IP: {request.META.get('REMOTE_ADDR')}"
             )
             return Response(
                 {
                     "error": "Verification token has expired or has already been used",
                     # Safe to return: holder already received this address via email.
-                    "email": verification_token.user.email,
-                    "can_resend": not verification_token.user.is_email_verified,
+                    "email": user.email,
+                    "can_resend": not user.is_email_verified,
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        already_verified = user.is_email_verified
 
         # Mark token as used with timestamp
         verification_token.mark_as_used()
 
         # Invalidate ALL remaining verification tokens for this user (comprehensive cleanup)
         remaining_tokens_count = EmailVerificationToken.invalidate_unused_user_tokens(
-            verification_token.user
+            user
         )
 
         if remaining_tokens_count > 0:
             logger.info(
-                f"Invalidated {remaining_tokens_count} remaining verification tokens for user: {verification_token.user.email}"
+                f"Invalidated {remaining_tokens_count} remaining verification tokens for user: {user.email}"
+            )
+
+        if already_verified:
+            # Valid token, user already verified — cleanup only; no confirmation email
+            logger.info(
+                f"Email already verified for user: {user.email} from IP: {request.META.get('REMOTE_ADDR')}"
+            )
+            return Response(
+                {
+                    "message": "Email verified successfully",
+                    "user": user_payload(user),
+                },
+                status=status.HTTP_200_OK,
             )
 
         # Verify user's email
-        user = verification_token.user
         user.is_email_verified = True
         user.save()
 
-        # Send confirmation email
+        # Send confirmation email (first successful verification only)
         home_url = get_public_frontend_base_url()
 
         send_email_verification_confirmation_email(
@@ -1355,7 +1450,10 @@ def resend_verification_email(request):
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def debug_email(request):
-    """Debug endpoint to test email handling"""
+    """Debug endpoint to test email handling — DEBUG only (not registered in production)."""
+    if not settings.DEBUG:
+        return Response(status=status.HTTP_404_NOT_FOUND)
+
     try:
         email = request.data.get("email", "").strip().lower()
         logger.info(f"DEBUG ENDPOINT: Received email: '{email}' (length: {len(email)})")

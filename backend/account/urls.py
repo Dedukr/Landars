@@ -1,5 +1,5 @@
+from django.conf import settings
 from django.urls import path
-from rest_framework_simplejwt.views import TokenRefreshView
 
 from . import views
 
@@ -10,7 +10,11 @@ urlpatterns = [
     path("logout/", views.logout_view, name="logout"),
     # JWT Token Management
     path("token/", views.VerifiedEmailTokenObtainPairView.as_view(), name="token_obtain_pair"),
-    path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    path(
+        "token/refresh/",
+        views.CookieTokenRefreshView.as_view(),
+        name="token_refresh",
+    ),
     # User Management
     path("user/", views.user_profile, name="user_profile"),  # Alias for profile
     path("profile/", views.user_profile, name="user_profile"),
@@ -53,6 +57,11 @@ urlpatterns = [
     ),
     # CSRF Token
     path("csrf-token/", views.csrf_token, name="csrf_token"),
-    # Debug
-    path("debug-email/", views.debug_email, name="debug_email"),
 ]
+
+# Debug probes must not be reachable in production
+if settings.DEBUG:
+    urlpatterns += [
+        path("debug-email/", views.debug_email, name="debug_email"),
+    ]
+

@@ -2,38 +2,47 @@
  * HTTP Client Tests
  *
  * Clean, professional tests for the HTTP client with automatic token refresh
- * Following Jest best practices for mocking fetch and localStorage
+ * Following Jest best practices for mocking fetch and storage
  */
 
-import { httpClient, resetCSRFToken } from "../httpClient";
+import { httpClient, refreshAuthTokens, resetCSRFToken } from "../httpClient";
+import { clearAccessToken, setAccessToken } from "../authTokenStore";
 
-// Constants
-const API_BASE_URL = "https://localhost";
-const CSRF_TOKEN_URL = `${API_BASE_URL}/api/auth/csrf-token/`;
-const TOKEN_REFRESH_URL = `${API_BASE_URL}/api/auth/token/refresh/`;
-const TEST_API_URL = `${API_BASE_URL}/api/test`;
+// Constants — browser client uses same-origin relative URLs
+const CSRF_TOKEN_URL = `/api/auth/csrf-token/`;
+const TOKEN_REFRESH_URL = `/api/auth/token/refresh/`;
+const TEST_API_URL = `/api/test`;
 
 // Mock fetch globally
 const mockFetch = jest.fn();
 global.fetch = mockFetch as typeof fetch;
 
-// Mock localStorage with actual storage
-const storage: Record<string, string> = {};
-const mockLocalStorage = {
-  getItem: jest.fn((key: string) => storage[key] || null),
-  setItem: jest.fn((key: string, value: string) => {
-    storage[key] = value;
-  }),
-  removeItem: jest.fn((key: string) => {
-    delete storage[key];
-  }),
-  clear: jest.fn(() => {
-    Object.keys(storage).forEach((key) => delete storage[key]);
-  }),
-};
+// Mock localStorage / sessionStorage
+const localStorageData: Record<string, string> = {};
+const sessionStorageData: Record<string, string> = {};
+
+function makeStorageMock(store: Record<string, string>) {
+  return {
+    getItem: jest.fn((key: string) => store[key] || null),
+    setItem: jest.fn((key: string, value: string) => {
+      store[key] = value;
+    }),
+    removeItem: jest.fn((key: string) => {
+      delete store[key];
+    }),
+    clear: jest.fn(() => {
+      Object.keys(store).forEach((key) => delete store[key]);
+    }),
+  };
+}
 
 Object.defineProperty(window, "localStorage", {
-  value: mockLocalStorage,
+  value: makeStorageMock(localStorageData),
+  writable: true,
+});
+
+Object.defineProperty(window, "sessionStorage", {
+  value: makeStorageMock(sessionStorageData),
   writable: true,
 });
 
@@ -47,8 +56,9 @@ describe("HttpClient", () => {
     jest.clearAllMocks();
     mockFetch.mockClear();
 
-    // Clear storage
-    Object.keys(storage).forEach((key) => delete storage[key]);
+    Object.keys(localStorageData).forEach((key) => delete localStorageData[key]);
+    Object.keys(sessionStorageData).forEach((key) => delete sessionStorageData[key]);
+    clearAccessToken();
 
     // Reset CSRF token state
     resetCSRFToken();
@@ -232,7 +242,7 @@ describe("HttpClient", () => {
 
   describe("Authentication", () => {
     test("should include auth token in requests when available", async () => {
-      storage["authToken"] = "test-auth-token";
+      setAccessToken("test-auth-token");
 
       mockFetch
         .mockResolvedValueOnce({
@@ -253,7 +263,7 @@ describe("HttpClient", () => {
     });
 
     test("should skip auth token when skipAuth is true", async () => {
-      storage["authToken"] = "test-auth-token";
+      setAccessToken("test-auth-token");
 
       mockFetch
         .mockResolvedValueOnce({
@@ -276,9 +286,7 @@ describe("HttpClient", () => {
 
   describe("Token Refresh Flow", () => {
     test("should refresh token and retry on 401 response", async () => {
-      // Setup: User has valid refresh token
-      storage["authToken"] = "expired-token";
-      storage["refreshToken"] = "valid-refresh-token";
+      setAccessToken("expired-token");
 
       mockFetch
         // Call 1: CSRF token fetch (initial request)
@@ -292,12 +300,11 @@ describe("HttpClient", () => {
           status: 401,
           json: async () => ({ error: "Token expired" }),
         })
-        // Call 3: Token refresh succeeds
+        // Call 3: Token refresh succeeds (cookie-based; empty body)
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({
             access: "new-access-token",
-            refresh: "new-refresh-token",
           }),
         })
         // Call 4: Retry request succeeds
@@ -308,44 +315,38 @@ describe("HttpClient", () => {
 
       const result = await httpClient.get("/api/test");
 
-      // Should get the final success response
       expect(result).toEqual({ data: "success" });
+      expect(sessionStorageData["authToken"]).toBe("new-access-token");
+      expect(localStorageData["refreshToken"]).toBeUndefined();
 
-      // Tokens should be updated
-      expect(storage["authToken"]).toBe("new-access-token");
-      expect(storage["refreshToken"]).toBe("new-refresh-token");
-
-      // Should make 4 fetch calls total
       expect(mockFetch).toHaveBeenCalledTimes(4);
 
-      // Verify the refresh call
       expect(mockFetch).toHaveBeenNthCalledWith(
         3,
         TOKEN_REFRESH_URL,
         expect.objectContaining({
           method: "POST",
-          body: JSON.stringify({ refresh: "valid-refresh-token" }),
+          body: JSON.stringify({}),
+          credentials: "include",
         })
       );
     });
 
     test("should trigger logout when refresh fails", async () => {
-      storage["authToken"] = "expired-token";
-      storage["refreshToken"] = "invalid-refresh-token";
+      setAccessToken("expired-token");
+      localStorageData["user"] = "{}";
+      localStorageData["wishlist"] = "[]";
 
       mockFetch
-        // Call 1: CSRF token fetch
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ csrfToken: "csrf-token" }),
         })
-        // Call 2: Initial request returns 401
         .mockResolvedValueOnce({
           ok: false,
           status: 401,
           json: async () => ({ error: "Token expired" }),
         })
-        // Call 3: Token refresh fails
         .mockResolvedValueOnce({
           ok: false,
           status: 401,
@@ -356,43 +357,84 @@ describe("HttpClient", () => {
         "Authentication failed. Please log in again."
       );
 
-      // Tokens should be cleared
-      expect(storage["authToken"]).toBeUndefined();
-      expect(storage["refreshToken"]).toBeUndefined();
-      expect(storage["user"]).toBeUndefined();
-      expect(storage["wishlist"]).toBeUndefined();
+      expect(sessionStorageData["authToken"]).toBeUndefined();
+      expect(localStorageData["user"]).toBeUndefined();
+      expect(localStorageData["wishlist"]).toBeUndefined();
 
-      // Logout event should be dispatched
       expect(mockDispatchEvent).toHaveBeenCalledWith(
         expect.objectContaining({ type: "auth:logout" })
       );
     });
 
-    test("should not retry when maxRetries is reached", async () => {
-      storage["authToken"] = "expired-token";
-      storage["refreshToken"] = "valid-refresh-token";
+    test("cookie-only refresh failure preserves guest wishlist", async () => {
+      // No prior access token (cookie probe for anonymous / cookie-only restore)
+      localStorageData["guest_wishlist"] = "[1,2]";
+      localStorageData["user"] = '{"id":1}';
 
       mockFetch
-        // Call 1: CSRF token fetch
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ csrfToken: "csrf-token" }),
         })
-        // Call 2: Initial request returns 401
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          json: async () => ({ error: "No refresh cookie" }),
+        });
+
+      const success = await refreshAuthTokens();
+
+      expect(success).toBe(false);
+      expect(localStorageData["user"]).toBeUndefined();
+      expect(localStorageData["guest_wishlist"]).toBe("[1,2]");
+      expect(mockDispatchEvent).not.toHaveBeenCalled();
+    });
+
+    test("refresh failure with prior access clears wishlist keys", async () => {
+      setAccessToken("expired-token");
+      localStorageData["guest_wishlist"] = "[9]";
+      localStorageData["wishlist"] = "[8]";
+      localStorageData["user"] = "{}";
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ csrfToken: "csrf-token" }),
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          json: async () => ({ error: "Invalid refresh" }),
+        });
+
+      const success = await refreshAuthTokens();
+
+      expect(success).toBe(false);
+      expect(localStorageData["user"]).toBeUndefined();
+      expect(localStorageData["wishlist"]).toBeUndefined();
+      expect(localStorageData["guest_wishlist"]).toBeUndefined();
+      expect(sessionStorageData["authToken"]).toBeUndefined();
+    });
+
+    test("should not retry when maxRetries is reached", async () => {
+      setAccessToken("expired-token");
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ csrfToken: "csrf-token" }),
+        })
         .mockResolvedValueOnce({
           ok: false,
           status: 401,
           json: async () => ({ error: "Token expired" }),
         })
-        // Call 3: Token refresh succeeds
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({
             access: "new-token",
-            refresh: "new-refresh",
           }),
         })
-        // Call 4: Retry also returns 401
         .mockResolvedValueOnce({
           ok: false,
           status: 401,
@@ -403,7 +445,6 @@ describe("HttpClient", () => {
         "Still expired"
       );
 
-      // Should not attempt second refresh (maxRetries = 1)
       expect(mockFetch).toHaveBeenCalledTimes(4);
     });
   });
