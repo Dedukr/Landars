@@ -26,7 +26,7 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from rest_framework.views import APIView
@@ -99,7 +99,12 @@ class CategoryUserThrottle(UserRateThrottle):
 
 # Create your views here.
 class ProductList(APIView):
-    permission_classes = [AllowAny]  # Allow unauthenticated access to view products
+    """GET is public; mutating methods require staff."""
+
+    def get_permissions(self):
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            return [AllowAny()]
+        return [IsAuthenticated(), IsAdminUser()]
 
     def get(self, request):
         """Retrieve products with filtering, sorting, and pagination."""
@@ -261,9 +266,12 @@ class ProductList(APIView):
 
 
 class ProductDetail(APIView):
-    permission_classes = [
-        AllowAny
-    ]  # Allow unauthenticated access to view product details
+    """GET is public; mutating methods require staff."""
+
+    def get_permissions(self):
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            return [AllowAny()]
+        return [IsAuthenticated(), IsAdminUser()]
 
     def get(self, request, product_id):
         """Retrieve a single product by ID with all images."""
@@ -942,48 +950,73 @@ class OrderListView(APIView):
         if phone_error is not None:
             return phone_error
 
-        # Create order using values from cart (ensure consistency)
-        # Prioritize cart values as the single source of truth - all cart fields are saved to order
-        # Convert discount and delivery_fee to Decimal to avoid type errors
-        discount_value = cart.discount or request.data.get("discount", 0)
+        # Reject client-controlled payment_status (paid must come from Stripe verify).
+        if "payment_status" in request.data:
+            from api.checkout_security import payment_status_rejection_response
 
-        # If shipping option is selected, use its price as delivery_fee
-        # Otherwise fall back to cart delivery_fee or request delivery_fee
-        shipping_cost = request.data.get("shipping_cost")
-        if shipping_cost:
-            # Use shipping option price as delivery fee
-            delivery_fee_value = shipping_cost
-        else:
-            delivery_fee_value = cart.delivery_fee or request.data.get(
-                "delivery_fee", 0
-            )
+            return payment_status_rejection_response()
 
-        # Ensure values are Decimal type
-        if isinstance(discount_value, str):
-            discount_value = (
-                Decimal(discount_value) if discount_value else Decimal(0)
-            )
-        elif not isinstance(discount_value, Decimal):
-            discount_value = Decimal(str(discount_value))
+        from api.checkout_security import (
+            discount_for_coupon,
+            normalize_coupon_code,
+            resolve_post_delivery_fee,
+            verify_stripe_payment_for_checkout,
+        )
 
-        if isinstance(delivery_fee_value, str):
-            delivery_fee_value = (
-                Decimal(delivery_fee_value) if delivery_fee_value else Decimal(0)
-            )
-        elif not isinstance(delivery_fee_value, Decimal):
-            delivery_fee_value = Decimal(str(delivery_fee_value))
+        # Discount: server-side coupon only (never trust request/cart monetary discount).
+        coupon_code = normalize_coupon_code(
+            request.data.get("coupon_code")
+            or getattr(cart, "coupon_code", None)
+        )
+        # If FE only persisted discount via prior coupon apply, re-derive from save10
+        # when cart.discount > 0 and coupon_code omitted (compat): treat as save10.
+        if not coupon_code and cart.discount and Decimal(str(cart.discount)) > 0:
+            coupon_code = "save10"
+        discount_value = discount_for_coupon(
+            Decimal(str(cart.sum_price or 0)), coupon_code
+        )
 
-        # Convert shipping_cost to Decimal if provided
-        shipping_cost_decimal = None
-        if shipping_cost:
-            if isinstance(shipping_cost, str):
-                shipping_cost_decimal = (
-                    Decimal(shipping_cost) if shipping_cost else None
+        shipping_method_id = request.data.get("shipping_method_id")
+        address_data = request.data.get("address") or {}
+
+        # Delivery fee: home delivery recalculated server-side; post uses Sendcloud re-quote.
+        delivery_fee_value = Decimal("0.00")
+        if cart.is_home_delivery:
+            delivery_fee_value = Decimal("0.00")  # filled after order via calculator
+        elif shipping_method_id:
+            try:
+                quote_address = {
+                    "country": address_data.get("country") or "GB",
+                    "postal_code": address_data.get("postal_code") or "",
+                    "city": address_data.get("city") or "",
+                    "address_line": address_data.get("address_line") or "",
+                    "address_line2": address_data.get("address_line2") or "",
+                }
+                delivery_fee_value = resolve_post_delivery_fee(
+                    shipping_method_id=int(shipping_method_id),
+                    address=quote_address,
+                    cart_items=cart_items,
                 )
-            elif not isinstance(shipping_cost, Decimal):
-                shipping_cost_decimal = Decimal(str(shipping_cost))
-            else:
-                shipping_cost_decimal = shipping_cost
+            except (TypeError, ValueError) as exc:
+                return Response(
+                    {"error": str(exc) or "Invalid shipping method"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            except Exception as exc:
+                logger.exception("Shipping re-quote failed: %s", exc)
+                return Response(
+                    {"error": "Unable to verify shipping price. Please try again."},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+        else:
+            return Response(
+                {
+                    "error": (
+                        "shipping_method_id is required for post delivery orders"
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         order_data = {
             "customer": request.user,
@@ -998,31 +1031,15 @@ class OrderListView(APIView):
         }
 
         shipping_details_data = {}
-        if request.data.get("shipping_method_id"):
-            shipping_details_data["shipping_method_id"] = request.data.get(
-                "shipping_method_id"
-            )
+        if shipping_method_id and not cart.is_home_delivery:
+            shipping_details_data["shipping_method_id"] = int(shipping_method_id)
 
-        # Handle payment information if provided
+        # Optional Stripe: verify PI server-side; never trust client payment_status.
         payment_intent_id = request.data.get("payment_intent_id")
-        payment_status = request.data.get("payment_status")
-
         if payment_intent_id:
             order_data["payment_intent_id"] = payment_intent_id
 
-        if payment_status:
-            # Map "paid" to "succeeded" for payment_status field (Stripe uses "succeeded")
-            if payment_status == "paid":
-                order_data["payment_status"] = "succeeded"
-            else:
-                order_data["payment_status"] = payment_status
-
-            # If payment is succeeded/paid, update order status
-            if payment_status in ["succeeded", "paid"]:
-                order_data["status"] = "paid"
-
         # Handle address from form data
-        address_data = request.data.get("address")
         if address_data:
             # Create a new address instance for this order
             address = Address.objects.create(
@@ -1088,11 +1105,25 @@ class OrderListView(APIView):
                 order=order, product=cart_item.product, quantity=cart_item.quantity
             )
 
-        # If shipping option was selected, don't recalculate delivery fee
-        # The delivery_fee is already set from shipping_cost
-        # Only recalculate if no shipping option was selected and delivery_fee_manual is False
-        if not order.delivery_fee_manual and not shipping_cost:
+        # Home delivery: compute fee from cart weight/rules (never client-supplied).
+        if order.is_home_delivery and not order.delivery_fee_manual:
             self._calculate_delivery_type_and_fee(order)
+            order.refresh_from_db()
+
+        # Verify payment against final order total (includes server delivery fee).
+        if payment_intent_id:
+            ok, pay_error = verify_stripe_payment_for_checkout(
+                payment_intent_id=str(payment_intent_id),
+                user=request.user,
+                expected_total=order.total_price,
+            )
+            if not ok:
+                # Roll back by raising — we are inside transaction.atomic()
+                raise ValueError(pay_error or "Payment verification failed")
+            from api.services.product_sales import set_order_status
+
+            set_order_status(order, "paid", payment_status="succeeded")
+            order.refresh_from_db()
 
         # Trigger shipment creation if order is paid and has shipping method
         shipping_details = getattr(order, "shipping_details", None)
@@ -1553,7 +1584,7 @@ class CartView(APIView):
             )
 
     def put(self, request):
-        """Update cart metadata (notes, delivery_fee, discount, is_home_delivery, delivery_date)."""
+        """Update cart metadata (notes, delivery prefs). Pricing is server-controlled."""
         if not request.user.is_authenticated:
             return Response(
                 {"error": "Authentication required"},
@@ -1563,25 +1594,42 @@ class CartView(APIView):
         try:
             cart = Cart.objects.get(user=request.user)
 
-            # Update fields if provided
+            # Reject client-supplied monetary pricing fields
+            if "discount" in request.data or "delivery_fee" in request.data:
+                return Response(
+                    {
+                        "error": (
+                            "discount and delivery_fee cannot be set directly. "
+                            "Use coupon_code for discounts; delivery fees are calculated server-side."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
             if "notes" in request.data:
                 cart.notes = request.data.get("notes", "")
             if "delivery_date" in request.data:
                 delivery_date = request.data.get("delivery_date")
                 cart.delivery_date = delivery_date if delivery_date else None
-            if "discount" in request.data:
-                from decimal import Decimal
-
-                cart.discount = Decimal(str(request.data.get("discount", 0)))
-            if "delivery_fee" in request.data:
-                from decimal import Decimal
-
-                cart.delivery_fee = Decimal(str(request.data.get("delivery_fee", 0)))
             if "is_home_delivery" in request.data:
                 cart.is_home_delivery = request.data.get("is_home_delivery", True)
 
+            if "coupon_code" in request.data:
+                from api.checkout_security import apply_coupon_to_cart
+
+                _amount, coupon_error = apply_coupon_to_cart(
+                    cart, request.data.get("coupon_code")
+                )
+                if coupon_error:
+                    return Response(
+                        {"error": coupon_error},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
             # If recalculate_delivery is True, calculate delivery fee and type automatically
-            if request.data.get("recalculate_delivery", False):
+            if request.data.get("recalculate_delivery", False) or (
+                "is_home_delivery" in request.data
+            ):
                 self._calculate_delivery_type_and_fee(cart)
 
             cart.save()

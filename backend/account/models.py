@@ -110,6 +110,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         default=CREATED_SOURCE_UNKNOWN,
         db_index=True,
     )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     objects = CustomUserManager()
 
     USERNAME_FIELD = "email"  # field used to log in

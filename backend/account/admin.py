@@ -89,13 +89,16 @@ class CustomUserAdmin(UserAdmin):
         "email",
         "is_active",
         "is_staff",
+        "created_at",
     )
     list_filter = (
         "is_staff",
         "is_active",
+        "created_at",
     )
     ordering = ("email",)
     search_fields = ("first_name", "surname", "name", "email", "profile__phone")
+    readonly_fields = ("last_login", "created_at")
 
     class Media:
         js = ("admin/js/prevent_double_submit.js",)
@@ -185,7 +188,7 @@ class CustomUserAdmin(UserAdmin):
                         )
                     },
                 ),
-                ("Important fields", {"fields": ("last_login", "is_active")}),
+                ("Important fields", {"fields": ("last_login", "created_at", "is_active")}),
             ]
         if request.user.has_perm("account.change_customuser"):
             permission_fields = ["is_active", "is_staff", "groups"]
@@ -195,7 +198,7 @@ class CustomUserAdmin(UserAdmin):
                 permission_fields.append("user_permissions")
             fieldsets = fieldsets + [
                 (_("Permissions"), {"fields": tuple(permission_fields)}),
-                (_("Important dates"), {"fields": ("last_login",)}),
+                (_("Important dates"), {"fields": ("last_login", "created_at")}),
             ]
         return fieldsets
 

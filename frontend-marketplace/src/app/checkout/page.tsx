@@ -444,12 +444,10 @@ export default function CheckoutPage() {
       typeof couponCode === "string" &&
       couponCode.toLowerCase() === "save10"
     ) {
-      const discountAmount = cartSubtotal * 0.1; // 10% discount
-
       try {
-        // Save discount to cart
+        // Server applies coupon rate — never send a raw discount amount
         await httpClient.put("/api/cart/", {
-          discount: discountAmount,
+          coupon_code: "save10",
         });
 
         setAppliedCoupon(couponCode);
@@ -465,9 +463,9 @@ export default function CheckoutPage() {
 
   const handleRemoveCoupon = async () => {
     try {
-      // Remove discount from cart
+      // Remove coupon server-side
       await httpClient.put("/api/cart/", {
-        discount: 0,
+        coupon_code: "",
       });
 
       setAppliedCoupon(null);
@@ -945,7 +943,7 @@ export default function CheckoutPage() {
       // Create order without payment intent
       const orderData: {
         notes: string;
-        discount: string;
+        coupon_code?: string;
         is_home_delivery: boolean;
         address: {
           address_line: string;
@@ -963,20 +961,12 @@ export default function CheckoutPage() {
           bill_city: string;
           bill_postal_code: string;
         };
-        delivery_fee: string;
         shipping_method_id?: number;
-        shipping_carrier?: string;
-        shipping_service_name?: string;
-        shipping_cost?: string;
         first_name: string;
         surname: string;
         phone: string;
       } = {
         notes: cartData?.notes || shippingForm.notes,
-        discount: cartData?.discount || "0",
-        delivery_fee: cartIsHomeDelivery
-          ? cartData?.delivery_fee || "0"
-          : resolvedPostShipmentQuote?.price || cartData?.delivery_fee || "0",
         is_home_delivery: cartData?.is_home_delivery ?? true,
         first_name: shippingForm.first_name.trim(),
         surname: shippingForm.surname.trim(),
@@ -991,6 +981,12 @@ export default function CheckoutPage() {
         bill_use_delivery_address: shippingForm.bill_use_delivery_address,
       };
 
+      if (appliedCoupon) {
+        orderData.coupon_code = appliedCoupon;
+      } else if (cartDiscount > 0) {
+        orderData.coupon_code = "save10";
+      }
+
       // Separate billing only when unchecked — leave order billing empty when same as shipping.
       if (!shippingForm.bill_use_delivery_address) {
         orderData.billing_address = {
@@ -1003,12 +999,9 @@ export default function CheckoutPage() {
         };
       }
 
-      // Courier metadata (post / home-delivery parcel): use resolved quote when only one tier
-      if (!cartIsHomeDelivery && resolvedPostShipmentQuote?.price) {
+      // Post-delivery: only send method id — server re-quotes the price
+      if (!cartIsHomeDelivery && resolvedPostShipmentQuote?.id) {
         orderData.shipping_method_id = resolvedPostShipmentQuote.id;
-        orderData.shipping_carrier = resolvedPostShipmentQuote.carrier;
-        orderData.shipping_service_name = resolvedPostShipmentQuote.name;
-        orderData.shipping_cost = resolvedPostShipmentQuote.price;
       }
 
       // Name, phone, and billing are required for invoices; persist before creating the order.

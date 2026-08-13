@@ -78,6 +78,7 @@ def user_profile_payload(user: CustomUser) -> dict:
         "user": {
             **user_payload(user, include_staff=True),
             "last_login": user.last_login,
+            "created_at": user.created_at,
         },
         "profile": profile_payload(profile),
         "address": address_payload(profile.address if profile else None),
