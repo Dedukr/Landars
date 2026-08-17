@@ -326,6 +326,49 @@ class CustomUserModelTest(TestCase):
         self.assertTrue(updated.is_email_verified)
         self.assertFalse(Profile.objects.filter(user=staff).exists())
 
+    def test_add_form_rejects_user_with_no_identifying_data(self):
+        """A completely blank add form must fail validation, not create a ghost user."""
+        from .forms import CustomUserCreationForm
+
+        form = CustomUserCreationForm(
+            data={
+                "first_name": "",
+                "surname": "",
+                "email": "",
+                "password": "",
+                "phone": "",
+                "address_line": "",
+                "address_line2": "",
+                "city": "",
+                "postal_code": "",
+                "notes": "",
+            }
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn(
+            "Enter at least a first name, surname, or email address.",
+            form.errors["__all__"],
+        )
+
+    def test_add_form_accepts_name_only_user(self):
+        from .forms import CustomUserCreationForm
+
+        form = CustomUserCreationForm(
+            data={
+                "first_name": "Nadia",
+                "surname": "",
+                "email": "",
+                "password": "",
+                "phone": "",
+                "address_line": "",
+                "address_line2": "",
+                "city": "",
+                "postal_code": "",
+                "notes": "",
+            }
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+
     def test_profile_billing_address_empty_without_saved_row(self):
         user = User.objects.create_user(**self.user_data)
         profile = Profile.objects.create(user=user)
@@ -610,6 +653,13 @@ class NameSimilarityTest(TestCase):
     def test_names_are_not_similar(self):
         self.assertFalse(names_are_similar("Alice Johnson", "Bob Williams"))
 
+    def test_blank_names_are_never_similar(self):
+        """Nameless accounts must not be treated as duplicates of each other."""
+        self.assertFalse(names_are_similar("", ""))
+        self.assertFalse(names_are_similar(None, None))
+        self.assertFalse(names_are_similar("", "John Smith"))
+        self.assertFalse(names_are_similar("John Smith", None))
+
 
 class MergePhonesTest(TestCase):
     def test_no_conflict(self):
@@ -701,6 +751,80 @@ class SelectCanonicalUserTest(TestCase):
 # ---------------------------------------------------------------------------
 # Merge service — integration tests
 # ---------------------------------------------------------------------------
+
+
+class CustomUserAdminAddViewTests(TestCase):
+    """The add view must never 500, including when the merge removes the new row."""
+
+    ADD_URL = "/admin/account/customuser/add/"
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser(
+            first_name="Root",
+            surname="Admin",
+            email="root-admin@example.com",
+            password="pass12345",
+        )
+        self.client.force_login(self.admin)
+
+    @staticmethod
+    def _post_data(**overrides):
+        data = {
+            "first_name": "",
+            "surname": "",
+            "email": "",
+            "password": "",
+            "phone": "",
+            "address_line": "",
+            "address_line2": "",
+            "city": "",
+            "postal_code": "",
+            "notes": "",
+            "bill_company_name": "",
+            "bill_contact_name": "",
+            "bill_address_line": "",
+            "bill_address_line2": "",
+            "bill_city": "",
+            "bill_postal_code": "",
+        }
+        data.update(overrides)
+        return data
+
+    def test_saving_user_with_no_data_shows_validation_error(self):
+        response = self.client.post(self.ADD_URL, data=self._post_data())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response, "Enter at least a first name, surname, or email address."
+        )
+        self.assertEqual(User.objects.filter(is_superuser=False).count(), 0)
+
+    def test_add_user_merged_into_existing_account_does_not_error(self):
+        User.objects.create_user(
+            first_name="Olena",
+            surname="Koval",
+            email="olena.koval@example.com",
+            password="pass12345",
+        )
+
+        response = self.client.post(
+            self.ADD_URL,
+            data=self._post_data(first_name="Olena", surname="Koval"),
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(User.objects.filter(name="Olena Koval").count(), 1)
+
+    def test_add_user_with_name_only_creates_profile(self):
+        response = self.client.post(
+            self.ADD_URL,
+            data=self._post_data(first_name="Nadia", surname="Shevchuk"),
+        )
+
+        self.assertEqual(response.status_code, 302)
+        created = User.objects.get(name="Nadia Shevchuk")
+        self.assertTrue(Profile.objects.filter(user=created).exists())
 
 
 class MergeUsersIntegrationTest(TestCase):
@@ -937,6 +1061,17 @@ class MergeUsersIntegrationTest(TestCase):
 
         self.assertFalse(User.objects.filter(pk=new_user.pk).exists())
         self.assertTrue(existing.is_active)
+
+    def test_nameless_users_are_not_merged(self):
+        """Two accounts with no name are unrelated and must both survive."""
+        existing = self._make_user(None)
+        new_user = User(name=None, email=None)
+        new_user.set_unusable_password()
+        new_user.save()
+
+        self.assertTrue(User.objects.filter(pk=existing.pk).exists())
+        self.assertTrue(User.objects.filter(pk=new_user.pk).exists())
+        self.assertIsNotNone(new_user.pk)
 
     # ── Safety: no IntegrityError ───────────────────────────────────────────
 

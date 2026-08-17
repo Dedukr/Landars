@@ -1,5 +1,5 @@
 from api.models import Order
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.auth.admin import GroupAdmin, UserAdmin
 from django.contrib.auth.models import Group
 from django.urls import reverse
@@ -264,6 +264,15 @@ class CustomUserAdmin(UserAdmin):
         # Save the user first
         super().save_model(request, obj, form, change)
 
+        # The user-merge signal can merge this new row into an existing account
+        # and delete it, which clears the pk. There is no profile to attach.
+        if obj.pk is None:
+            messages.warning(
+                request,
+                "This user matched an existing account and was merged into it.",
+            )
+            return
+
         # Handle Profile and Address creation
         if not change:  # Only create Profile and Address for new users
             if not obj.is_staff:
@@ -320,6 +329,18 @@ class CustomUserAdmin(UserAdmin):
                     )
 
                 profile.save()
+
+    def save_related(self, request, form, formsets, change):
+        # When the merge signal deleted the freshly created user, assigning
+        # m2m values (groups/permissions) to the missing row would fail.
+        if form.instance.pk is None:
+            return
+        super().save_related(request, form, formsets, change)
+
+    def log_addition(self, request, obj, message):
+        if obj.pk is None:
+            return None
+        return super().log_addition(request, obj, message)
 
     def response_add(self, request, obj, post_url_continue=None):
         """

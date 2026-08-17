@@ -256,6 +256,14 @@ class CustomUserCreationForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        if not any(
+            (cleaned_data.get(field) or "").strip()
+            for field in ("first_name", "surname", "email")
+        ):
+            self.add_error(
+                None,
+                "Enter at least a first name, surname, or email address.",
+            )
         _validate_latin_name_and_address_fields(self)
         _validate_delivery_street_optional(self, cleaned_data)
         return _validate_billing_street_optional(self, cleaned_data)

@@ -82,3 +82,4 @@ backend/vendor/cputil-*/
 .github_*
 *.md
 *.pdf
+/tmp
