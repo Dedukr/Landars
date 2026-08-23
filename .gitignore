@@ -83,3 +83,4 @@ backend/vendor/cputil-*/
 *.md
 *.pdf
 /tmp
+/output
