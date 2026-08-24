@@ -73,6 +73,14 @@ describe("Email Validation", () => {
       expect(result.isValid).toBe(true);
     });
 
+    it("should allow yeah.net (aligned with backend allowlist)", () => {
+      const result = validateEmail("user@yeah.net", {
+        allowDisposable: false,
+      });
+      expect(result.isValid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
     it("should detect common typos", () => {
       const result = validateEmail("test@gmial.com");
       expect(result.isValid).toBe(true);

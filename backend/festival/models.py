@@ -69,6 +69,10 @@ class FestivalAddition(models.Model):
         validators=[MinValueValidator(Decimal("0.00"))],
         help_text="VAT-inclusive addition price (default £0.00).",
     )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Inactive additions are hidden when creating festival orders.",
+    )
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:

@@ -166,7 +166,7 @@ export default function ProfilePage() {
       setSaving(true);
       setError(null);
 
-      // Validate required fields
+      // Validate name fields; address is optional on profile (required at checkout)
       if (!formData.first_name.trim()) {
         setError("First name is required");
         setSaving(false);
@@ -216,35 +216,24 @@ export default function ProfilePage() {
         }
       }
 
-      if (!formData.bill_use_delivery_address) {
-        const billingRequired = [
-          {
-            key: "bill_address_line" as const,
-            label: "Billing address line 1",
-          },
-          { key: "bill_city" as const, label: "Billing city" },
-          {
-            key: "bill_postal_code" as const,
-            label: "Billing postal code",
-          },
-        ];
-        const missing = billingRequired.find(
-          (field) => !formData[field.key].trim()
-        );
-        if (missing) {
-          setError(`${missing.label} is required`);
-          setSaving(false);
-          return;
-        }
-        if (
-          !/^[A-Z]{1,2}[0-9]{1,2}[A-Z]?[0-9][A-Z]{2}$/i.test(
-            formData.bill_postal_code.replace(/\s/g, "")
-          )
-        ) {
-          setError("Please enter a valid UK postal code for billing");
-          setSaving(false);
-          return;
-        }
+      // Soft format checks for any postal codes that were entered
+      const ukPostcodeRe = /^[A-Z]{1,2}[0-9]{1,2}[A-Z]?[0-9][A-Z]{2}$/i;
+      if (
+        formData.postal_code.trim() &&
+        !ukPostcodeRe.test(formData.postal_code.replace(/\s/g, ""))
+      ) {
+        setError("Please enter a valid UK postal code");
+        setSaving(false);
+        return;
+      }
+      if (
+        !formData.bill_use_delivery_address &&
+        formData.bill_postal_code.trim() &&
+        !ukPostcodeRe.test(formData.bill_postal_code.replace(/\s/g, ""))
+      ) {
+        setError("Please enter a valid UK postal code for billing");
+        setSaving(false);
+        return;
       }
 
       const updateData = {
@@ -726,12 +715,11 @@ export default function ProfilePage() {
                 <div className="animate-billing-expand mt-6 pt-6 border-t border-[var(--sidebar-border)]">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <Input
-                      label="Billing Address Line 1 *"
+                      label="Billing Address Line 1"
                       name="bill_address_line"
                       value={formData.bill_address_line}
                       onChange={handleInputChange}
                       placeholder="Street address, P.O. box, etc."
-                      required
                     />
                     <Input
                       label="Billing Address Line 2"
@@ -741,20 +729,18 @@ export default function ProfilePage() {
                       placeholder="Apartment, suite, unit, building, floor, etc."
                     />
                     <Input
-                      label="Billing City *"
+                      label="Billing City"
                       name="bill_city"
                       value={formData.bill_city}
                       onChange={handleInputChange}
                       placeholder="Enter billing city"
-                      required
                     />
                     <Input
-                      label="Billing Postal Code *"
+                      label="Billing Postal Code"
                       name="bill_postal_code"
                       value={formData.bill_postal_code}
                       onChange={handleInputChange}
                       placeholder="Enter billing postal code"
-                      required
                     />
                   </div>
                 </div>

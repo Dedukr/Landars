@@ -50,8 +50,8 @@ class FestivalProductSerializer(serializers.ModelSerializer):
     def get_additions(self, obj: FestivalProduct) -> list[dict]:
         if not obj.addition_class_id:
             return []
-        # Prefetched in FestivalProductsView ordered by created_at, id.
-        additions = obj.addition_class.additions.all()
+        # Prefetched in FestivalProductsView (active only), ordered by created_at, id.
+        additions = [a for a in obj.addition_class.additions.all() if a.is_active]
         return FestivalAdditionSerializer(additions, many=True).data
 
     def get_fillings(self, obj: FestivalProduct) -> list[dict]:

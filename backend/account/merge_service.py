@@ -53,6 +53,10 @@ def names_are_similar(name1: str, name2: str) -> bool:
     """Return True if the two names are similar enough to consider a merge."""
     n1 = normalize_name(name1)
     n2 = normalize_name(name2)
+    # A blank name is not evidence of a duplicate: treating two blanks as equal
+    # would merge every nameless account into the same record.
+    if not n1 or not n2:
+        return False
     if n1 == n2:
         return True
     return SequenceMatcher(None, n1, n2).ratio() >= SIMILARITY_THRESHOLD
@@ -66,6 +70,9 @@ def names_are_similar(name1: str, name2: str) -> bool:
 def find_similar_users(new_user):
     """Return existing users (excluding *new_user*) whose name is similar."""
     from .models import CustomUser
+
+    if not normalize_name(new_user.name):
+        return []
 
     similar = []
     for candidate in CustomUser.objects.exclude(pk=new_user.pk).iterator():

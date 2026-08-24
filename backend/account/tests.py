@@ -1,6 +1,9 @@
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import TestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .name_utils import split_legacy_name
@@ -15,7 +18,7 @@ from .merge_service import (
     normalize_name,
     select_canonical_user,
 )
-from .models import Address, CustomUser, Profile
+from .models import Address, CustomUser, EmailVerificationToken, Profile
 
 User = get_user_model()
 
@@ -157,7 +160,7 @@ class CustomUserModelTest(TestCase):
         self.assertEqual(user.name, "José García")
         self.assertEqual(user.get_display_name(), "José García")
 
-    def test_admin_form_requires_delivery_address_fields(self):
+    def test_admin_form_allows_empty_delivery_address(self):
         from .forms import CustomUserForm
 
         user = User.objects.create_user(**self.user_data)
@@ -178,10 +181,7 @@ class CustomUserModelTest(TestCase):
             },
             instance=user,
         )
-        self.assertFalse(form.is_valid())
-        self.assertIn("address_line", form.errors)
-        self.assertIn("city", form.errors)
-        self.assertIn("postal_code", form.errors)
+        self.assertTrue(form.is_valid(), form.errors)
 
     def test_admin_form_rejects_non_latin_names(self):
         from .forms import CustomUserForm
@@ -233,7 +233,7 @@ class CustomUserModelTest(TestCase):
         self.assertIn("address_line", form.errors)
         self.assertIn("city", form.errors)
 
-    def test_admin_form_requires_complete_billing_street_when_partial(self):
+    def test_admin_form_allows_partial_billing_street(self):
         from .forms import CustomUserForm
 
         user = User.objects.create_user(**self.user_data)
@@ -259,8 +259,7 @@ class CustomUserModelTest(TestCase):
             },
             instance=user,
         )
-        self.assertFalse(form.is_valid())
-        self.assertIn("bill_address_line", form.errors)
+        self.assertTrue(form.is_valid(), form.errors)
 
     def test_admin_form_accepts_complete_billing_address(self):
         from .forms import CustomUserForm
@@ -293,6 +292,82 @@ class CustomUserModelTest(TestCase):
         user.profile.refresh_from_db()
         self.assertIsNotNone(user.profile.billing_address)
         self.assertEqual(user.profile.billing_address.address_line2, "Suite 2")
+
+    def test_admin_form_allows_staff_verify_without_address_fields(self):
+        """
+        Staff change forms omit address widgets. Missing bill_use_delivery_address
+        in POST must not block saving (e.g. toggling is_email_verified).
+        """
+        from .forms import CustomUserForm
+
+        staff = User.objects.create_user(
+            first_name="Lan",
+            surname="Dar",
+            email="landar-staff@example.com",
+            password="testpass123",
+            is_staff=True,
+            is_email_verified=False,
+        )
+        form = CustomUserForm(
+            data={
+                "first_name": staff.first_name,
+                "surname": staff.surname,
+                "email": staff.email,
+                "password": staff.password,
+                "is_email_verified": True,
+                "is_staff": True,
+                "is_active": True,
+            },
+            instance=staff,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertTrue(form.cleaned_data["bill_use_delivery_address"])
+        updated = form.save()
+        self.assertTrue(updated.is_email_verified)
+        self.assertFalse(Profile.objects.filter(user=staff).exists())
+
+    def test_add_form_rejects_user_with_no_identifying_data(self):
+        """A completely blank add form must fail validation, not create a ghost user."""
+        from .forms import CustomUserCreationForm
+
+        form = CustomUserCreationForm(
+            data={
+                "first_name": "",
+                "surname": "",
+                "email": "",
+                "password": "",
+                "phone": "",
+                "address_line": "",
+                "address_line2": "",
+                "city": "",
+                "postal_code": "",
+                "notes": "",
+            }
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn(
+            "Enter at least a first name, surname, or email address.",
+            form.errors["__all__"],
+        )
+
+    def test_add_form_accepts_name_only_user(self):
+        from .forms import CustomUserCreationForm
+
+        form = CustomUserCreationForm(
+            data={
+                "first_name": "Nadia",
+                "surname": "",
+                "email": "",
+                "password": "",
+                "phone": "",
+                "address_line": "",
+                "address_line2": "",
+                "city": "",
+                "postal_code": "",
+                "notes": "",
+            }
+        )
+        self.assertTrue(form.is_valid(), form.errors)
 
     def test_profile_billing_address_empty_without_saved_row(self):
         user = User.objects.create_user(**self.user_data)
@@ -368,12 +443,13 @@ class ProfileBillingValidationApiTest(TestCase):
         Profile.objects.get_or_create(user=self.user)
         self.client.force_authenticate(user=self.user)
 
-    def test_partial_billing_street_requires_complete_fields(self):
+    def test_partial_billing_street_allowed_on_profile(self):
         response = self.client.put(
             "/api/auth/profile/update/",
             {
                 "first_name": "Bill",
                 "surname": "User",
+                "bill_use_delivery_address": False,
                 "billing_address": {
                     "bill_company_name": "",
                     "bill_contact_name": "",
@@ -385,9 +461,48 @@ class ProfileBillingValidationApiTest(TestCase):
             },
             format="json",
         )
+        self.assertEqual(response.status_code, 200)
+        self.user.profile.refresh_from_db()
+        self.assertEqual(
+            self.user.profile.billing_address.address_line, "1 Billing St"
+        )
+        self.assertIn(self.user.profile.billing_address.city, (None, ""))
+
+    def test_empty_delivery_address_allowed_on_profile(self):
+        response = self.client.put(
+            "/api/auth/profile/update/",
+            {
+                "first_name": "Bill",
+                "surname": "User",
+                "address": {
+                    "address_line": "",
+                    "address_line2": "",
+                    "city": "",
+                    "postal_code": "",
+                },
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_invalid_postal_code_rejected_on_profile(self):
+        response = self.client.put(
+            "/api/auth/profile/update/",
+            {
+                "first_name": "Bill",
+                "surname": "User",
+                "address": {
+                    "address_line": "",
+                    "address_line2": "",
+                    "city": "",
+                    "postal_code": "NOTAPost",
+                },
+            },
+            format="json",
+        )
         self.assertEqual(response.status_code, 400)
         self.assertIn("errors", response.data)
-        self.assertIn("bill_city", response.data["errors"])
+        self.assertIn("postal_code", response.data["errors"])
 
     def test_billing_accepts_complete_address(self):
         response = self.client.put(
@@ -538,6 +653,13 @@ class NameSimilarityTest(TestCase):
     def test_names_are_not_similar(self):
         self.assertFalse(names_are_similar("Alice Johnson", "Bob Williams"))
 
+    def test_blank_names_are_never_similar(self):
+        """Nameless accounts must not be treated as duplicates of each other."""
+        self.assertFalse(names_are_similar("", ""))
+        self.assertFalse(names_are_similar(None, None))
+        self.assertFalse(names_are_similar("", "John Smith"))
+        self.assertFalse(names_are_similar("John Smith", None))
+
 
 class MergePhonesTest(TestCase):
     def test_no_conflict(self):
@@ -629,6 +751,80 @@ class SelectCanonicalUserTest(TestCase):
 # ---------------------------------------------------------------------------
 # Merge service — integration tests
 # ---------------------------------------------------------------------------
+
+
+class CustomUserAdminAddViewTests(TestCase):
+    """The add view must never 500, including when the merge removes the new row."""
+
+    ADD_URL = "/admin/account/customuser/add/"
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser(
+            first_name="Root",
+            surname="Admin",
+            email="root-admin@example.com",
+            password="pass12345",
+        )
+        self.client.force_login(self.admin)
+
+    @staticmethod
+    def _post_data(**overrides):
+        data = {
+            "first_name": "",
+            "surname": "",
+            "email": "",
+            "password": "",
+            "phone": "",
+            "address_line": "",
+            "address_line2": "",
+            "city": "",
+            "postal_code": "",
+            "notes": "",
+            "bill_company_name": "",
+            "bill_contact_name": "",
+            "bill_address_line": "",
+            "bill_address_line2": "",
+            "bill_city": "",
+            "bill_postal_code": "",
+        }
+        data.update(overrides)
+        return data
+
+    def test_saving_user_with_no_data_shows_validation_error(self):
+        response = self.client.post(self.ADD_URL, data=self._post_data())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response, "Enter at least a first name, surname, or email address."
+        )
+        self.assertEqual(User.objects.filter(is_superuser=False).count(), 0)
+
+    def test_add_user_merged_into_existing_account_does_not_error(self):
+        User.objects.create_user(
+            first_name="Olena",
+            surname="Koval",
+            email="olena.koval@example.com",
+            password="pass12345",
+        )
+
+        response = self.client.post(
+            self.ADD_URL,
+            data=self._post_data(first_name="Olena", surname="Koval"),
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(User.objects.filter(name="Olena Koval").count(), 1)
+
+    def test_add_user_with_name_only_creates_profile(self):
+        response = self.client.post(
+            self.ADD_URL,
+            data=self._post_data(first_name="Nadia", surname="Shevchuk"),
+        )
+
+        self.assertEqual(response.status_code, 302)
+        created = User.objects.get(name="Nadia Shevchuk")
+        self.assertTrue(Profile.objects.filter(user=created).exists())
 
 
 class MergeUsersIntegrationTest(TestCase):
@@ -866,6 +1062,17 @@ class MergeUsersIntegrationTest(TestCase):
         self.assertFalse(User.objects.filter(pk=new_user.pk).exists())
         self.assertTrue(existing.is_active)
 
+    def test_nameless_users_are_not_merged(self):
+        """Two accounts with no name are unrelated and must both survive."""
+        existing = self._make_user(None)
+        new_user = User(name=None, email=None)
+        new_user.set_unusable_password()
+        new_user.save()
+
+        self.assertTrue(User.objects.filter(pk=existing.pk).exists())
+        self.assertTrue(User.objects.filter(pk=new_user.pk).exists())
+        self.assertIsNotNone(new_user.pk)
+
     # ── Safety: no IntegrityError ───────────────────────────────────────────
 
     def test_no_integrity_error_when_email_already_exists(self):
@@ -893,3 +1100,137 @@ class MergeUsersIntegrationTest(TestCase):
             merge_users(new_user)
         except RecursionError:
             self.fail("merge_users caused infinite recursion")
+
+
+class VerifyEmailIdempotentTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            name="Verify User",
+            email="verify@example.com",
+            password="testpass123",
+        )
+        self.user.is_email_verified = False
+        self.user.save(update_fields=["is_email_verified"])
+
+        # Shared Redis cache makes AnonRateThrottle flaky across test runs
+        from account import views as account_views
+
+        self._verify_cls = getattr(account_views.verify_email, "cls", None)
+        self._saved_verify_throttles = None
+        if self._verify_cls is not None:
+            self._saved_verify_throttles = self._verify_cls.throttle_classes
+            self._verify_cls.throttle_classes = []
+
+    def tearDown(self):
+        if self._verify_cls is not None and self._saved_verify_throttles is not None:
+            self._verify_cls.throttle_classes = self._saved_verify_throttles
+
+    @patch("account.views.send_email_verification_confirmation_email")
+    def test_first_verify_succeeds_and_sends_confirmation(self, mock_confirm):
+        token = EmailVerificationToken.objects.create(user=self.user)
+        response = self.client.post(
+            "/api/auth/verify-email/",
+            {"token": token.token},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["message"], "Email verified successfully")
+        self.assertIn("user", response.data)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.is_email_verified)
+        mock_confirm.assert_called_once()
+
+    @patch("account.views.send_email_verification_confirmation_email")
+    def test_reused_token_when_already_verified_returns_200(self, mock_confirm):
+        token = EmailVerificationToken.objects.create(user=self.user)
+        token.mark_as_used()
+        self.user.is_email_verified = True
+        self.user.save(update_fields=["is_email_verified"])
+
+        response = self.client.post(
+            "/api/auth/verify-email/",
+            {"token": token.token},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["message"], "Email verified successfully")
+        self.assertIn("user", response.data)
+        mock_confirm.assert_not_called()
+
+    @patch("account.views.send_email_verification_confirmation_email")
+    def test_valid_token_when_already_verified_cleans_up_without_email(
+        self, mock_confirm
+    ):
+        self.user.is_email_verified = True
+        self.user.save(update_fields=["is_email_verified"])
+        token = EmailVerificationToken.objects.create(user=self.user)
+        other = EmailVerificationToken.objects.create(user=self.user)
+
+        response = self.client.post(
+            "/api/auth/verify-email/",
+            {"token": token.token},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["message"], "Email verified successfully")
+        token.refresh_from_db()
+        other.refresh_from_db()
+        self.assertTrue(token.is_used)
+        self.assertTrue(other.is_used)
+        mock_confirm.assert_not_called()
+
+    def test_used_token_when_unverified_returns_400_with_can_resend(self):
+        token = EmailVerificationToken.objects.create(user=self.user)
+        token.mark_as_used()
+
+        response = self.client.post(
+            "/api/auth/verify-email/",
+            {"token": token.token},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["email"], self.user.email)
+        self.assertTrue(response.data["can_resend"])
+
+    def test_expired_token_when_unverified_returns_400(self):
+        token = EmailVerificationToken.objects.create(user=self.user)
+        EmailVerificationToken.objects.filter(pk=token.pk).update(
+            expires_at=timezone.now() - timezone.timedelta(hours=1)
+        )
+
+        response = self.client.post(
+            "/api/auth/verify-email/",
+            {"token": token.token},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["email"], self.user.email)
+        self.assertTrue(response.data["can_resend"])
+
+
+class DebugEmailGatingTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    @override_settings(DEBUG=False)
+    def test_debug_email_returns_404_when_not_debug(self):
+        # URL may still be registered if DEBUG was True at URLconf import;
+        # view must still refuse to probe emails outside DEBUG.
+        response = self.client.post(
+            "/api/auth/debug-email/",
+            {"email": "anyone@example.com"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_debug_email_url_only_registered_when_debug(self):
+        from django.conf import settings as django_settings
+
+        from . import urls as account_urls
+
+        names = [getattr(p, "name", None) for p in account_urls.urlpatterns]
+        if django_settings.DEBUG:
+            self.assertIn("debug_email", names)
+        else:
+            self.assertNotIn("debug_email", names)

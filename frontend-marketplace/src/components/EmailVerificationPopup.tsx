@@ -2,18 +2,22 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { httpClient } from "@/utils/httpClient";
+import { getAuthUrl, getSafeNextRedirect } from "@/utils/authHelpers";
 
 interface EmailVerificationPopupProps {
   isOpen: boolean;
   onClose: () => void;
   userEmail: string;
   userName?: string;
+  /** Optional return path; preserved on sign-in link when safe */
+  next?: string | null;
 }
 
 const EmailVerificationPopup: React.FC<EmailVerificationPopupProps> = ({
   isOpen,
   onClose,
   userEmail,
+  next,
 }) => {
   const router = useRouter();
   const [isResending, setIsResending] = useState(false);
@@ -61,8 +65,17 @@ const EmailVerificationPopup: React.FC<EmailVerificationPopupProps> = ({
   };
 
   const handleSignInClick = () => {
-    const encodedEmail = encodeURIComponent(userEmail);
-    router.push(`/auth?email=${encodedEmail}&mode=signin`);
+    const safeNext =
+      getSafeNextRedirect(next ?? null) ||
+      (typeof window !== "undefined"
+        ? getSafeNextRedirect(
+            new URLSearchParams(window.location.search).get("next")
+          )
+        : null);
+    const authUrl = getAuthUrl({ mode: "signin", next: safeNext });
+    const url = new URL(authUrl, window.location.origin);
+    url.searchParams.set("email", userEmail);
+    router.push(`${url.pathname}${url.search}`);
     onClose();
   };
 
@@ -74,9 +87,13 @@ const EmailVerificationPopup: React.FC<EmailVerificationPopupProps> = ({
     setResendSuccess(false);
 
     try {
-      await httpClient.post("/api/auth/resend-verification/", {
-        email: userEmail,
-      });
+      await httpClient.post(
+        "/api/auth/resend-verification/",
+        {
+          email: userEmail,
+        },
+        { skipAuth: true, skipCSRF: true }
+      );
 
       setResendSuccess(true);
       // Clear success message after 3 seconds

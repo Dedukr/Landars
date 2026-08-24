@@ -24,11 +24,29 @@ NAME_AND_ADDRESS_LATIN_FIELDS = (
 )
 
 
-def _validate_billing_street_when_required(form, cleaned_data):
+def _is_staff_user_form(form, cleaned_data=None):
+    """Staff change/add forms hide address fields; treat them as staff accounts."""
+    instance = getattr(form, "instance", None)
+    if instance is not None and getattr(instance, "is_staff", False):
+        return True
+    if cleaned_data is not None and cleaned_data.get("is_staff"):
+        return True
+    return False
+
+
+def _validate_billing_street_optional(form, cleaned_data):
     """
-    When not using delivery as billing, require street fields
-    (same rules as delivery: line2 optional, UK postcode).
+    Profile/account billing fields are optional. When a separate billing address
+    is entered, only validate format of provided values (Latin, UK postcode).
+    Full completeness is enforced at order placement.
     """
+    # Staff admin forms omit address/billing widgets. An unchecked checkbox is
+    # absent from POST and would otherwise become False, failing validation on
+    # fields the admin never sees.
+    if _is_staff_user_form(form, cleaned_data):
+        cleaned_data["bill_use_delivery_address"] = True
+        return cleaned_data
+
     if cleaned_data.get("bill_use_delivery_address", True):
         return cleaned_data
 
@@ -38,6 +56,7 @@ def _validate_billing_street_when_required(form, cleaned_data):
         city=cleaned_data.get("bill_city"),
         postal_code=cleaned_data.get("bill_postal_code"),
         require_line2=False,
+        require_complete=False,
     )
     field_map = {
         "address_line": "bill_address_line",
@@ -50,16 +69,14 @@ def _validate_billing_street_when_required(form, cleaned_data):
     return cleaned_data
 
 
-def _validate_delivery_street_when_required(form, cleaned_data):
+def _validate_delivery_street_optional(form, cleaned_data):
     """
-    Require delivery address line, city, and UK postal code for customer accounts.
+    Delivery address on user accounts is optional. Validate format of any
+    non-empty fields only; completeness is enforced at order placement.
 
     Staff change forms do not show these fields, so validation is skipped for staff.
     """
-    instance = getattr(form, "instance", None)
-    if instance is not None and getattr(instance, "is_staff", False):
-        return cleaned_data
-    if cleaned_data.get("is_staff"):
+    if _is_staff_user_form(form, cleaned_data):
         return cleaned_data
     if "address_line" not in getattr(form, "fields", {}):
         return cleaned_data
@@ -70,6 +87,7 @@ def _validate_delivery_street_when_required(form, cleaned_data):
         city=cleaned_data.get("city"),
         postal_code=cleaned_data.get("postal_code"),
         require_line2=False,
+        require_complete=False,
     )
     for key, message in errors.items():
         form.add_error(key, message)
@@ -144,9 +162,11 @@ class CustomUserForm(UserChangeForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        if _is_staff_user_form(self, cleaned_data):
+            cleaned_data["bill_use_delivery_address"] = True
         _validate_latin_name_and_address_fields(self)
-        _validate_delivery_street_when_required(self, cleaned_data)
-        return _validate_billing_street_when_required(self, cleaned_data)
+        _validate_delivery_street_optional(self, cleaned_data)
+        return _validate_billing_street_optional(self, cleaned_data)
 
     def save(self, commit=True):
         user = super().save(commit=False)
@@ -160,6 +180,11 @@ class CustomUserForm(UserChangeForm):
 
         if commit:
             user.save()
+
+        # Staff admin forms do not show profile/address fields; skip so missing
+        # POST values cannot wipe or invent empty profiles.
+        if user.is_staff or self.cleaned_data.get("is_staff"):
+            return user
 
         profile, _ = Profile.objects.get_or_create(user=user)
         profile.phone = self.cleaned_data.get("phone")
@@ -231,6 +256,14 @@ class CustomUserCreationForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        if not any(
+            (cleaned_data.get(field) or "").strip()
+            for field in ("first_name", "surname", "email")
+        ):
+            self.add_error(
+                None,
+                "Enter at least a first name, surname, or email address.",
+            )
         _validate_latin_name_and_address_fields(self)
-        _validate_delivery_street_when_required(self, cleaned_data)
-        return _validate_billing_street_when_required(self, cleaned_data)
+        _validate_delivery_street_optional(self, cleaned_data)
+        return _validate_billing_street_optional(self, cleaned_data)

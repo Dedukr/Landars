@@ -65,7 +65,6 @@ DISPOSABLE_EMAIL_DOMAINS = {
     "xmaily.com",
     "xoxy.net",
     "yapped.net",
-    "yeah.net",
     "yopmail.com",
     "yopmail.net",
     "yopmail.org",

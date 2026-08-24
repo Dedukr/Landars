@@ -6,11 +6,29 @@ import React, {
   useEffect,
   ReactNode,
   useCallback,
+  useRef,
 } from "react";
-import { httpClient } from "@/utils/httpClient";
+import { httpClient, refreshAuthTokens } from "@/utils/httpClient";
 import { clearCartStorage } from "@/utils/cartStorage";
 import { clearWishlistStorage } from "@/utils/wishlistStorage";
 import { formatUserDisplayName } from "@/lib/userName";
+import {
+  authTokensUnchanged,
+  createAuthGeneration,
+  hasReplacementSession,
+} from "@/utils/authSessionGuard";
+import {
+  clearAccessToken,
+  clearLegacyTokenStorage,
+  getAccessToken,
+  setAccessToken,
+} from "@/utils/authTokenStore";
+
+/** Clear token-only half-session without cart/wishlist side effects. */
+function clearHalfSessionAccess(): void {
+  clearAccessToken();
+  localStorage.removeItem("user");
+}
 
 interface User {
   id: number;
@@ -24,7 +42,8 @@ interface User {
 
 interface AuthTokens {
   access: string;
-  refresh: string;
+  /** @deprecated Refresh is httpOnly-cookie only; ignored if present. */
+  refresh?: string;
 }
 
 interface AuthContextType {
@@ -41,11 +60,15 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  const [refreshTokenValue, setRefreshTokenValue] = useState<string | null>(
-    null
-  );
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+
+  // Detects login/logout that completes while async restore/refresh is in flight
+  const authGeneration = useRef(createAuthGeneration()).current;
+  const logoutRef = useRef<() => Promise<void>>(async () => {});
+  const refreshTokenRef = useRef<() => Promise<boolean>>(async () => false);
+  const tokenRef = useRef<string | null>(null);
+
+  tokenRef.current = token;
 
   /**
    * Validates a JWT token by making a test request to the user endpoint
@@ -71,7 +94,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         const data = await response.json();
-        // Return user data with is_staff from profile response
         if (data.user) {
           return {
             id: data.user.id,
@@ -94,121 +116,203 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   /**
-   * Refreshes the JWT token using the stored refresh token
+   * Sync React auth state from the access-token store after a shared refresh.
+   * Requires a successful profile load — token-only half-sessions are cleared.
    */
-  const refreshToken = useCallback(async (): Promise<boolean> => {
-    // Prevent concurrent refresh attempts
-    if (refreshing) {
-      return false;
-    }
+  const syncAuthStateFromStore = useCallback(
+    async (generationSnapshot: number): Promise<boolean> => {
+      if (!authGeneration.isCurrent(generationSnapshot)) {
+        return true;
+      }
 
-    try {
-      setRefreshing(true);
-      const currentRefreshToken =
-        refreshTokenValue || localStorage.getItem("refreshToken");
-      if (!currentRefreshToken) {
+      const access = getAccessToken();
+      if (!access) {
         return false;
       }
 
-      const data = await httpClient.post<{ access: string; refresh?: string }>(
-        "/api/auth/token/refresh/",
-        { refresh: currentRefreshToken }
-      );
-
-      setToken(data.access);
-      localStorage.setItem("authToken", data.access);
-
-      // Update refresh token if provided (token rotation)
-      if (data.refresh) {
-        setRefreshTokenValue(data.refresh);
-        localStorage.setItem("refreshToken", data.refresh);
+      const updatedUser = await validateToken(access);
+      if (!authGeneration.isCurrent(generationSnapshot)) {
+        return true;
       }
 
-      // Fetch and update user profile with is_staff after token refresh
-      const updatedUser = await validateToken(data.access);
-      if (updatedUser) {
-        setUser(updatedUser);
-        localStorage.setItem("user", JSON.stringify(updatedUser));
+      if (!updatedUser) {
+        // Access exists but profile failed — do not leave token-only state.
+        // Do not refresh again here (avoids loops); callers handle false.
+        clearHalfSessionAccess();
+        setToken(null);
+        setUser(null);
+        return false;
       }
 
+      setToken(access);
+      setUser(updatedUser);
+      localStorage.setItem("user", JSON.stringify(updatedUser));
       return true;
+    },
+    [authGeneration, validateToken]
+  );
+
+  /**
+   * Refreshes the access JWT via httpOnly cookie (shared single-flight in httpClient).
+   */
+  const refreshToken = useCallback(async (): Promise<boolean> => {
+    const generationSnapshot = authGeneration.snapshot();
+    const accessAtStart = getAccessToken();
+
+    try {
+      const success = await refreshAuthTokens();
+
+      if (!authGeneration.isCurrent(generationSnapshot)) {
+        return true;
+      }
+
+      if (!success) {
+        if (hasReplacementSession(accessAtStart, getAccessToken)) {
+          return syncAuthStateFromStore(generationSnapshot);
+        }
+        return false;
+      }
+
+      return syncAuthStateFromStore(generationSnapshot);
     } catch (error) {
       console.error("Token refresh error:", error);
+      if (!authGeneration.isCurrent(generationSnapshot)) {
+        return true;
+      }
+      if (hasReplacementSession(accessAtStart, getAccessToken)) {
+        return syncAuthStateFromStore(generationSnapshot);
+      }
       return false;
-    } finally {
-      setRefreshing(false);
     }
-  }, [refreshTokenValue, refreshing, validateToken]);
+  }, [authGeneration, syncAuthStateFromStore]);
+
+  refreshTokenRef.current = refreshToken;
 
   /**
    * Logs out the user and clears all authentication data
    */
   const logout = useCallback(async () => {
+    authGeneration.bump();
+    const access = tokenRef.current || getAccessToken();
+
     try {
-      // Call logout endpoint if token exists
-      if (token && refreshTokenValue) {
-        await httpClient.post("/api/auth/logout/", {
-          refresh: refreshTokenValue,
-        });
-      }
+      await httpClient.post(
+        "/api/auth/logout/",
+        {},
+        { skipAuth: !access }
+      );
     } catch (error) {
       console.error("Logout error:", error);
     } finally {
       clearWishlistStorage();
       clearCartStorage();
-      localStorage.removeItem("authToken");
-      localStorage.removeItem("refreshToken");
+      clearAccessToken();
+      clearLegacyTokenStorage();
       localStorage.removeItem("user");
 
-      // Clear wishlist hearts before auth state drops (WishlistContext listens sync)
       window.dispatchEvent(new CustomEvent("user:logout"));
 
       setToken(null);
-      setRefreshTokenValue(null);
       setUser(null);
     }
-  }, [token, refreshTokenValue]);
+  }, [authGeneration]);
+
+  logoutRef.current = logout;
 
   /**
-   * Restores authentication state from localStorage on app initialization
+   * Restores auth from sessionStorage access and/or httpOnly refresh cookie.
+   * When no access token exists, probes the refresh cookie once (cookie-only sessions).
    */
   useEffect(() => {
+    let cancelled = false;
+    const restoreGeneration = authGeneration.snapshot();
+    clearLegacyTokenStorage();
+    const accessAtStart = getAccessToken();
+
     const restoreAuth = async () => {
       try {
-        const storedToken = localStorage.getItem("authToken");
-        const storedRefresh = localStorage.getItem("refreshToken");
-        const storedUser = localStorage.getItem("user");
+        const storedToken = accessAtStart;
 
-        if (storedToken && storedRefresh && storedUser) {
-          // Validate the stored token and get full user profile with is_staff
+        if (storedToken) {
           const validatedUser = await validateToken(storedToken);
 
+          if (cancelled || !authGeneration.isCurrent(restoreGeneration)) {
+            return;
+          }
+
+          if (!authTokensUnchanged(accessAtStart, getAccessToken)) {
+            if (hasReplacementSession(accessAtStart, getAccessToken)) {
+              await syncAuthStateFromStore(restoreGeneration);
+            }
+            return;
+          }
+
           if (validatedUser) {
-            // Token is valid, restore auth state with updated user data
             setToken(storedToken);
-            setRefreshTokenValue(storedRefresh);
+            setAccessToken(storedToken);
             setUser(validatedUser);
-            // Update localStorage with complete user data including is_staff
             localStorage.setItem("user", JSON.stringify(validatedUser));
           } else {
-            // Token is invalid, try to refresh
-            const refreshSuccess = await refreshToken();
-            if (!refreshSuccess) {
-              // Refresh failed, clear auth data
-              await logout();
+            const refreshSuccess = await refreshTokenRef.current();
+
+            if (
+              cancelled ||
+              !authGeneration.isCurrent(restoreGeneration) ||
+              hasReplacementSession(accessAtStart, getAccessToken)
+            ) {
+              return;
             }
+
+            if (!refreshSuccess) {
+              await logoutRef.current();
+            }
+          }
+        } else {
+          // No access in this tab — probe httpOnly refresh cookie once.
+          // Failure is expected when logged out; do not run full logout side effects.
+          const refreshSuccess = await refreshTokenRef.current();
+
+          if (
+            cancelled ||
+            !authGeneration.isCurrent(restoreGeneration) ||
+            hasReplacementSession(accessAtStart, getAccessToken)
+          ) {
+            return;
+          }
+
+          if (!refreshSuccess) {
+            localStorage.removeItem("user");
           }
         }
       } catch (error) {
         console.error("Error restoring auth:", error);
-        await logout();
+        if (
+          !cancelled &&
+          authGeneration.isCurrent(restoreGeneration) &&
+          !hasReplacementSession(accessAtStart, getAccessToken)
+        ) {
+          // Only full-logout when we started with an access token (had a session).
+          if (accessAtStart) {
+            await logoutRef.current();
+          } else {
+            localStorage.removeItem("user");
+          }
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
     restoreAuth();
-  }, [validateToken, refreshToken, logout]);
+
+    return () => {
+      cancelled = true;
+    };
+    // Mount-only: restore must not re-run when login/logout change callback identities
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /**
    * Handles automatic logout events and tab visibility changes
@@ -219,24 +323,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout();
     };
 
-    const handleBeforeUnload = () => {
-      // Optional: Save any pending state before page unload
-      // This is a good place to save cart state, etc.
-    };
-
     const handleVisibilityChange = () => {
-      // When user returns to the tab, validate token if we have one
       if (!document.hidden && token) {
+        const generationAtCheck = authGeneration.snapshot();
+        const accessAtCheck = getAccessToken();
+
         validateToken(token).then((validatedUser) => {
+          if (!authGeneration.isCurrent(generationAtCheck)) {
+            return;
+          }
+
           if (!validatedUser) {
             console.log("Token invalid on tab focus, attempting refresh...");
             refreshToken().then((refreshSuccess) => {
-              if (!refreshSuccess) {
+              if (refreshSuccess) {
+                return;
+              }
+              if (
+                authGeneration.isCurrent(generationAtCheck) &&
+                !hasReplacementSession(accessAtCheck, getAccessToken)
+              ) {
                 logout();
               }
             });
-          } else if (validatedUser) {
-            // Update user data with latest is_staff status
+          } else {
             setUser(validatedUser);
             localStorage.setItem("user", JSON.stringify(validatedUser));
           }
@@ -245,31 +355,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     window.addEventListener("auth:logout", handleAutoLogout);
-    window.addEventListener("beforeunload", handleBeforeUnload);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       window.removeEventListener("auth:logout", handleAutoLogout);
-      window.removeEventListener("beforeunload", handleBeforeUnload);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [logout, token, refreshToken, validateToken]);
+  }, [logout, token, refreshToken, validateToken, authGeneration]);
 
   /**
-   * Logs in a user with provided tokens and user data
+   * Logs in a user with provided access token and user data.
+   * Refresh is expected to already be set as an httpOnly cookie by the API.
    */
-  const login = useCallback((tokens: AuthTokens, newUser: User) => {
-    const normalized: User = {
-      ...newUser,
-      name: formatUserDisplayName(newUser),
-    };
-    setToken(tokens.access);
-    setRefreshTokenValue(tokens.refresh);
-    setUser(normalized);
-    localStorage.setItem("authToken", tokens.access);
-    localStorage.setItem("refreshToken", tokens.refresh);
-    localStorage.setItem("user", JSON.stringify(normalized));
-  }, []);
+  const login = useCallback(
+    (tokens: AuthTokens, newUser: User) => {
+      authGeneration.bump();
+      const normalized: User = {
+        ...newUser,
+        name: formatUserDisplayName(newUser),
+      };
+      setAccessToken(tokens.access);
+      setToken(tokens.access);
+      setUser(normalized);
+      localStorage.setItem("user", JSON.stringify(normalized));
+      clearLegacyTokenStorage();
+      setLoading(false);
+    },
+    [authGeneration]
+  );
 
   const contextValue: AuthContextType = {
     user,

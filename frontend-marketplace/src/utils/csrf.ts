@@ -1,5 +1,6 @@
 // CSRF token utility functions
 import { getClientApiBaseUrl } from "@/config/api";
+import { getAccessToken } from "@/utils/authTokenStore";
 
 let csrfToken: string | null = null;
 
@@ -76,9 +77,9 @@ export async function makeAuthenticatedRequest(
     headers.set("Content-Type", "application/json");
   }
 
-  // Add JWT token from localStorage if available and not already in headers
+  // Add access JWT if available and not already in headers
   if (typeof window !== "undefined" && !headers.has("Authorization")) {
-    const authToken = localStorage.getItem("authToken");
+    const authToken = getAccessToken();
     if (authToken) {
       headers.set("Authorization", `Bearer ${authToken}`);
     }

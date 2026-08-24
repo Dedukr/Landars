@@ -5,9 +5,10 @@ import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
 import { httpClient } from "@/utils/httpClient";
 import { getSafeNextRedirect } from "@/utils/authHelpers";
-import { EmailInput } from "@/components/ui/EmailInput";
+import { hasSolidAuthSession } from "@/utils/authSessionGuard";
 import EmailVerificationPopup from "@/components/EmailVerificationPopup";
 import { latinScriptError } from "@/utils/latinValidation";
+import { validateEmail } from "@/utils/emailValidation";
 
 interface AuthResponse {
   access?: string;
@@ -50,9 +51,19 @@ function AuthForm() {
   const [showEmailVerificationPopup, setShowEmailVerificationPopup] =
     useState(false);
   const [verificationEmail, setVerificationEmail] = useState("");
+  const [emailFieldError, setEmailFieldError] = useState("");
   const [resendCooldown, setResendCooldown] = useState(0);
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, user, token, loading: authLoading } = useAuth();
+
+  // Redirect only when both user + token are present (avoid half-session bounce)
+  useEffect(() => {
+    if (authLoading) return;
+    if (hasSolidAuthSession(token, user)) {
+      const next = getSafeNextRedirect(searchParams.get("next"));
+      router.replace(next || "/");
+    }
+  }, [authLoading, user, token, searchParams, router]);
 
   useEffect(() => {
     const mode = searchParams.get("mode");
@@ -163,6 +174,22 @@ function AuthForm() {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setSuccessMessage("");
+    setShowCreateAccountSuggestion(false);
+    setEmailFieldError("");
+
+    const emailResult = validateEmail(formData.email, {
+      allowDisposable: isSignUp ? false : true,
+      checkTypos: false,
+    });
+
+    if (!emailResult.isValid) {
+      const message = emailResult.error || "Enter a valid email address";
+      setEmailFieldError(message);
+      setError(message);
+      setLoading(false);
+      return;
+    }
 
     if (isSignUp) {
       // Validate passwords match
@@ -207,33 +234,41 @@ function AuthForm() {
             surname: formData.surname.trim(),
             email: formData.email,
             password: formData.password,
-          }
+          },
+          { skipAuth: true, skipCSRF: true }
         );
 
-        // Check if email verification is required
+        // Register always requires email verification (no immediate JWT)
         if (data.email_verification_required) {
-          setError(""); // Clear any previous errors
+          setError("");
           setVerificationEmail(formData.email);
           setShowEmailVerificationPopup(true);
-          setLoading(false); // Re-enable the button
-          // Don't log in yet - wait for email verification
+          setLoading(false);
           return;
         }
 
-        // Handle JWT tokens for immediate login (if verification not required)
-        if (data.access && data.refresh) {
-          login({ access: data.access, refresh: data.refresh }, data.user);
-          const next = getSafeNextRedirect(searchParams.get("next"));
-          router.push(next || "/");
-        }
+        setError("Unexpected registration response. Please try signing in.");
       } catch (error: unknown) {
-        // Display error message from server
-        const errorMessage =
-          error instanceof Error
-            ? Array.isArray(error.message)
-              ? error.message.join(", ")
-              : error.message
-            : "Registration failed";
+        // Prefer structured API payload when present (e.g. password validator list)
+        const apiData =
+          error &&
+          typeof error === "object" &&
+          "response" in error &&
+          (error as { response?: { data?: unknown } }).response?.data;
+
+        let errorMessage = "Registration failed";
+        if (apiData && typeof apiData === "object") {
+          const payload = apiData as Record<string, unknown>;
+          if (typeof payload.error === "string") {
+            errorMessage = payload.error;
+          } else if (Array.isArray(payload.error)) {
+            errorMessage = payload.error.filter((m) => typeof m === "string").join(" ");
+          } else if (error instanceof Error && error.message) {
+            errorMessage = error.message;
+          }
+        } else if (error instanceof Error && error.message) {
+          errorMessage = error.message;
+        }
 
         setError(errorMessage);
         // Registration error occurred
@@ -247,7 +282,7 @@ function AuthForm() {
             email: formData.email,
             password: formData.password,
           },
-          { skipAuth: true }
+          { skipAuth: true, skipCSRF: true }
         );
 
         // Check if email verification is required
@@ -260,11 +295,15 @@ function AuthForm() {
           return;
         }
 
-        // Handle JWT tokens for successful login
-        if (data.access && data.refresh) {
-          login({ access: data.access, refresh: data.refresh }, data.user);
+        // Access in SPA; refresh is set as httpOnly cookie by the API
+        if (data.access) {
+          login({ access: data.access }, data.user);
           const next = getSafeNextRedirect(searchParams.get("next"));
-          router.push(next || "/");
+          // replace avoids stacking /auth in history; safe next never loops to /auth
+          router.replace(next || "/");
+          return;
+        } else if (!data.email_verification_required) {
+          setError("Unexpected login response. Please try again.");
         }
       } catch (error: unknown) {
         // Enhanced error handling for login
@@ -276,8 +315,8 @@ function AuthForm() {
             error as {
               response: {
                 data?: {
-                  error?: string;
-                  detail?: string;
+                  error?: string | string[];
+                  detail?: string | string[];
                   non_field_errors?: string | string[];
                   suggestion?: string;
                 };
@@ -288,19 +327,20 @@ function AuthForm() {
 
           if (response && response.data) {
             const data = response.data;
-
-            // Handle different error response formats
-            if (data.error) {
-              errorMessage = data.error;
-            } else if (data.detail) {
-              errorMessage = data.detail;
-            } else if (data.non_field_errors) {
-              if (Array.isArray(data.non_field_errors)) {
-                errorMessage = data.non_field_errors.join(", ");
-              } else {
-                errorMessage = data.non_field_errors;
+            const asText = (value: unknown): string | null => {
+              if (typeof value === "string" && value.trim()) return value;
+              if (Array.isArray(value)) {
+                const parts = value.filter((v): v is string => typeof v === "string");
+                return parts.length ? parts.join(" ") : null;
               }
-            }
+              return null;
+            };
+
+            errorMessage =
+              asText(data.error) ||
+              asText(data.detail) ||
+              asText(data.non_field_errors) ||
+              errorMessage;
 
             // Check if backend suggests creating an account
             if (data.suggestion === "create_account") {
@@ -353,7 +393,7 @@ function AuthForm() {
         {
           email: forgotPasswordEmail.trim(),
         },
-        { skipAuth: true }
+        { skipAuth: true, skipCSRF: true }
       );
 
       if (response.message) {
@@ -452,12 +492,26 @@ function AuthForm() {
     });
     setError("");
     setSuccessMessage("");
+    setEmailFieldError("");
     // Update URL to reflect the new mode, preserve next if present
     const nextParam = searchParams.get("next");
     const next = nextParam ? `&next=${encodeURIComponent(nextParam)}` : "";
     const newUrl = newMode ? `/auth?mode=signup${next}` : `/auth?mode=signin${next}`;
     router.replace(newUrl);
   };
+
+  // Wait for auth bootstrap; solid session keeps spinner while redirecting
+  if (authLoading || hasSolidAuthSession(token, user)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center auth-container">
+        <div
+          className="animate-spin rounded-full h-10 w-10 border-b-2"
+          style={{ borderColor: "var(--btn-primary)" }}
+          aria-label="Loading"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 auth-container">
@@ -497,7 +551,7 @@ function AuthForm() {
             </button>
           </p>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+        <form className="mt-8 space-y-6" onSubmit={handleSubmit} noValidate>
           <div className="space-y-4">
             {isSignUp && (
               <>
@@ -546,43 +600,44 @@ function AuthForm() {
             <div>
               <label
                 htmlFor="email"
-                className="block text-sm font-medium mb-2"
+                className="block text-sm font-medium"
                 style={{ color: "var(--foreground)" }}
               >
                 Email Address
               </label>
-              {isSignUp ? (
-                <EmailInput
-                  id="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={(email) => {
-                    setFormData((prev) => ({ ...prev, email }));
-                    // You can also track validation state if needed
-                  }}
-                  placeholder="Email address"
-                  required
-                  showSuggestions={false}
-                  validationOptions={{
-                    allowDisposable: false,
-                    checkTypos: true,
-                    validateOnChange: true,
-                    validateOnBlur: true,
-                  }}
-                  className="auth-input"
-                />
-              ) : (
-                <input
-                  id="email"
-                  name="email"
-                  type="text"
-                  value={formData.email}
-                  onChange={handleChange}
-                  placeholder="Email address"
-                  required
-                  className="mt-1 appearance-none relative block w-full px-3 py-2 border rounded-md focus:outline-none focus:z-10 sm:text-sm auth-input"
-                />
-              )}
+              <input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                value={formData.email}
+                onChange={(e) => {
+                  handleChange(e);
+                  if (emailFieldError) setEmailFieldError("");
+                }}
+                placeholder="Email address"
+                required
+                className="mt-1 appearance-none relative block w-full px-3 py-2 border rounded-md focus:outline-none focus:z-10 sm:text-sm auth-input"
+                style={
+                  emailFieldError
+                    ? { borderColor: "var(--destructive)" }
+                    : undefined
+                }
+                aria-invalid={Boolean(emailFieldError)}
+                aria-describedby={
+                  emailFieldError ? "email-error" : undefined
+                }
+              />
+              {emailFieldError ? (
+                <p
+                  id="email-error"
+                  role="alert"
+                  className="mt-2 text-sm"
+                  style={{ color: "var(--destructive)" }}
+                >
+                  {emailFieldError}
+                </p>
+              ) : null}
             </div>
             <div>
               <label
@@ -602,7 +657,7 @@ function AuthForm() {
                   className="mt-1 appearance-none relative block w-full px-3 py-2 border rounded-md focus:outline-none focus:z-10 sm:text-sm auth-input"
                   placeholder={
                     isSignUp
-                      ? "Password (min 8 characters, letters and numbers)"
+                      ? "Password (8+ chars, letter + number, not common)"
                       : "Password"
                   }
                   value={formData.password}
@@ -773,10 +828,14 @@ function AuthForm() {
                 <div>
                   No account found with this email address. Would you like to{" "}
                   <button
+                    type="button"
                     onClick={() => {
                       setIsSignUp(true);
                       setError("");
                       setShowCreateAccountSuggestion(false);
+                      const url = new URL(window.location.href);
+                      url.searchParams.set("mode", "signup");
+                      window.history.replaceState({}, "", url.toString());
                     }}
                     className="text-sm font-medium underline transition-all duration-200 hover:opacity-80 hover:scale-105 hover:shadow-sm cursor-pointer"
                     style={{
@@ -819,6 +878,7 @@ function AuthForm() {
               {successMessage.includes("verify your email") && (
                 <div className="mt-2">
                   <button
+                    type="button"
                     onClick={async () => {
                       if (resendCooldown > 0) return;
 
@@ -827,7 +887,8 @@ function AuthForm() {
                           "/api/auth/resend-verification/",
                           {
                             email: formData.email,
-                          }
+                          },
+                          { skipAuth: true, skipCSRF: true }
                         );
                         setSuccessMessage(
                           "Verification email sent! Please check your inbox."
@@ -1268,6 +1329,7 @@ function AuthForm() {
           onClose={() => setShowEmailVerificationPopup(false)}
           userEmail={verificationEmail}
           userName={`${formData.first_name} ${formData.surname}`.trim()}
+          next={searchParams.get("next")}
         />
       </div>
     </div>

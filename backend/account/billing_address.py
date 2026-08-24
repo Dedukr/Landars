@@ -41,7 +41,11 @@ def billing_payload_from_request(data: dict) -> dict[str, str | None]:
     }
 
 
-def validate_billing_street(fields: dict[str, str | None]) -> dict[str, str]:
+def validate_billing_street(
+    fields: dict[str, str | None],
+    *,
+    require_complete: bool = True,
+) -> dict[str, str]:
     """Same rules as delivery address (line2 optional, UK postcode)."""
     errors = validate_street_address(
         address_line=fields.get("address_line"),
@@ -49,6 +53,7 @@ def validate_billing_street(fields: dict[str, str | None]) -> dict[str, str]:
         city=fields.get("city"),
         postal_code=fields.get("postal_code"),
         require_line2=False,
+        require_complete=require_complete,
     )
     # Map to bill_* keys for API/form compatibility.
     return {f"bill_{key}" if not key.startswith("bill_") else key: msg for key, msg in errors.items()}

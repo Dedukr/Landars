@@ -57,7 +57,6 @@ const DISPOSABLE_EMAIL_DOMAINS = [
   "xmaily.com",
   "xoxy.net",
   "yapped.net",
-  "yeah.net",
   "yopmail.com",
   "yopmail.net",
   "yopmail.org",
@@ -140,7 +139,7 @@ export function validateEmail(
   if (!trimmedEmail.includes("@")) {
     return {
       isValid: false,
-      error: "Email address must contain an @ symbol",
+      error: "Enter a valid email address",
     };
   }
 
@@ -149,7 +148,7 @@ export function validateEmail(
   if (atCount > 1) {
     return {
       isValid: false,
-      error: "Email address can only contain one @ symbol",
+      error: "Enter a valid email address",
     };
   }
 
@@ -160,7 +159,7 @@ export function validateEmail(
   if (!localPart || localPart.length === 0) {
     return {
       isValid: false,
-      error: "Email address must have a local part before @",
+      error: "Enter a valid email address",
     };
   }
 
@@ -176,7 +175,7 @@ export function validateEmail(
   if (!domain || domain.length === 0) {
     return {
       isValid: false,
-      error: "Email address must have a domain after @",
+      error: "Enter a valid email address",
     };
   }
 
@@ -192,7 +191,7 @@ export function validateEmail(
   if (trimmedEmail.includes("..")) {
     return {
       isValid: false,
-      error: "Email address cannot contain consecutive dots",
+      error: "Enter a valid email address",
     };
   }
 
@@ -200,7 +199,7 @@ export function validateEmail(
   if (localPart.startsWith(".") || localPart.endsWith(".")) {
     return {
       isValid: false,
-      error: "Email address cannot start or end with a dot",
+      error: "Enter a valid email address",
     };
   }
 
@@ -208,7 +207,15 @@ export function validateEmail(
   if (domain.startsWith(".") || domain.endsWith(".")) {
     return {
       isValid: false,
-      error: "Domain cannot start or end with a dot",
+      error: "Enter a valid email address",
+    };
+  }
+
+  // Domain should include a TLD (at least one dot), e.g. example.com
+  if (!domain.includes(".")) {
+    return {
+      isValid: false,
+      error: "Enter a valid email address",
     };
   }
 
@@ -216,7 +223,7 @@ export function validateEmail(
   if (!EMAIL_REGEX.test(trimmedEmail)) {
     return {
       isValid: false,
-      error: "Email address format is invalid",
+      error: "Enter a valid email address",
     };
   }
 

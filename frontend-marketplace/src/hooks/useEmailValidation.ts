@@ -24,6 +24,8 @@ export interface UseEmailValidationReturn {
   isTouched: boolean;
   reset: () => void;
   handleBlur: () => void;
+  /** Mark field touched and validate immediately (e.g. on form submit). */
+  showErrors: () => EmailValidationResult;
 }
 
 /**
@@ -46,18 +48,39 @@ export function useEmailValidation(
   const [isDirty, setIsDirty] = useState(false);
   const [isTouched, setIsTouched] = useState(false);
 
+  // Sync controlled value from parent
+  useEffect(() => {
+    if (initialEmail !== email) {
+      setEmailState(initialEmail);
+    }
+    // Only sync when the controlled prop changes, not when local email edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialEmail]);
+
+  // Stabilize options so inline objects from parents don't recreate the debouncer
+  const allowDisposable = validationOptions.allowDisposable;
+  const checkTypos = validationOptions.checkTypos;
+  const maxLength = validationOptions.maxLength;
+  const minLength = validationOptions.minLength;
+
   // Create debounced validator using ref to avoid recreation
   const debouncedValidatorRef = useRef<((email: string) => void) | null>(null);
 
   useEffect(() => {
+    const options: EmailValidationOptions = {
+      allowDisposable,
+      checkTypos,
+      maxLength,
+      minLength,
+    };
     debouncedValidatorRef.current = createDebouncedEmailValidator(
       (result) => {
         setValidationResult(result);
       },
       debounceMs,
-      validationOptions
+      options
     );
-  }, [debounceMs, validationOptions]);
+  }, [debounceMs, allowDisposable, checkTypos, maxLength, minLength]);
 
   const debouncedValidator = useCallback((emailToValidate: string) => {
     if (debouncedValidatorRef.current) {
@@ -68,11 +91,16 @@ export function useEmailValidation(
   // Immediate validation function
   const validateImmediately = useCallback(
     (emailToValidate: string) => {
-      const result = validateEmail(emailToValidate, validationOptions);
+      const result = validateEmail(emailToValidate, {
+        allowDisposable,
+        checkTypos,
+        maxLength,
+        minLength,
+      });
       setValidationResult(result);
       return result;
     },
-    [validationOptions]
+    [allowDisposable, checkTypos, maxLength, minLength]
   );
 
   // Set email with validation
@@ -100,6 +128,12 @@ export function useEmailValidation(
     }
   }, [validateOnBlur, validateImmediately, email]);
 
+  const showErrors = useCallback(() => {
+    setIsDirty(true);
+    setIsTouched(true);
+    return validateImmediately(email);
+  }, [validateImmediately, email]);
+
   // Reset function
   const reset = useCallback(() => {
     setEmailState(initialEmail);
@@ -126,6 +160,7 @@ export function useEmailValidation(
     isTouched,
     reset,
     handleBlur,
+    showErrors,
   };
 }
 

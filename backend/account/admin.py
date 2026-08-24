@@ -1,5 +1,5 @@
 from api.models import Order
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.auth.admin import GroupAdmin, UserAdmin
 from django.contrib.auth.models import Group
 from django.urls import reverse
@@ -89,13 +89,16 @@ class CustomUserAdmin(UserAdmin):
         "email",
         "is_active",
         "is_staff",
+        "created_at",
     )
     list_filter = (
         "is_staff",
         "is_active",
+        "created_at",
     )
     ordering = ("email",)
     search_fields = ("first_name", "surname", "name", "email", "profile__phone")
+    readonly_fields = ("last_login", "created_at")
 
     class Media:
         js = ("admin/js/prevent_double_submit.js",)
@@ -185,7 +188,7 @@ class CustomUserAdmin(UserAdmin):
                         )
                     },
                 ),
-                ("Important fields", {"fields": ("last_login", "is_active")}),
+                ("Important fields", {"fields": ("last_login", "created_at", "is_active")}),
             ]
         if request.user.has_perm("account.change_customuser"):
             permission_fields = ["is_active", "is_staff", "groups"]
@@ -195,7 +198,7 @@ class CustomUserAdmin(UserAdmin):
                 permission_fields.append("user_permissions")
             fieldsets = fieldsets + [
                 (_("Permissions"), {"fields": tuple(permission_fields)}),
-                (_("Important dates"), {"fields": ("last_login",)}),
+                (_("Important dates"), {"fields": ("last_login", "created_at")}),
             ]
         return fieldsets
 
@@ -261,6 +264,15 @@ class CustomUserAdmin(UserAdmin):
         # Save the user first
         super().save_model(request, obj, form, change)
 
+        # The user-merge signal can merge this new row into an existing account
+        # and delete it, which clears the pk. There is no profile to attach.
+        if obj.pk is None:
+            messages.warning(
+                request,
+                "This user matched an existing account and was merged into it.",
+            )
+            return
+
         # Handle Profile and Address creation
         if not change:  # Only create Profile and Address for new users
             if not obj.is_staff:
@@ -317,6 +329,18 @@ class CustomUserAdmin(UserAdmin):
                     )
 
                 profile.save()
+
+    def save_related(self, request, form, formsets, change):
+        # When the merge signal deleted the freshly created user, assigning
+        # m2m values (groups/permissions) to the missing row would fail.
+        if form.instance.pk is None:
+            return
+        super().save_related(request, form, formsets, change)
+
+    def log_addition(self, request, obj, message):
+        if obj.pk is None:
+            return None
+        return super().log_addition(request, obj, message)
 
     def response_add(self, request, obj, post_url_continue=None):
         """

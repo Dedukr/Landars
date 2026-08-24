@@ -1,8 +1,9 @@
-import React, { forwardRef } from "react";
+import React, { forwardRef, useImperativeHandle } from "react";
 import {
   useEmailValidation,
   UseEmailValidationOptions,
 } from "@/hooks/useEmailValidation";
+import type { EmailValidationResult } from "@/utils/emailValidation";
 
 export interface EmailInputProps
   extends Omit<
@@ -24,9 +25,16 @@ export interface EmailInputProps
   errorClassName?: string;
   warningClassName?: string;
   successClassName?: string;
+  /** Force showing validation messages (e.g. after submit attempt). */
+  forceShowErrors?: boolean;
 }
 
-export const EmailInput = forwardRef<HTMLInputElement, EmailInputProps>(
+export type EmailInputHandle = {
+  showErrors: () => EmailValidationResult;
+  isValid: boolean;
+};
+
+export const EmailInput = forwardRef<EmailInputHandle, EmailInputProps>(
   (
     {
       value = "",
@@ -43,14 +51,13 @@ export const EmailInput = forwardRef<HTMLInputElement, EmailInputProps>(
       required = false,
       disabled = false,
       className = "",
+      forceShowErrors = false,
       onBlur: propOnBlur,
       onFocus: propOnFocus,
       ...restProps
     },
     ref
   ) => {
-    // const [showPassword, setShowPassword] = useState(false);
-
     const {
       email,
       setEmail,
@@ -61,13 +68,26 @@ export const EmailInput = forwardRef<HTMLInputElement, EmailInputProps>(
       isDirty,
       isTouched,
       handleBlur,
+      showErrors,
     } = useEmailValidation(value, validationOptions);
 
-    // Handle email change
+    useImperativeHandle(
+      ref,
+      () => ({
+        showErrors,
+        isValid,
+      }),
+      [showErrors, isValid]
+    );
+
+    const showFeedback = forceShowErrors || (isDirty && isTouched);
+
+    // Handle email change — validate immediately for the onChange isValid flag
     const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const newEmail = e.target.value;
       setEmail(newEmail);
-      onChange?.(newEmail, isValid);
+      // Parent should not rely on stale isValid; validation updates async via onValidationChange
+      onChange?.(newEmail, false);
     };
 
     // Handle blur
@@ -84,7 +104,7 @@ export const EmailInput = forwardRef<HTMLInputElement, EmailInputProps>(
     // Determine input state classes
     const getInputStateClasses = () => {
       if (disabled) return "";
-      if (isDirty && isTouched) {
+      if (showFeedback) {
         if (isValid && !error) return successClassName;
         if (error) return errorClassName;
         if (warning) return warningClassName;
@@ -95,7 +115,7 @@ export const EmailInput = forwardRef<HTMLInputElement, EmailInputProps>(
     // Determine border color
     const getBorderColor = () => {
       if (disabled) return "var(--sidebar-border)";
-      if (isDirty && isTouched) {
+      if (showFeedback) {
         if (isValid && !error) return "var(--success)";
         if (error) return "var(--destructive)";
         if (warning) return "var(--warning)";
@@ -108,19 +128,14 @@ export const EmailInput = forwardRef<HTMLInputElement, EmailInputProps>(
         {/* Email Input */}
         <div className="relative">
           <input
-            ref={ref}
             type="email"
             value={email}
-            onChange={(e) => {
-              handleEmailChange(e);
-            }}
-            onBlur={(e) => {
-              handleInputBlur(e);
-              propOnBlur?.(e);
-            }}
+            onChange={handleEmailChange}
+            onBlur={handleInputBlur}
             placeholder={placeholder}
             required={required}
             disabled={disabled}
+            autoComplete="email"
             className={`w-full px-4 py-3 rounded-lg border focus:outline-none focus:ring-2 transition-colors ${getInputStateClasses()} ${className}`}
             style={{
               backgroundColor: "var(--background)",
@@ -136,7 +151,7 @@ export const EmailInput = forwardRef<HTMLInputElement, EmailInputProps>(
           />
 
           {/* Status Icons */}
-          {isDirty && isTouched && (
+          {showFeedback && (
             <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
               {error && showErrorIcon && (
                 <svg
@@ -145,6 +160,7 @@ export const EmailInput = forwardRef<HTMLInputElement, EmailInputProps>(
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
+                  aria-hidden
                 >
                   <path
                     strokeLinecap="round"
@@ -161,6 +177,7 @@ export const EmailInput = forwardRef<HTMLInputElement, EmailInputProps>(
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
+                  aria-hidden
                 >
                   <path
                     strokeLinecap="round"
@@ -177,6 +194,7 @@ export const EmailInput = forwardRef<HTMLInputElement, EmailInputProps>(
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
+                  aria-hidden
                 >
                   <path
                     strokeLinecap="round"
@@ -191,8 +209,9 @@ export const EmailInput = forwardRef<HTMLInputElement, EmailInputProps>(
         </div>
 
         {/* Error Message */}
-        {error && isDirty && isTouched && (
+        {error && showFeedback && (
           <div
+            role="alert"
             className={`text-sm p-3 rounded-lg border ${errorClassName}`}
             style={{
               color: "var(--destructive)",
@@ -207,6 +226,7 @@ export const EmailInput = forwardRef<HTMLInputElement, EmailInputProps>(
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
+                aria-hidden
               >
                 <path
                   strokeLinecap="round"
@@ -221,7 +241,7 @@ export const EmailInput = forwardRef<HTMLInputElement, EmailInputProps>(
         )}
 
         {/* Warning Message */}
-        {warning && !error && isDirty && isTouched && (
+        {warning && !error && showFeedback && (
           <div
             className={`text-sm p-3 rounded-lg border ${warningClassName}`}
             style={{
@@ -237,6 +257,7 @@ export const EmailInput = forwardRef<HTMLInputElement, EmailInputProps>(
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
+                aria-hidden
               >
                 <path
                   strokeLinecap="round"
@@ -251,7 +272,7 @@ export const EmailInput = forwardRef<HTMLInputElement, EmailInputProps>(
         )}
 
         {/* Suggestions */}
-        {showSuggestions && suggestions.length > 0 && isDirty && isTouched && (
+        {showSuggestions && suggestions.length > 0 && showFeedback && (
           <div className="space-y-2">
             <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>
               Did you mean:

@@ -4,6 +4,7 @@ Stripe payment processing views
 
 import json
 import logging
+from decimal import Decimal
 
 import stripe
 from django.conf import settings
@@ -18,6 +19,9 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from api.checkout_security import money_to_pence
+from api.models import Cart
+
 logger = logging.getLogger(__name__)
 
 # Configure Stripe
@@ -28,28 +32,42 @@ stripe.api_key = settings.STRIPE_SECRET_KEY
 @permission_classes([IsAuthenticated])
 def create_payment_intent(request):
     """
-    Create a Stripe Payment Intent for the order
+    Create a Stripe Payment Intent for the authenticated user's current cart.
+
+    Amount is computed server-side from the cart (never from the client body).
     """
     try:
-        data = request.data
-        amount = data.get("amount")  # Amount in cents
-        currency = data.get("currency", "gbp")
-        metadata = data.get("metadata", {})
-
-        # Validate amount
-        if not amount or amount <= 0:
+        try:
+            cart = Cart.objects.prefetch_related("items__product").get(
+                user=request.user
+            )
+        except Cart.DoesNotExist:
             return Response(
-                {"error": "Invalid amount"}, status=status.HTTP_400_BAD_REQUEST
+                {"error": "Cart not found"}, status=status.HTTP_404_NOT_FOUND
             )
 
-        # Create payment intent
+        if not cart.items.exists():
+            return Response(
+                {"error": "Cart is empty"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        total = Decimal(str(cart.total_price or 0))
+        amount_pence = money_to_pence(total)
+        if amount_pence <= 0:
+            return Response(
+                {"error": "Invalid cart total"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        currency = "gbp"
+        # Ignore client amount/currency; only allow opaque metadata keys we control.
         payment_intent = stripe.PaymentIntent.create(
-            amount=amount,
+            amount=amount_pence,
             currency=currency,
             metadata={
                 "user_id": str(request.user.id),
-                "user_email": request.user.email,
-                **metadata,
+                "user_email": request.user.email or "",
+                "cart_id": str(cart.id),
+                "expected_amount_pence": str(amount_pence),
             },
             automatic_payment_methods={
                 "enabled": True,
@@ -57,13 +75,18 @@ def create_payment_intent(request):
         )
 
         logger.info(
-            f"Payment intent created: {payment_intent.id} for user: {request.user.email}"
+            "Payment intent created: %s for user=%s amount_pence=%s",
+            payment_intent.id,
+            request.user.email,
+            amount_pence,
         )
 
         return Response(
             {
                 "client_secret": payment_intent.client_secret,
                 "payment_intent_id": payment_intent.id,
+                "amount": amount_pence,
+                "currency": currency,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -193,10 +216,15 @@ def stripe_webhook(request):
 @permission_classes([IsAuthenticated])
 def get_payment_intent_status(request, payment_intent_id):
     """
-    Get the status of a payment intent
+    Get the status of a payment intent owned by the current user.
     """
     try:
         payment_intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+        metadata = getattr(payment_intent, "metadata", None) or {}
+        if str(metadata.get("user_id") or "") != str(request.user.id):
+            return Response(
+                {"error": "Payment not found"}, status=status.HTTP_404_NOT_FOUND
+            )
 
         return Response(
             {
