@@ -26,6 +26,11 @@ logger = logging.getLogger(__name__)
 MAX_STALE_CLAIM_REQUEUES = 5
 # Skip rewriting last_seen_at on idle polls more often than this.
 PRINTER_LAST_SEEN_MIN_INTERVAL = timedelta(seconds=20)
+# After GET, CloudPRNT treats the job as in progress until DELETE. Star still
+# polls during that window, and printingInProgress is optional. Requeueing on
+# the next idle poll makes the printer GET the same ticket again and fills its
+# ~10-job buffer until CloudPRNT stops. Wait this long with no DELETE first.
+FETCHED_JOB_IDLE_REQUEUE_SECONDS = 90
 
 
 class CloudPRNTAuthError(Exception):
@@ -113,6 +118,19 @@ def printer_is_operational(status_code: str) -> bool:
     if numeric in (220, 221):
         return False
     return 200 <= numeric < 300
+
+
+def printer_held_job_for_offline_error(status_code: str) -> bool:
+    """
+    True for cover-open / paper-out / similar 4xx states.
+
+    Star keeps the jobToken and does not DELETE. After the printer is online
+    again it will only retry when the next poll returns jobReady: true.
+    """
+    numeric = parse_status_numeric(status_code)
+    if numeric is None:
+        return False
+    return 400 <= numeric < 500
 
 
 def get_active_printer_for_mac(mac_raw: str) -> FestivalPrinter:
@@ -364,6 +382,24 @@ def _requeue_claimed_job(job: FestivalPrintJob, note: str) -> None:
     )
 
 
+def _job_ready_response(job: FestivalPrintJob) -> dict:
+    from festival.services.cputil import advertised_media_types
+
+    return {
+        "jobReady": True,
+        "mediaTypes": advertised_media_types(job.media_type),
+        "jobToken": str(job.job_token),
+        "deleteMethod": "DELETE",
+    }
+
+
+def _fetched_job_idle_too_long(job: FestivalPrintJob) -> bool:
+    if not job.fetched_at:
+        return False
+    age = (timezone.now() - job.fetched_at).total_seconds()
+    return age >= FETCHED_JOB_IDLE_REQUEUE_SECONDS
+
+
 @transaction.atomic
 def handle_poll(payload: dict, *, mac_override: str | None = None) -> dict:
     mac_raw = mac_override or payload.get("printerMAC") or ""
@@ -400,43 +436,62 @@ def handle_poll(payload: dict, *, mac_override: str | None = None) -> dict:
         .first()
     )
 
-    from festival.services.cputil import advertised_media_types
-
     if claimed:
-        if client_token and str(client_token) == str(claimed.job_token):
-            printer.current_job_token = claimed.job_token
-            _persist_printer(printer, before)
-            return {
-                "jobReady": True,
-                "mediaTypes": advertised_media_types(claimed.media_type),
-                "jobToken": str(claimed.job_token),
-                "deleteMethod": "DELETE",
-            }
+        same_token = bool(client_token) and str(client_token) == str(claimed.job_token)
+        fetched = claimed.fetched_at is not None
+        printer_busy = printing_in_progress or not printer_is_operational(status_code)
 
-        # Lost DELETE or crash after fetch: requeue rather than infer PRINTED
-        # (prefer a possible duplicate ticket over a silent kitchen miss).
-        if not client_token and not printing_in_progress and claimed.fetched_at:
-            _requeue_claimed_job(
-                claimed,
-                "Lost DELETE / idle after fetch: requeued to READY "
-                "(printingInProgress=false, no jobToken).",
-            )
-            printer.current_job_token = None
-            claimed = None
-        elif not client_token and not printing_in_progress and not claimed.fetched_at:
-            # Re-advertise the unfetched claimed job (lost jobReady response).
-            printer.current_job_token = claimed.job_token
-            _persist_printer(printer, before)
-            return {
-                "jobReady": True,
-                "mediaTypes": advertised_media_types(claimed.media_type),
-                "jobToken": str(claimed.job_token),
-                "deleteMethod": "DELETE",
-            }
-        else:
+        # Star keeps polling during print. jobReady:true makes the client GET
+        # again and can fill the ~10-job buffer until CloudPRNT stops.
+        if printer_busy:
             printer.current_job_token = claimed.job_token
             _persist_printer(printer, before)
             return {"jobReady": False}
+
+        if not fetched:
+            # Download not finished — (re)advertise so the printer can GET.
+            # Also covers a lost jobReady response (no client token yet).
+            if same_token or not client_token:
+                printer.current_job_token = claimed.job_token
+                _persist_printer(printer, before)
+                return _job_ready_response(claimed)
+            printer.current_job_token = claimed.job_token
+            _persist_printer(printer, before)
+            return {"jobReady": False}
+
+        # Cover open / paper empty: Star holds jobToken and skips DELETE.
+        # When it returns to 200 it only retries after jobReady: true.
+        previous_code = str(before.get("last_status_code") or "")
+        if (
+            same_token
+            and printer_held_job_for_offline_error(previous_code)
+            and printer_is_operational(status_code)
+            and not printing_in_progress
+        ):
+            printer.current_job_token = claimed.job_token
+            _persist_printer(printer, before)
+            logger.info(
+                "Re-offering festival print job %s after printer recovered from %s",
+                claimed.job_token,
+                previous_code,
+            )
+            return _job_ready_response(claimed)
+
+        # Fetched: spec says print is in progress until DELETE.
+        # printingInProgress is optional, so do not treat an idle poll as a
+        # lost DELETE until the job has been sitting fetched for a while.
+        if same_token or not _fetched_job_idle_too_long(claimed):
+            printer.current_job_token = claimed.job_token
+            _persist_printer(printer, before)
+            return {"jobReady": False}
+
+        _requeue_claimed_job(
+            claimed,
+            "Lost DELETE / idle after fetch: requeued to READY "
+            f"(no jobToken for {FETCHED_JOB_IDLE_REQUEUE_SECONDS}s after GET).",
+        )
+        printer.current_job_token = None
+        claimed = None
 
     if client_token and not claimed:
         # Printer still reporting a token we already finished — idle response.
@@ -491,20 +546,15 @@ def handle_poll(payload: dict, *, mac_override: str | None = None) -> dict:
         job.job_type,
         job.order_id,
     )
-    return {
-        "jobReady": True,
-        "mediaTypes": advertised_media_types(job.media_type),
-        "jobToken": str(job.job_token),
-        "deleteMethod": "DELETE",
-    }
+    return _job_ready_response(job)
 
 
-@transaction.atomic
 def handle_job_get(*, mac: str, media_type: str, token: str) -> tuple[bytes, str]:
     """
     Return ``(payload_bytes, content_type)`` for the claimed job.
 
     Markup jobs are converted with CPUtil to the printer-requested type.
+    Conversion runs outside the row lock so polls/DELETEs are not blocked.
     """
     from festival.services.cputil import (
         ALLOWED_OUTPUT_TYPES,
@@ -515,7 +565,6 @@ def handle_job_get(*, mac: str, media_type: str, token: str) -> tuple[bytes, str
     )
     from festival.services.tickets import encode_print_payload
 
-    printer = get_active_printer_for_mac(mac)
     if media_type not in ALLOWED_OUTPUT_TYPES:
         raise CloudPRNTError("Unsupported media type.", status=415)
     try:
@@ -523,35 +572,42 @@ def handle_job_get(*, mac: str, media_type: str, token: str) -> tuple[bytes, str
     except ValueError as exc:
         raise CloudPRNTError("Unknown job token.", status=404) from exc
 
-    try:
-        job = FestivalPrintJob.objects.select_for_update().get(
-            job_token=token_uuid, printer=printer
-        )
-    except FestivalPrintJob.DoesNotExist as exc:
-        raise CloudPRNTError("Unknown job token.", status=404) from exc
+    with transaction.atomic():
+        printer = get_active_printer_for_mac(mac)
+        try:
+            job = FestivalPrintJob.objects.select_for_update().get(
+                job_token=token_uuid, printer=printer
+            )
+        except FestivalPrintJob.DoesNotExist as exc:
+            raise CloudPRNTError("Unknown job token.", status=404) from exc
 
-    if job.status == FestivalPrintJob.Status.CANCELLED:
-        # Order cancel or superseded retry — let the printer finish the protocol.
-        printer.last_seen_at = timezone.now()
-        if printer.current_job_token == job.job_token:
-            printer.current_job_token = None
-        printer.save(update_fields=["last_seen_at", "current_job_token", "updated_at"])
-        return b"", media_type or PLAIN_MEDIA_TYPE
+        if job.status == FestivalPrintJob.Status.CANCELLED:
+            # Order cancel or superseded retry — let the printer finish the protocol.
+            printer.last_seen_at = timezone.now()
+            if printer.current_job_token == job.job_token:
+                printer.current_job_token = None
+            printer.save(
+                update_fields=["last_seen_at", "current_job_token", "updated_at"]
+            )
+            return b"", media_type or PLAIN_MEDIA_TYPE
 
-    if job.status != FestivalPrintJob.Status.CLAIMED:
-        raise CloudPRNTError("Job is not available for download.", status=409)
+        if job.status != FestivalPrintJob.Status.CLAIMED:
+            raise CloudPRNTError("Job is not available for download.", status=409)
 
-    if payload_sha256(job.payload_text) != job.payload_checksum:
-        raise CloudPRNTError("Payload checksum mismatch.", status=500)
+        if payload_sha256(job.payload_text) != job.payload_checksum:
+            raise CloudPRNTError("Payload checksum mismatch.", status=500)
 
-    source_type = job.media_type or PLAIN_MEDIA_TYPE
+        payload_text = job.payload_text
+        source_type = job.media_type or PLAIN_MEDIA_TYPE
+        job_token = job.job_token
+
     if source_type == MARKUP_MEDIA_TYPE:
         try:
-            payload = convert_markup(job.payload_text, media_type)
+            payload = convert_markup(payload_text, media_type)
         except CPUtilError as exc:
             logger.error(
                 "CPUtil convert failed for job %s type=%s: %s",
-                job.job_token,
+                job_token,
                 media_type,
                 exc,
             )
@@ -561,14 +617,25 @@ def handle_job_get(*, mac: str, media_type: str, token: str) -> tuple[bytes, str
     else:
         if media_type != PLAIN_MEDIA_TYPE:
             raise CloudPRNTError("Unsupported media type.", status=415)
-        payload = encode_print_payload(job.payload_text)
+        payload = encode_print_payload(payload_text)
 
-    job.fetched_at = timezone.now()
-    job.attempt_count += 1
-    job.save(update_fields=["fetched_at", "attempt_count", "updated_at"])
-    printer.last_seen_at = timezone.now()
-    printer.current_job_token = job.job_token
-    printer.save(update_fields=["last_seen_at", "current_job_token", "updated_at"])
+    with transaction.atomic():
+        printer = get_active_printer_for_mac(mac)
+        try:
+            job = FestivalPrintJob.objects.select_for_update().get(
+                job_token=token_uuid, printer=printer
+            )
+        except FestivalPrintJob.DoesNotExist:
+            return payload, media_type
+        if job.status == FestivalPrintJob.Status.CLAIMED:
+            job.fetched_at = timezone.now()
+            job.attempt_count += 1
+            job.save(update_fields=["fetched_at", "attempt_count", "updated_at"])
+            printer.current_job_token = job.job_token
+        printer.last_seen_at = timezone.now()
+        printer.save(
+            update_fields=["last_seen_at", "current_job_token", "updated_at"]
+        )
     return payload, media_type
 
 
@@ -815,6 +882,26 @@ def oldest_queued_seconds(printer: FestivalPrinter | None = None) -> int | None:
     return max(0, int((timezone.now() - oldest).total_seconds()))
 
 
+def printer_attention_message(
+    printer: FestivalPrinter | None, *, queued: int
+) -> str:
+    """Staff-facing reason when printing cannot proceed."""
+    if printer is None:
+        return "No festival printer is configured."
+    if printer.is_online:
+        return ""
+    code = parse_status_numeric(printer.last_status_code)
+    text = (printer.last_status_text or "").strip()
+    waiting = f" {queued} ticket(s) waiting." if queued else ""
+    if code == 420:
+        return f"Close the printer cover — printing is paused.{waiting}"
+    if code in (410, 411, 412):
+        return f"Printer is out of paper — load a new roll.{waiting}"
+    if text:
+        return f"Printer error ({text}).{waiting}".strip()
+    return f"Printer unreachable — check power and network.{waiting}".strip()
+
+
 def printer_status_payload() -> dict:
     enabled = bool(getattr(settings, "FESTIVAL_ENABLED", False))
     mode = getattr(settings, "FESTIVAL_PRINT_MODE", "disabled")
@@ -846,6 +933,9 @@ def printer_status_payload() -> dict:
         "can_accept_orders": can_accept,
         "status_code": printer.last_status_code if printer else "",
         "status_text": printer.last_status_text if printer else "",
+        "attention": printer_attention_message(printer, queued=queued)
+        if mode == "cloudprnt"
+        else "",
     }
 
 

@@ -4,6 +4,7 @@ import json
 import logging
 
 from django.conf import settings
+from django.db.utils import OperationalError
 from django.http import HttpResponse
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
@@ -79,7 +80,11 @@ class FestivalStatusView(APIView):
                 "online": payload["online"],
                 "last_seen_at": payload["last_seen_at"],
                 "queued_jobs": payload["queued_jobs"],
+                "oldest_queued_seconds": payload["oldest_queued_seconds"],
                 "can_accept_orders": payload["can_accept_orders"],
+                "status_code": payload["status_code"],
+                "status_text": payload["status_text"],
+                "attention": payload["attention"],
             }
         )
 
@@ -202,6 +207,13 @@ class FestivalCloudPRNTView(APIView):
             return HttpResponse(
                 str(exc), status=exc.status, content_type="text/plain; charset=utf-8"
             )
+        except OperationalError:
+            logger.warning("CloudPRNT GET hit a database lock; printer will retry")
+            return HttpResponse(
+                "Temporarily unavailable.",
+                status=503,
+                content_type="text/plain; charset=utf-8",
+            )
         # Markup jobs → StarPRNT (or passthrough markup / CP437 plain fallback).
         # Plain jobs → CP437 text/plain for the printer std code page.
         return HttpResponse(payload, content_type=content_type)
@@ -220,6 +232,9 @@ class FestivalCloudPRNTView(APIView):
             body = handle_poll(payload, mac_override=mac)
         except CloudPRNTError as exc:
             return Response({"detail": str(exc)}, status=exc.status)
+        except OperationalError:
+            logger.warning("CloudPRNT poll hit a database lock; printer will retry")
+            return Response({"jobReady": False}, status=200)
         return Response(body, status=200)
 
     def delete(self, request):
@@ -232,4 +247,7 @@ class FestivalCloudPRNTView(APIView):
             handle_job_delete(mac=mac, token=token, code=code, retry=retry)
         except CloudPRNTError as exc:
             return HttpResponse(status=exc.status)
+        except OperationalError:
+            logger.warning("CloudPRNT DELETE hit a database lock; printer will retry")
+            return HttpResponse(status=503)
         return HttpResponse(status=200)

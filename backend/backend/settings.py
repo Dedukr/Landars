@@ -562,8 +562,10 @@ FESTIVAL_PRINTER_REQUIRED = os.getenv("FESTIVAL_PRINTER_REQUIRED", "true").lower
     "true",
     "yes",
 )
+# Default true so a printer outage does not freeze the till mid-event.
+# Tickets queue and print when the printer returns.
 FESTIVAL_ALLOW_ORDERS_WHEN_PRINTER_OFFLINE = os.getenv(
-    "FESTIVAL_ALLOW_ORDERS_WHEN_PRINTER_OFFLINE", "false"
+    "FESTIVAL_ALLOW_ORDERS_WHEN_PRINTER_OFFLINE", "true"
 ).lower() in ("1", "true", "yes")
 FESTIVAL_PRINTER_STALE_SECONDS = int(os.getenv("FESTIVAL_PRINTER_STALE_SECONDS", "60"))
 # After order placement, wait this long then alert if tickets are still unprinted.

@@ -819,11 +819,11 @@ class PrintRecoveryTests(TestCase):
         self.assertIn("Ticket print FAILED", text)
         self.assertIn("Varenyky", text)
 
-    def test_lost_delete_requeues_not_inferred_printed(self):
-        self._place_order()
-        token = self._poll()["jobToken"]
+    def test_idle_poll_after_fetch_does_not_requeue(self):
         from festival.services.cloudprnt import handle_job_get
 
+        self._place_order()
+        token = self._poll()["jobToken"]
         handle_job_get(
             mac="001C62000000", media_type="text/plain", token=token
         )
@@ -831,15 +831,147 @@ class PrintRecoveryTests(TestCase):
         self.assertEqual(job.status, FestivalPrintJob.Status.CLAIMED)
         self.assertIsNotNone(job.fetched_at)
 
-        # Idle poll without jobToken after fetch → requeue (not PRINTED), then re-offer.
+        # Star polls during print, often without printingInProgress. Requeueing
+        # here would make it GET the same ticket again and fill the buffer.
+        result = self._poll()
+        job.refresh_from_db()
+        self.assertFalse(result["jobReady"])
+        self.assertEqual(job.status, FestivalPrintJob.Status.CLAIMED)
+        self.assertEqual(job.stale_requeue_count, 0)
+        self.assertEqual(job.completion_source, "")
+
+    def test_poll_during_print_does_not_reoffer_fetched_job(self):
+        from festival.services.cloudprnt import handle_job_get
+
+        self._place_order()
+        token = self._poll()["jobToken"]
+        handle_job_get(
+            mac="001C62000000", media_type="text/plain", token=token
+        )
+        result = handle_poll(
+            {
+                "printerMAC": "00:1C:62:00:00:00",
+                "statusCode": "220%20Printing%20In%20Progress",
+                "jobToken": token,
+                "printingInProgress": True,
+            }
+        )
+        self.assertFalse(result["jobReady"])
+        job = FestivalPrintJob.objects.get(job_token=token)
+        self.assertEqual(job.status, FestivalPrintJob.Status.CLAIMED)
+        self.assertEqual(job.stale_requeue_count, 0)
+
+    def test_cover_open_then_closed_reoffers_same_job(self):
+        from festival.services.cloudprnt import handle_job_get
+
+        self._place_order()
+        token = self._poll()["jobToken"]
+        handle_job_get(
+            mac="001C62000000", media_type="text/plain", token=token
+        )
+        closed = handle_poll(
+            {
+                "printerMAC": "00:1C:62:00:00:00",
+                "statusCode": "420%20Cover%20Open",
+                "jobToken": token,
+                "printingInProgress": False,
+            }
+        )
+        self.assertFalse(closed["jobReady"])
+        resumed = handle_poll(
+            {
+                "printerMAC": "00:1C:62:00:00:00",
+                "statusCode": "200%20OK",
+                "jobToken": token,
+                "printingInProgress": False,
+            }
+        )
+        self.assertTrue(resumed["jobReady"])
+        self.assertEqual(resumed["jobToken"], token)
+        job = FestivalPrintJob.objects.get(job_token=token)
+        self.assertEqual(job.status, FestivalPrintJob.Status.CLAIMED)
+
+    def test_busy_then_idle_does_not_reoffer_fetched_job(self):
+        from festival.services.cloudprnt import handle_job_get
+
+        self._place_order()
+        token = self._poll()["jobToken"]
+        handle_job_get(
+            mac="001C62000000", media_type="text/plain", token=token
+        )
+        handle_poll(
+            {
+                "printerMAC": "00:1C:62:00:00:00",
+                "statusCode": "220%20Printing%20In%20Progress",
+                "jobToken": token,
+                "printingInProgress": True,
+            }
+        )
+        result = handle_poll(
+            {
+                "printerMAC": "00:1C:62:00:00:00",
+                "statusCode": "200%20OK",
+                "jobToken": token,
+                "printingInProgress": False,
+            }
+        )
+        self.assertFalse(result["jobReady"])
+
+    def test_cover_open_attention_on_status_payload(self):
+        from festival.services.cloudprnt import printer_status_payload
+
+        self.printer.last_status_code = "420"
+        self.printer.last_status_text = "Cover Open"
+        self.printer.last_seen_at = timezone.now()
+        self.printer.save(
+            update_fields=["last_status_code", "last_status_text", "last_seen_at"]
+        )
+        payload = printer_status_payload()
+        self.assertFalse(payload["online"])
+        self.assertIn("cover", payload["attention"].lower())
+
+    def test_lost_delete_requeues_after_grace_period(self):
+        from festival.services.cloudprnt import (
+            FETCHED_JOB_IDLE_REQUEUE_SECONDS,
+            handle_job_get,
+        )
+
+        self._place_order()
+        token = self._poll()["jobToken"]
+        handle_job_get(
+            mac="001C62000000", media_type="text/plain", token=token
+        )
+        job = FestivalPrintJob.objects.get(job_token=token)
+        FestivalPrintJob.objects.filter(pk=job.pk).update(
+            fetched_at=timezone.now()
+            - timedelta(seconds=FETCHED_JOB_IDLE_REQUEUE_SECONDS + 1)
+        )
+
         result = self._poll()
         job.refresh_from_db()
         self.assertNotEqual(job.status, FestivalPrintJob.Status.PRINTED)
-        self.assertEqual(job.completion_source, "")
         self.assertGreaterEqual(job.stale_requeue_count, 1)
         self.assertTrue(result["jobReady"])
         self.assertEqual(result["jobToken"], str(job.job_token))
         self.assertEqual(job.status, FestivalPrintJob.Status.CLAIMED)
+
+    def test_printing_status_keeps_till_online(self):
+        from festival.services.cloudprnt import printer_status_payload
+
+        self.printer.last_status_code = "220"
+        self.printer.last_status_text = "Printing In Progress"
+        self.printer.last_seen_at = timezone.now()
+        self.printer.save(update_fields=["last_status_code", "last_status_text", "last_seen_at"])
+        self.assertTrue(self.printer.is_online)
+        payload = printer_status_payload()
+        self.assertTrue(payload["online"])
+        self.assertTrue(payload["can_accept_orders"])
+
+        self.printer.last_status_code = "221"
+        self.printer.last_status_text = "Output Paper Present"
+        self.printer.save(update_fields=["last_status_code", "last_status_text"])
+        self.printer.refresh_from_db()
+        self.assertTrue(self.printer.is_online)
 
     def test_get_fetches_do_not_exhaust_stale_requeue_budget(self):
         from festival.services.cloudprnt import handle_job_get

@@ -564,14 +564,16 @@ class FestivalPrinter(models.Model):
         if age > stale:
             return False
         code = (self.last_status_code or "").strip()
-        # Online for operational 2xx; paper-low (211) still printable.
+        # 2xx means the printer is reachable. 211 paper-low is still printable.
+        # 220/221 are busy (printing / paper at exit), not offline — the till
+        # must keep taking orders while a ticket is coming out.
         if not code:
             return True
         try:
             numeric = int(code.split()[0])
         except (ValueError, IndexError):
             return False
-        return 200 <= numeric < 300 and numeric not in (220, 221)
+        return 200 <= numeric < 300
 
 
 class FestivalPrintBatch(models.Model):

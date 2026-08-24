@@ -504,6 +504,33 @@ describe("FestivalTillPage", () => {
     ).toBeDisabled();
   });
 
+  it("shows cover-open attention while still taking orders", async () => {
+    fetchStatus.mockResolvedValue({
+      enabled: true,
+      mode: "cloudprnt",
+      online: false,
+      last_seen_at: new Date().toISOString(),
+      queued_jobs: 4,
+      oldest_queued_seconds: 120,
+      can_accept_orders: true,
+      status_code: "420",
+      status_text: "Cover Open",
+      attention:
+        "Close the printer cover — printing is paused. 4 ticket(s) waiting.",
+    });
+    render(<FestivalTillPage />);
+    expect(
+      await screen.findByText(/Keep taking orders — tickets print when it is fixed/i)
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(/Close the printer cover/i).length).toBeGreaterThan(
+      0
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Order Kvas" }));
+    expect(
+      screen.getByRole("button", { name: /Place order/i })
+    ).toBeEnabled();
+  });
+
   it("shows oldest queue age when tickets are waiting", async () => {
     fetchStatus.mockResolvedValue({
       enabled: true,

@@ -94,7 +94,9 @@ function PrinterBadge({ status }: { status: FestivalStatus | null }) {
   } else if (status.mode === "disabled") {
     label = "Print mode off (dev)";
   } else if (!status.online) {
-    label = "Printer offline";
+    label = status.attention?.trim()
+      ? status.attention
+      : "Printer offline";
   } else if (delayed) {
     const age =
       status.oldest_queued_seconds != null
@@ -653,7 +655,18 @@ export default function FestivalTillPage() {
             style={{ color: "var(--destructive)" }}
             role="status"
           >
-            Printer offline — orders paused
+            {status?.attention?.trim()
+              ? `${status.attention} Orders paused.`
+              : "Printer offline — orders paused"}
+          </p>
+        ) : status?.attention && status.queued_jobs > 0 ? (
+          <p
+            className="mb-4 text-sm font-medium"
+            style={{ color: "#b45309" }}
+            role="status"
+          >
+            {status.attention} Keep taking orders — tickets print when it is
+            fixed.
           </p>
         ) : !status?.enabled ? (
           <p

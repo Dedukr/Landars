@@ -33,6 +33,9 @@ export type FestivalStatus = {
   queued_jobs: number;
   oldest_queued_seconds: number | null;
   can_accept_orders: boolean;
+  status_code?: string;
+  status_text?: string;
+  attention?: string;
 };
 
 export type FestivalOrderResponse = {
