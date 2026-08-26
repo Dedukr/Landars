@@ -35,6 +35,7 @@ from festival.services.cloudprnt import (
     handle_poll,
     printer_status_payload,
     server_settings_http_only,
+    unstick_festival_printer,
 )
 from festival.services.orders import FestivalOrderError, place_festival_order
 
@@ -87,8 +88,29 @@ class FestivalStatusView(APIView):
                 "status_code": payload["status_code"],
                 "status_text": payload["status_text"],
                 "attention": payload["attention"],
+                "pending_tickets": payload["pending_tickets"],
+                "pending_ticket_total": payload["pending_ticket_total"],
             }
         )
+
+
+class FestivalPrinterUnstickView(APIView):
+    """Requeue stuck CLAIMED jobs so the printer can pick them up again."""
+
+    authentication_classes = [JWTAuthentication, SessionAuthentication]
+    permission_classes = [IsFestivalStaff]
+
+    def post(self, request):
+        if not getattr(settings, "FESTIVAL_ENABLED", False):
+            return Response(
+                {"detail": "Festival ordering is disabled."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        try:
+            payload = unstick_festival_printer()
+        except CloudPRNTError as exc:
+            return Response({"detail": str(exc)}, status=exc.status)
+        return Response(payload)
 
 
 class FestivalOrdersView(APIView):

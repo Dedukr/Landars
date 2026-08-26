@@ -18,13 +18,18 @@ import {
   fetchFestivalStatus,
   formatFestivalMoney,
   placeFestivalOrder,
+  unstickFestivalPrinter,
   type FestivalFilling,
+  type FestivalPendingTicket,
   type FestivalProduct,
   type FestivalStatus,
 } from "@/lib/festivalApi";
 import { getAuthUrl } from "@/utils/authHelpers";
 
 const MAX_QTY = 99;
+const KITCHEN_FALLBACK_AGE_SECONDS = 45;
+const STATUS_POLL_MS = 15000;
+const STATUS_POLL_PROBLEM_MS = 5000;
 
 type ProductGroup = {
   key: string;
@@ -123,6 +128,125 @@ function PrinterBadge({ status }: { status: FestivalStatus | null }) {
   );
 }
 
+function pendingTickets(status: FestivalStatus | null): FestivalPendingTicket[] {
+  return status?.pending_tickets ?? [];
+}
+
+function printerHasProblem(status: FestivalStatus | null): boolean {
+  if (!status || status.mode !== "cloudprnt") return false;
+  if (status.attention) return true;
+  if (!status.online && status.queued_jobs > 0) return true;
+  return (status.oldest_queued_seconds ?? 0) >= KITCHEN_FALLBACK_AGE_SECONDS;
+}
+
+function shouldShowKitchenBoard(status: FestivalStatus | null): boolean {
+  return printerHasProblem(status) && pendingTickets(status).length > 0;
+}
+
+function PrinterSafetyCover({
+  status,
+  printerBlocks,
+  unsticking,
+  onUnstick,
+}: {
+  status: FestivalStatus;
+  printerBlocks: boolean;
+  unsticking: boolean;
+  onUnstick: () => void;
+}) {
+  const tickets = pendingTickets(status);
+  const showBoard = shouldShowKitchenBoard(status);
+  const total = status.pending_ticket_total ?? tickets.length;
+  const more = Math.max(0, total - tickets.length);
+  const attention = status.attention?.trim() ?? "";
+  const tone = printerBlocks ? "var(--destructive)" : "#b45309";
+  const background = printerBlocks ? "#fef2f2" : "#fffbeb";
+  const border = printerBlocks ? "#fecaca" : "#fcd34d";
+
+  let headline: string;
+  if (printerBlocks) {
+    headline = attention
+      ? `${attention} Orders paused.`
+      : "Printer offline — orders paused";
+  } else if (attention) {
+    headline = `${attention} Keep taking orders — tickets print when it is fixed.`;
+  } else {
+    headline =
+      "Tickets are waiting on the printer. Keep taking orders — cook from the list if paper has stopped.";
+  }
+
+  return (
+    <div
+      className="mb-4 rounded-2xl px-4 py-4"
+      style={{ background, border: `1px solid ${border}`, color: tone }}
+      role="alert"
+    >
+      <p className="text-sm font-semibold">{headline}</p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          disabled={unsticking}
+          onClick={onUnstick}
+        >
+          {unsticking ? "Retrying…" : "Retry printing"}
+        </Button>
+        <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>
+          Close the cover or load paper first if that is the problem.
+        </p>
+      </div>
+      {showBoard ? (
+        <div className="mt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide mb-2">
+            Kitchen tickets on screen
+          </p>
+          <ul className="space-y-2 max-h-[min(40dvh,22rem)] overflow-y-auto">
+            {tickets.map((ticket) => (
+              <li
+                key={`${ticket.order_id}-${ticket.job_type}`}
+                className="rounded-xl px-3 py-2"
+                style={{
+                  background: "rgba(255,255,255,0.7)",
+                  color: "var(--foreground)",
+                }}
+              >
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="text-2xl font-black tracking-tight">
+                    #{ticket.order_number}
+                    {ticket.job_type === "KITCHEN_CANCELLATION" ? (
+                      <span className="ml-2 text-sm font-semibold text-red-700">
+                        VOID
+                      </span>
+                    ) : null}
+                  </p>
+                  <p
+                    className="text-xs font-medium"
+                    style={{ color: "var(--muted-foreground)" }}
+                  >
+                    waiting {formatQueueAge(ticket.waiting_seconds)}
+                  </p>
+                </div>
+                <ul className="mt-1 text-sm font-medium">
+                  {ticket.items.map((item, index) => (
+                    <li key={`${ticket.order_id}-${index}`}>
+                      {item.quantity}× {item.name}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+          {more > 0 ? (
+            <p className="mt-2 text-xs font-medium">
+              And {more} more kitchen ticket{more === 1 ? "" : "s"} waiting.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function groupProductsByCategory(products: FestivalProduct[]): ProductGroup[] {
   const groups = new Map<string, ProductGroup>();
   const uncategorised: FestivalProduct[] = [];
@@ -164,6 +288,7 @@ export default function FestivalTillPage() {
   const [status, setStatus] = useState<FestivalStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [unsticking, setUnsticking] = useState(false);
   const [brokenImages, setBrokenImages] = useState<Record<number, boolean>>({});
   const [clientRequestId, setClientRequestId] = useState(() =>
     crypto.randomUUID()
@@ -176,6 +301,7 @@ export default function FestivalTillPage() {
   const cartListRef = useRef<HTMLUListElement | null>(null);
   const cartPanelRef = useRef<HTMLDivElement | null>(null);
   const lastCartFocusKeyRef = useRef<string | null>(null);
+  const lastAttentionRef = useRef("");
 
   const scrollCartToKey = useCallback((key: string) => {
     const list = cartListRef.current;
@@ -243,13 +369,28 @@ export default function FestivalTillPage() {
     }
     if (!canUse) return;
     void load();
+  }, [authLoading, user, canUse, load, router]);
+
+  const statusProblem = printerHasProblem(status);
+
+  useEffect(() => {
+    if (authLoading || !user || !canUse) return;
+    const ms = statusProblem ? STATUS_POLL_PROBLEM_MS : STATUS_POLL_MS;
     const timer = window.setInterval(() => {
       fetchFestivalStatus()
         .then(setStatus)
         .catch(() => undefined);
-    }, 15000);
+    }, ms);
     return () => window.clearInterval(timer);
-  }, [authLoading, user, canUse, load, router]);
+  }, [authLoading, user, canUse, statusProblem]);
+
+  useEffect(() => {
+    const message = status?.attention?.trim() ?? "";
+    if (message && message !== lastAttentionRef.current) {
+      toast.error(message);
+    }
+    lastAttentionRef.current = message;
+  }, [status?.attention]);
 
   useEffect(() => {
     if (!scrollToCartKey) return;
@@ -302,6 +443,31 @@ export default function FestivalTillPage() {
     status?.mode === "cloudprnt" &&
     !status.can_accept_orders &&
     status.enabled;
+
+  const handleUnstick = useCallback(async () => {
+    setUnsticking(true);
+    try {
+      const result = await unstickFestivalPrinter();
+      setStatus(result);
+      if (result.requeued > 0) {
+        toast.success(
+          `Requeued ${result.requeued} stuck ticket${
+            result.requeued === 1 ? "" : "s"
+          }.`
+        );
+      } else {
+        toast.success(
+          "Print queue reset. Close the cover or load paper if it is still open."
+        );
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not retry printing.";
+      toast.error(message);
+    } finally {
+      setUnsticking(false);
+    }
+  }, []);
 
   const selectedAddition = useMemo(() => {
     if (!activeProduct || selectedAdditionId == null) return null;
@@ -649,25 +815,13 @@ export default function FestivalTillPage() {
           <PrinterBadge status={status} />
         </div>
 
-        {printerBlocks ? (
-          <p
-            className="mb-4 text-sm font-medium"
-            style={{ color: "var(--destructive)" }}
-            role="status"
-          >
-            {status?.attention?.trim()
-              ? `${status.attention} Orders paused.`
-              : "Printer offline — orders paused"}
-          </p>
-        ) : status?.attention && status.queued_jobs > 0 ? (
-          <p
-            className="mb-4 text-sm font-medium"
-            style={{ color: "#b45309" }}
-            role="status"
-          >
-            {status.attention} Keep taking orders — tickets print when it is
-            fixed.
-          </p>
+        {status && (printerBlocks || statusProblem) ? (
+          <PrinterSafetyCover
+            status={status}
+            printerBlocks={printerBlocks}
+            unsticking={unsticking}
+            onUnstick={() => void handleUnstick()}
+          />
         ) : !status?.enabled ? (
           <p
             className="mb-4 text-sm"

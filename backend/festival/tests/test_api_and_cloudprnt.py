@@ -955,6 +955,82 @@ class PrintRecoveryTests(TestCase):
         self.assertFalse(payload["online"])
         self.assertIn("cover", payload["attention"].lower())
 
+    def test_status_lists_pending_kitchen_tickets(self):
+        from festival.services.cloudprnt import printer_status_payload
+
+        order = self._place_order()
+        self.printer.last_status_code = "420"
+        self.printer.last_status_text = "Cover Open"
+        self.printer.last_seen_at = timezone.now()
+        self.printer.save(
+            update_fields=["last_status_code", "last_status_text", "last_seen_at"]
+        )
+        payload = printer_status_payload()
+        self.assertEqual(payload["pending_ticket_total"], 1)
+        self.assertEqual(len(payload["pending_tickets"]), 1)
+        ticket = payload["pending_tickets"][0]
+        self.assertEqual(ticket["order_id"], order.pk)
+        self.assertEqual(ticket["order_number"], str(order.order_number))
+        self.assertEqual(ticket["job_type"], FestivalPrintJob.JobType.KITCHEN)
+        self.assertEqual(ticket["items"][0]["name"], "Varenyky")
+        self.assertEqual(ticket["items"][0]["quantity"], 1)
+
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        resp = client.get("/api/festival/status/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(resp.data["pending_tickets"]), 1)
+        self.assertEqual(resp.data["pending_ticket_total"], 1)
+
+    def test_unstick_requeues_claimed_job_and_clears_token(self):
+        from festival.services.cloudprnt import handle_job_get, unstick_festival_printer
+
+        self._place_order()
+        token = self._poll()["jobToken"]
+        handle_job_get(
+            mac="001C62000000", media_type="text/plain", token=token
+        )
+        job = FestivalPrintJob.objects.get(job_token=token)
+        self.assertEqual(job.status, FestivalPrintJob.Status.CLAIMED)
+        self.printer.refresh_from_db()
+        self.assertEqual(self.printer.current_job_token, job.job_token)
+
+        result = unstick_festival_printer()
+        self.assertEqual(result["requeued"], 1)
+        job.refresh_from_db()
+        self.assertEqual(job.status, FestivalPrintJob.Status.READY)
+        self.assertIsNone(job.claimed_at)
+        self.assertIn("Manual unstick", job.audit_note)
+        self.printer.refresh_from_db()
+        self.assertIsNone(self.printer.current_job_token)
+        self.assertEqual(
+            FestivalPrintJob.objects.filter(
+                status=FestivalPrintJob.Status.CLAIMED
+            ).count(),
+            0,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        token = self._poll()["jobToken"]
+        handle_job_get(
+            mac="001C62000000", media_type="text/plain", token=token
+        )
+        resp = client.post("/api/festival/printer/unstick/", {}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertGreaterEqual(resp.data["requeued"], 1)
+        self.assertEqual(
+            FestivalPrintJob.objects.filter(
+                status=FestivalPrintJob.Status.CLAIMED
+            ).count(),
+            0,
+        )
+
+    def test_unstick_rejects_anonymous(self):
+        client = APIClient()
+        resp = client.post("/api/festival/printer/unstick/", {}, format="json")
+        self.assertIn(resp.status_code, (401, 403))
+
     def test_lost_delete_requeues_after_grace_period(self):
         from festival.services.cloudprnt import (
             FETCHED_JOB_IDLE_REQUEUE_SECONDS,

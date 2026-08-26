@@ -31,6 +31,12 @@ PRINTER_LAST_SEEN_MIN_INTERVAL = timedelta(seconds=20)
 # the next idle poll makes the printer GET the same ticket again and fills its
 # ~10-job buffer until CloudPRNT stops. Wait this long with no DELETE first.
 FETCHED_JOB_IDLE_REQUEUE_SECONDS = 90
+# Oldest kitchen tickets shown on the till when paper stops.
+PENDING_TICKET_BOARD_LIMIT = 20
+_KITCHEN_BOARD_JOB_TYPES = (
+    FestivalPrintJob.JobType.KITCHEN,
+    FestivalPrintJob.JobType.KITCHEN_CANCELLATION,
+)
 
 
 class CloudPRNTAuthError(Exception):
@@ -882,6 +888,99 @@ def oldest_queued_seconds(printer: FestivalPrinter | None = None) -> int | None:
     return max(0, int((timezone.now() - oldest).total_seconds()))
 
 
+def pending_kitchen_tickets(printer: FestivalPrinter | None) -> tuple[list[dict], int]:
+    """Unprinted kitchen tickets for the till fallback board.
+
+    Returns ``(tickets, total_kitchen_pending)``. The list is oldest-first and
+    capped so a long stall does not blow up the status payload.
+    """
+    if printer is None:
+        return [], 0
+    pending = FestivalPrintJob.objects.filter(
+        printer=printer,
+        job_type__in=_KITCHEN_BOARD_JOB_TYPES,
+        status__in=[
+            FestivalPrintJob.Status.READY,
+            FestivalPrintJob.Status.CLAIMED,
+        ],
+        order_id__isnull=False,
+    )
+    total = pending.count()
+    jobs = list(
+        pending.select_related("order")
+        .prefetch_related("order__items")
+        .order_by("created_at", "pk")[:PENDING_TICKET_BOARD_LIMIT]
+    )
+    now = timezone.now()
+    tickets: list[dict] = []
+    for job in jobs:
+        order = job.order
+        if order is None:
+            continue
+        tickets.append(
+            {
+                "order_id": order.pk,
+                "order_number": str(order.order_number),
+                "job_type": job.job_type,
+                "status": job.status,
+                "waiting_seconds": max(
+                    0, int((now - job.created_at).total_seconds())
+                ),
+                "items": [
+                    {
+                        "quantity": item.quantity,
+                        "name": item.display_name,
+                    }
+                    for item in order.items.all()
+                ],
+            }
+        )
+    return tickets, total
+
+
+def unstick_festival_printer() -> dict:
+    """Staff kick: requeue CLAIMED jobs and drop the held CloudPRNT token.
+
+    Celery stale recovery waits 3–10 minutes. If the printer jammed or the
+    cover stayed open, till staff can unblock the queue without Django admin.
+    Closing the cover / loading paper is still required before 4xx printers
+    will print again.
+    """
+    printer = get_active_printer()
+    if printer is None:
+        raise CloudPRNTError("No active festival printer.", status=404)
+
+    requeued = 0
+    with transaction.atomic():
+        locked = (
+            FestivalPrinter.objects.select_for_update()
+            .filter(pk=printer.pk)
+            .first()
+        )
+        if locked is None:
+            raise CloudPRNTError("No active festival printer.", status=404)
+        claimed = list(
+            FestivalPrintJob.objects.select_for_update()
+            .filter(printer=locked, status=FestivalPrintJob.Status.CLAIMED)
+            .order_by("created_at", "pk")
+        )
+        for job in claimed:
+            _requeue_claimed_job(job, "Manual unstick from till.")
+            requeued += 1
+        if locked.current_job_token is not None:
+            locked.current_job_token = None
+            locked.save(update_fields=["current_job_token", "updated_at"])
+
+    logger.warning(
+        "Festival printer unstick: requeued=%s printer=%s",
+        requeued,
+        printer.pk,
+    )
+    payload = printer_status_payload()
+    payload["requeued"] = requeued
+    return payload
+
+
 def printer_attention_message(
     printer: FestivalPrinter | None, *, queued: int
 ) -> str:
@@ -919,6 +1018,10 @@ def printer_status_payload() -> dict:
     elif mode == "disabled":
         can_accept = enabled
 
+    tickets, kitchen_pending = (
+        pending_kitchen_tickets(printer) if mode == "cloudprnt" else ([], 0)
+    )
+
     return {
         "enabled": enabled,
         "mode": mode,
@@ -936,6 +1039,8 @@ def printer_status_payload() -> dict:
         "attention": printer_attention_message(printer, queued=queued)
         if mode == "cloudprnt"
         else "",
+        "pending_tickets": tickets,
+        "pending_ticket_total": kitchen_pending,
     }
 
 

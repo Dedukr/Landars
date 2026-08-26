@@ -62,7 +62,43 @@ async function stubFestivalApis(page: Page, opts?: { offline?: boolean }) {
         online: !opts?.offline,
         last_seen_at: null,
         queued_jobs: opts?.offline ? 3 : 0,
+        oldest_queued_seconds: opts?.offline ? 90 : null,
         can_accept_orders: !opts?.offline,
+        attention: opts?.offline
+          ? "Printer unreachable — check power and network. 3 ticket(s) waiting."
+          : "",
+        pending_tickets: opts?.offline
+          ? [
+              {
+                order_id: 15,
+                order_number: "15",
+                job_type: "KITCHEN",
+                status: "READY",
+                waiting_seconds: 90,
+                items: [{ quantity: 1, name: "Varenyky" }],
+              },
+            ]
+          : [],
+        pending_ticket_total: opts?.offline ? 1 : 0,
+      }),
+    });
+  });
+
+  await page.route("**/api/festival/printer/unstick/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        enabled: true,
+        mode: "cloudprnt",
+        online: true,
+        last_seen_at: new Date().toISOString(),
+        queued_jobs: 0,
+        oldest_queued_seconds: null,
+        can_accept_orders: true,
+        requeued: 1,
+        pending_tickets: [],
+        pending_ticket_total: 0,
       }),
     });
   });
@@ -190,9 +226,12 @@ test.describe("@festival Till", () => {
     await seedAuth(page);
     await stubFestivalApis(page, { offline: true });
     await page.goto("/festival", { waitUntil: "domcontentloaded" });
-    await expect(page.getByText(/Printer offline/i)).toBeVisible({
+    await expect(page.getByText(/Printer unreachable/i)).toBeVisible({
       timeout: 15_000,
     });
+    await expect(page.getByText(/Orders paused/i)).toBeVisible();
+    await expect(page.getByText("#15")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Retry printing/i })).toBeVisible();
     await page.getByLabel("Increase Varenyky").click();
     await expect(
       page.getByRole("button", { name: /Place order/i })

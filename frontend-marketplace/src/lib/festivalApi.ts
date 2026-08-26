@@ -25,6 +25,20 @@ export type FestivalProduct = {
   vat_rate: string;
 };
 
+export type FestivalPendingTicketItem = {
+  quantity: number;
+  name: string;
+};
+
+export type FestivalPendingTicket = {
+  order_id: number;
+  order_number: string;
+  job_type: string;
+  status: string;
+  waiting_seconds: number;
+  items: FestivalPendingTicketItem[];
+};
+
 export type FestivalStatus = {
   enabled: boolean;
   mode: string;
@@ -36,6 +50,12 @@ export type FestivalStatus = {
   status_code?: string;
   status_text?: string;
   attention?: string;
+  pending_tickets?: FestivalPendingTicket[];
+  pending_ticket_total?: number;
+};
+
+export type FestivalPrinterUnstickResponse = FestivalStatus & {
+  requeued: number;
 };
 
 export type FestivalOrderResponse = {
@@ -65,6 +85,13 @@ export async function fetchFestivalProducts(): Promise<FestivalProduct[]> {
 
 export async function fetchFestivalStatus(): Promise<FestivalStatus> {
   return httpClient.get<FestivalStatus>("/api/festival/status/");
+}
+
+export async function unstickFestivalPrinter(): Promise<FestivalPrinterUnstickResponse> {
+  return httpClient.post<FestivalPrinterUnstickResponse>(
+    "/api/festival/printer/unstick/",
+    {}
+  );
 }
 
 export async function placeFestivalOrder(payload: {

@@ -114,11 +114,13 @@ const products = [
 const fetchProducts = jest.fn();
 const fetchStatus = jest.fn();
 const placeOrder = jest.fn();
+const unstickPrinter = jest.fn();
 
 jest.mock("@/lib/festivalApi", () => ({
   fetchFestivalProducts: (...args: unknown[]) => fetchProducts(...args),
   fetchFestivalStatus: (...args: unknown[]) => fetchStatus(...args),
   placeFestivalOrder: (...args: unknown[]) => placeOrder(...args),
+  unstickFestivalPrinter: (...args: unknown[]) => unstickPrinter(...args),
   formatFestivalMoney: (v: number | string) => {
     const n = typeof v === "string" ? Number(v) : v;
     return `£${n.toFixed(2)}`;
@@ -168,6 +170,18 @@ describe("FestivalTillPage", () => {
       print_status: "queued",
       replayed: false,
       status: "PAID",
+    });
+    unstickPrinter.mockResolvedValue({
+      enabled: true,
+      mode: "cloudprnt",
+      online: true,
+      last_seen_at: new Date().toISOString(),
+      queued_jobs: 0,
+      oldest_queued_seconds: null,
+      can_accept_orders: true,
+      requeued: 1,
+      pending_tickets: [],
+      pending_ticket_total: 0,
     });
   });
 
@@ -517,6 +531,17 @@ describe("FestivalTillPage", () => {
       status_text: "Cover Open",
       attention:
         "Close the printer cover — printing is paused. 4 ticket(s) waiting.",
+      pending_tickets: [
+        {
+          order_id: 15,
+          order_number: "15",
+          job_type: "KITCHEN",
+          status: "READY",
+          waiting_seconds: 120,
+          items: [{ quantity: 1, name: "Varenyky" }],
+        },
+      ],
+      pending_ticket_total: 1,
     });
     render(<FestivalTillPage />);
     expect(
@@ -525,10 +550,45 @@ describe("FestivalTillPage", () => {
     expect(screen.getAllByText(/Close the printer cover/i).length).toBeGreaterThan(
       0
     );
+    expect(screen.getByText("Kitchen tickets on screen")).toBeInTheDocument();
+    expect(screen.getByText("#15")).toBeInTheDocument();
+    expect(screen.getByText(/1× Varenyky/)).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Order Kvas" }));
     expect(
       screen.getByRole("button", { name: /Place order/i })
     ).toBeEnabled();
+  });
+
+  it("retries printing from the till safety cover", async () => {
+    fetchStatus.mockResolvedValue({
+      enabled: true,
+      mode: "cloudprnt",
+      online: false,
+      last_seen_at: new Date().toISOString(),
+      queued_jobs: 4,
+      oldest_queued_seconds: 120,
+      can_accept_orders: true,
+      status_code: "420",
+      status_text: "Cover Open",
+      attention:
+        "Close the printer cover — printing is paused. 4 ticket(s) waiting.",
+      pending_tickets: [
+        {
+          order_id: 15,
+          order_number: "15",
+          job_type: "KITCHEN",
+          status: "CLAIMED",
+          waiting_seconds: 120,
+          items: [{ quantity: 2, name: "Kvas" }],
+        },
+      ],
+      pending_ticket_total: 1,
+    });
+    render(<FestivalTillPage />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Retry printing/i })
+    );
+    await waitFor(() => expect(unstickPrinter).toHaveBeenCalled());
   });
 
   it("shows oldest queue age when tickets are waiting", async () => {
