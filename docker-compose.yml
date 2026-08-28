@@ -1,5 +1,9 @@
+# Memory limits: use top-level mem_limit (enforced by docker compose up).
+# deploy.resources is kept for Swarm; verify with scripts/verify-docker-limits.sh
 services:
   postgres:
+    mem_limit: 768m
+    mem_reservation: 384m
     build:
       context: ./postgresql
       dockerfile: Dockerfile
@@ -31,19 +35,30 @@ services:
       timeout: 5s
       retries: 20
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 768M
         reservations:
-          memory: 256M
+          memory: 384M
 
   redis:
+    mem_limit: 128m
+    mem_reservation: 64m
     image: redis:7-alpine
     command:
       - redis-server
       - --appendonly
       - "yes"
+      - --maxmemory
+      - 100mb
+      - --maxmemory-policy
+      - volatile-lru
       - --requirepass
       - "${REDIS_PASSWORD:-}"
       # Block the classic internet-scan hijack (REPLICAOF/SLAVEOF to attacker host).
@@ -64,6 +79,11 @@ services:
       timeout: 3s
       retries: 5
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     deploy:
       resources:
         limits:
@@ -72,6 +92,8 @@ services:
           memory: 64M
 
   backend:
+    mem_limit: 1g
+    mem_reservation: 512m
     image: dedukr/landar-backend:latest
     build:
       context: ./backend
@@ -115,6 +137,11 @@ services:
       retries: 3
       start_period: 40s
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     deploy:
       resources:
         limits:
@@ -123,6 +150,8 @@ services:
           memory: 512M
 
   celery:
+    mem_limit: 768m
+    mem_reservation: 256m
     image: dedukr/landar-backend:latest
     build:
       context: ./backend
@@ -161,6 +190,11 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     deploy:
       resources:
         limits:
@@ -169,6 +203,8 @@ services:
           memory: 256M
 
   celery-beat:
+    mem_limit: 256m
+    mem_reservation: 64m
     image: dedukr/landar-backend:latest
     build:
       context: ./backend
@@ -205,6 +241,11 @@ services:
       celery:
         condition: service_started
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     deploy:
       resources:
         limits:
@@ -213,6 +254,8 @@ services:
           memory: 64M
 
   frontend-marketplace:
+    mem_limit: 256m
+    mem_reservation: 128m
     image: dedukr/landar-frontend-marketplace:latest
     build:
       context: ./frontend-marketplace
@@ -250,6 +293,11 @@ services:
       retries: 3
       start_period: 40s
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     deploy:
       resources:
         limits:
@@ -258,6 +306,8 @@ services:
           memory: 128M
 
   nginx:
+    mem_limit: 128m
+    mem_reservation: 64m
     image: dedukr/landar-nginx:latest
     build:
       context: ./nginx

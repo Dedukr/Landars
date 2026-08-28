@@ -98,6 +98,9 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
         (item: { product: number }) => item.product
       );
       setWishlist(productIds);
+      if (user?.id) {
+        writeAuthenticatedWishlistSnapshot(user.id, productIds);
+      }
     } catch (error) {
       console.error("Failed to load wishlist:", error);
     } finally {
@@ -147,9 +150,13 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
         guestWishlistSnapshotRef.current = [];
 
         const refreshed = await httpClient.get<WishlistResponse>("/api/wishlist/");
-        setWishlist(
-          refreshed.items.map((item: { product: number }) => item.product)
+        const mergedIds = refreshed.items.map(
+          (item: { product: number }) => item.product
         );
+        setWishlist(mergedIds);
+        if (user?.id) {
+          writeAuthenticatedWishlistSnapshot(user.id, mergedIds);
+        }
       } catch (error) {
         console.error("Failed to merge guest wishlist into account:", error);
       } finally {
@@ -206,11 +213,6 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
     loadWishlistFromBackend,
     resetWishlistState,
   ]);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    writeAuthenticatedWishlistSnapshot(user.id, wishlist);
-  }, [wishlist, user?.id]);
 
   useLayoutEffect(() => {
     const prev = prevUserRef.current;

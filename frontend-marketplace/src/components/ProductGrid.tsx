@@ -65,6 +65,18 @@ const ProductGrid: React.FC<ProductGridProps> = ({
 
   const fetchGenerationRef = useRef(0);
   const productsLengthRef = useRef(0);
+  const listingAbortRef = useRef<AbortController | null>(null);
+  const paginationAbortRef = useRef<AbortController | null>(null);
+
+  const invalidateListingFetch = useCallback(() => {
+    fetchGenerationRef.current += 1;
+    listingAbortRef.current?.abort();
+    listingAbortRef.current = null;
+    paginationAbortRef.current?.abort();
+    paginationAbortRef.current = null;
+    setLoadingMore(false);
+    return fetchGenerationRef.current;
+  }, []);
 
   const { user } = useAuth();
   const [signInPopupVariant, setSignInPopupVariant] =
@@ -137,16 +149,17 @@ const ProductGrid: React.FC<ProductGridProps> = ({
     if (categoryFilterPending) return;
 
     if (emptyCategoryFilter) {
+      invalidateListingFetch();
       setProducts([]);
       setTotalCount(0);
       setListLoading(false);
-      setLoadingMore(false);
       setListError(null);
       return;
     }
 
-    const generation = ++fetchGenerationRef.current;
+    const generation = invalidateListingFetch();
     const controller = new AbortController();
+    listingAbortRef.current = controller;
 
     setListLoading(true);
     setListError(null);
@@ -174,12 +187,18 @@ const ProductGrid: React.FC<ProductGridProps> = ({
       }
     })();
 
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      if (listingAbortRef.current === controller) {
+        listingAbortRef.current = null;
+      }
+    };
   }, [
     listingQueryKey,
     categoryFilterPending,
     emptyCategoryFilter,
     loadPage,
+    invalidateListingFetch,
   ]);
 
   const hasMoreRemote = products.length < totalCount;
@@ -192,14 +211,25 @@ const ProductGrid: React.FC<ProductGridProps> = ({
     const generation = fetchGenerationRef.current;
     const offset = productsLengthRef.current;
 
+    paginationAbortRef.current?.abort();
+    const controller = new AbortController();
+    paginationAbortRef.current = controller;
+
     setLoadingMore(true);
     try {
-      await loadPage(offset, { append: true, generation });
+      await loadPage(offset, {
+        append: true,
+        generation,
+        signal: controller.signal,
+      });
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
       if (generation !== fetchGenerationRef.current) return;
       console.error("Error loading more products:", err);
     } finally {
+      if (paginationAbortRef.current === controller) {
+        paginationAbortRef.current = null;
+      }
       if (generation === fetchGenerationRef.current) {
         setLoadingMore(false);
       }
@@ -225,8 +255,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({
   }, [inView, hasMoreRemote, listLoading, loadingMore, loadMore]);
 
   const retry = useCallback(() => {
-    fetchGenerationRef.current += 1;
-    const generation = fetchGenerationRef.current;
+    const generation = invalidateListingFetch();
 
     if (emptyCategoryFilter) {
       setProducts([]);
@@ -236,6 +265,9 @@ const ProductGrid: React.FC<ProductGridProps> = ({
       return;
     }
 
+    const controller = new AbortController();
+    listingAbortRef.current = controller;
+
     setListLoading(true);
     setListError(null);
     setProducts([]);
@@ -243,8 +275,13 @@ const ProductGrid: React.FC<ProductGridProps> = ({
 
     void (async () => {
       try {
-        await loadPage(0, { append: false, generation });
+        await loadPage(0, {
+          append: false,
+          generation,
+          signal: controller.signal,
+        });
       } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
         if (generation !== fetchGenerationRef.current) return;
         console.error("Error loading shop products:", err);
         setListError("Unable to load products.");
@@ -254,7 +291,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({
         }
       }
     })();
-  }, [emptyCategoryFilter, loadPage]);
+  }, [emptyCategoryFilter, loadPage, invalidateListingFetch]);
 
   const isBlockingLoad = listLoading || categoryFilterPending;
   const showBlockingError = Boolean(listError && !isBlockingLoad);

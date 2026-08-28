@@ -12,7 +12,7 @@ from notifications.services.order_alerts import (
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=30)
+@shared_task(bind=True, max_retries=3, default_retry_delay=30, ignore_result=True)
 def send_new_order_telegram_alert_task(self, order_id: int) -> bool:
     """Celery task: send Telegram admin alert for a new frontend order."""
     try:

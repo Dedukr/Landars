@@ -99,11 +99,18 @@ class CategoryUserThrottle(UserRateThrottle):
 #     return response
 
 
+PRODUCTS_LIST_CACHE_VERSION_KEY = "products_list_cache_version"
+DEFAULT_PRODUCTS_LIST_CACHE_VERSION = 12
+
+
 def _products_list_cache_key(query_params) -> str:
     """Stable cache key across Gunicorn workers (built-in hash() is per-process)."""
     normalized = "&".join(f"{k}={v}" for k, v in sorted(query_params.items()))
     digest = hashlib.sha256(normalized.encode()).hexdigest()[:16]
-    return f"products_v12_{digest}"
+    version = cache.get(
+        PRODUCTS_LIST_CACHE_VERSION_KEY, DEFAULT_PRODUCTS_LIST_CACHE_VERSION
+    )
+    return f"products_v{version}_{digest}"
 
 
 _PRODUCT_LIST_IMAGE_PREFETCH = Prefetch(

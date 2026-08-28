@@ -440,7 +440,7 @@ def _patch_resolved_shipping_method(
         work["logical_option"] = logical_stored
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+@shared_task(bind=True, max_retries=3, default_retry_delay=60, ignore_result=True)
 def create_sendcloud_shipment(
     self,
     shipment_id: int,

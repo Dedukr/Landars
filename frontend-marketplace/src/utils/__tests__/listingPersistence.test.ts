@@ -32,6 +32,7 @@ beforeEach(() => {
 });
 
 describe("cart snapshot persistence", () => {
+  // Storage helpers are pure; CartContext persists only after successful API sync.
   it("round-trips cart lines for a user", () => {
     writeCartSnapshot(42, [{ productId: 1, quantity: 2 }]);
     expect(readCartSnapshot(42)).toEqual([{ productId: 1, quantity: 2 }]);
@@ -41,6 +42,7 @@ describe("cart snapshot persistence", () => {
 });
 
 describe("authenticated wishlist snapshot persistence", () => {
+  // Storage helpers are pure; WishlistContext persists only after successful API sync.
   it("round-trips product ids for a user", () => {
     writeAuthenticatedWishlistSnapshot(7, [3, 9]);
     expect(readAuthenticatedWishlistSnapshot(7)).toEqual([3, 9]);

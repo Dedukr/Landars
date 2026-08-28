@@ -12,7 +12,11 @@ from django.core.cache import cache
 from django.db.models.signals import m2m_changed, post_delete, post_save, pre_save
 from django.dispatch import receiver
 
-from api.models import CategoryGroup, Order, OrderItem, ProductCategory
+from api.models import CategoryGroup, Order, OrderItem, Product, ProductCategory
+from api.views import (
+    DEFAULT_PRODUCTS_LIST_CACHE_VERSION,
+    PRODUCTS_LIST_CACHE_VERSION_KEY,
+)
 from api.services.post_delivery_categories import invalidate_post_delivery_category_cache
 from api.services.product_sales import (
     collect_product_ids_for_order,
@@ -35,6 +39,17 @@ def invalidate_category_list_caches() -> None:
     cache.delete("categories_list_v6")
     cache.delete("category_groups_list_v1")
     cache.delete("category_groups_list_v2")
+
+
+def bump_products_list_cache_version() -> None:
+    """Invalidate product list API cache by bumping the version prefix."""
+    try:
+        cache.incr(PRODUCTS_LIST_CACHE_VERSION_KEY)
+    except ValueError:
+        cache.set(
+            PRODUCTS_LIST_CACHE_VERSION_KEY,
+            DEFAULT_PRODUCTS_LIST_CACHE_VERSION + 1,
+        )
 
 
 @receiver(pre_save, sender=OrderItem, dispatch_uid="api.orderitem_stash_product_for_sales")
@@ -102,10 +117,17 @@ def order_schedule_sales_on_status_change(sender, instance, **kwargs):
         )
 
 
+@receiver(post_save, sender=Product, dispatch_uid="api.product_list_cache_clear")
+@receiver(post_delete, sender=Product, dispatch_uid="api.product_list_delete_cache_clear")
+def product_invalidate_list_cache(sender, instance, **kwargs):
+    bump_products_list_cache_version()
+
+
 @receiver(post_save, sender=ProductCategory, dispatch_uid="api.product_category_cache_clear")
 @receiver(post_delete, sender=ProductCategory, dispatch_uid="api.product_category_delete_cache_clear")
 def product_category_invalidate_list_cache(sender, instance, **kwargs):
     invalidate_category_list_caches()
+    bump_products_list_cache_version()
 
 
 @receiver(post_save, sender=CategoryGroup, dispatch_uid="api.category_group_cache_clear")
@@ -113,6 +135,7 @@ def product_category_invalidate_list_cache(sender, instance, **kwargs):
 def category_group_invalidate_post_delivery_cache(sender, instance, **kwargs):
     invalidate_post_delivery_category_cache(instance.pk)
     invalidate_category_list_caches()
+    bump_products_list_cache_version()
 
 
 @receiver(
@@ -126,3 +149,4 @@ def category_group_categories_changed(sender, instance, action, **kwargs):
     ):
         invalidate_post_delivery_category_cache(instance.pk)
         invalidate_category_list_caches()
+        bump_products_list_cache_version()

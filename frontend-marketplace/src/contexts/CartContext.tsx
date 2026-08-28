@@ -63,6 +63,15 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   const { user, token, loading: authLoading } = useAuth();
   const prevUserRef = useRef<typeof user | undefined>(undefined);
 
+  const persistCartSnapshot = useCallback(
+    (items: CartItem[]) => {
+      if (user?.id) {
+        writeCartSnapshot(user.id, items);
+      }
+    },
+    [user?.id]
+  );
+
   const resetCartState = useCallback(() => {
     const userId = user?.id ?? getPersistedUserId() ?? undefined;
     setCart([]);
@@ -75,18 +84,18 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     setIsLoading(true);
     try {
       const data = await httpClient.get<CartResponse>("/api/cart/");
-      setCart(
-        data.items.map((item) => ({
-          productId: item.product,
-          quantity: parseFloat(item.quantity),
-        }))
-      );
+      const syncedCart = data.items.map((item) => ({
+        productId: item.product,
+        quantity: parseFloat(item.quantity),
+      }));
+      setCart(syncedCart);
+      persistCartSnapshot(syncedCart);
     } catch (error) {
       console.error("Failed to fetch cart:", error);
     } finally {
       setIsLoading(false);
     }
-  }, [user, token, authLoading]);
+  }, [user, token, authLoading, persistCartSnapshot]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -105,11 +114,6 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
       clearCartStorage();
     }
   }, [user, token, authLoading, loadCartFromBackend, resetCartState]);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    writeCartSnapshot(user.id, cart);
-  }, [cart, user?.id]);
 
   useLayoutEffect(() => {
     const prev = prevUserRef.current;
@@ -142,14 +146,15 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
 
         setCart((prev) => {
           const existing = prev.find((item) => item.productId === productId);
-          if (existing) {
-            return prev.map((item) =>
-              item.productId === productId
-                ? { ...item, quantity: item.quantity + quantity }
-                : item
-            );
-          }
-          return [...prev, { productId, quantity }];
+          const nextCart = existing
+            ? prev.map((item) =>
+                item.productId === productId
+                  ? { ...item, quantity: item.quantity + quantity }
+                  : item
+              )
+            : [...prev, { productId, quantity }];
+          persistCartSnapshot(nextCart);
+          return nextCart;
         });
       } catch (error) {
         console.error("Failed to add to cart:", error);
@@ -158,7 +163,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         setIsLoading(false);
       }
     },
-    [user, token, loadCartFromBackend]
+    [user, token, loadCartFromBackend, persistCartSnapshot]
   );
 
   const removeFromCart = useCallback(
@@ -171,27 +176,27 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
       const newQuantity = existing.quantity - 1;
       setIsLoading(true);
       try {
+        let nextCart: CartItem[];
         if (newQuantity <= 0) {
-          setCart((prev) =>
-            prev.filter((item) => item.productId !== productId)
-          );
+          nextCart = cart.filter((item) => item.productId !== productId);
+          setCart(nextCart);
           await httpClient.request("/api/cart/", {
             method: "DELETE",
             body: JSON.stringify({ productId }),
           });
         } else {
-          setCart((prev) =>
-            prev.map((item) =>
-              item.productId === productId
-                ? { ...item, quantity: newQuantity }
-                : item
-            )
+          nextCart = cart.map((item) =>
+            item.productId === productId
+              ? { ...item, quantity: newQuantity }
+              : item
           );
+          setCart(nextCart);
           await httpClient.patch("/api/cart/", {
             productId,
             quantity: newQuantity,
           });
         }
+        persistCartSnapshot(nextCart);
       } catch (error) {
         console.error("Failed to remove from cart:", error);
         await loadCartFromBackend();
@@ -199,7 +204,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         setIsLoading(false);
       }
     },
-    [user, token, cart, loadCartFromBackend]
+    [user, token, cart, loadCartFromBackend, persistCartSnapshot]
   );
 
   const updateQuantity = useCallback(
@@ -208,18 +213,18 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
 
       const previousCart = [...cart];
       try {
-        setCart((prev) => {
-          if (quantity <= 0) {
-            return prev.filter((item) => item.productId !== productId);
-          }
-          const existing = prev.find((item) => item.productId === productId);
-          if (existing) {
-            return prev.map((item) =>
-              item.productId === productId ? { ...item, quantity } : item
-            );
-          }
-          return [...prev, { productId, quantity }];
-        });
+        let nextCart: CartItem[];
+        if (quantity <= 0) {
+          nextCart = cart.filter((item) => item.productId !== productId);
+        } else {
+          const existing = cart.find((item) => item.productId === productId);
+          nextCart = existing
+            ? cart.map((item) =>
+                item.productId === productId ? { ...item, quantity } : item
+              )
+            : [...cart, { productId, quantity }];
+        }
+        setCart(nextCart);
 
         if (quantity <= 0) {
           await httpClient.request("/api/cart/", {
@@ -233,12 +238,13 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
             replace: true,
           });
         }
+        persistCartSnapshot(nextCart);
       } catch (error) {
         console.error("Failed to update quantity:", error);
         setCart(previousCart);
       }
     },
-    [user, token, cart]
+    [user, token, cart, persistCartSnapshot]
   );
 
   const removeItem = useCallback(
@@ -248,11 +254,13 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
       setIsLoading(true);
       const previousCart = [...cart];
       try {
-        setCart((prev) => prev.filter((item) => item.productId !== productId));
+        const nextCart = cart.filter((item) => item.productId !== productId);
+        setCart(nextCart);
         await httpClient.patch("/api/cart/", {
           productId,
           quantity: 0,
         });
+        persistCartSnapshot(nextCart);
       } catch (error) {
         console.error("Failed to remove item from cart:", error);
         setCart(previousCart);
@@ -260,7 +268,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         setIsLoading(false);
       }
     },
-    [user, token, cart]
+    [user, token, cart, persistCartSnapshot]
   );
 
   const clearCart = useCallback(async () => {
@@ -274,6 +282,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     try {
       setCart([]);
       await httpClient.delete("/api/cart/");
+      persistCartSnapshot([]);
     } catch (error) {
       const status =
         typeof error === "object" &&
@@ -283,6 +292,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
 
       if (status === 404) {
         console.warn("Cart already deleted on backend.");
+        persistCartSnapshot([]);
       } else {
         console.error("Failed to clear cart:", error);
         setCart(previousCart);
@@ -290,7 +300,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [user, token, cart, resetCartState]);
+  }, [user, token, cart, resetCartState, persistCartSnapshot]);
 
   const contextValue = useMemo(
     () => ({

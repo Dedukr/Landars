@@ -17,13 +17,26 @@ function readInitialCartProducts(): Product[] {
   return readListingProductsCache("cart", userId) ?? [];
 }
 
+function mergeUniqueCartProducts(
+  existing: Product[],
+  incoming: Product[],
+  ids: readonly number[]
+): Product[] {
+  const merged = [...existing.filter((p) => ids.includes(p.id)), ...incoming];
+  const byId = new Map<number, Product>();
+  for (const row of merged) {
+    byId.set(row.id, row);
+  }
+  return ids.map((id) => byId.get(id)).filter((p): p is Product => Boolean(p));
+}
+
 export const useCartOptimized = () => {
   const { user } = useAuth();
   const { cart, clearCart } = useCart();
   const [products, setProducts] = useState<Product[]>(readInitialCartProducts);
   const [loading, setLoading] = useState(() => readInitialCartProducts().length === 0);
   const [isValidating, setIsValidating] = useState(false);
-  const prevProductIdsRef = useRef<string | null>(null);
+  const prevProductIdsRef = useRef<string>("");
   const productsRef = useRef<Product[]>(products);
   productsRef.current = products;
 
@@ -34,6 +47,11 @@ export const useCartOptimized = () => {
     const ids = cart.map((item) => item.productId).sort((a, b) => a - b);
     return ids.join(",");
   }, [cart]);
+
+  const cartProductIds = useMemo(
+    () => cart.map((item) => item.productId),
+    [cart]
+  );
 
   const calculateStats = useCallback(
     (productRows: Product[]) => {
@@ -60,13 +78,69 @@ export const useCartOptimized = () => {
   useEffect(() => {
     let cancelled = false;
 
-    async function fetchProductsByIds(productIdsKey: string) {
-      if (!productIdsKey) {
-        setProducts([]);
-        setLoading(false);
-        setIsValidating(false);
+    async function fetchProducts() {
+      if (cartProductIdsKey === "") {
+        if (!cancelled) {
+          setProducts([]);
+          setLoading(false);
+          setIsValidating(false);
+        }
+        prevProductIdsRef.current = "";
         return;
       }
+
+      if (prevProductIdsRef.current === cartProductIdsKey) {
+        const current = productsRef.current;
+        const filteredProducts = current.filter((p) =>
+          cartProductIds.includes(p.id)
+        );
+        if (filteredProducts.length !== current.length) {
+          if (!cancelled) {
+            setProducts(filteredProducts);
+            if (userId) {
+              writeListingProductsCache("cart", userId, filteredProducts);
+            }
+          }
+        }
+        return;
+      }
+
+      const prevIds = prevProductIdsRef.current
+        ? prevProductIdsRef.current.split(",").map(Number)
+        : [];
+      const currentIds = cartProductIds;
+      const addedIds = currentIds.filter((id) => !prevIds.includes(id));
+      const removedIds = prevIds.filter((id) => !currentIds.includes(id));
+
+      if (addedIds.length === 0 && removedIds.length > 0) {
+        const current = productsRef.current;
+        const filteredProducts = current.filter((p) =>
+          cartProductIds.includes(p.id)
+        );
+        if (!cancelled) {
+          setProducts(filteredProducts);
+          if (userId) {
+            writeListingProductsCache("cart", userId, filteredProducts);
+          }
+          prevProductIdsRef.current = cartProductIdsKey;
+        }
+        return;
+      }
+
+      const runFetch = async (ids: number[]) => {
+        const productPromises = ids.map(async (productId) => {
+          try {
+            const res = await fetch(`/api/products/${productId}/`);
+            if (!res.ok) return null;
+            return (await res.json()) as Product | null;
+          } catch (error) {
+            console.error(`Failed to fetch product ${productId}:`, error);
+            return null;
+          }
+        });
+
+        return (await Promise.all(productPromises)).filter(Boolean) as Product[];
+      };
 
       const hasCachedProducts = productsRef.current.length > 0;
       if (!hasCachedProducts) {
@@ -76,32 +150,32 @@ export const useCartOptimized = () => {
       }
 
       try {
-        const ids = productIdsKey.split(",").map((id) => parseInt(id, 10));
-        const productPromises = ids.map(async (productId) => {
-          try {
-            const res = await fetch(`/api/products/${productId}/`);
-            if (res.ok) {
-              return (await res.json()) as Product;
+        if (addedIds.length > 0) {
+          const newProducts = await runFetch(addedIds);
+          const snapshot = productsRef.current;
+          const updatedProducts = mergeUniqueCartProducts(
+            snapshot,
+            newProducts,
+            cartProductIds
+          );
+
+          if (!cancelled) {
+            setProducts(updatedProducts);
+            if (userId) {
+              writeListingProductsCache("cart", userId, updatedProducts);
             }
-            console.warn(`Product ${productId} not found`);
-            return null;
-          } catch (error) {
-            console.error(`Failed to fetch product ${productId}:`, error);
-            return null;
           }
-        });
-
-        const productResults = await Promise.all(productPromises);
-        const validProducts = productResults.filter(Boolean) as Product[];
-
-        if (cancelled) return;
-
-        setProducts(validProducts);
-        if (userId) {
-          writeListingProductsCache("cart", userId, validProducts);
+        } else if (productsRef.current.length === 0 && cartProductIds.length > 0) {
+          const fetchedProducts = await runFetch(cartProductIds);
+          if (!cancelled) {
+            setProducts(fetchedProducts);
+            if (userId) {
+              writeListingProductsCache("cart", userId, fetchedProducts);
+            }
+          }
         }
       } catch (error) {
-        console.error("Error fetching products:", error);
+        console.error("Error fetching cart products:", error);
         if (!cancelled && productsRef.current.length === 0) {
           setProducts([]);
         }
@@ -111,35 +185,17 @@ export const useCartOptimized = () => {
           setIsValidating(false);
         }
       }
+
+      if (!cancelled) {
+        prevProductIdsRef.current = cartProductIdsKey;
+      }
     }
 
-    if (prevProductIdsRef.current !== cartProductIdsKey) {
-      prevProductIdsRef.current = cartProductIdsKey;
-      void fetchProductsByIds(cartProductIdsKey);
-    } else if (prevProductIdsRef.current === null && cartProductIdsKey) {
-      prevProductIdsRef.current = cartProductIdsKey;
-      void fetchProductsByIds(cartProductIdsKey);
-    }
-
+    void fetchProducts();
     return () => {
       cancelled = true;
     };
-  }, [cartProductIdsKey, userId]);
-
-  useEffect(() => {
-    if (products.length > 0) {
-      const cartProductIds = new Set(cart.map((item) => item.productId));
-      const filteredProducts = products.filter((p: Product) =>
-        cartProductIds.has(p.id)
-      );
-      if (filteredProducts.length !== products.length) {
-        setProducts(filteredProducts);
-        if (userId) {
-          writeListingProductsCache("cart", userId, filteredProducts);
-        }
-      }
-    }
-  }, [cart, products, userId]);
+  }, [cartProductIdsKey, cartProductIds, userId]);
 
   const stats = useMemo(() => calculateStats(products), [products, calculateStats]);
 

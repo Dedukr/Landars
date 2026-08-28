@@ -275,7 +275,9 @@ def get_database_config():
         "OPTIONS": {
             "connect_timeout": 5,
         },
-        "CONN_MAX_AGE": 0,  # Disable persistent connections to avoid hanging
+        # Reuse connections for 60s; CONN_HEALTH_CHECKS avoids stale sockets.
+        "CONN_MAX_AGE": 60,
+        "CONN_HEALTH_CHECKS": True,
     }
 
 
@@ -549,6 +551,9 @@ CELERY_TASK_SOFT_TIME_LIMIT = 240
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = os.getenv(
     "CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP", "true"
 ).lower() in ("1", "true", "yes")
+CELERY_RESULT_EXPIRES = 3600  # 1 hour - prevent Redis result buildup
+# Safe: no code reads AsyncResult; festival tasks already use ignore_result=True.
+CELERY_TASK_IGNORE_RESULT = True
 
 # Shared cache (set in Docker to Redis so Gunicorn + Celery see the same keys, e.g. Sendcloud locks).
 _django_cache_redis_url = (os.getenv("DJANGO_CACHE_REDIS_URL") or "").strip()
