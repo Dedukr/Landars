@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import random
 import uuid
@@ -15,6 +16,7 @@ from django.db.models import (
     F,
     Min,
     OuterRef,
+    Prefetch,
     Subquery,
     Sum,
     Value,
@@ -97,6 +99,19 @@ class CategoryUserThrottle(UserRateThrottle):
 #     return response
 
 
+def _products_list_cache_key(query_params) -> str:
+    """Stable cache key across Gunicorn workers (built-in hash() is per-process)."""
+    normalized = "&".join(f"{k}={v}" for k, v in sorted(query_params.items()))
+    digest = hashlib.sha256(normalized.encode()).hexdigest()[:16]
+    return f"products_v12_{digest}"
+
+
+_PRODUCT_LIST_IMAGE_PREFETCH = Prefetch(
+    "images",
+    queryset=ProductImage.objects.order_by("sort_order", "created_at"),
+)
+
+
 # Create your views here.
 class ProductList(APIView):
     """GET is public; mutating methods require staff."""
@@ -110,8 +125,8 @@ class ProductList(APIView):
         """Retrieve products with filtering, sorting, and pagination."""
         no_cache = request.query_params.get("no_cache") == "1"
         # Cache key version suffix bumps stale entries when search logic changes.
-        # v11: categories no longer inject synthetic parent-category names (flat leaves only).
-        cache_key = f"products_v11_{hash(str(request.query_params))}"
+        # v12: stable sha256 key (hash() was per-process, so Redis cache never hit across workers).
+        cache_key = _products_list_cache_key(request.query_params)
 
         # Try to get cached response
         if not no_cache:
@@ -119,11 +134,11 @@ class ProductList(APIView):
             if cached_response:
                 return Response(cached_response)
 
-        # Optimize database queries: prefetch categories to avoid N+1 in serializer
-        products = (
-            Product.objects.prefetch_related("categories", "images")
-            .filter(active=True)
-        )
+        # Optimize database queries: prefetch categories/images to avoid N+1 in serializer
+        products = Product.objects.prefetch_related(
+            "categories",
+            _PRODUCT_LIST_IMAGE_PREFETCH,
+        ).filter(active=True)
 
         # Filtering (categories, optional group shortcut, include subcategories)
         from api.services.category_groups import (

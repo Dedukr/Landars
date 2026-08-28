@@ -1890,11 +1890,14 @@ class OrderAdmin(admin.ModelAdmin):
         qs = super().get_queryset(request)
         # Prefetch invoices and their credit notes to avoid N+1 queries
         # Also prefetch order items and products for efficient product search
-        return qs.prefetch_related(
-            "invoices", 
+        return qs.select_related(
+            "customer",
+            "customer__profile",
+        ).prefetch_related(
+            "invoices",
             "invoices__credit_note",
             "items",
-            "items__product"
+            "items__product",
         )
 
     def get_search_results(self, request, queryset, search_term):

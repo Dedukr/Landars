@@ -204,6 +204,7 @@ class Product(models.Model):
         indexes = [
             models.Index(fields=["name"]),
             models.Index(fields=["created_at"]),
+            models.Index(fields=["active", "-created_at"]),
             models.Index(fields=["-sold_quantity", "id"]),
         ]
 
@@ -239,8 +240,9 @@ class Product(models.Model):
 
     def get_primary_image(self):
         """Get the primary image URL or None. The first image (by sort_order) is always primary."""
-        first_image = self.images.first()
-        return first_image.image_url if first_image else None
+        # Use .all() so prefetched images are reused; .first() issues a separate query.
+        images = list(self.images.all()[:1])
+        return images[0].image_url if images else None
 
     # def get_product_stock(self):
     #     """Get the stock for this product."""

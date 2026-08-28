@@ -413,7 +413,8 @@ class ProductSerializer(ProductImageValidationMixin, serializers.ModelSerializer
 
     def get_categories(self, obj):
         """Return the product's own (leaf) category names."""
-        return [cat.name for cat in obj.categories.all().order_by("name")]
+        categories = sorted(obj.categories.all(), key=lambda cat: cat.name)
+        return [cat.name for cat in categories]
 
     # def get_stock_quantity(self, obj):
     #     stock = Stock.objects.filter(product=obj).first()
@@ -502,7 +503,8 @@ class ProductListSerializer(serializers.ModelSerializer):
 
     def get_categories(self, obj):
         """Return the product's own (leaf) category names."""
-        return [cat.name for cat in obj.categories.all().order_by("name")]
+        categories = sorted(obj.categories.all(), key=lambda cat: cat.name)
+        return [cat.name for cat in categories]
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
