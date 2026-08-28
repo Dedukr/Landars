@@ -8,21 +8,7 @@ import {
   type ApiCategoryGroup,
 } from "@/lib/prepareHomeDisplayCategories";
 
-function mainImageUrl(product: ShopCatalogProduct): string | null {
-  if (product.images?.length) {
-    for (const img of product.images) {
-      if (typeof img === "string" && img.trim()) return img.trim();
-      if (img && typeof img === "object" && "image_url" in img) {
-        const url = String((img as { image_url: string }).image_url).trim();
-        if (url) return url;
-      }
-    }
-  }
-  const single = product.image_url || product.primary_image;
-  return single && String(single).trim() ? String(single).trim() : null;
-}
-
-const PAGE_SIZE = 50;
+export const SHOP_PAGE_SIZE = 50;
 
 export type ShopCatalogProduct = ShopProductDto & {
   sold_quantity?: number;
@@ -35,39 +21,33 @@ interface PaginatedProductsResponse {
   next: string | null;
 }
 
-/** Load the full active catalogue once (paginated API walk). */
-export async function fetchAllShopProducts(
-  signal?: AbortSignal
-): Promise<ShopCatalogProduct[]> {
-  const all: ShopCatalogProduct[] = [];
-  let offset = 0;
+export interface ShopProductsQuery {
+  filters: ShopListingFilters;
+  sort: string;
+  search?: string;
+  limit: number;
+  offset: number;
+  categoryGroups?: ApiCategoryGroup[];
+}
 
-  while (true) {
-    const qs = scopeProductsQueryString(
-      new URLSearchParams({
-        limit: String(PAGE_SIZE),
-        offset: String(offset),
-        sort: "name_asc",
-      }).toString()
-    );
+export interface ShopProductsPage {
+  results: ShopCatalogProduct[];
+  count: number;
+  hasMore: boolean;
+}
 
-    const res = await fetch(`/api/products/?${qs}`, {
-      headers: { Accept: "application/json" },
-      signal,
-    });
-
-    if (!res.ok) {
-      throw new Error(`Failed to load products (${res.status})`);
+function mainImageUrl(product: ShopCatalogProduct): string | null {
+  if (product.images?.length) {
+    for (const img of product.images) {
+      if (typeof img === "string" && img.trim()) return img.trim();
+      if (img && typeof img === "object" && "image_url" in img) {
+        const url = String((img as { image_url: string }).image_url).trim();
+        if (url) return url;
+      }
     }
-
-    const data = (await res.json()) as PaginatedProductsResponse;
-    all.push(...(data.results ?? []));
-
-    if (!data.next) break;
-    offset += PAGE_SIZE;
   }
-
-  return all;
+  const single = product.image_url || product.primary_image;
+  return single && String(single).trim() ? String(single).trim() : null;
 }
 
 /**
@@ -118,120 +98,80 @@ export function categoryNamesForFilterIds(
   return names;
 }
 
-function productPrice(product: ShopCatalogProduct): number {
-  const n = parseFloat(String(product.price ?? ""));
-  return Number.isFinite(n) ? n : 0;
-}
-
-function productMatchesSearch(product: ShopCatalogProduct, search: string): boolean {
-  const terms = search
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((t) => t.toLowerCase());
-  if (!terms.length) return true;
-
-  const name = (product.name ?? "").toLowerCase();
-  return terms.every((term) => name.includes(term));
-}
-
-function sortProducts(
-  products: ShopCatalogProduct[],
-  sort: string
-): ShopCatalogProduct[] {
-  const sorted = [...products];
-
-  switch (sort) {
-    case "name_desc":
-      sorted.sort((a, b) => b.name.localeCompare(a.name));
-      break;
-    case "price_asc":
-      sorted.sort((a, b) => productPrice(a) - productPrice(b));
-      break;
-    case "price_desc":
-      sorted.sort((a, b) => productPrice(b) - productPrice(a));
-      break;
-    case "sales_desc":
-      sorted.sort((a, b) => {
-        const soldA = a.sold_quantity ?? 0;
-        const soldB = b.sold_quantity ?? 0;
-        if (soldB !== soldA) return soldB - soldA;
-        const ordersA = a.sold_orders_count ?? 0;
-        const ordersB = b.sold_orders_count ?? 0;
-        if (ordersB !== ordersA) return ordersB - ordersA;
-        return a.id - b.id;
-      });
-      break;
-    case "category_asc":
-      sorted.sort((a, b) => {
-        const catA = (a.categories?.[0] ?? "").toLowerCase();
-        const catB = (b.categories?.[0] ?? "").toLowerCase();
-        if (catA !== catB) return catA.localeCompare(catB);
-        return a.name.localeCompare(b.name);
-      });
-      break;
-    case "name_asc":
-    default:
-      sorted.sort((a, b) => a.name.localeCompare(b.name));
-      break;
-  }
-
-  return sorted;
-}
-
-/** Client-side listing query — no extra API calls after the catalogue is loaded. */
-export function applyShopListingQuery(
-  catalog: ShopCatalogProduct[],
+/** True when category filters are set but resolve to no API category ids. */
+export function shopCategoryFilterIsEmpty(
   filters: ShopListingFilters,
-  sort: string,
-  search: string | undefined,
-  categoryRecords: ShopCategoryRecord[],
   categoryGroups: ApiCategoryGroup[] = []
-): ShopCatalogProduct[] {
-  let result = catalog;
+): boolean {
+  if (!filters.categories.length) return false;
+  return expandCategoryIdsForFilter(filters.categories, categoryGroups).size === 0;
+}
 
-  if (filters.categories.length > 0) {
-    if (categoryRecords.length === 0) {
-      return [];
-    }
+/** Build query string for GET /api/products/ from shop listing state. */
+export function buildShopProductsQueryString({
+  filters,
+  sort,
+  search,
+  limit,
+  offset,
+  categoryGroups = [],
+}: ShopProductsQuery): string {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+  params.set("sort", sort);
 
-    const allowedNames = categoryNamesForFilterIds(
-      filters.categories,
-      categoryRecords,
-      categoryGroups
-    );
-    if (allowedNames.size === 0) {
-      return [];
-    }
-
-    result = result.filter((product) =>
-      (product.categories ?? []).some((name) => allowedNames.has(name))
-    );
-  }
-
-  const q = search?.trim() ?? "";
+  const q = search?.trim();
   if (q) {
-    result = result.filter((p) => productMatchesSearch(p, q));
+    params.set("search", q);
   }
 
   const [priceMin, priceMax] = filters.price;
   if (priceMin > 0) {
-    result = result.filter((p) => productPrice(p) >= priceMin);
+    params.set("price_min", String(priceMin));
   }
   if (priceMax < SHOP_PRICE_MAX_UNLIMITED) {
-    result = result.filter((p) => productPrice(p) <= priceMax);
+    params.set("price_max", String(priceMax));
   }
 
-  if (filters.inStock) {
-    result = result.filter(
-      (p) => typeof p.stock_quantity !== "number" || p.stock_quantity > 0
-    );
+  if (filters.categories.length > 0) {
+    const expanded = expandCategoryIdsForFilter(filters.categories, categoryGroups);
+    if (expanded.size > 0) {
+      params.set("categories", [...expanded].join(","));
+    }
   }
 
-  return sortProducts(result, sort);
+  return scopeProductsQueryString(params.toString());
 }
 
-/** Warm the browser image cache for catalogue thumbnails (once per URL). */
+/** Fetch one page of products from the API (server-side filter, sort, pagination). */
+export async function fetchShopProductsPage(
+  query: ShopProductsQuery,
+  signal?: AbortSignal
+): Promise<ShopProductsPage> {
+  const qs = buildShopProductsQueryString(query);
+
+  const res = await fetch(`/api/products/?${qs}`, {
+    headers: { Accept: "application/json" },
+    signal,
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to load products (${res.status})`);
+  }
+
+  const data = (await res.json()) as PaginatedProductsResponse;
+  const results = data.results ?? [];
+  const count = typeof data.count === "number" ? data.count : results.length;
+
+  return {
+    results,
+    count,
+    hasMore: query.offset + results.length < count,
+  };
+}
+
+/** Warm the browser image cache for visible thumbnails (once per URL). */
 const prefetchedImageUrls = new Set<string>();
 
 export function prefetchShopProductImages(products: ShopCatalogProduct[]): void {

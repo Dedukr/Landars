@@ -291,7 +291,6 @@ export default function ShopContent() {
               <ProductGrid
                 filters={filters}
                 search={search}
-                categories={categories}
                 categoryGroups={categoryGroups}
                 categoriesLoading={categoriesLoading}
               />

@@ -10,7 +10,6 @@ import SignInPopup, { type SignInPopupVariant } from "./SignInPopup";
 import { Button } from "@/components/ui/Button";
 import { useInView } from "react-intersection-observer";
 import type { ShopListingFilters } from "@/types/shop-filters";
-import type { ShopCategoryRecord } from "@/components/shop/ShopFilterPanelContent";
 import type { ApiCategoryGroup } from "@/lib/prepareHomeDisplayCategories";
 import ShopProductTile from "@/components/shop/ShopProductTile";
 import { ShopProductCardSkeleton } from "@/components/shop/ShopProductCardSkeleton";
@@ -20,9 +19,10 @@ import {
   SHOP_INITIAL_SORT,
 } from "@/components/shop/shop-sort-options";
 import {
-  applyShopListingQuery,
-  fetchAllShopProducts,
+  fetchShopProductsPage,
   prefetchShopProductImages,
+  shopCategoryFilterIsEmpty,
+  SHOP_PAGE_SIZE,
   type ShopCatalogProduct,
 } from "@/lib/shopCatalogClient";
 
@@ -38,31 +38,33 @@ export type ShopListingMeta = {
 interface ProductGridProps {
   filters: ShopListingFilters;
   search?: string;
-  categories: ShopCategoryRecord[];
   categoryGroups?: ApiCategoryGroup[];
   categoriesLoading?: boolean;
   onListingMeta?: (meta: ShopListingMeta) => void;
 }
 
 const SKELETON_COUNT = 8;
-const PAGE_SIZE = 50;
+const SEARCH_DEBOUNCE_MS = 300;
 
 const ProductGrid: React.FC<ProductGridProps> = ({
   filters,
   search,
-  categories,
   categoryGroups = [],
   categoriesLoading = false,
   onListingMeta,
 }) => {
   const sort =
     filters.categories.length > 0 ? SHOP_CATEGORY_SORT : SHOP_INITIAL_SORT;
-  const [catalog, setCatalog] = useState<ShopCatalogProduct[]>([]);
-  const [catalogLoading, setCatalogLoading] = useState(true);
-  const [catalogError, setCatalogError] = useState<string | null>(null);
-  const catalogLoadedRef = useRef(false);
 
-  const [visibleProductsCount, setVisibleProductsCount] = useState(PAGE_SIZE);
+  const [products, setProducts] = useState<ShopCatalogProduct[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [listLoading, setListLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
+  const [debouncedSearch, setDebouncedSearch] = useState(search ?? "");
+
+  const fetchGenerationRef = useRef(0);
+  const productsLengthRef = useRef(0);
 
   const { user } = useAuth();
   const [signInPopupVariant, setSignInPopupVariant] =
@@ -73,67 +75,142 @@ const ProductGrid: React.FC<ProductGridProps> = ({
   }, []);
 
   useEffect(() => {
-    if (catalogLoadedRef.current) return;
-
-    const controller = new AbortController();
-
-    async function loadCatalog() {
-      setCatalogLoading(true);
-      setCatalogError(null);
-      try {
-        const products = await fetchAllShopProducts(controller.signal);
-        catalogLoadedRef.current = true;
-        setCatalog(products);
-        prefetchShopProductImages(products);
-      } catch (err) {
-        if (err instanceof Error && err.name === "AbortError") return;
-        console.error("Error loading shop catalogue:", err);
-        setCatalogError("Unable to load products.");
-        setCatalog([]);
-      } finally {
-        setCatalogLoading(false);
-      }
-    }
-
-    void loadCatalog();
-    return () => controller.abort();
-  }, []);
+    const timer = window.setTimeout(
+      () => setDebouncedSearch(search ?? ""),
+      SEARCH_DEBOUNCE_MS
+    );
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
   const categoryFilterPending =
     filters.categories.length > 0 && categoriesLoading;
-  const listLoading = catalogLoading || categoryFilterPending;
 
-  const filteredProducts = useMemo(() => {
-    if (categoryFilterPending) return [];
-    return applyShopListingQuery(
-      catalog,
-      filters,
-      sort,
-      search,
-      categories,
-      categoryGroups
-    );
-  }, [
-    catalog,
-    filters,
-    sort,
-    search,
-    categories,
-    categoryGroups,
-    categoryFilterPending,
-  ]);
-
-  useEffect(() => {
-    setVisibleProductsCount(PAGE_SIZE);
-  }, [filters, search, sort]);
-
-  const visibleProducts = useMemo(
-    () => filteredProducts.slice(0, visibleProductsCount),
-    [filteredProducts, visibleProductsCount]
+  const emptyCategoryFilter = useMemo(
+    () => shopCategoryFilterIsEmpty(filters, categoryGroups),
+    [filters, categoryGroups]
   );
 
-  const hasMoreProducts = filteredProducts.length > visibleProductsCount;
-  const totalCount = filteredProducts.length;
+  const listingQueryKey = useMemo(
+    () =>
+      JSON.stringify({
+        filters,
+        sort,
+        debouncedSearch,
+        categoryGroups,
+      }),
+    [filters, sort, debouncedSearch, categoryGroups]
+  );
+
+  useEffect(() => {
+    productsLengthRef.current = products.length;
+  }, [products.length]);
+
+  const loadPage = useCallback(
+    async (
+      offset: number,
+      options: { append: boolean; generation: number; signal?: AbortSignal }
+    ) => {
+      const page = await fetchShopProductsPage(
+        {
+          filters,
+          sort,
+          search: debouncedSearch,
+          limit: SHOP_PAGE_SIZE,
+          offset,
+          categoryGroups,
+        },
+        options.signal
+      );
+
+      if (options.generation !== fetchGenerationRef.current) return;
+
+      setTotalCount(page.count);
+      setProducts((prev) =>
+        options.append ? [...prev, ...page.results] : page.results
+      );
+      prefetchShopProductImages(page.results);
+    },
+    [filters, sort, debouncedSearch, categoryGroups]
+  );
+
+  useEffect(() => {
+    if (categoryFilterPending) return;
+
+    if (emptyCategoryFilter) {
+      setProducts([]);
+      setTotalCount(0);
+      setListLoading(false);
+      setLoadingMore(false);
+      setListError(null);
+      return;
+    }
+
+    const generation = ++fetchGenerationRef.current;
+    const controller = new AbortController();
+
+    setListLoading(true);
+    setListError(null);
+    setProducts([]);
+    setTotalCount(0);
+
+    void (async () => {
+      try {
+        await loadPage(0, {
+          append: false,
+          generation,
+          signal: controller.signal,
+        });
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
+        if (generation !== fetchGenerationRef.current) return;
+        console.error("Error loading shop products:", err);
+        setListError("Unable to load products.");
+        setProducts([]);
+        setTotalCount(0);
+      } finally {
+        if (generation === fetchGenerationRef.current) {
+          setListLoading(false);
+        }
+      }
+    })();
+
+    return () => controller.abort();
+  }, [
+    listingQueryKey,
+    categoryFilterPending,
+    emptyCategoryFilter,
+    loadPage,
+  ]);
+
+  const hasMoreRemote = products.length < totalCount;
+
+  const loadMore = useCallback(async () => {
+    if (listLoading || loadingMore || !hasMoreRemote || emptyCategoryFilter) {
+      return;
+    }
+
+    const generation = fetchGenerationRef.current;
+    const offset = productsLengthRef.current;
+
+    setLoadingMore(true);
+    try {
+      await loadPage(offset, { append: true, generation });
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
+      if (generation !== fetchGenerationRef.current) return;
+      console.error("Error loading more products:", err);
+    } finally {
+      if (generation === fetchGenerationRef.current) {
+        setLoadingMore(false);
+      }
+    }
+  }, [
+    listLoading,
+    loadingMore,
+    hasMoreRemote,
+    emptyCategoryFilter,
+    loadPage,
+  ]);
 
   const { ref: loadMoreRef, inView } = useInView({
     threshold: 0.1,
@@ -142,58 +219,67 @@ const ProductGrid: React.FC<ProductGridProps> = ({
   });
 
   useEffect(() => {
-    if (inView && hasMoreProducts && !listLoading) {
-      setVisibleProductsCount((prev) =>
-        Math.min(prev + PAGE_SIZE, filteredProducts.length)
-      );
+    if (inView && hasMoreRemote && !listLoading && !loadingMore) {
+      void loadMore();
     }
-  }, [inView, hasMoreProducts, listLoading, filteredProducts.length]);
+  }, [inView, hasMoreRemote, listLoading, loadingMore, loadMore]);
 
   const retry = useCallback(() => {
-    catalogLoadedRef.current = false;
-    setCatalog([]);
-    setCatalogLoading(true);
-    setCatalogError(null);
+    fetchGenerationRef.current += 1;
+    const generation = fetchGenerationRef.current;
+
+    if (emptyCategoryFilter) {
+      setProducts([]);
+      setTotalCount(0);
+      setListLoading(false);
+      setListError(null);
+      return;
+    }
+
+    setListLoading(true);
+    setListError(null);
+    setProducts([]);
+    setTotalCount(0);
 
     void (async () => {
       try {
-        const products = await fetchAllShopProducts();
-        catalogLoadedRef.current = true;
-        setCatalog(products);
-        prefetchShopProductImages(products);
+        await loadPage(0, { append: false, generation });
       } catch (err) {
-        console.error("Error loading shop catalogue:", err);
-        setCatalogError("Unable to load products.");
+        if (generation !== fetchGenerationRef.current) return;
+        console.error("Error loading shop products:", err);
+        setListError("Unable to load products.");
       } finally {
-        setCatalogLoading(false);
+        if (generation === fetchGenerationRef.current) {
+          setListLoading(false);
+        }
       }
     })();
-  }, []);
+  }, [emptyCategoryFilter, loadPage]);
 
-  const showingFrom = visibleProducts.length ? 1 : 0;
-  const showingTo = visibleProducts.length;
+  const isBlockingLoad = listLoading || categoryFilterPending;
+  const showBlockingError = Boolean(listError && !isBlockingLoad);
+  const showEmpty = !isBlockingLoad && !showBlockingError && totalCount === 0;
+
+  const showingFrom = products.length ? 1 : 0;
+  const showingTo = products.length;
 
   useEffect(() => {
     onListingMeta?.({
-      loading: listLoading,
-      error: Boolean(catalogError && !listLoading),
+      loading: isBlockingLoad,
+      error: Boolean(listError && !isBlockingLoad),
       totalCount,
-      loadedCount: catalog.length,
-      displayedCount: visibleProducts.length,
-      hasMoreRemote: hasMoreProducts,
+      loadedCount: products.length,
+      displayedCount: products.length,
+      hasMoreRemote,
     });
   }, [
     onListingMeta,
-    listLoading,
-    catalogError,
+    isBlockingLoad,
+    listError,
     totalCount,
-    catalog.length,
-    visibleProducts.length,
-    hasMoreProducts,
+    products.length,
+    hasMoreRemote,
   ]);
-
-  const showBlockingError = Boolean(catalogError && !listLoading);
-  const showEmpty = !listLoading && !showBlockingError && totalCount === 0;
 
   function handleClearFiltersViaEvent() {
     if (typeof window !== "undefined") {
@@ -205,7 +291,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({
     <section aria-label="Product catalogue">
       <div className="mb-6 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between text-sm tabular-nums">
         <p style={{ color: "var(--muted-foreground)" }}>
-          {listLoading ? (
+          {isBlockingLoad ? (
             <span className="inline-flex items-center gap-2">
               <span
                 className="inline-block size-4 rounded-full animate-spin border-2 shrink-0"
@@ -229,7 +315,7 @@ const ProductGrid: React.FC<ProductGridProps> = ({
               </span>
               {" of "}
               <span style={{ fontWeight: 700, color: "var(--foreground)" }}>{totalCount}</span>
-              {hasMoreProducts ? " • Keep scrolling for more" : ""}
+              {hasMoreRemote ? " • Keep scrolling for more" : ""}
             </span>
           )}
         </p>
@@ -249,11 +335,11 @@ const ProductGrid: React.FC<ProductGridProps> = ({
 
       {!showBlockingError && (
         <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6">
-          {listLoading
+          {isBlockingLoad
             ? Array.from({ length: SKELETON_COUNT }).map((_, i) => (
                 <ShopProductCardSkeleton key={i} />
               ))
-            : visibleProducts.map((product) => (
+            : products.map((product) => (
                 <ShopProductTile
                   key={product.id}
                   product={product}
@@ -264,31 +350,28 @@ const ProductGrid: React.FC<ProductGridProps> = ({
         </div>
       )}
 
-      {hasMoreProducts && !showBlockingError && !listLoading && (
+      {hasMoreRemote && !showBlockingError && !isBlockingLoad && (
         <div className="flex justify-center py-8">
           <Button
             variant="outline"
-            onClick={() => {
-              setVisibleProductsCount((prev) =>
-                Math.min(prev + PAGE_SIZE, filteredProducts.length)
-              );
-            }}
+            onClick={() => void loadMore()}
+            disabled={loadingMore}
             className="px-8 py-3"
           >
-            Show more from this search
+            {loadingMore ? "Loading…" : "Show more from this search"}
           </Button>
         </div>
       )}
 
-      {hasMoreProducts && !showBlockingError && !listLoading && (
+      {hasMoreRemote && !showBlockingError && !isBlockingLoad && (
         <div ref={loadMoreRef} className="flex justify-center py-4">
           <div className="text-sm" style={{ color: "var(--muted-foreground)" }}>
-            Scroll to load more
+            {loadingMore ? "Loading more products…" : "Scroll to load more"}
           </div>
         </div>
       )}
 
-      {!hasMoreProducts && filteredProducts.length > 0 && !showBlockingError && (
+      {!hasMoreRemote && products.length > 0 && !showBlockingError && (
         <div className="flex justify-center py-8">
           <div className="text-sm" style={{ color: "var(--muted-foreground)" }}>
             You&apos;ve reached the end of the catalogue
