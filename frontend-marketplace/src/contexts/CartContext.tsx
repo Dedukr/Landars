@@ -14,7 +14,14 @@ import {
 } from "react";
 import { useAuth } from "./AuthContext";
 import { httpClient } from "@/utils/httpClient";
-import { clearCartStorage } from "@/utils/cartStorage";
+import { clearCartStorage, readCartSnapshot, writeCartSnapshot } from "@/utils/cartStorage";
+import { getPersistedUserId } from "@/utils/persistedUser";
+
+function readInitialCart(): CartItem[] {
+  const userId = getPersistedUserId();
+  if (!userId) return [];
+  return readCartSnapshot(userId) ?? [];
+}
 
 interface CartResponse {
   items: Array<{
@@ -51,20 +58,19 @@ interface CartContextType {
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export const CartProvider = ({ children }: { children: ReactNode }) => {
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [cart, setCart] = useState<CartItem[]>(readInitialCart);
   const [isLoading, setIsLoading] = useState(false);
   const { user, token, loading: authLoading } = useAuth();
   const prevUserRef = useRef<typeof user | undefined>(undefined);
 
   const resetCartState = useCallback(() => {
+    const userId = user?.id ?? getPersistedUserId() ?? undefined;
     setCart([]);
-    clearCartStorage();
-  }, []);
+    clearCartStorage(userId);
+  }, [user?.id]);
 
   const loadCartFromBackend = useCallback(async () => {
     if (!user || !token || authLoading) return;
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
 
     setIsLoading(true);
     try {
@@ -83,10 +89,10 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   }, [user, token, authLoading]);
 
   useEffect(() => {
+    if (authLoading) return;
+
     if (user && token) {
-      if (!authLoading) {
-        void loadCartFromBackend();
-      }
+      void loadCartFromBackend();
       return;
     }
 
@@ -99,6 +105,11 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
       clearCartStorage();
     }
   }, [user, token, authLoading, loadCartFromBackend, resetCartState]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    writeCartSnapshot(user.id, cart);
+  }, [cart, user?.id]);
 
   useLayoutEffect(() => {
     const prev = prevUserRef.current;

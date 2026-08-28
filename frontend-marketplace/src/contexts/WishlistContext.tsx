@@ -17,7 +17,21 @@ import {
   clearWishlistStorage,
   GUEST_WISHLIST_STORAGE_KEY,
   parseStoredGuestWishlist,
+  readAuthenticatedWishlistSnapshot,
+  writeAuthenticatedWishlistSnapshot,
 } from "@/utils/wishlistStorage";
+import { getPersistedUserId } from "@/utils/persistedUser";
+
+function readInitialWishlist(): number[] {
+  if (typeof window === "undefined") return [];
+  const userId = getPersistedUserId();
+  if (userId) {
+    return readAuthenticatedWishlistSnapshot(userId) ?? [];
+  }
+  return parseStoredGuestWishlist(
+    localStorage.getItem(GUEST_WISHLIST_STORAGE_KEY)
+  );
+}
 
 interface WishlistResponse {
   items: Array<{
@@ -51,7 +65,7 @@ function combineWishlistIds(a: number[], b: number[]): number[] {
 }
 
 export const WishlistProvider = ({ children }: { children: ReactNode }) => {
-  const [wishlist, setWishlist] = useState<number[]>([]);
+  const [wishlist, setWishlist] = useState<number[]>(readInitialWishlist);
   const [loading, setLoading] = useState(false);
   const { user, token, loading: authLoading } = useAuth();
   /** Prior `user` to detect logout (signed-in → signed-out). */
@@ -62,11 +76,12 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
   const skipGuestPersistRef = useRef(false);
 
   const resetWishlistState = useCallback(() => {
+    const userId = user?.id ?? getPersistedUserId() ?? undefined;
     skipGuestPersistRef.current = true;
     setWishlist([]);
-    clearWishlistStorage();
+    clearWishlistStorage(userId);
     guestWishlistSnapshotRef.current = [];
-  }, []);
+  }, [user?.id]);
 
   const handleSessionLogout = useCallback(() => {
     resetWishlistState();
@@ -75,9 +90,6 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
   // Load wishlist from backend when user is authenticated
   const loadWishlistFromBackend = useCallback(async () => {
     if (!user || !token || authLoading) return;
-
-    // Add a small delay to prevent race conditions with auth
-    await new Promise((resolve) => setTimeout(resolve, 100));
 
     setLoading(true);
     try {
@@ -112,8 +124,6 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
   const mergeGuestIntoBackend = useCallback(
     async (guestProductIds: number[]) => {
       if (!user || !token || authLoading || guestProductIds.length === 0) return;
-
-      await new Promise((resolve) => setTimeout(resolve, 100));
 
       setLoading(true);
       try {
@@ -161,8 +171,9 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
 
   // Authenticated: merge guest wishlist then load; guest: load storage; logout: clear (no reload).
   useEffect(() => {
+    if (authLoading) return;
+
     if (user && token) {
-      if (authLoading) return;
       const fromLs = parseStoredGuestWishlist(
         localStorage.getItem(GUEST_WISHLIST_STORAGE_KEY)
       );
@@ -195,6 +206,11 @@ export const WishlistProvider = ({ children }: { children: ReactNode }) => {
     loadWishlistFromBackend,
     resetWishlistState,
   ]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    writeAuthenticatedWishlistSnapshot(user.id, wishlist);
+  }, [wishlist, user?.id]);
 
   useLayoutEffect(() => {
     const prev = prevUserRef.current;

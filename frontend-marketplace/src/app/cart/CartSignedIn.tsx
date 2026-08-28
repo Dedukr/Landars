@@ -168,8 +168,10 @@ export default function CartSignedIn() {
     [cart]
   );
 
-  const isInitialLoading = productsLoading && cart.length === 0;
-  const isEmpty = !productsLoading && cart.length === 0;
+  const isInitialLoading =
+    productsLoading && filteredProducts.length === 0 && cart.length === 0;
+  const isEmpty =
+    !productsLoading && !cartIsLoading && cart.length === 0 && filteredProducts.length === 0;
 
   return (
     <div className="min-h-screen" style={{ background: "var(--background)" }}>
@@ -185,7 +187,7 @@ export default function CartSignedIn() {
           pendingQuantityTotal={
             cartQuantityTotal > visibleQuantitySum ? cartQuantityTotal : undefined
           }
-          isLoading={productsLoading}
+          isLoading={productsLoading || cartIsLoading}
           isInitialLoading={isInitialLoading}
           isEmpty={isEmpty}
         />

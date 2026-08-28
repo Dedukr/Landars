@@ -1,41 +1,49 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
+import {
+  readListingProductsCache,
+  writeListingProductsCache,
+  type CachedListingProduct,
+} from "@/utils/listingProductCache";
+import { getPersistedUserId } from "@/utils/persistedUser";
 
-interface Product {
-  id: number;
-  name: string;
-  price: string;
-  image_url?: string | null;
-  images?: (string | { image_url: string })[];
-  primary_image?: string | null;
-  description?: string;
-  categories?: string[];
+type Product = CachedListingProduct;
+
+function readInitialCartProducts(): Product[] {
+  const userId = getPersistedUserId();
+  if (!userId) return [];
+  return readListingProductsCache("cart", userId) ?? [];
 }
 
 export const useCartOptimized = () => {
+  const { user } = useAuth();
   const { cart, clearCart } = useCart();
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState<Product[]>(readInitialCartProducts);
+  const [loading, setLoading] = useState(() => readInitialCartProducts().length === 0);
+  const [isValidating, setIsValidating] = useState(false);
   const prevProductIdsRef = useRef<string | null>(null);
+  const productsRef = useRef<Product[]>(products);
+  productsRef.current = products;
 
-  // Stable, sorted product id set string to detect only ID changes (not quantities)
+  const userId = user?.id ?? getPersistedUserId();
+
   const cartProductIdsKey = useMemo(() => {
     if (cart.length === 0) return "";
     const ids = cart.map((item) => item.productId).sort((a, b) => a - b);
     return ids.join(",");
   }, [cart]);
 
-  // Memoized stats calculation
   const calculateStats = useCallback(
-    (products: Product[]) => {
-      const subtotal = products.reduce((sum, product) => {
+    (productRows: Product[]) => {
+      const subtotal = productRows.reduce((sum, product) => {
         const cartItem = cart.find((item) => item.productId === product.id);
         return sum + parseFloat(product.price) * (cartItem?.quantity || 0);
       }, 0);
 
-      const shipping = subtotal > 50 ? 0 : 4.99; // Free shipping over £50
-      const tax = subtotal * 0.2; // 20% VAT
+      const shipping = subtotal > 50 ? 0 : 4.99;
+      const tax = subtotal * 0.2;
       const total = subtotal + shipping + tax;
 
       return {
@@ -49,23 +57,31 @@ export const useCartOptimized = () => {
     [cart]
   );
 
-  // Fetch products only when the SET of product IDs changes (not quantities)
   useEffect(() => {
+    let cancelled = false;
+
     async function fetchProductsByIds(productIdsKey: string) {
       if (!productIdsKey) {
         setProducts([]);
         setLoading(false);
+        setIsValidating(false);
         return;
       }
 
-      try {
+      const hasCachedProducts = productsRef.current.length > 0;
+      if (!hasCachedProducts) {
         setLoading(true);
+      } else {
+        setIsValidating(true);
+      }
+
+      try {
         const ids = productIdsKey.split(",").map((id) => parseInt(id, 10));
         const productPromises = ids.map(async (productId) => {
           try {
             const res = await fetch(`/api/products/${productId}/`);
             if (res.ok) {
-              return await res.json();
+              return (await res.json()) as Product;
             }
             console.warn(`Product ${productId} not found`);
             return null;
@@ -77,27 +93,39 @@ export const useCartOptimized = () => {
 
         const productResults = await Promise.all(productPromises);
         const validProducts = productResults.filter(Boolean) as Product[];
+
+        if (cancelled) return;
+
         setProducts(validProducts);
+        if (userId) {
+          writeListingProductsCache("cart", userId, validProducts);
+        }
       } catch (error) {
         console.error("Error fetching products:", error);
-        setProducts([]);
+        if (!cancelled && productsRef.current.length === 0) {
+          setProducts([]);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setIsValidating(false);
+        }
       }
     }
 
-    // Only fetch when product IDs actually change (not when quantities change)
-    // Don't set loading state based on cartIsLoading to avoid page reload effect
     if (prevProductIdsRef.current !== cartProductIdsKey) {
       prevProductIdsRef.current = cartProductIdsKey;
-      fetchProductsByIds(cartProductIdsKey);
+      void fetchProductsByIds(cartProductIdsKey);
     } else if (prevProductIdsRef.current === null && cartProductIdsKey) {
-      // Initial load - fetch products
-      fetchProductsByIds(cartProductIdsKey);
+      prevProductIdsRef.current = cartProductIdsKey;
+      void fetchProductsByIds(cartProductIdsKey);
     }
-  }, [cartProductIdsKey]);
 
-  // Keep products array aligned with current cart IDs (no loading toggles)
+    return () => {
+      cancelled = true;
+    };
+  }, [cartProductIdsKey, userId]);
+
   useEffect(() => {
     if (products.length > 0) {
       const cartProductIds = new Set(cart.map((item) => item.productId));
@@ -106,18 +134,19 @@ export const useCartOptimized = () => {
       );
       if (filteredProducts.length !== products.length) {
         setProducts(filteredProducts);
+        if (userId) {
+          writeListingProductsCache("cart", userId, filteredProducts);
+        }
       }
     }
-  }, [cart, products]);
+  }, [cart, products, userId]);
 
-  // Memoized stats
-  const stats = useMemo(() => {
-    return calculateStats(products);
-  }, [products, calculateStats]);
+  const stats = useMemo(() => calculateStats(products), [products, calculateStats]);
 
   return {
     products,
     loading,
+    isValidating,
     stats,
     clearCart,
     cart,

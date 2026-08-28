@@ -11,6 +11,7 @@ import React, {
 import { httpClient, refreshAuthTokens } from "@/utils/httpClient";
 import { clearCartStorage } from "@/utils/cartStorage";
 import { clearWishlistStorage } from "@/utils/wishlistStorage";
+import { getPersistedUserId } from "@/utils/persistedUser";
 import { formatUserDisplayName } from "@/lib/userName";
 import {
   authTokensUnchanged,
@@ -204,8 +205,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error("Logout error:", error);
     } finally {
-      clearWishlistStorage();
-      clearCartStorage();
+      const userId = getPersistedUserId() ?? undefined;
+      clearWishlistStorage(userId);
+      clearCartStorage(userId);
       clearAccessToken();
       clearLegacyTokenStorage();
       localStorage.removeItem("user");

@@ -5,10 +5,21 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getAuthUrl } from "@/utils/authHelpers";
 import NotAuthenticatedState from "@/components/NotAuthenticatedState";
 import WishlistSignedIn from "./WishlistSignedIn";
+import WishlistLoadingState from "@/components/wishlist/WishlistLoadingState";
 
 export default function WishlistPage() {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen" style={{ background: "var(--background)" }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+          <WishlistLoadingState />
+        </div>
+      </div>
+    );
+  }
 
   if (!user) {
     return (

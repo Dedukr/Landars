@@ -20,6 +20,7 @@ export default function WishlistSignedIn() {
   const {
     products,
     loading,
+    isValidating,
     stats,
     clearWishlist,
     wishlist,
@@ -115,7 +116,10 @@ export default function WishlistSignedIn() {
       : [];
   }, [productsWithLeafCategories, searchQuery, filterCategory, sortBy]);
 
-  if (loading) {
+  const showFullPageLoading =
+    loading && products.length === 0 && wishlist.length === 0;
+
+  if (showFullPageLoading) {
     return (
       <div className="min-h-screen" style={{ background: "var(--background)" }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
@@ -131,7 +135,7 @@ export default function WishlistSignedIn() {
     );
   }
 
-  if (wishlist.length === 0) {
+  if (wishlist.length === 0 && !loading) {
     return (
       <div className="min-h-screen py-6 sm:py-8" style={{ background: "var(--background)" }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -164,7 +168,7 @@ export default function WishlistSignedIn() {
         <WishlistHero
           itemCount={filteredAndSortedProducts.length}
           savedTotalCount={wishlist.length}
-          isLoading={false}
+          isLoading={loading || isValidating}
           hasError={false}
         />
         <WishlistSummaryStrip stats={stats} />
@@ -206,7 +210,12 @@ export default function WishlistSignedIn() {
             </Button>
           </div>
 
-          {filteredAndSortedProducts.length === 0 && productsWithLeafCategories.length > 0 ? (
+          {filteredAndSortedProducts.length === 0 &&
+          productsWithLeafCategories.length === 0 &&
+          wishlist.length > 0 &&
+          loading ? (
+            <WishlistLoadingState />
+          ) : filteredAndSortedProducts.length === 0 && productsWithLeafCategories.length > 0 ? (
             <p
               role="status"
               className="rounded-2xl border px-5 py-10 text-center text-sm font-medium"
