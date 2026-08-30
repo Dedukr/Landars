@@ -8,6 +8,10 @@ import {
   buildShopCarouselCategories,
   type HomeDisplayCategory,
 } from "@/lib/prepareHomeDisplayCategories";
+import {
+  CATEGORY_FETCH_TIMEOUT_MS,
+  fetchWithTimeout,
+} from "@/utils/fetchWithTimeout";
 
 export default function CategoryGrid() {
   const [categories, setCategories] = useState<HomeDisplayCategory[]>([]);
@@ -15,7 +19,11 @@ export default function CategoryGrid() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/categories/").then((r) => {
+      fetchWithTimeout(
+        "/api/categories/",
+        { headers: { Accept: "application/json" } },
+        CATEGORY_FETCH_TIMEOUT_MS
+      ).then((r) => {
         if (!r.ok) throw new Error("Failed to fetch categories");
         return r.json();
       }),

@@ -23,6 +23,10 @@ import {
   getAccessToken,
   setAccessToken,
 } from "@/utils/authTokenStore";
+import {
+  AUTH_FETCH_TIMEOUT_MS,
+  fetchWithTimeout,
+} from "@/utils/fetchWithTimeout";
 
 /** Clear token-only half-session without cart/wishlist side effects. */
 function clearHalfSessionAccess(): void {
@@ -77,14 +81,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const validateToken = useCallback(
     async (tokenToValidate: string): Promise<User | null> => {
       try {
-        const response = await fetch(`/api/auth/profile/`, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${tokenToValidate}`,
-            "Content-Type": "application/json",
+        const response = await fetchWithTimeout(
+          `/api/auth/profile/`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${tokenToValidate}`,
+              "Content-Type": "application/json",
+            },
+            credentials: "include",
           },
-          credentials: "include",
-        });
+          AUTH_FETCH_TIMEOUT_MS
+        );
 
         if (!response.ok) {
           console.warn(

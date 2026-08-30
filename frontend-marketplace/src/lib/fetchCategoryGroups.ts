@@ -1,4 +1,8 @@
 import type { ApiCategoryGroup } from "@/lib/prepareHomeDisplayCategories";
+import {
+  CATEGORY_FETCH_TIMEOUT_MS,
+  fetchWithTimeout,
+} from "@/utils/fetchWithTimeout";
 
 let cached: ApiCategoryGroup[] | null = null;
 let fetchPromise: Promise<ApiCategoryGroup[]> | null = null;
@@ -16,7 +20,11 @@ export async function fetchCategoryGroups(): Promise<ApiCategoryGroup[]> {
   if (cached) return cached;
   if (fetchPromise) return fetchPromise;
 
-  fetchPromise = fetch("/api/category-groups/")
+  fetchPromise = fetchWithTimeout(
+    "/api/category-groups/",
+    { headers: { Accept: "application/json" } },
+    CATEGORY_FETCH_TIMEOUT_MS
+  )
     .then(async (res) => {
       if (!res.ok) return [];
       const data = await res.json();

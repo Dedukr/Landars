@@ -12,6 +12,10 @@ import { normalizeListResponse } from "@/components/shop/normalizeListResponse";
 import type { ShopCategoryRecord } from "@/components/shop/ShopFilterPanelContent";
 import { fetchCategoryGroups } from "@/lib/fetchCategoryGroups";
 import { findPostDeliveryCategoryGroup } from "@/lib/categoryGroups";
+import {
+  CATEGORY_FETCH_TIMEOUT_MS,
+  fetchWithTimeout,
+} from "@/utils/fetchWithTimeout";
 import type { ApiCategoryGroup } from "@/lib/prepareHomeDisplayCategories";
 import { httpClient } from "@/utils/httpClient";
 
@@ -73,7 +77,11 @@ export default function CartSignedIn() {
     void (async () => {
       const [groups, categoriesRes] = await Promise.all([
         fetchCategoryGroups(),
-        fetch("/api/categories/"),
+        fetchWithTimeout(
+          "/api/categories/",
+          { headers: { Accept: "application/json" } },
+          CATEGORY_FETCH_TIMEOUT_MS
+        ),
       ]);
       setPostDeliveryGroup(findPostDeliveryCategoryGroup(groups));
       if (categoriesRes.ok) {
