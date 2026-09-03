@@ -131,7 +131,10 @@ describe("FestivalMenuPage", () => {
     expect(
       await screen.findByRole("heading", { name: "Festival Menu" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Landar's Food")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Landar's Food" })).toHaveAttribute(
+      "href",
+      "/",
+    );
     expect(
       await screen.findByText(sampleMenu.included_meal_offer),
     ).toBeInTheDocument();

@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import { FestivalWheatSprig } from "./FestivalMenuDecoration";
 
 type FestivalMenuHeaderProps = {
@@ -10,7 +11,7 @@ export function FestivalMenuHeader({ includedMealOffer }: FestivalMenuHeaderProp
     <div className="festival-menu-header">
       <div className="festival-menu-header-inner">
         <div className="festival-menu-masthead">
-          <div className="festival-menu-brand">
+          <Link href="/" className="festival-menu-brand">
             <Image
               src="/landars_food_logo.svg"
               alt=""
@@ -19,7 +20,7 @@ export function FestivalMenuHeader({ includedMealOffer }: FestivalMenuHeaderProp
               priority
             />
             <span className="festival-menu-brand-name">Landar&apos;s Food</span>
-          </div>
+          </Link>
           <FestivalWheatSprig />
         </div>
 

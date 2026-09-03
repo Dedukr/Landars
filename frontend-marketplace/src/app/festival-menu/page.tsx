@@ -12,7 +12,10 @@ import { FestivalCategorySection } from "./components/FestivalCategorySection";
 import { FestivalMenuDecoration } from "./components/FestivalMenuDecoration";
 import { FestivalMenuFooter } from "./components/FestivalMenuFooter";
 import { FestivalMenuHeader } from "./components/FestivalMenuHeader";
-import { FestivalMenuSkeleton } from "./components/FestivalMenuSkeleton";
+import {
+  FestivalMenuSkeleton,
+  FestivalMenuSkeletonNav,
+} from "./components/FestivalMenuSkeleton";
 import {
   FestivalMenuEmptyState,
   FestivalMenuErrorState,
@@ -46,7 +49,10 @@ export default function FestivalMenuPage() {
     void load();
   }, [load]);
 
-  const categories = menu?.categories ?? [];
+  const categories = useMemo(
+    () => menu?.categories ?? [],
+    [menu?.categories],
+  );
   const allProducts = useMemo(
     () => categories.flatMap((category) => category.products),
     [categories],
@@ -82,7 +88,9 @@ export default function FestivalMenuPage() {
       <div className="festival-menu-sheet">
         <FestivalMenuHeader includedMealOffer={menu?.included_meal_offer} />
 
-        {!loading && !error && categories.length > 0 ? (
+        {loading ? (
+          <FestivalMenuSkeletonNav />
+        ) : !error && categories.length > 0 ? (
           <FestivalCategoryNav categories={categories} />
         ) : null}
 
