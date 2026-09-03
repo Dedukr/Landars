@@ -16,6 +16,8 @@ type FestivalCategorySectionProps = {
   onImageError: (key: string) => void;
   /** Absolute product index offset for eager-loading the first photos. */
   imagePriorityStart?: number;
+  /** Category order for divider side/motif. */
+  index?: number;
 };
 
 export function FestivalCategorySection({
@@ -24,6 +26,7 @@ export function FestivalCategorySection({
   brokenImages,
   onImageError,
   imagePriorityStart = 0,
+  index = 0,
 }: FestivalCategorySectionProps) {
   const sectionId = categorySectionId(category.name);
   const additionGroups = nonDrinkAdditionGroups(
@@ -41,7 +44,7 @@ export function FestivalCategorySection({
           <h2 id={`${sectionId}-title`} className="festival-menu-section-title">
             {category.name}
           </h2>
-          <FestivalSectionDivider />
+          <FestivalSectionDivider index={index} />
         </div>
         <div className="festival-menu-state" role="status">
           <p>No items in this category right now.</p>
@@ -67,7 +70,7 @@ export function FestivalCategorySection({
             </span>
           ) : null}
         </div>
-        <FestivalSectionDivider />
+        <FestivalSectionDivider index={index} />
         <FestivalCategoryAdditions
           categoryName={category.name}
           groups={additionGroups}

@@ -58,7 +58,7 @@ export function FestivalMenuSkeleton() {
                 style={{ width: section.titleWidth }}
               />
             </div>
-            <FestivalSectionDivider />
+            <FestivalSectionDivider index={sectionIndex} />
             {section.withAdditions ? (
               <div className="festival-menu-category-additions festival-menu-category-additions--skeleton">
                 <ul className="festival-menu-category-additions-summary">

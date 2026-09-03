@@ -115,6 +115,7 @@ export default function FestivalMenuPage() {
                 <FestivalCategorySection
                   key={category.name}
                   category={category}
+                  index={catIndex}
                   showDrinksIncluded={
                     drinksIncludedWithMeals && isMealsCategory(category.name)
                   }

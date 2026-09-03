@@ -177,6 +177,8 @@
 
 .festival-menu-decoration-rail--right {
   right: 0;
+  /* 2 blocks → centers of the gaps between left's 3 space-between blocks */
+  justify-content: space-around;
 }
 
 .festival-menu-decoration-block {
@@ -464,6 +466,7 @@
 
 /* Category divider */
 .festival-menu-section-divider {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -487,6 +490,35 @@
   display: inline-flex;
   color: var(--fm-deco);
   flex-shrink: 0;
+}
+
+.festival-menu-section-divider-deco {
+  display: none;
+}
+
+@media (max-width: 699.98px) {
+  .festival-menu-section-divider-deco {
+    display: inline-flex;
+    position: absolute;
+    /* Sit just above the separation line (standing on it) */
+    top: 50%;
+    transform: translateY(calc(-100% - 0.2rem));
+    color: color-mix(in srgb, var(--fm-label) 38%, var(--fm-deco));
+    opacity: 0.72;
+    pointer-events: none;
+  }
+
+  .festival-menu-section-divider-deco--left {
+    left: -0.15rem;
+  }
+
+  .festival-menu-section-divider-deco--right {
+    right: -0.15rem;
+  }
+
+  .festival-menu-section-divider-deco svg {
+    display: block;
+  }
 }
 
 /* Slim ruled additions band */
