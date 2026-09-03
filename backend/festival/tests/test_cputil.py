@@ -8,6 +8,7 @@ from django.test import SimpleTestCase, override_settings
 
 from festival.services.cputil import (
     STARPRNT_MEDIA_TYPE,
+    advertised_media_types,
     convert_markup,
     cputil_available,
     reset_cputil_cache,
@@ -33,6 +34,21 @@ class CPUtilWrapperTests(SimpleTestCase):
         )
         plain = convert_markup(markup, "text/plain")
         self.assertEqual(plain, b"TOTAL \x9c1.00\n\n")
+
+    def test_advertised_media_types_starprnt_only(self):
+        self.assertEqual(
+            advertised_media_types(STARPRNT_MEDIA_TYPE),
+            [STARPRNT_MEDIA_TYPE],
+        )
+        self.assertEqual(
+            advertised_media_types("text/vnd.star.markup"),
+            [
+                STARPRNT_MEDIA_TYPE,
+                "text/vnd.star.markup",
+                "text/plain",
+            ],
+        )
+        self.assertEqual(advertised_media_types("text/plain"), ["text/plain"])
 
 
 @unittest.skipUnless(

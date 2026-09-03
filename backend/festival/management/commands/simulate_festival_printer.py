@@ -24,7 +24,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--poll-seconds",
             type=float,
-            default=float(getattr(settings, "FESTIVAL_CLOUDPRNT_POLL_SECONDS", 5)),
+            default=float(getattr(settings, "FESTIVAL_CLOUDPRNT_POLL_SECONDS", 2)),
         )
         parser.add_argument(
             "--max-cycles",

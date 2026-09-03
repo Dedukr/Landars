@@ -741,6 +741,8 @@ class FestivalPrintJob(models.Model):
     )
     media_type = models.CharField(max_length=64, default="text/plain")
     payload_text = models.TextField()
+    # Preconverted StarPRNT (or other wire) bytes; null for plain / convert-on-GET.
+    payload_binary = models.BinaryField(null=True, blank=True)
     payload_checksum = models.CharField(max_length=64)
     is_reprint = models.BooleanField(default=False)
     retry_of = models.ForeignKey(
@@ -801,6 +803,7 @@ class FestivalPrintJob(models.Model):
             if prev.status != self.Status.READY or self.status != self.Status.READY:
                 immutable = (
                     "payload_text",
+                    "payload_binary",
                     "payload_checksum",
                     "media_type",
                     "order_id",

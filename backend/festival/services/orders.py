@@ -400,8 +400,8 @@ def place_festival_order(
                     order=fresh_order,
                     printer=fresh_printer,
                     jobs=[
-                        (FestivalPrintJob.JobType.KITCHEN, 1, kitchen),
-                        (FestivalPrintJob.JobType.CUSTOMER, 2, customer),
+                        (FestivalPrintJob.JobType.CUSTOMER, 1, customer),
+                        (FestivalPrintJob.JobType.KITCHEN, 2, kitchen),
                     ],
                 )
                 # Offline: alert immediately. Online: a delayed verify alerts

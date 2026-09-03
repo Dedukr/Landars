@@ -134,6 +134,8 @@ def job_source_media_type() -> str:
 
 
 def advertised_media_types(source_media_type: str) -> list[str]:
+    if source_media_type == STARPRNT_MEDIA_TYPE:
+        return [STARPRNT_MEDIA_TYPE]
     if source_media_type == MARKUP_MEDIA_TYPE:
         return list(DEFAULT_MARKUP_MEDIA_TYPES)
     return [PLAIN_MEDIA_TYPE]
