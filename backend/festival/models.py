@@ -639,15 +639,21 @@ class FestivalPrinter(models.Model):
         super().save(*args, **kwargs)
 
     @property
-    def is_online(self) -> bool:
+    def is_reachable(self) -> bool:
+        """True when the printer has polled recently (any status code)."""
         if not self.is_active or not self.last_seen_at:
             return False
         stale = int(getattr(settings, "FESTIVAL_PRINTER_STALE_SECONDS", 60))
         age = (timezone.now() - self.last_seen_at).total_seconds()
-        if age > stale:
+        return age <= stale
+
+    @property
+    def is_online(self) -> bool:
+        """True when reachable and ready to print (2xx CloudPRNT status)."""
+        if not self.is_reachable:
             return False
         code = (self.last_status_code or "").strip()
-        # 2xx means the printer is reachable. 211 paper-low is still printable.
+        # 2xx means the printer is printable. 211 paper-low is still OK.
         # 220/221 are busy (printing / paper at exit), not offline — the till
         # must keep taking orders while a ticket is coming out.
         if not code:

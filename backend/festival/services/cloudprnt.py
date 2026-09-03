@@ -585,13 +585,10 @@ def handle_job_get(*, mac: str, media_type: str, token: str) -> tuple[bytes, str
     """
     Return ``(payload_bytes, content_type)`` for the claimed job.
 
-<<<<<<< HEAD
-    Markup jobs are converted with CPUtil to the printer-requested type.
-    Conversion runs outside the row lock so polls/DELETEs are not blocked.
-=======
-    Preconverted StarPRNT jobs return stored ``payload_binary`` immediately.
-    Legacy markup jobs (no binary) are converted with CPUtil on GET.
->>>>>>> dev
+    Preconverted StarPRNT jobs are served and acknowledged in one DB
+    transaction (instant GET). Legacy markup/plain payloads are converted
+    outside the row lock so polls/DELETEs are not blocked, then fetched_at
+    is recorded in a short follow-up transaction.
     """
     from festival.services.cputil import (
         ALLOWED_OUTPUT_TYPES,
@@ -635,20 +632,27 @@ def handle_job_get(*, mac: str, media_type: str, token: str) -> tuple[bytes, str
         if payload_sha256(job.payload_text) != job.payload_checksum:
             raise CloudPRNTError("Payload checksum mismatch.", status=500)
 
-        payload_text = job.payload_text
         source_type = job.media_type or PLAIN_MEDIA_TYPE
+
+        # Hot path: preconverted StarPRNT — no CPUtil, one transaction.
+        if source_type == STARPRNT_MEDIA_TYPE and job.payload_binary:
+            if media_type != STARPRNT_MEDIA_TYPE:
+                raise CloudPRNTError("Unsupported media type.", status=415)
+            payload = bytes(job.payload_binary)
+            job.fetched_at = timezone.now()
+            job.attempt_count += 1
+            job.save(update_fields=["fetched_at", "attempt_count", "updated_at"])
+            printer.last_seen_at = timezone.now()
+            printer.current_job_token = job.job_token
+            printer.save(
+                update_fields=["last_seen_at", "current_job_token", "updated_at"]
+            )
+            return payload, media_type
+
+        payload_text = job.payload_text
         job_token = job.job_token
 
-<<<<<<< HEAD
     if source_type == MARKUP_MEDIA_TYPE:
-=======
-    source_type = job.media_type or PLAIN_MEDIA_TYPE
-    if source_type == STARPRNT_MEDIA_TYPE and job.payload_binary:
-        if media_type != STARPRNT_MEDIA_TYPE:
-            raise CloudPRNTError("Unsupported media type.", status=415)
-        payload = bytes(job.payload_binary)
-    elif source_type == MARKUP_MEDIA_TYPE:
->>>>>>> dev
         try:
             payload = convert_markup(payload_text, media_type)
         except CPUtilError as exc:
@@ -1030,21 +1034,30 @@ def unstick_festival_printer() -> dict:
 def printer_attention_message(
     printer: FestivalPrinter | None, *, queued: int
 ) -> str:
-    """Staff-facing reason when printing cannot proceed."""
+    """Short staff-facing reason when printing cannot proceed."""
     if printer is None:
         return "No festival printer is configured."
     if printer.is_online:
         return ""
+    if not printer.is_reachable:
+        waiting = f" {queued} ticket(s) waiting." if queued else ""
+        return f"Printer offline.{waiting}".strip()
     code = parse_status_numeric(printer.last_status_code)
-    text = (printer.last_status_text or "").strip()
     waiting = f" {queued} ticket(s) waiting." if queued else ""
     if code == 420:
-        return f"Close the printer cover — printing is paused.{waiting}"
+        return f"Cover open.{waiting}".strip()
     if code in (410, 411, 412):
-        return f"Printer is out of paper — load a new roll.{waiting}"
+        return f"Out of paper.{waiting}".strip()
+    text = (printer.last_status_text or "").strip()
     if text:
-        return f"Printer error ({text}).{waiting}".strip()
-    return f"Printer unreachable — check power and network.{waiting}".strip()
+        # Prefer a short known phrase over dumping the raw protocol string.
+        lowered = text.lower()
+        if "cover" in lowered:
+            return f"Cover open.{waiting}".strip()
+        if "paper" in lowered:
+            return f"Out of paper.{waiting}".strip()
+        return f"Printer problem: {text}.{waiting}".strip()
+    return f"Printer not ready.{waiting}".strip()
 
 
 def printer_status_payload() -> dict:
@@ -1054,15 +1067,9 @@ def printer_status_payload() -> dict:
     online = bool(printer and printer.is_online)
     queued = queue_depth(printer) if printer else 0
     oldest_age = oldest_queued_seconds(printer) if printer else None
-    require_printer = bool(getattr(settings, "FESTIVAL_PRINTER_REQUIRED", True))
-    allow_offline = bool(
-        getattr(settings, "FESTIVAL_ALLOW_ORDERS_WHEN_PRINTER_OFFLINE", False)
-    )
+    # Orders are never blocked by printer health. Status / attention are for
+    # staff visibility and kitchen fallback only.
     can_accept = enabled
-    if mode == "cloudprnt" and require_printer and not allow_offline:
-        can_accept = enabled and online
-    elif mode == "disabled":
-        can_accept = enabled
 
     tickets, kitchen_pending = (
         pending_kitchen_tickets(printer) if mode == "cloudprnt" else ([], 0)

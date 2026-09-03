@@ -596,13 +596,13 @@ FESTIVAL_ENABLED = os.getenv("FESTIVAL_ENABLED", "false").lower() in (
 FESTIVAL_PRINT_MODE = os.getenv("FESTIVAL_PRINT_MODE", "disabled").strip().lower()
 if FESTIVAL_PRINT_MODE not in ("disabled", "cloudprnt"):
     FESTIVAL_PRINT_MODE = "disabled"
-FESTIVAL_PRINTER_REQUIRED = os.getenv("FESTIVAL_PRINTER_REQUIRED", "true").lower() in (
+# Deprecated: orders are always accepted when FESTIVAL_ENABLED. Kept so existing
+# env files do not break; neither setting gates place-order any more.
+FESTIVAL_PRINTER_REQUIRED = os.getenv("FESTIVAL_PRINTER_REQUIRED", "false").lower() in (
     "1",
     "true",
     "yes",
 )
-# Default true so a printer outage does not freeze the till mid-event.
-# Tickets queue and print when the printer returns.
 FESTIVAL_ALLOW_ORDERS_WHEN_PRINTER_OFFLINE = os.getenv(
     "FESTIVAL_ALLOW_ORDERS_WHEN_PRINTER_OFFLINE", "true"
 ).lower() in ("1", "true", "yes")

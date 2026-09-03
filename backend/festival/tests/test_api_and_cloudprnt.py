@@ -1005,7 +1005,8 @@ class PrintRecoveryTests(TestCase):
         )
         payload = printer_status_payload()
         self.assertFalse(payload["online"])
-        self.assertIn("cover", payload["attention"].lower())
+        self.assertTrue(payload["can_accept_orders"])
+        self.assertIn("cover open", payload["attention"].lower())
 
     def test_status_lists_pending_kitchen_tickets(self):
         from festival.services.cloudprnt import printer_status_payload

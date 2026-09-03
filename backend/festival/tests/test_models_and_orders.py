@@ -631,18 +631,19 @@ class FestivalCloudPRNTOrderTests(TestCase):
         self.assertNotIn("PAID", jobs[0].payload_text)
         self.assertNotIn("£", jobs[1].payload_text)
 
-    def test_missing_printer_rejected_when_required(self):
+    def test_missing_printer_still_accepts_order(self):
         FestivalPrinter.objects.all().delete()
-        with self.assertRaises(FestivalOrderError) as ctx:
-            place_festival_order(
-                user=self.user,
-                client_request_id=uuid.uuid4(),
-                items=[{"product_id": self.product.id, "quantity": 1}],
-            )
-        self.assertEqual(ctx.exception.code, "printer_missing")
+        result = place_festival_order(
+            user=self.user,
+            client_request_id=uuid.uuid4(),
+            items=[{"product_id": self.product.id, "quantity": 1}],
+        )
+        self.assertEqual(result.order.status, FestivalOrder.Status.PAID)
+        self.assertEqual(
+            FestivalPrintJob.objects.filter(order=result.order).count(), 0
+        )
 
-    @override_settings(FESTIVAL_ALLOW_ORDERS_WHEN_PRINTER_OFFLINE=True)
-    def test_order_without_printer_when_offline_allowed(self):
+    def test_order_without_printer_queues_no_jobs(self):
         FestivalPrinter.objects.all().delete()
         result = place_festival_order(
             user=self.user,

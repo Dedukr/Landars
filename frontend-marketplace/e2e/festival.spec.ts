@@ -63,9 +63,9 @@ async function stubFestivalApis(page: Page, opts?: { offline?: boolean }) {
         last_seen_at: null,
         queued_jobs: opts?.offline ? 3 : 0,
         oldest_queued_seconds: opts?.offline ? 90 : null,
-        can_accept_orders: !opts?.offline,
+        can_accept_orders: true,
         attention: opts?.offline
-          ? "Printer unreachable — check power and network. 3 ticket(s) waiting."
+          ? "Printer offline. 3 ticket(s) waiting."
           : "",
         pending_tickets: opts?.offline
           ? [
@@ -226,15 +226,14 @@ test.describe("@festival Till", () => {
     await seedAuth(page);
     await stubFestivalApis(page, { offline: true });
     await page.goto("/festival", { waitUntil: "domcontentloaded" });
-    await expect(page.getByText(/Printer unreachable/i)).toBeVisible({
+    await expect(page.getByRole("status", { name: /Printer offline/i })).toBeVisible({
       timeout: 15_000,
     });
-    await expect(page.getByText(/Orders paused/i)).toBeVisible();
-    await expect(page.getByText("#15")).toBeVisible();
     await expect(page.getByRole("button", { name: /Retry printing/i })).toBeVisible();
+    await expect(page.getByText(/Keep taking orders/i)).toHaveCount(0);
     await page.getByLabel("Increase Varenyky").click();
     await expect(
       page.getByRole("button", { name: /Place order/i })
-    ).toBeDisabled();
+    ).toBeEnabled();
   });
 });

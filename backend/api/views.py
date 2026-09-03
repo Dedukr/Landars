@@ -1,4 +1,3 @@
-import hashlib
 import logging
 import random
 import uuid
@@ -104,20 +103,6 @@ class CategoryUserThrottle(UserRateThrottle):
 #     return response
 
 
-PRODUCTS_LIST_CACHE_VERSION_KEY = "products_list_cache_version"
-DEFAULT_PRODUCTS_LIST_CACHE_VERSION = 12
-
-
-def _products_list_cache_key(query_params) -> str:
-    """Stable cache key across Gunicorn workers (built-in hash() is per-process)."""
-    normalized = "&".join(f"{k}={v}" for k, v in sorted(query_params.items()))
-    digest = hashlib.sha256(normalized.encode()).hexdigest()[:16]
-    version = cache.get(
-        PRODUCTS_LIST_CACHE_VERSION_KEY, DEFAULT_PRODUCTS_LIST_CACHE_VERSION
-    )
-    return f"products_v{version}_{digest}"
-
-
 _PRODUCT_LIST_IMAGE_PREFETCH = Prefetch(
     "images",
     queryset=ProductImage.objects.order_by("sort_order", "created_at"),
@@ -136,23 +121,10 @@ class ProductList(APIView):
     def get(self, request):
         """Retrieve products with filtering, sorting, and pagination."""
         no_cache = request.query_params.get("no_cache") == "1"
-<<<<<<< HEAD
-        # Cache key version suffix bumps stale entries when search logic changes.
-        # v12: stable sha256 key (hash() was per-process, so Redis cache never hit across workers).
-        cache_key = _products_list_cache_key(request.query_params)
-=======
->>>>>>> dev
 
         if no_cache:
-            return Response(self._build_product_list_response(request))
+            return self._build_product_list_response(request)
 
-<<<<<<< HEAD
-        # Optimize database queries: prefetch categories/images to avoid N+1 in serializer
-        products = Product.objects.prefetch_related(
-            "categories",
-            _PRODUCT_LIST_IMAGE_PREFETCH,
-        ).filter(active=True)
-=======
         cache_key = products_list_cache_key(request.query_params)
         response_data = cache_get_or_compute(
             cache_key,
@@ -163,12 +135,11 @@ class ProductList(APIView):
 
     def _build_product_list_response(self, request):
         """Build paginated product list payload (DB + serialization)."""
-        # Optimize database queries: prefetch categories to avoid N+1 in serializer
-        products = (
-            Product.objects.prefetch_related("categories", "images")
-            .filter(active=True)
-        )
->>>>>>> dev
+        # Optimize database queries: prefetch categories/images to avoid N+1 in serializer
+        products = Product.objects.prefetch_related(
+            "categories",
+            _PRODUCT_LIST_IMAGE_PREFETCH,
+        ).filter(active=True)
 
         # Filtering (categories, optional group shortcut, include subcategories)
         from api.services.category_groups import (

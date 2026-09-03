@@ -508,7 +508,7 @@ describe("FestivalTillPage", () => {
     ]);
   });
 
-  it("disables place when printer offline and required", async () => {
+  it("still allows place when printer offline", async () => {
     fetchStatus.mockResolvedValue({
       enabled: true,
       mode: "cloudprnt",
@@ -516,20 +516,22 @@ describe("FestivalTillPage", () => {
       last_seen_at: null,
       queued_jobs: 2,
       oldest_queued_seconds: 90,
-      can_accept_orders: false,
+      can_accept_orders: true,
+      attention: "Printer offline. 2 ticket(s) waiting.",
     });
     render(<FestivalTillPage />);
     expect(
-      await screen.findByText(/Printer offline — orders paused/i)
+      await screen.findByRole("status", { name: "Printer offline" })
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Retry printing/i })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Order Kvas" }));
     expect(screen.getByLabelText("Festival cart")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Place order/i })
-    ).toBeDisabled();
+    ).toBeEnabled();
   });
 
-  it("shows cover-open attention while still taking orders", async () => {
+  it("shows cover-open status with inline retry while still taking orders", async () => {
     fetchStatus.mockResolvedValue({
       enabled: true,
       mode: "cloudprnt",
@@ -540,8 +542,7 @@ describe("FestivalTillPage", () => {
       can_accept_orders: true,
       status_code: "420",
       status_text: "Cover Open",
-      attention:
-        "Close the printer cover — printing is paused. 4 ticket(s) waiting.",
+      attention: "Cover open. 4 ticket(s) waiting.",
       pending_tickets: [
         {
           order_id: 15,
@@ -556,21 +557,17 @@ describe("FestivalTillPage", () => {
     });
     render(<FestivalTillPage />);
     expect(
-      await screen.findByText(/Keep taking orders — tickets print when it is fixed/i)
+      await screen.findByRole("status", { name: "Cover open" })
     ).toBeInTheDocument();
-    expect(screen.getAllByText(/Close the printer cover/i).length).toBeGreaterThan(
-      0
-    );
-    expect(screen.getByText("Kitchen tickets on screen")).toBeInTheDocument();
-    expect(screen.getByText("#15")).toBeInTheDocument();
-    expect(screen.getByText(/1× Varenyky/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Retry printing/i })).toBeInTheDocument();
+    expect(screen.queryByText(/Kitchen tickets on screen/i)).not.toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Order Kvas" }));
     expect(
       screen.getByRole("button", { name: /Place order/i })
     ).toBeEnabled();
   });
 
-  it("retries printing from the till safety cover", async () => {
+  it("retries printing from the inline status control", async () => {
     fetchStatus.mockResolvedValue({
       enabled: true,
       mode: "cloudprnt",
@@ -581,8 +578,7 @@ describe("FestivalTillPage", () => {
       can_accept_orders: true,
       status_code: "420",
       status_text: "Cover Open",
-      attention:
-        "Close the printer cover — printing is paused. 4 ticket(s) waiting.",
+      attention: "Cover open. 4 ticket(s) waiting.",
       pending_tickets: [
         {
           order_id: 15,
@@ -602,6 +598,25 @@ describe("FestivalTillPage", () => {
     await waitFor(() => expect(unstickPrinter).toHaveBeenCalled());
   });
 
+  it("shows offline badge without listing other printer faults", async () => {
+    fetchStatus.mockResolvedValue({
+      enabled: true,
+      mode: "cloudprnt",
+      online: false,
+      last_seen_at: null,
+      queued_jobs: 0,
+      oldest_queued_seconds: null,
+      can_accept_orders: true,
+      attention: "Printer offline.",
+    });
+    render(<FestivalTillPage />);
+    expect(
+      await screen.findByRole("status", { name: "Printer offline" })
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/cover/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Keep taking orders/i)).not.toBeInTheDocument();
+  });
+
   it("shows oldest queue age when tickets are waiting", async () => {
     fetchStatus.mockResolvedValue({
       enabled: true,
@@ -614,7 +629,9 @@ describe("FestivalTillPage", () => {
     });
     render(<FestivalTillPage />);
     expect(
-      await screen.findByText(/Printer online · 2 queued · oldest 45s/i)
+      await screen.findByRole("status", {
+        name: /Printer online · 2 queued · oldest 45s/i,
+      })
     ).toBeInTheDocument();
   });
 });

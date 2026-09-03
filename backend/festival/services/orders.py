@@ -22,7 +22,6 @@ from festival.models import (
 from festival.services.cloudprnt import (
     create_print_batch,
     get_active_printer,
-    printer_status_payload,
 )
 from festival.services.numbering import allocate_ticket_number
 from festival.services.pricing import price_line, price_order
@@ -131,31 +130,6 @@ def _ensure_can_place(user) -> None:
         )
 
 
-def _ensure_printer_available() -> None:
-    status = printer_status_payload()
-    mode = status["mode"]
-    if mode != "cloudprnt":
-        return
-    require = bool(getattr(settings, "FESTIVAL_PRINTER_REQUIRED", True))
-    allow_offline = bool(
-        getattr(settings, "FESTIVAL_ALLOW_ORDERS_WHEN_PRINTER_OFFLINE", False)
-    )
-    if not require or allow_offline:
-        return
-    if not get_active_printer():
-        raise FestivalOrderError(
-            "No active festival printer is configured.",
-            code="printer_missing",
-            status=503,
-        )
-    if not status["online"]:
-        raise FestivalOrderError(
-            "Festival printer is offline. Orders cannot be accepted right now.",
-            code="printer_offline",
-            status=503,
-        )
-
-
 def place_festival_order(
     *,
     user,
@@ -183,8 +157,6 @@ def place_festival_order(
             code="idempotency_conflict",
             status=409,
         )
-
-    _ensure_printer_available()
 
     product_ids = [row["product_id"] for row in normalized]
     filling_ids = [
@@ -327,8 +299,9 @@ def place_festival_order(
 
         printer = get_active_printer()
         mode = getattr(settings, "FESTIVAL_PRINT_MODE", "disabled")
-        # Print jobs are queued only when an active printer exists; missing
-        # printers are already gated by _ensure_printer_available().
+        # Orders are always accepted when festival is enabled. Print jobs are
+        # queued only when an active printer exists; otherwise the order still
+        # completes and tickets can be reprinted later.
 
         ticket = allocate_ticket_number()
         try:
