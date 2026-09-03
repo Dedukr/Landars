@@ -12,10 +12,18 @@ from django.core.cache import cache
 from django.db.models.signals import m2m_changed, post_delete, post_save, pre_save
 from django.dispatch import receiver
 
+<<<<<<< HEAD
 from api.models import CategoryGroup, Order, OrderItem, Product, ProductCategory
 from api.views import (
     DEFAULT_PRODUCTS_LIST_CACHE_VERSION,
     PRODUCTS_LIST_CACHE_VERSION_KEY,
+=======
+from api.models import CategoryGroup, Order, OrderItem, Product, ProductCategory, ProductImage
+from api.cache_utils import (
+    CATEGORIES_LIST_CACHE_KEY,
+    CATEGORY_GROUPS_LIST_CACHE_KEY,
+    bump_products_cache_generation,
+>>>>>>> dev
 )
 from api.services.post_delivery_categories import invalidate_post_delivery_category_cache
 from api.services.product_sales import (
@@ -25,9 +33,18 @@ from api.services.product_sales import (
 
 logger = logging.getLogger(__name__)
 
-# Keep in sync with CategoryList / CategoryGroupList cache keys in views.py
-CATEGORIES_LIST_CACHE_KEY = "categories_list_v7"
-CATEGORY_GROUPS_LIST_CACHE_KEY = "category_groups_list_v3"
+# Re-export for tests and other modules
+__all__ = [
+    "CATEGORIES_LIST_CACHE_KEY",
+    "CATEGORY_GROUPS_LIST_CACHE_KEY",
+    "invalidate_category_list_caches",
+    "invalidate_product_list_caches",
+]
+
+
+def invalidate_product_list_caches() -> None:
+    """Bump product list generation so all query-param keys refresh."""
+    bump_products_cache_generation()
 
 
 def invalidate_category_list_caches() -> None:
@@ -149,4 +166,16 @@ def category_group_categories_changed(sender, instance, action, **kwargs):
     ):
         invalidate_post_delivery_category_cache(instance.pk)
         invalidate_category_list_caches()
+<<<<<<< HEAD
         bump_products_list_cache_version()
+=======
+
+
+@receiver(post_save, sender=Product, dispatch_uid="api.product_cache_invalidate")
+@receiver(post_delete, sender=Product, dispatch_uid="api.product_delete_cache_invalidate")
+@receiver(post_save, sender=ProductImage, dispatch_uid="api.product_image_cache_invalidate")
+@receiver(post_delete, sender=ProductImage, dispatch_uid="api.product_image_delete_cache_invalidate")
+def product_invalidate_list_caches(sender, instance, **kwargs):
+    invalidate_product_list_caches()
+    invalidate_category_list_caches()
+>>>>>>> dev

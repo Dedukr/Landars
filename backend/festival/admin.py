@@ -7,7 +7,11 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import path, reverse
 from django.utils.html import format_html, format_html_join
 
-from festival.forms import FestivalCancelOrderForm, FestivalProductAdminForm
+from festival.forms import (
+    FestivalCancelOrderForm,
+    FestivalFillingInlineForm,
+    FestivalProductAdminForm,
+)
 from festival.models import (
     FestivalAddition,
     FestivalAdditionClass,
@@ -15,6 +19,7 @@ from festival.models import (
     FestivalCreditNote,
     FestivalFilling,
     FestivalInvoice,
+    FestivalMenuSettings,
     FestivalNumberSequence,
     FestivalOrder,
     FestivalOrderItem,
@@ -104,16 +109,36 @@ class FestivalOrderItemInline(admin.TabularInline):
 
 class FestivalFillingInline(admin.TabularInline):
     model = FestivalFilling
+    form = FestivalFillingInlineForm
     extra = 0
-    fields = ["name", "is_active"]
+    fields = ["name", "image_upload", "description", "allergens", "is_active"]
+    classes = ["festival-filling-inline"]
+
+    class Media:
+        css = {"all": ("festival/admin_filling_inline.css",)}
+
+
+@admin.register(FestivalMenuSettings)
+class FestivalMenuSettingsAdmin(admin.ModelAdmin):
+    list_display = ["included_meal_offer", "updated_at"]
+    fields = ["included_meal_offer", "updated_at"]
+    readonly_fields = ["updated_at"]
+
+    def has_add_permission(self, request):
+        return not FestivalMenuSettings.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(FestivalCategory)
 class FestivalCategoryAdmin(admin.ModelAdmin):
-    list_display = ["name", "product_count", "created_at"]
+    list_display = ["name", "is_active", "product_count", "created_at"]
+    list_filter = ["is_active"]
+    list_editable = ["is_active"]
     search_fields = ["name"]
     ordering = ["created_at", "id"]
-    fields = ["name", "created_at"]
+    fields = ["name", "is_active", "created_at"]
 
     @admin.display(description="Products")
     def product_count(self, obj: FestivalCategory) -> int:
@@ -194,6 +219,7 @@ class FestivalProductAdmin(admin.ModelAdmin):
         "image_preview",
     ]
     list_filter = ["category", "addition_class", "is_active", "vat_rate"]
+    list_editable = ["is_active"]
     search_fields = ["name", "category__name", "addition_class__name"]
     autocomplete_fields = ["category", "addition_class"]
     readonly_fields = ["updated_at", "image_preview"]
@@ -203,6 +229,11 @@ class FestivalProductAdmin(admin.ModelAdmin):
         "name",
         "price",
         "vat_rate",
+        "portion",
+        "description",
+        "ingredients",
+        "toppings",
+        "allergens",
         "is_active",
         "image_url",
         "image_upload",

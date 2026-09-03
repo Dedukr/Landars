@@ -94,6 +94,35 @@ class FestivalAPITests(TestCase):
         self.assertEqual(len(resp.data["results"]), 1)
         self.assertEqual(resp.data["results"][0]["image"], "")
 
+    def test_filling_image_falls_back_to_product_image(self):
+        from festival.models import FestivalFilling
+
+        self.product.image_url = "https://example.com/varenyky.jpg"
+        self.product.save(update_fields=["image_url"])
+        potato = FestivalFilling.objects.create(
+            product=self.product,
+            name="Potato",
+            image_url="https://example.com/potato.jpg",
+            is_active=True,
+        )
+        FestivalFilling.objects.create(
+            product=self.product,
+            name="Cheese",
+            is_active=True,
+        )
+
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.get("/api/festival/products/")
+        self.assertEqual(resp.status_code, 200)
+        fillings = resp.data["results"][0]["fillings"]
+        images = {f["name"]: f["image"] for f in fillings}
+        self.assertEqual(images["Potato"], "https://example.com/potato.jpg")
+        self.assertEqual(images["Cheese"], "https://example.com/varenyky.jpg")
+        self.assertEqual(
+            set(fillings[0].keys()), {"id", "name", "image", "description", "allergens"}
+        )
+        self.assertEqual(potato.image_url, "https://example.com/potato.jpg")
+
     def test_products_list_omits_inactive_additions(self):
         from festival.models import FestivalAddition, FestivalAdditionClass
 
@@ -118,6 +147,23 @@ class FestivalAPITests(TestCase):
         self.assertEqual(resp.status_code, 200)
         additions = resp.data["results"][0]["additions"]
         self.assertEqual([a["name"] for a in additions], ["Cola"])
+
+    def test_products_list_omits_inactive_category(self):
+        from festival.models import FestivalCategory
+
+        hidden = FestivalCategory.objects.create(name="Off menu", is_active=False)
+        FestivalProduct.objects.create(
+            name="Hidden dumpling",
+            category=hidden,
+            price=Decimal("6.00"),
+            is_active=True,
+        )
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.get("/api/festival/products/")
+        self.assertEqual(resp.status_code, 200)
+        names = [row["name"] for row in resp.data["results"]]
+        self.assertIn("Varenyky", names)
+        self.assertNotIn("Hidden dumpling", names)
 
     def test_place_order(self):
         self.client.force_authenticate(user=self.staff)
@@ -214,14 +260,14 @@ class CloudPRNTProtocolTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["jobReady"], False)
 
-    def test_full_lifecycle_kitchen_then_customer(self):
+    def test_full_lifecycle_customer_then_kitchen(self):
         place_order(
             self,
             user=self.user,
             client_request_id=uuid.uuid4(),
             items=[{"product_id": self.product.id, "quantity": 1}],
         )
-        # First job kitchen
+        # First job customer
         resp = self._post_poll()
         self.assertTrue(resp.data["jobReady"])
         token = resp.data["jobToken"]
@@ -237,7 +283,10 @@ class CloudPRNTProtocolTests(TestCase):
         self.assertEqual(get.status_code, 200)
         self.assertIn("text/plain", get["Content-Type"])
         body1 = get.content
-        self.assertIn(b"KITCHEN", body1)
+        self.assertIn(b"INVOICE", body1)
+        # £ must be CP437 0x9C on the wire (not UTF-8 C2 A3 mojibake).
+        self.assertIn("£".encode("cp437"), body1)
+        self.assertNotIn("£".encode("utf-8"), body1)
 
         # Repeated GET same bytes
         get2 = self.client.get(
@@ -262,7 +311,7 @@ class CloudPRNTProtocolTests(TestCase):
         )
         self.assertEqual(delete2.status_code, 200)
 
-        # Second job customer
+        # Second job kitchen
         resp = self._post_poll()
         self.assertTrue(resp.data["jobReady"])
         token2 = resp.data["jobToken"]
@@ -271,10 +320,7 @@ class CloudPRNTProtocolTests(TestCase):
             {"mac": "001C62000000", "type": "text/plain", "token": token2},
             HTTP_AUTHORIZATION=self.auth,
         )
-        self.assertIn(b"INVOICE", get.content)
-        # £ must be CP437 0x9C on the wire (not UTF-8 C2 A3 mojibake).
-        self.assertIn("£".encode("cp437"), get.content)
-        self.assertNotIn("£".encode("utf-8"), get.content)
+        self.assertIn(b"KITCHEN", get.content)
         self.client.delete(
             f"{self.url}?mac=001C62000000&token={token2}&code=200%20OK",
             HTTP_AUTHORIZATION=self.auth,
@@ -316,7 +362,7 @@ class CloudPRNTProtocolTests(TestCase):
                 f"{self.url}?mac=001C62000000&token={token}&code=200%20OK",
                 HTTP_AUTHORIZATION=self.auth,
             )
-        # First order kitchen+customer before second order starts
+        # First order customer+kitchen before second order starts
         self.assertEqual(sequence[0][2], 1)
         self.assertEqual(sequence[1][2], 2)
         self.assertEqual(sequence[0][0], sequence[1][0])
@@ -324,6 +370,8 @@ class CloudPRNTProtocolTests(TestCase):
         self.assertEqual(sequence[2][2], 1)
         self.assertEqual(sequence[3][2], 2)
         self.assertLess(sequence[0][0], sequence[2][0])
+        self.assertEqual(sequence[0][1], FestivalPrintJob.JobType.CUSTOMER)
+        self.assertEqual(sequence[1][1], FestivalPrintJob.JobType.KITCHEN)
 
     def test_job_get_accepts_star_text_plain_accept_header(self):
         """TSP100IV sends Accept: text/plain; DRF must not 406 before the handler."""
@@ -342,7 +390,7 @@ class CloudPRNTProtocolTests(TestCase):
             HTTP_ACCEPT="text/plain",
         )
         self.assertEqual(get.status_code, 200)
-        self.assertIn(b"KITCHEN", get.content)
+        self.assertIn(b"INVOICE", get.content)
         job = FestivalPrintJob.objects.get(job_token=token)
         self.assertIsNotNone(job.fetched_at)
 
@@ -370,12 +418,16 @@ class CloudPRNTProtocolTests(TestCase):
         resp = self.client.get(self.url, HTTP_AUTHORIZATION=self.auth)
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data.get("protocol"), "HTTP")
+        self.assertEqual(
+            resp.data.get("settingForHTTP", {}).get("pollingTimeSec"),
+            2,
+        )
 
     def test_unknown_mac(self):
         resp = self._post_poll(printerMAC="00:11:22:33:44:55")
         self.assertEqual(resp.status_code, 403)
 
-    def test_terminal_media_error_sync_retries_kitchen_before_customer(self):
+    def test_terminal_media_error_sync_retries_customer_before_kitchen(self):
         place_order(
             self,
             user=self.user,
@@ -400,13 +452,13 @@ class CloudPRNTProtocolTests(TestCase):
         self.assertEqual(job.status, FestivalPrintJob.Status.CANCELLED)
         replacement = FestivalPrintJob.objects.get(retry_of=job)
         self.assertEqual(replacement.status, FestivalPrintJob.Status.READY)
-        self.assertEqual(replacement.job_type, FestivalPrintJob.JobType.KITCHEN)
-        customer = FestivalPrintJob.objects.get(
-            order=job.order, job_type=FestivalPrintJob.JobType.CUSTOMER
+        self.assertEqual(replacement.job_type, FestivalPrintJob.JobType.CUSTOMER)
+        kitchen = FestivalPrintJob.objects.get(
+            order=job.order, job_type=FestivalPrintJob.JobType.KITCHEN
         )
-        self.assertEqual(customer.status, FestivalPrintJob.Status.READY)
-        self.assertEqual(customer.batch_uuid, replacement.batch_uuid)
-        # Next claim must be kitchen retry, not customer.
+        self.assertEqual(kitchen.status, FestivalPrintJob.Status.READY)
+        self.assertEqual(kitchen.batch_uuid, replacement.batch_uuid)
+        # Next claim must be customer retry, not kitchen.
         nxt = self._post_poll()
         self.assertTrue(nxt.data["jobReady"])
         self.assertEqual(nxt.data["jobToken"], str(replacement.job_token))
@@ -588,7 +640,7 @@ class PrintRecoveryTests(TestCase):
         remaining = FestivalPrintJob.objects.filter(
             order=order, status=FestivalPrintJob.Status.READY
         ).count()
-        self.assertEqual(remaining, 1)  # customer still waiting
+        self.assertEqual(remaining, 1)  # kitchen still waiting
 
     def test_failed_jobs_keep_retrying_without_cap(self):
         self._place_order()
@@ -630,7 +682,7 @@ class PrintRecoveryTests(TestCase):
             recover_stale_festival_print_claims()
             self.assertTrue(alert.called)
             alert_text = alert.call_args[0][0]
-            self.assertIn("KITCHEN", alert_text)
+            self.assertIn("Customer", alert_text)
             self.assertIn("Varenyky", alert_text)
             self.assertIn("<pre>", alert_text)
             self.assertIn("Tickets in this event", alert_text)
@@ -1168,18 +1220,18 @@ class PrintRecoveryTests(TestCase):
             ).exists()
         )
 
-    def test_poll_retry_keeps_kitchen_before_customer(self):
+    def test_poll_retry_keeps_customer_before_kitchen(self):
         order = self._place_order()
         failed = self._fail_claimed_job()
         with mock.patch("festival.services.alerts.send_festival_alert"):
             nxt = self._poll()
         replacement = FestivalPrintJob.objects.get(retry_of=failed)
-        customer = FestivalPrintJob.objects.get(
-            order=order, job_type=FestivalPrintJob.JobType.CUSTOMER
+        kitchen = FestivalPrintJob.objects.get(
+            order=order, job_type=FestivalPrintJob.JobType.KITCHEN
         )
-        self.assertEqual(customer.batch_uuid, replacement.batch_uuid)
+        self.assertEqual(kitchen.batch_uuid, replacement.batch_uuid)
         self.assertEqual(nxt["jobToken"], str(replacement.job_token))
-        self.assertEqual(replacement.job_type, FestivalPrintJob.JobType.KITCHEN)
+        self.assertEqual(replacement.job_type, FestivalPrintJob.JobType.CUSTOMER)
 
     def test_unfetched_stale_requeues_after_three_minutes(self):
         from festival.tasks import recover_stale_festival_print_claims
@@ -1305,7 +1357,7 @@ class CloudPRNTMarkupTests(TestCase):
         "festival.services.cputil.convert_markup",
         return_value=b"\x1b@STARPRNT-TEST",
     )
-    def test_markup_poll_advertises_starprnt_and_get_returns_bytes(
+    def test_markup_preconvert_at_enqueue_and_get_serves_binary(
         self, mock_convert, _mock_avail
     ):
         with self.captureOnCommitCallbacks(execute=True):
@@ -1314,26 +1366,32 @@ class CloudPRNTMarkupTests(TestCase):
                 client_request_id=uuid.uuid4(),
                 items=[{"product_id": self.product.id, "quantity": 1}],
             )
-        job = FestivalPrintJob.objects.filter(
+        # Enqueue converts markup → StarPRNT (customer + kitchen).
+        self.assertGreaterEqual(mock_convert.call_count, 2)
+
+        customer = FestivalPrintJob.objects.filter(
+            job_type=FestivalPrintJob.JobType.CUSTOMER
+        ).first()
+        kitchen = FestivalPrintJob.objects.filter(
             job_type=FestivalPrintJob.JobType.KITCHEN
         ).first()
-        self.assertEqual(job.media_type, "text/vnd.star.markup")
-        self.assertIn("[magnify:", job.payload_text)
-        self.assertIn("£", FestivalPrintJob.objects.filter(
-            job_type=FestivalPrintJob.JobType.CUSTOMER
-        ).first().payload_text)
+        self.assertEqual(customer.sequence, 1)
+        self.assertEqual(kitchen.sequence, 2)
+        self.assertEqual(customer.media_type, "application/vnd.star.starprnt")
+        self.assertEqual(kitchen.media_type, "application/vnd.star.starprnt")
+        self.assertTrue(customer.payload_binary)
+        self.assertEqual(bytes(customer.payload_binary), b"\x1b@STARPRNT-TEST")
+        self.assertIn("[magnify:", kitchen.payload_text)
+        self.assertIn("£", customer.payload_text)
 
         resp = self._post_poll()
         self.assertTrue(resp.data["jobReady"])
         self.assertEqual(
             resp.data["mediaTypes"],
-            [
-                "application/vnd.star.starprnt",
-                "text/vnd.star.markup",
-                "text/plain",
-            ],
+            ["application/vnd.star.starprnt"],
         )
         token = resp.data["jobToken"]
+        mock_convert.reset_mock()
         get = self.client.get(
             self.url,
             {
@@ -1347,7 +1405,8 @@ class CloudPRNTMarkupTests(TestCase):
         self.assertEqual(get.status_code, 200)
         self.assertEqual(get["Content-Type"], "application/vnd.star.starprnt")
         self.assertEqual(get.content, b"\x1b@STARPRNT-TEST")
-        mock_convert.assert_called()
+        # Instant GET — no CPUtil on download.
+        mock_convert.assert_not_called()
         # Repeated GET is deterministic.
         get2 = self.client.get(
             self.url,
@@ -1359,6 +1418,57 @@ class CloudPRNTMarkupTests(TestCase):
             HTTP_AUTHORIZATION=self.auth,
         )
         self.assertEqual(get2.content, get.content)
+
+    @mock.patch("festival.services.cputil.cputil_available", return_value=True)
+    def test_markup_preconvert_failure_falls_back_to_convert_on_get(
+        self, _mock_avail
+    ):
+        from festival.services.cputil import CPUtilError, MARKUP_MEDIA_TYPE
+
+        with mock.patch(
+            "festival.services.cputil.convert_markup",
+            side_effect=[
+                CPUtilError("boom"),
+                CPUtilError("boom"),
+                b"\x1b@STARPRNT-FALLBACK",
+            ],
+        ) as mock_convert:
+            with self.captureOnCommitCallbacks(execute=True):
+                place_festival_order(
+                    user=self.user,
+                    client_request_id=uuid.uuid4(),
+                    items=[{"product_id": self.product.id, "quantity": 1}],
+                )
+            job = FestivalPrintJob.objects.filter(
+                job_type=FestivalPrintJob.JobType.CUSTOMER
+            ).first()
+            self.assertEqual(job.media_type, MARKUP_MEDIA_TYPE)
+            self.assertIsNone(job.payload_binary)
+
+            resp = self._post_poll()
+            self.assertTrue(resp.data["jobReady"])
+            self.assertEqual(
+                resp.data["mediaTypes"],
+                [
+                    "application/vnd.star.starprnt",
+                    "text/vnd.star.markup",
+                    "text/plain",
+                ],
+            )
+            token = resp.data["jobToken"]
+            get = self.client.get(
+                self.url,
+                {
+                    "mac": "001C62000000",
+                    "type": "application/vnd.star.starprnt",
+                    "token": token,
+                },
+                HTTP_AUTHORIZATION=self.auth,
+                HTTP_ACCEPT="application/vnd.star.starprnt",
+            )
+            self.assertEqual(get.status_code, 200)
+            self.assertEqual(get.content, b"\x1b@STARPRNT-FALLBACK")
+            self.assertGreaterEqual(mock_convert.call_count, 3)
 
     @mock.patch("festival.services.cputil.cputil_available", return_value=False)
     def test_markup_format_falls_back_to_plain_when_cputil_missing(
@@ -1375,7 +1485,8 @@ class CloudPRNTMarkupTests(TestCase):
                 items=[{"product_id": self.product.id, "quantity": 1}],
             )
         job = FestivalPrintJob.objects.filter(
-            job_type=FestivalPrintJob.JobType.KITCHEN
+            job_type=FestivalPrintJob.JobType.CUSTOMER
         ).first()
         self.assertEqual(job.media_type, "text/plain")
         self.assertNotIn("[magnify:", job.payload_text)
+        self.assertIsNone(job.payload_binary)

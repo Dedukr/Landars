@@ -89,8 +89,8 @@ const products = [
     addition_class: null,
     additions: [],
     fillings: [
-      { id: 31, name: "Potato" },
-      { id: 32, name: "Cabbage" },
+      { id: 31, name: "Potato", image: "https://example.com/potato.jpg" },
+      { id: 32, name: "Cabbage", image: "https://example.com/cabbage.jpg" },
     ],
     image: "",
     price: "4.00",
@@ -104,7 +104,7 @@ const products = [
     addition_class_id: 1,
     addition_class: "Soft drinks",
     additions: [{ id: 10, name: "Cola", price: "1.50" }],
-    fillings: [{ id: 41, name: "Cherry" }],
+    fillings: [{ id: 41, name: "Cherry", image: "" }],
     image: "",
     price: "5.00",
     vat_rate: "0",
@@ -425,6 +425,17 @@ describe("FestivalTillPage", () => {
       screen.getByRole("button", { name: "Order Pyrizhky — Cabbage" })
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Pyrizhky fillings")).toBeInTheDocument();
+  });
+
+  it("shows filling images on till cards when provided", async () => {
+    const { container } = render(<FestivalTillPage />);
+    await screen.findByRole("heading", { name: "Pyrizhky" });
+    expect(
+      container.querySelector('img[src="https://example.com/potato.jpg"]')
+    ).toBeTruthy();
+    expect(
+      container.querySelector('img[src="https://example.com/cabbage.jpg"]')
+    ).toBeTruthy();
   });
 
   it("adds filling card straight to cart and sends filling_id", async () => {

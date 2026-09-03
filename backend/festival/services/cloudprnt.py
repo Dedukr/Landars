@@ -260,16 +260,41 @@ def create_print_batch(
     Create READY print jobs for a batch.
 
     jobs: list of (job_type, sequence, payload_text)
+
+    For markup format, converts to StarPRNT at enqueue and stores bytes in
+    ``payload_binary`` so CloudPRNT GET is instant. On CPUtil failure, leaves
+    markup + null binary (legacy convert-on-GET).
     """
     batch_uuid = uuid.uuid4()
     now = timezone.now()
     created: list[FestivalPrintJob] = []
     retry_of_map = retry_of_map or {}
-    from festival.services.cputil import job_source_media_type
+    from festival.services.cputil import (
+        CPUtilError,
+        STARPRNT_MEDIA_TYPE,
+        active_job_format,
+        convert_markup,
+        job_source_media_type,
+    )
 
-    media_type = job_source_media_type()
+    source_format = active_job_format()
+    default_media_type = job_source_media_type()
     for job_type, sequence, payload in jobs:
         checksum = payload_sha256(payload)
+        media_type = default_media_type
+        payload_binary = None
+        if source_format == "markup":
+            try:
+                payload_binary = convert_markup(payload, STARPRNT_MEDIA_TYPE)
+                media_type = STARPRNT_MEDIA_TYPE
+            except CPUtilError as exc:
+                logger.error(
+                    "CPUtil preconvert failed for %s seq=%s: %s; "
+                    "leaving markup for on-GET convert",
+                    job_type,
+                    sequence,
+                    exc,
+                )
         job = FestivalPrintJob.objects.create(
             batch_uuid=batch_uuid,
             order=order,
@@ -279,6 +304,7 @@ def create_print_batch(
             status=FestivalPrintJob.Status.READY,
             media_type=media_type,
             payload_text=payload,
+            payload_binary=payload_binary,
             payload_checksum=checksum,
             is_reprint=is_reprint,
             retry_of=retry_of_map.get(sequence),
@@ -559,14 +585,20 @@ def handle_job_get(*, mac: str, media_type: str, token: str) -> tuple[bytes, str
     """
     Return ``(payload_bytes, content_type)`` for the claimed job.
 
+<<<<<<< HEAD
     Markup jobs are converted with CPUtil to the printer-requested type.
     Conversion runs outside the row lock so polls/DELETEs are not blocked.
+=======
+    Preconverted StarPRNT jobs return stored ``payload_binary`` immediately.
+    Legacy markup jobs (no binary) are converted with CPUtil on GET.
+>>>>>>> dev
     """
     from festival.services.cputil import (
         ALLOWED_OUTPUT_TYPES,
         CPUtilError,
         MARKUP_MEDIA_TYPE,
         PLAIN_MEDIA_TYPE,
+        STARPRNT_MEDIA_TYPE,
         convert_markup,
     )
     from festival.services.tickets import encode_print_payload
@@ -607,7 +639,16 @@ def handle_job_get(*, mac: str, media_type: str, token: str) -> tuple[bytes, str
         source_type = job.media_type or PLAIN_MEDIA_TYPE
         job_token = job.job_token
 
+<<<<<<< HEAD
     if source_type == MARKUP_MEDIA_TYPE:
+=======
+    source_type = job.media_type or PLAIN_MEDIA_TYPE
+    if source_type == STARPRNT_MEDIA_TYPE and job.payload_binary:
+        if media_type != STARPRNT_MEDIA_TYPE:
+            raise CloudPRNTError("Unsupported media type.", status=415)
+        payload = bytes(job.payload_binary)
+    elif source_type == MARKUP_MEDIA_TYPE:
+>>>>>>> dev
         try:
             payload = convert_markup(payload_text, media_type)
         except CPUtilError as exc:
@@ -854,6 +895,11 @@ def server_settings_http_only() -> dict:
     return {
         "version": "1.0",
         "protocol": "HTTP",
+        "settingForHTTP": {
+            "pollingTimeSec": int(
+                getattr(settings, "FESTIVAL_CLOUDPRNT_POLL_SECONDS", 2)
+            ),
+        },
     }
 
 
@@ -1148,7 +1194,7 @@ def create_retry_job(failed_job: FestivalPrintJob) -> FestivalPrintJob:
     )
     replacement = jobs[0]
 
-    # Re-home unfinished siblings so kitchen-before-customer survives the new
+    # Re-home unfinished siblings so customer-before-kitchen survives the new
     # batch_uuid (unique constraint prevents same-batch sequence reuse).
     FestivalPrintJob.objects.filter(
         batch_uuid=old_batch,
@@ -1195,8 +1241,8 @@ def create_reprint_batch(order, *, is_copy: bool = True) -> list[FestivalPrintJo
         order=order,
         printer=printer,
         jobs=[
-            (FestivalPrintJob.JobType.KITCHEN, 1, kitchen),
-            (FestivalPrintJob.JobType.CUSTOMER, 2, customer),
+            (FestivalPrintJob.JobType.CUSTOMER, 1, customer),
+            (FestivalPrintJob.JobType.KITCHEN, 2, kitchen),
         ],
         is_reprint=True,
     )

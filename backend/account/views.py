@@ -29,7 +29,7 @@ from rest_framework_simplejwt.serializers import (
 )
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 
 from .jwt_cookies import (
     clear_refresh_cookie,
@@ -37,11 +37,9 @@ from .jwt_cookies import (
     refresh_cookie_name,
     set_refresh_cookie,
 )
-from .email_utils import (
-    send_email_verification_confirmation_email,
-    send_email_verification_email,
-    send_password_reset_confirmation_email,
-    send_password_reset_email,
+from .tasks import (
+    send_verification_confirmation_email_task,
+    send_verification_email_task,
 )
 from .email_validators import validate_email_comprehensive, validate_email_field
 from .frontend_urls import get_public_frontend_base_url
@@ -61,38 +59,83 @@ from .serializers import PaymentInformationListSerializer, PaymentInformationSer
 logger = logging.getLogger("account")
 
 
+def _queue_verification_email(token_id: int) -> bool:
+    """Enqueue verification email; fall back to synchronous send if broker unavailable."""
+    try:
+        send_verification_email_task.delay(token_id)
+        return True
+    except Exception:
+        logger.exception(
+            "Celery unavailable for verification email token %s — sending synchronously",
+            token_id,
+        )
+        try:
+            send_verification_email_task(token_id)
+            return True
+        except Exception:
+            logger.exception("Synchronous verification email failed for token %s", token_id)
+            return False
+
+
+# Custom throttle base — fail open when cache/Redis is unavailable
+class FailOpenAnonRateThrottle(AnonRateThrottle):
+    def allow_request(self, request, view):
+        try:
+            return super().allow_request(request, view)
+        except Exception:
+            logger.warning(
+                "Throttle cache unavailable for %s — allowing request",
+                self.scope,
+                exc_info=True,
+            )
+            return True
+
+
+class FailOpenUserRateThrottle(UserRateThrottle):
+    def allow_request(self, request, view):
+        try:
+            return super().allow_request(request, view)
+        except Exception:
+            logger.warning(
+                "Throttle cache unavailable for %s — allowing request",
+                self.scope,
+                exc_info=True,
+            )
+            return True
+
+
 # Custom throttle for registration
-class RegisterThrottle(AnonRateThrottle):
+class RegisterThrottle(FailOpenAnonRateThrottle):
     scope = "register"
     rate = getattr(settings, "REGISTER_RATE_LIMIT", "10/hour")
 
 
 # Custom throttle for login
-class LoginThrottle(AnonRateThrottle):
+class LoginThrottle(FailOpenAnonRateThrottle):
     scope = "login"
     rate = getattr(settings, "LOGIN_RATE_LIMIT", "5/minute")
 
 
 # Custom throttle for password reset requests
-class PasswordResetThrottle(AnonRateThrottle):
+class PasswordResetThrottle(FailOpenAnonRateThrottle):
     scope = "password_reset"
     rate = getattr(settings, "PASSWORD_RESET_RATE_LIMIT", "5/hour")
 
 
 # Custom throttle for password reset by email
-class PasswordResetEmailThrottle(UserRateThrottle):
+class PasswordResetEmailThrottle(FailOpenUserRateThrottle):
     scope = "password_reset_email"
     rate = getattr(settings, "PASSWORD_RESET_EMAIL_RATE_LIMIT", "3/hour")
 
 
 # Custom throttle for email verification
-class EmailVerificationThrottle(AnonRateThrottle):
+class EmailVerificationThrottle(FailOpenAnonRateThrottle):
     scope = "email_verify"
     rate = getattr(settings, "EMAIL_VERIFICATION_RATE_LIMIT", "5/hour")
 
 
 # Custom throttle for email verification resend
-class EmailVerificationResendThrottle(AnonRateThrottle):
+class EmailVerificationResendThrottle(FailOpenAnonRateThrottle):
     scope = "email_resend"
     rate = getattr(settings, "EMAIL_VERIFICATION_RESEND_RATE_LIMIT", "3/hour")
 
@@ -278,24 +321,7 @@ def register(request):
             user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],  # Limit length
         )
 
-        frontend_url = get_public_frontend_base_url()
-        verification_url = (
-            f"{frontend_url}/verify-email?token={verification_token.token}"
-        )
-        email_sent = send_email_verification_email(
-            to_email=email,
-            user_name=user.get_display_name(),
-            verification_url=verification_url,
-        )
-        # Only start resend cooldown when SMTP actually accepted the message
-        if email_sent:
-            verification_token.email_sent_at = timezone.now()
-            verification_token.save(update_fields=["email_sent_at"])
-        else:
-            logger.error(
-                "Registration succeeded but verification email failed for %s",
-                email,
-            )
+        email_queued = _queue_verification_email(verification_token.pk)
 
         # Log successful registration
         logger.info(
@@ -306,11 +332,12 @@ def register(request):
             {
                 "message": (
                     "User created successfully. Please check your email to verify your account."
-                    if email_sent
+                    if email_queued
                     else "User created successfully, but we could not send the verification email. Please use Resend verification from the sign-in page."
                 ),
                 "email_verification_required": True,
-                "email_sent": email_sent,
+                "email_queued": email_queued,
+                "email_sent": False,
                 "user": user_payload(user),
             },
             status=status.HTTP_201_CREATED,
@@ -1181,89 +1208,89 @@ def verify_email(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Find the verification token
+        with transaction.atomic():
+            try:
+                verification_token = (
+                    EmailVerificationToken.objects.select_for_update()
+                    .select_related("user")
+                    .get(token=token)
+                )
+            except EmailVerificationToken.DoesNotExist:
+                logger.warning(
+                    f"Invalid email verification token attempted from IP: {request.META.get('REMOTE_ADDR')}"
+                )
+                return Response(
+                    {"error": "Invalid or expired verification token"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            user = verification_token.user
+
+            # Idempotent success: already-used token for an already-verified user
+            if verification_token.is_used and user.is_email_verified:
+                logger.info(
+                    f"Idempotent email verification for already-verified user: {user.email} "
+                    f"from IP: {request.META.get('REMOTE_ADDR')}"
+                )
+                return Response(
+                    {
+                        "message": "Email verified successfully",
+                        "user": user_payload(user),
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
+            if not verification_token.is_valid():
+                logger.warning(
+                    f"Expired email verification token attempted for user: {user.email} from IP: {request.META.get('REMOTE_ADDR')}"
+                )
+                return Response(
+                    {
+                        "error": "Verification token has expired or has already been used",
+                        "email": user.email,
+                        "can_resend": not user.is_email_verified,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            already_verified = user.is_email_verified
+            verification_token.mark_as_used()
+
+            remaining_tokens_count = (
+                EmailVerificationToken.invalidate_unused_user_tokens(user)
+            )
+            if remaining_tokens_count > 0:
+                logger.info(
+                    f"Invalidated {remaining_tokens_count} remaining verification tokens for user: {user.email}"
+                )
+
+            if already_verified:
+                logger.info(
+                    f"Email already verified for user: {user.email} from IP: {request.META.get('REMOTE_ADDR')}"
+                )
+                return Response(
+                    {
+                        "message": "Email verified successfully",
+                        "user": user_payload(user),
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
+            user.is_email_verified = True
+            user.save(update_fields=["is_email_verified"])
+
         try:
-            verification_token = EmailVerificationToken.objects.get(token=token)
-        except EmailVerificationToken.DoesNotExist:
-            logger.warning(
-                f"Invalid email verification token attempted from IP: {request.META.get('REMOTE_ADDR')}"
+            send_verification_confirmation_email_task.delay(user.pk)
+        except Exception:
+            logger.exception(
+                "Failed to queue confirmation email for user %s — sending synchronously",
+                user.email,
             )
-            return Response(
-                {"error": "Invalid or expired verification token"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            try:
+                send_verification_confirmation_email_task(user.pk)
+            except Exception:
+                logger.exception("Synchronous confirmation email failed for %s", user.email)
 
-        user = verification_token.user
-
-        # Idempotent success: already-used token for an already-verified user
-        if verification_token.is_used and user.is_email_verified:
-            logger.info(
-                f"Idempotent email verification for already-verified user: {user.email} "
-                f"from IP: {request.META.get('REMOTE_ADDR')}"
-            )
-            return Response(
-                {
-                    "message": "Email verified successfully",
-                    "user": user_payload(user),
-                },
-                status=status.HTTP_200_OK,
-            )
-
-        # Check if token is valid and not expired
-        if not verification_token.is_valid():
-            logger.warning(
-                f"Expired email verification token attempted for user: {user.email} from IP: {request.META.get('REMOTE_ADDR')}"
-            )
-            return Response(
-                {
-                    "error": "Verification token has expired or has already been used",
-                    # Safe to return: holder already received this address via email.
-                    "email": user.email,
-                    "can_resend": not user.is_email_verified,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        already_verified = user.is_email_verified
-
-        # Mark token as used with timestamp
-        verification_token.mark_as_used()
-
-        # Invalidate ALL remaining verification tokens for this user (comprehensive cleanup)
-        remaining_tokens_count = EmailVerificationToken.invalidate_unused_user_tokens(
-            user
-        )
-
-        if remaining_tokens_count > 0:
-            logger.info(
-                f"Invalidated {remaining_tokens_count} remaining verification tokens for user: {user.email}"
-            )
-
-        if already_verified:
-            # Valid token, user already verified — cleanup only; no confirmation email
-            logger.info(
-                f"Email already verified for user: {user.email} from IP: {request.META.get('REMOTE_ADDR')}"
-            )
-            return Response(
-                {
-                    "message": "Email verified successfully",
-                    "user": user_payload(user),
-                },
-                status=status.HTTP_200_OK,
-            )
-
-        # Verify user's email
-        user.is_email_verified = True
-        user.save()
-
-        # Send confirmation email (first successful verification only)
-        home_url = get_public_frontend_base_url()
-
-        send_email_verification_confirmation_email(
-            to_email=user.email, user_name=user.get_display_name(), home_url=home_url
-        )
-
-        # Log successful verification
         logger.info(
             f"Email verified for user: {user.email} from IP: {request.META.get('REMOTE_ADDR')}"
         )
@@ -1392,25 +1419,12 @@ def resend_verification_email(request):
                 f"Created new verification token for user: {user.email} (token: {verification_token.token[:8]}...)"
             )
 
-            # Send verification email with HTML template
-            frontend_url = get_public_frontend_base_url()
-            verification_url = (
-                f"{frontend_url}/verify-email?token={verification_token.token}"
-            )
-
-            email_sent = send_email_verification_email(
-                to_email=user.email,
-                user_name=user.get_display_name(),
-                verification_url=verification_url,
-            )
-            # Only start cooldown when SMTP accepted the message
-            if email_sent:
-                verification_token.email_sent_at = timezone.now()
-                verification_token.save(update_fields=["email_sent_at"])
-                logger.info(f"Email verification email sent to: {email}")
+            email_queued = _queue_verification_email(verification_token.pk)
+            if email_queued:
+                logger.info(f"Email verification email queued for: {email}")
             else:
                 logger.error(
-                    f"Failed to send email verification email to {email}"
+                    f"Failed to queue email verification email to {email}"
                 )
 
         # Always return success message regardless of whether user exists

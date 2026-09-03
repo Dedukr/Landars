@@ -1126,7 +1126,7 @@ class VerifyEmailIdempotentTests(TestCase):
         if self._verify_cls is not None and self._saved_verify_throttles is not None:
             self._verify_cls.throttle_classes = self._saved_verify_throttles
 
-    @patch("account.views.send_email_verification_confirmation_email")
+    @patch("account.views.send_verification_confirmation_email_task.delay")
     def test_first_verify_succeeds_and_sends_confirmation(self, mock_confirm):
         token = EmailVerificationToken.objects.create(user=self.user)
         response = self.client.post(
@@ -1141,7 +1141,7 @@ class VerifyEmailIdempotentTests(TestCase):
         self.assertTrue(self.user.is_email_verified)
         mock_confirm.assert_called_once()
 
-    @patch("account.views.send_email_verification_confirmation_email")
+    @patch("account.views.send_verification_confirmation_email_task.delay")
     def test_reused_token_when_already_verified_returns_200(self, mock_confirm):
         token = EmailVerificationToken.objects.create(user=self.user)
         token.mark_as_used()
@@ -1158,7 +1158,7 @@ class VerifyEmailIdempotentTests(TestCase):
         self.assertIn("user", response.data)
         mock_confirm.assert_not_called()
 
-    @patch("account.views.send_email_verification_confirmation_email")
+    @patch("account.views.send_verification_confirmation_email_task.delay")
     def test_valid_token_when_already_verified_cleans_up_without_email(
         self, mock_confirm
     ):

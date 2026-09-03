@@ -29,6 +29,10 @@ import {
   type ApiCategory,
 } from "@/lib/prepareHomeDisplayCategories";
 import { prefetchCategoryImages } from "@/lib/shopCatalogClient";
+import {
+  CATEGORY_FETCH_TIMEOUT_MS,
+  fetchWithTimeout,
+} from "@/utils/fetchWithTimeout";
 
 export default function ShopContent() {
   const searchParams = useSearchParams();
@@ -62,7 +66,11 @@ export default function ShopContent() {
       setCategoriesLoading(true);
       try {
         const [categoriesRes, groups] = await Promise.all([
-          fetch("/api/categories/"),
+          fetchWithTimeout(
+            "/api/categories/",
+            { headers: { Accept: "application/json" } },
+            CATEGORY_FETCH_TIMEOUT_MS
+          ),
           fetchCategoryGroups(),
         ]);
 

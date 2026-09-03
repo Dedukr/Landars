@@ -15,6 +15,10 @@ import {
   getAccessToken,
   setAccessToken,
 } from "@/utils/authTokenStore";
+import {
+  AUTH_FETCH_TIMEOUT_MS,
+  fetchWithTimeout,
+} from "@/utils/fetchWithTimeout";
 
 // Types for the HTTP client
 interface RequestConfig extends RequestInit {
@@ -49,10 +53,14 @@ async function fetchCSRFToken(): Promise<string> {
   }
 
   try {
-    const response = await fetch(`${getClientApiBaseUrl()}/api/auth/csrf-token/`, {
-      method: "GET",
-      credentials: "include",
-    });
+    const response = await fetchWithTimeout(
+      `${getClientApiBaseUrl()}/api/auth/csrf-token/`,
+      {
+        method: "GET",
+        credentials: "include",
+      },
+      AUTH_FETCH_TIMEOUT_MS
+    );
 
     if (response.ok) {
       const data = await response.json();
@@ -134,15 +142,19 @@ async function refreshJWTToken(): Promise<boolean> {
   const hadAccessToken = Boolean(getAccessToken());
 
   try {
-    const response = await fetch(`${getClientApiBaseUrl()}/api/auth/token/refresh/`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRFToken": csrfToken || (await fetchCSRFToken()),
+    const response = await fetchWithTimeout(
+      `${getClientApiBaseUrl()}/api/auth/token/refresh/`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrfToken || (await fetchCSRFToken()),
+        },
+        credentials: "include",
+        body: JSON.stringify({}),
       },
-      credentials: "include",
-      body: JSON.stringify({}),
-    });
+      AUTH_FETCH_TIMEOUT_MS
+    );
 
     if (response.ok) {
       const data: RefreshTokenResponse = await response.json();

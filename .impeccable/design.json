@@ -1,0 +1,375 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-03T02:09:00Z",
+  "title": "Design System: Festival Paper Frame",
+  "extensions": {
+    "colorMeta": {
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Parchment",
+        "canonical": "#f3e8d8",
+        "tonalRamp": [
+          "#3a2c1c",
+          "#5c4630",
+          "#7e6146",
+          "#a17e5e",
+          "#c09b78",
+          "#d4b899",
+          "#e6d4bb",
+          "#f3e8d8"
+        ]
+      },
+      "sheet": {
+        "role": "neutral",
+        "displayName": "Ivory Sheet",
+        "canonical": "#f8f3ea",
+        "tonalRamp": [
+          "#3c2f1e",
+          "#5e4a32",
+          "#816648",
+          "#a38360",
+          "#c2a07c",
+          "#d6bc9e",
+          "#eadac4",
+          "#f8f3ea"
+        ]
+      },
+      "card": {
+        "role": "neutral",
+        "displayName": "Card Cream",
+        "canonical": "#fffcf7",
+        "tonalRamp": [
+          "#3d3222",
+          "#604e36",
+          "#836b4c",
+          "#a68864",
+          "#c5a682",
+          "#d9c2a4",
+          "#eee0cc",
+          "#fffcf7"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Menu Ink",
+        "canonical": "#241d18",
+        "tonalRamp": [
+          "#2e251f",
+          "#514136",
+          "#745d4d",
+          "#977965",
+          "#af9787",
+          "#c6b6aa",
+          "#ddd4cd",
+          "#f5f2f0"
+        ]
+      },
+      "body": {
+        "role": "neutral",
+        "displayName": "Warm Body",
+        "canonical": "#5f5147",
+        "tonalRamp": [
+          "#2c2521",
+          "#4d423a",
+          "#6e5e53",
+          "#907b6c",
+          "#a9988c",
+          "#c2b6ae",
+          "#dbd4cf",
+          "#f4f2f0"
+        ]
+      },
+      "price": {
+        "role": "primary",
+        "displayName": "Harvest Gold",
+        "canonical": "#a67b46",
+        "tonalRamp": [
+          "#362817",
+          "#5f4628",
+          "#886539",
+          "#b1834b",
+          "#c49f72",
+          "#d5bb9b",
+          "#e6d7c4",
+          "#f7f3ed"
+        ]
+      },
+      "label": {
+        "role": "neutral",
+        "displayName": "Label Bronze",
+        "canonical": "#80603d",
+        "tonalRamp": [
+          "#342719",
+          "#5b442c",
+          "#83623e",
+          "#aa8051",
+          "#be9c77",
+          "#d1b99f",
+          "#e4d6c6",
+          "#f7f2ee"
+        ]
+      },
+      "deco": {
+        "role": "neutral",
+        "displayName": "Straw Motif",
+        "canonical": "#d7c2a2",
+        "tonalRamp": [
+          "#352917",
+          "#5e4929",
+          "#87693a",
+          "#b0884c",
+          "#c3a373",
+          "#d4be9c",
+          "#e6d9c4",
+          "#f7f3ed"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Beige Rule",
+        "canonical": "#e6d2b2",
+        "tonalRamp": [
+          "#3a2b13",
+          "#664b21",
+          "#926c2f",
+          "#be8c3e",
+          "#cea768",
+          "#dcc094",
+          "#eadac0",
+          "#f9f4ec"
+        ]
+      },
+      "allergen": {
+        "role": "neutral",
+        "displayName": "Allergen Taupe",
+        "canonical": "#806f60",
+        "tonalRamp": [
+          "#2c2621",
+          "#4d433a",
+          "#6e6053",
+          "#907d6c",
+          "#a99a8d",
+          "#c2b7ae",
+          "#dbd5cf",
+          "#f4f2f0"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Page title Festival Menu — Britannic condensed uppercase."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Category titles on the ivory sheet."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Dish names on product cards."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Dish and filling descriptions."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Tagline, nav, portions, offer, add-on summaries."
+      },
+      "price": {
+        "displayName": "Price",
+        "purpose": "Money in Gilroy tabular nums and harvest gold."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Ingredients / Allergens / Sauces prefixes and choice headings."
+      }
+    },
+    "shadows": [
+      {
+        "name": "sheet-rest",
+        "value": "0 18px 40px rgba(61, 43, 28, 0.06)",
+        "purpose": "Ivory menu document on the parchment table."
+      },
+      {
+        "name": "card-rest",
+        "value": "0 1px 0 rgba(61, 43, 28, 0.05), 0 12px 30px rgba(61, 43, 28, 0.07)",
+        "purpose": "Product cards and empty/error states."
+      }
+    ],
+    "motion": [
+      {
+        "name": "micro",
+        "value": "140ms",
+        "purpose": "Nav and retry color/background transitions."
+      },
+      {
+        "name": "standard",
+        "value": "220ms",
+        "purpose": "Standard state duration token."
+      },
+      {
+        "name": "large",
+        "value": "320ms",
+        "purpose": "Sheet entrance and skeleton shimmer cycle."
+      },
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Entrance and control easing."
+      },
+      {
+        "name": "section-in",
+        "value": "opacity 0→1, translateY(0.45rem→0) over 320ms",
+        "purpose": "Ivory sheet entrance when motion is allowed."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sheet-narrow",
+        "value": "699px"
+      },
+      {
+        "name": "sheet-md",
+        "value": "700px"
+      },
+      {
+        "name": "sheet-lg",
+        "value": "1120px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Festival Product Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "One dish: 5:4 well, Britannic name, Gilroy gold price, always-on ingredients and allergens.",
+      "html": "<article class=\"ds-fm-card\" tabindex=\"0\"><div class=\"ds-fm-card-media\"><span class=\"ds-fm-card-media-label\">Photo unavailable</span></div><div class=\"ds-fm-card-body\"><div class=\"ds-fm-card-headline\"><h3 class=\"ds-fm-card-name\">Shashlik</h3><span class=\"ds-fm-card-price\">£9.00</span></div><p class=\"ds-fm-card-portion\">Skewer</p><p class=\"ds-fm-card-description\">Chargrilled skewer</p><p class=\"ds-fm-card-detail\"><span class=\"ds-fm-card-detail-label\">Ingredients</span> · Meat, spices</p><p class=\"ds-fm-card-allergens\"><span class=\"ds-fm-card-detail-label\">Allergens</span> : Not listed</p></div></article>",
+      "css": ".ds-fm-card {\n  display: flex;\n  flex-direction: column;\n  background: #fffcf7;\n  color: #241d18;\n  border: 1px solid #e6d2b2;\n  border-radius: 0.75rem;\n  box-shadow: 0 1px 0 rgba(61, 43, 28, 0.05), 0 12px 30px rgba(61, 43, 28, 0.07);\n  overflow: hidden;\n  text-align: left;\n  max-width: 22rem;\n}\n.ds-fm-card-media {\n  position: relative;\n  width: 100%;\n  aspect-ratio: 5 / 4;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  background:\n    repeating-linear-gradient(-18deg, transparent, transparent 11px, rgba(230, 210, 178, 0.35) 11px, rgba(230, 210, 178, 0.35) 12px),\n    color-mix(in srgb, #f8f3ea 70%, #e6d2b2);\n}\n.ds-fm-card-media-label {\n  font-family: \"Landars Gilroy\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif;\n  font-size: 0.75rem;\n  font-weight: 600;\n  letter-spacing: 0.08em;\n  text-transform: uppercase;\n  color: #80603d;\n}\n.ds-fm-card-body {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n  padding: 1rem;\n}\n.ds-fm-card-headline {\n  display: flex;\n  align-items: baseline;\n  justify-content: space-between;\n  gap: 0.75rem;\n}\n.ds-fm-card-name {\n  margin: 0;\n  font-family: \"Landars Britannic\", \"Arial Narrow\", \"Helvetica Neue Condensed\", sans-serif;\n  font-size: 1.25rem;\n  font-weight: 700;\n  line-height: 1.15;\n  letter-spacing: 0.03em;\n  text-transform: uppercase;\n  color: #241d18;\n}\n.ds-fm-card-price {\n  font-family: \"Landars Gilroy\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif;\n  font-size: 1.375rem;\n  font-weight: 700;\n  color: #a67b46;\n  font-variant-numeric: tabular-nums;\n  white-space: nowrap;\n}\n.ds-fm-card-portion {\n  margin: 0;\n  font-family: \"Landars Gilroy\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif;\n  font-size: 0.8125rem;\n  font-weight: 600;\n  letter-spacing: 0.05em;\n  text-transform: uppercase;\n  color: #80603d;\n}\n.ds-fm-card-description {\n  margin: 0;\n  font-family: \"Landars Gilroy\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif;\n  font-size: 0.9375rem;\n  line-height: 1.5;\n  color: #5f5147;\n}\n.ds-fm-card-detail, .ds-fm-card-allergens {\n  margin: 0;\n  font-family: \"Landars Gilroy\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif;\n  font-size: 0.8125rem;\n  line-height: 1.5;\n  color: #5f5147;\n}\n.ds-fm-card-allergens { color: #806f60; }\n.ds-fm-card-detail-label {\n  font-weight: 700;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: #80603d;\n  font-size: 0.6875rem;\n}\n.ds-fm-card:focus-within {\n  outline: 2px solid #80603d;\n  outline-offset: 3px;\n}"
+    },
+    {
+      "name": "Category Nav Link",
+      "kind": "nav",
+      "refersTo": "nav-link",
+      "description": "Sticky sheet nav chip; current state is cream fill plus beige stroke.",
+      "html": "<nav class=\"ds-fm-nav\" aria-label=\"Menu categories\"><a class=\"ds-fm-nav-link\" href=\"#category-meals\" aria-current=\"true\">Meals</a><a class=\"ds-fm-nav-link\" href=\"#category-sides\">Sides</a><a class=\"ds-fm-nav-link\" href=\"#category-drinks\">Drinks</a></nav>",
+      "css": ".ds-fm-nav {\n  display: flex;\n  gap: 0.375rem;\n  background: color-mix(in srgb, #f8f3ea 94%, white);\n  border-bottom: 1px solid color-mix(in srgb, #e6d2b2 85%, transparent);\n  padding: 0.5rem;\n}\n.ds-fm-nav-link {\n  appearance: none;\n  flex: 0 0 auto;\n  min-height: 2.75rem;\n  min-width: 2.75rem;\n  padding: 0.5rem 0.875rem;\n  border-radius: 0.375rem;\n  border: 1px solid transparent;\n  background: transparent;\n  color: #5f5147;\n  font-family: \"Landars Gilroy\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif;\n  font-size: 0.8125rem;\n  font-weight: 600;\n  text-decoration: none;\n  display: inline-flex;\n  align-items: center;\n  cursor: pointer;\n  transition: color 140ms cubic-bezier(0.22, 1, 0.36, 1), background 140ms cubic-bezier(0.22, 1, 0.36, 1), border-color 140ms cubic-bezier(0.22, 1, 0.36, 1);\n}\n.ds-fm-nav-link:hover {\n  color: #241d18;\n  background: color-mix(in srgb, #fffcf7 80%, #f8f3ea);\n}\n.ds-fm-nav-link[aria-current=\"true\"] {\n  color: #241d18;\n  background: #fffcf7;\n  border-color: #e6d2b2;\n}\n.ds-fm-nav-link:focus-visible {\n  outline: 2px solid #80603d;\n  outline-offset: 3px;\n}"
+    },
+    {
+      "name": "Retry Button",
+      "kind": "button",
+      "refersTo": "retry",
+      "description": "Only button on the surface — reload after a menu fetch error.",
+      "html": "<button type=\"button\" class=\"ds-fm-retry\">Try again</button>",
+      "css": ".ds-fm-retry {\n  min-height: 2.75rem;\n  padding: 0.5rem 1.25rem;\n  border-radius: 0.375rem;\n  border: 1px solid #e6d2b2;\n  background: #fffcf7;\n  color: #241d18;\n  font-family: \"Landars Gilroy\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif;\n  font-size: 0.875rem;\n  font-weight: 600;\n  cursor: pointer;\n  transition: border-color 140ms cubic-bezier(0.22, 1, 0.36, 1), background 140ms cubic-bezier(0.22, 1, 0.36, 1);\n}\n.ds-fm-retry:hover {\n  border-color: #d7c2a2;\n  background: color-mix(in srgb, #d7c2a2 14%, #fffcf7);\n}\n.ds-fm-retry:focus-visible {\n  outline: 2px solid #80603d;\n  outline-offset: 3px;\n}\n.ds-fm-retry:active {\n  background: color-mix(in srgb, #d7c2a2 22%, #fffcf7);\n}"
+    },
+    {
+      "name": "Meal Offer Band",
+      "kind": "custom",
+      "refersTo": "offer-band",
+      "description": "Transparent harvest-gold hairline band for the included meal offer.",
+      "html": "<p class=\"ds-fm-offer\">Main + side + drink for £15</p>",
+      "css": ".ds-fm-offer {\n  margin: 0 auto;\n  max-width: 36rem;\n  padding: 0.7rem 0.5rem;\n  border-top: 1.5px solid #e6d2b2;\n  border-bottom: 1.5px solid #e6d2b2;\n  background: transparent;\n  font-family: \"Landars Gilroy\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif;\n  font-size: 0.8125rem;\n  font-weight: 700;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n  line-height: 1.45;\n  color: #a67b46;\n  text-align: center;\n}"
+    },
+    {
+      "name": "Category Additions Band",
+      "kind": "custom",
+      "refersTo": "offer-band",
+      "description": "Centered uppercase add-on summaries between 1px beige rules.",
+      "html": "<aside class=\"ds-fm-additions\"><ul class=\"ds-fm-additions-list\"><li>Sauces included</li></ul></aside>",
+      "css": ".ds-fm-additions {\n  margin: 0;\n  padding: 0.625rem 0;\n  border-top: 1px solid #e6d2b2;\n  border-bottom: 1px solid #e6d2b2;\n  background: transparent;\n}\n.ds-fm-additions-list {\n  margin: 0;\n  padding: 0;\n  list-style: none;\n  display: flex;\n  flex-wrap: wrap;\n  justify-content: center;\n  gap: 0.35rem 1.25rem;\n}\n.ds-fm-additions-list li {\n  font-family: \"Landars Gilroy\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif;\n  font-size: 0.8125rem;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: #80603d;\n}"
+    },
+    {
+      "name": "Section Divider",
+      "kind": "custom",
+      "description": "Fading beige rules with a wheat-seed mark.",
+      "html": "<div class=\"ds-fm-divider\" aria-hidden=\"true\"><span class=\"ds-fm-divider-line\"></span><span class=\"ds-fm-divider-mark\"><svg viewBox=\"0 0 24 12\" width=\"24\" height=\"12\" focusable=\"false\"><path d=\"M2 6h6.5M15.5 6H22\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1\" stroke-linecap=\"round\" opacity=\"0.55\"/><circle cx=\"12\" cy=\"6\" r=\"2.25\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.1\"/><circle cx=\"12\" cy=\"6\" r=\"0.7\" fill=\"currentColor\"/></svg></span><span class=\"ds-fm-divider-line\"></span></div>",
+      "css": ".ds-fm-divider {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  color: #d7c2a2;\n  margin: 0.35rem 0;\n}\n.ds-fm-divider-line {\n  flex: 1;\n  height: 1px;\n  background: linear-gradient(90deg, transparent, #e6d2b2 18%, #e6d2b2 82%, transparent);\n}\n.ds-fm-divider-mark {\n  display: inline-flex;\n  color: #d7c2a2;\n}"
+    },
+    {
+      "name": "Photo Unavailable Well",
+      "kind": "custom",
+      "description": "5:4 striped well that keeps geometry when a photo is missing or broken.",
+      "html": "<div class=\"ds-fm-well\"><span class=\"ds-fm-well-label\">Photo unavailable</span></div>",
+      "css": ".ds-fm-well {\n  width: 100%;\n  max-width: 18rem;\n  aspect-ratio: 5 / 4;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  border-radius: 0.75rem 0.75rem 0 0;\n  background:\n    repeating-linear-gradient(-18deg, transparent, transparent 11px, rgba(230, 210, 178, 0.35) 11px, rgba(230, 210, 178, 0.35) 12px),\n    color-mix(in srgb, #f8f3ea 70%, #e6d2b2);\n}\n.ds-fm-well-label {\n  font-family: \"Landars Gilroy\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif;\n  font-size: 0.75rem;\n  font-weight: 600;\n  letter-spacing: 0.08em;\n  text-transform: uppercase;\n  color: #80603d;\n}"
+    },
+    {
+      "name": "Empty State",
+      "kind": "custom",
+      "refersTo": "state",
+      "description": "Centered paper state for an empty or loading-failed menu.",
+      "html": "<div class=\"ds-fm-state\" role=\"status\"><p class=\"ds-fm-state-title\">Menu coming soon</p><p class=\"ds-fm-state-body\">Our festival menu is being prepared. Please check back shortly or ask at the counter.</p></div>",
+      "css": ".ds-fm-state {\n  max-width: 24rem;\n  margin: 0 auto;\n  padding: 1.75rem 1.25rem;\n  text-align: center;\n  border-radius: 0.75rem;\n  background: #fffcf7;\n  border: 1px solid #e6d2b2;\n  box-shadow: 0 1px 0 rgba(61, 43, 28, 0.05), 0 12px 30px rgba(61, 43, 28, 0.07);\n}\n.ds-fm-state-title {\n  margin: 0 0 0.5rem;\n  font-family: \"Landars Britannic\", \"Arial Narrow\", \"Helvetica Neue Condensed\", sans-serif;\n  font-size: 1.125rem;\n  font-weight: 700;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  color: #241d18;\n}\n.ds-fm-state-body {\n  margin: 0;\n  font-family: \"Landars Gilroy\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif;\n  font-size: 0.875rem;\n  color: #5f5147;\n  line-height: 1.45;\n}"
+    },
+    {
+      "name": "Filling Choice List",
+      "kind": "custom",
+      "description": "Nested filling variants inside the parent card, not sibling tiles.",
+      "html": "<div class=\"ds-fm-choices\"><p class=\"ds-fm-choice-label\">Choose your meat</p><ul class=\"ds-fm-choice-list\"><li><p class=\"ds-fm-choice-name\">Chicken</p><p class=\"ds-fm-choice-description\">Chargrilled chicken skewer</p></li><li><p class=\"ds-fm-choice-name\">Pork</p><p class=\"ds-fm-choice-description\">Chargrilled skewer</p></li></ul></div>",
+      "css": ".ds-fm-choices {\n  margin-top: 0.25rem;\n  padding-top: 0.625rem;\n  border-top: 1px solid #e6d2b2;\n}\n.ds-fm-choice-label {\n  margin: 0 0 0.5rem;\n  font-family: \"Landars Gilroy\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif;\n  font-size: 0.6875rem;\n  font-weight: 700;\n  letter-spacing: 0.12em;\n  text-transform: uppercase;\n  color: #80603d;\n}\n.ds-fm-choice-list {\n  margin: 0;\n  padding: 0;\n  list-style: none;\n}\n.ds-fm-choice-list > li {\n  padding: 0.55rem 0;\n  border-bottom: 1px solid #e6d2b2;\n}\n.ds-fm-choice-list > li:last-child {\n  border-bottom: none;\n  padding-bottom: 0;\n}\n.ds-fm-choice-name {\n  margin: 0;\n  font-family: \"Landars Gilroy\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif;\n  font-size: 1rem;\n  font-weight: 600;\n  line-height: 1.3;\n  color: #241d18;\n}\n.ds-fm-choice-description {\n  margin: 0.2rem 0 0;\n  font-family: \"Landars Gilroy\", \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif;\n  font-size: 0.90625rem;\n  line-height: 1.45;\n  color: #5f5147;\n}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Festival Paper Frame",
+    "overview": "A printed countryside menu laid on a parchment table. One ivory sheet sits on a dotted warm wash; wheat, fence, mill, and roof motifs appear only as cropped edge fragments. Guests read Landar's Food dishes, prices, fillings, and allergens at the festival counter. They do not shop.\n\nThe voice is editorial and quiet. Condensed Britannic names the menu and the food; Gilroy carries everything you scan in a hurry. Depth is three papers and thin beige rules, not glow or catalogue chrome. This file records the `/festival-menu/` surface as built — local `Landars Britannic` (TTF) and `Landars Gilroy` (woff2) in `frontend-marketplace/public/fonts`. Marketplace shop chrome is a different world and is hidden here.",
+    "keyCharacteristics": [
+      "Three paper layers: parchment canvas, ivory sheet, cream cards",
+      "Britannic condensed uppercase for menu, sections, and dish names; Gilroy for the rest",
+      "5:4 photo wells; labeled **Photo unavailable** when the image is missing or broken",
+      "Filling choices nested inside the parent card",
+      "Browse-only public catalogue: marketplace header and footer off; festival footer is a counter note"
+    ],
+    "rules": [
+      {
+        "name": "The Three-Paper Rule",
+        "body": "Depth is parchment → ivory sheet → card cream. Do not collapse them into one fill.",
+        "section": "colors"
+      },
+      {
+        "name": "The Harvest-Rarity Rule",
+        "body": "Harvest gold marks money and the meal-offer hairline. It is not a surface.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two-Voice Rule",
+        "body": "Britannic condensed uppercase names the menu, sections, and dishes. Gilroy carries body, labels, navigation, and prices. Never set a price in Britannic.",
+        "section": "typography"
+      },
+      {
+        "name": "The Sheet-in-Frame Rule",
+        "body": "Copy and cards live on the ivory sheet. Countryside linework occupies only the side rails, cropped as edge fragments, and a village horizon in the festival footer.",
+        "section": "layout"
+      },
+      {
+        "name": "The Nested-Choice Rule",
+        "body": "Filling variants stay inside the parent product card as a ruled list. They are not sibling product cards.",
+        "section": "layout"
+      },
+      {
+        "name": "The Paper-Lift Rule",
+        "body": "Cards and states rest on a 1px beige stroke plus the card wash. Shadows stay brown and diffuse. They are not a hover gimmick.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Ruled-Band Rule",
+        "body": "Meal offers and category add-ons are transparent bands between beige rules, not filled banners.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do keep photo wells at 5:4. If the photo is missing or broken, keep the well and label it **Photo unavailable**.",
+      "Do always render Ingredients and Allergens; use **Not listed** when the API string is empty.",
+      "Do nest filling choices inside the parent card under a “Choose your …” label.",
+      "Do hide the marketplace Header and Footer on `/festival-menu/`; end the sheet with the village horizon and the counter note.",
+      "Do load Britannic and Gilroy from `/fonts` (TTF + woff2). Treat `/festival-menu/` as a public browse-only catalogue."
+    ],
+    "donts": [
+      "Don't add cart, checkout, account, or other ecommerce chrome to this surface.",
+      "Don't promote fillings into their own product cards or a separate option-group tile.",
+      "Don't drop village motifs into the reading column or overlay badges on food photos.",
+      "Don't invent a primary purchase button. Retry exists only when the menu fails to load.",
+      "Don't fill offer or add-on bands with a tinted promo background."
+    ]
+  }
+}

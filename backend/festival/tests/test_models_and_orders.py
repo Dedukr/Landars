@@ -612,7 +612,7 @@ class FestivalCloudPRNTOrderTests(TestCase):
             last_status_text="OK",
         )
 
-    def test_order_creates_kitchen_then_customer_jobs(self):
+    def test_order_creates_customer_then_kitchen_jobs(self):
         with self.captureOnCommitCallbacks(execute=True):
             result = place_festival_order(
                 user=self.user,
@@ -623,13 +623,13 @@ class FestivalCloudPRNTOrderTests(TestCase):
             FestivalPrintJob.objects.filter(order=result.order).order_by("sequence")
         )
         self.assertEqual(len(jobs), 2)
-        self.assertEqual(jobs[0].job_type, FestivalPrintJob.JobType.KITCHEN)
-        self.assertEqual(jobs[1].job_type, FestivalPrintJob.JobType.CUSTOMER)
+        self.assertEqual(jobs[0].job_type, FestivalPrintJob.JobType.CUSTOMER)
+        self.assertEqual(jobs[1].job_type, FestivalPrintJob.JobType.KITCHEN)
         self.assertEqual(jobs[0].batch_uuid, jobs[1].batch_uuid)
-        self.assertIn("KITCHEN", jobs[0].payload_text)
-        self.assertIn("INVOICE", jobs[1].payload_text)
-        self.assertNotIn("PAID", jobs[1].payload_text)
-        self.assertNotIn("£", jobs[0].payload_text)
+        self.assertIn("INVOICE", jobs[0].payload_text)
+        self.assertIn("KITCHEN", jobs[1].payload_text)
+        self.assertNotIn("PAID", jobs[0].payload_text)
+        self.assertNotIn("£", jobs[1].payload_text)
 
     def test_missing_printer_rejected_when_required(self):
         FestivalPrinter.objects.all().delete()

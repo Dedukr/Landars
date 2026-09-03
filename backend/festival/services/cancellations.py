@@ -141,8 +141,8 @@ def cancel_festival_order(
                 order=order,
                 printer=printer,
                 jobs=[
-                    (FestivalPrintJob.JobType.KITCHEN_CANCELLATION, 1, kitchen),
-                    (FestivalPrintJob.JobType.CUSTOMER_CREDIT, 2, customer),
+                    (FestivalPrintJob.JobType.CUSTOMER_CREDIT, 1, customer),
+                    (FestivalPrintJob.JobType.KITCHEN_CANCELLATION, 2, kitchen),
                 ],
             )
 

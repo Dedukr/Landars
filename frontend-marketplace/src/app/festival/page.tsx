@@ -288,8 +288,12 @@ export default function FestivalTillPage() {
   const [status, setStatus] = useState<FestivalStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+<<<<<<< HEAD
   const [unsticking, setUnsticking] = useState(false);
   const [brokenImages, setBrokenImages] = useState<Record<number, boolean>>({});
+=======
+  const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
+>>>>>>> dev
   const [clientRequestId, setClientRequestId] = useState(() =>
     crypto.randomUUID()
   );
@@ -632,6 +636,10 @@ export default function FestivalTillPage() {
     filling: FestivalFilling | null
   ) {
     const cardLabel = filling ? filling.name : product.name;
+    const cardImage = filling?.image || product.image;
+    const imageKey = filling
+      ? `${product.id}:${filling.id}:${cardImage}`
+      : `${product.id}:${cardImage}`;
     const ariaLabel = filling
       ? `Order ${product.name} — ${filling.name}`
       : `Order ${product.name}`;
@@ -651,9 +659,9 @@ export default function FestivalTillPage() {
           className="relative aspect-[3/2] md:aspect-[5/4] w-full shrink-0"
           style={{ background: "var(--sidebar-bg)" }}
         >
-          {product.image && !brokenImages[product.id] ? (
+          {cardImage && !brokenImages[imageKey] ? (
             <Image
-              src={product.image}
+              src={cardImage}
               alt=""
               fill
               className="object-cover"
@@ -662,7 +670,7 @@ export default function FestivalTillPage() {
               onError={() =>
                 setBrokenImages((prev) => ({
                   ...prev,
-                  [product.id]: true,
+                  [imageKey]: true,
                 }))
               }
             />

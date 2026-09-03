@@ -305,23 +305,33 @@ def report_missing_festival_document_pdfs() -> dict | None:
 @shared_task(ignore_result=True)
 def cleanup_old_festival_ticket_payloads() -> int:
     """
-    Clear payload_text for old PRINTED jobs while retaining checksums/metadata.
-    Retention of accounting records is unaffected.
+    Clear payload_text/payload_binary for old PRINTED jobs while retaining
+    checksums/metadata. Retention of accounting records is unaffected.
     """
+    from django.db.models import Q
+
     retention_days = 90
     cutoff = timezone.now() - timedelta(days=retention_days)
     qs = FestivalPrintJob.objects.filter(
         status=FestivalPrintJob.Status.PRINTED,
         completed_at__lt=cutoff,
-    ).exclude(payload_text="")
+    ).filter(Q(payload_text__gt="") | Q(payload_binary__isnull=False))
     updated = 0
     for job in qs.iterator():
         job.payload_text = ""
+        job.payload_binary = None
         job.audit_note = (
             job.audit_note + "\n" if job.audit_note else ""
         ) + "Payload cleared after retention period."
-        job.save(update_fields=["payload_text", "audit_note", "updated_at"])
+        job.save(
+            update_fields=[
+                "payload_text",
+                "payload_binary",
+                "audit_note",
+                "updated_at",
+            ]
+        )
         updated += 1
     if updated:
-        logger.info("Cleared payload_text on %s old festival print jobs", updated)
+        logger.info("Cleared payloads on %s old festival print jobs", updated)
     return updated

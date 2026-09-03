@@ -196,8 +196,8 @@ def place_festival_order(
     with transaction.atomic():
         products = {
             p.id: p
-            for p in FestivalProduct.objects.select_for_update(of=("self",)).filter(
-                id__in=product_ids, is_active=True
+            for p in FestivalProduct.objects.select_for_update(of=("self",)).sellable().filter(
+                id__in=product_ids
             )
         }
         missing = [pid for pid in product_ids if pid not in products]
@@ -400,8 +400,8 @@ def place_festival_order(
                     order=fresh_order,
                     printer=fresh_printer,
                     jobs=[
-                        (FestivalPrintJob.JobType.KITCHEN, 1, kitchen),
-                        (FestivalPrintJob.JobType.CUSTOMER, 2, customer),
+                        (FestivalPrintJob.JobType.CUSTOMER, 1, customer),
+                        (FestivalPrintJob.JobType.KITCHEN, 2, kitchen),
                     ],
                 )
                 # Offline: alert immediately. Online: a delayed verify alerts

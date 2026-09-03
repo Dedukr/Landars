@@ -30,8 +30,35 @@ def payload_sha256(text: str) -> str:
 FESTIVAL_TICKET_SEQUENCE_MAX = 99
 
 
+class FestivalMenuSettings(models.Model):
+    """Singleton row for customer-facing festival menu copy."""
+
+    included_meal_offer = models.TextField(
+        blank=True,
+        default="",
+        help_text="Optional banner text (e.g. meal-deal offer) shown on the public menu.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Festival menu settings"
+        verbose_name_plural = "Festival menu settings"
+
+    def __str__(self) -> str:
+        return "Festival menu settings"
+
+    @classmethod
+    def load(cls) -> FestivalMenuSettings:
+        row, _ = cls.objects.get_or_create(pk=1)
+        return row
+
+
 class FestivalCategory(models.Model):
     name = models.CharField(max_length=100, unique=True)
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Inactive categories are hidden from the public menu and till.",
+    )
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -94,6 +121,14 @@ class FestivalAddition(models.Model):
             raise ValidationError({"price": "Price cannot be negative."})
 
 
+class FestivalProductQuerySet(models.QuerySet):
+    def sellable(self):
+        """Active products in an active (or unset) category."""
+        return self.filter(is_active=True).filter(
+            Q(category__isnull=True) | Q(category__is_active=True)
+        )
+
+
 class FestivalProduct(models.Model):
     category = models.ForeignKey(
         FestivalCategory,
@@ -125,9 +160,37 @@ class FestivalProduct(models.Model):
         validators=[MinValueValidator(Decimal("0.00"))],
         help_text="VAT-inclusive retail price.",
     )
+    portion = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        help_text="Serving size shown on the public menu (e.g. 6 pieces).",
+    )
+    description = models.TextField(
+        blank=True,
+        default="",
+        help_text="Short customer-facing description for the public menu.",
+    )
+    ingredients = models.TextField(
+        blank=True,
+        default="",
+        help_text="Ingredient list for the public menu.",
+    )
+    toppings = models.TextField(
+        blank=True,
+        default="",
+        help_text="Toppings or sauces available, shown on the public menu.",
+    )
+    allergens = models.TextField(
+        blank=True,
+        default="",
+        help_text="Allergen information for the public menu.",
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
+
+    objects = FestivalProductQuerySet.as_manager()
 
     class Meta:
         ordering = ["category__created_at", "category__id", "created_at", "id"]
@@ -173,6 +236,22 @@ class FestivalFilling(models.Model):
         related_name="fillings",
     )
     name = models.CharField(max_length=100)
+    image_url = models.URLField(
+        blank=True,
+        default="",
+        max_length=500,
+        help_text="Optional image for this filling on the public menu.",
+    )
+    description = models.TextField(
+        blank=True,
+        default="",
+        help_text="Optional description for this filling on the public menu. Falls back to the product description when empty.",
+    )
+    allergens = models.TextField(
+        blank=True,
+        default="",
+        help_text="Allergens for this filling variant on the public menu.",
+    )
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -664,6 +743,8 @@ class FestivalPrintJob(models.Model):
     )
     media_type = models.CharField(max_length=64, default="text/plain")
     payload_text = models.TextField()
+    # Preconverted StarPRNT (or other wire) bytes; null for plain / convert-on-GET.
+    payload_binary = models.BinaryField(null=True, blank=True)
     payload_checksum = models.CharField(max_length=64)
     is_reprint = models.BooleanField(default=False)
     retry_of = models.ForeignKey(
@@ -724,6 +805,7 @@ class FestivalPrintJob(models.Model):
             if prev.status != self.Status.READY or self.status != self.Status.READY:
                 immutable = (
                     "payload_text",
+                    "payload_binary",
                     "payload_checksum",
                     "media_type",
                     "order_id",

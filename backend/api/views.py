@@ -69,7 +69,12 @@ from .serializers import (
     WishlistSerializer,
 )
 
-logger = logging.getLogger(__name__)
+from .cache_utils import (
+    CATEGORIES_LIST_CACHE_KEY,
+    CATEGORY_GROUPS_LIST_CACHE_KEY,
+    cache_get_or_compute,
+    products_list_cache_key,
+)
 from .validators import validate_image_file_extension
 
 
@@ -131,21 +136,39 @@ class ProductList(APIView):
     def get(self, request):
         """Retrieve products with filtering, sorting, and pagination."""
         no_cache = request.query_params.get("no_cache") == "1"
+<<<<<<< HEAD
         # Cache key version suffix bumps stale entries when search logic changes.
         # v12: stable sha256 key (hash() was per-process, so Redis cache never hit across workers).
         cache_key = _products_list_cache_key(request.query_params)
+=======
+>>>>>>> dev
 
-        # Try to get cached response
-        if not no_cache:
-            cached_response = cache.get(cache_key)
-            if cached_response:
-                return Response(cached_response)
+        if no_cache:
+            return Response(self._build_product_list_response(request))
 
+<<<<<<< HEAD
         # Optimize database queries: prefetch categories/images to avoid N+1 in serializer
         products = Product.objects.prefetch_related(
             "categories",
             _PRODUCT_LIST_IMAGE_PREFETCH,
         ).filter(active=True)
+=======
+        cache_key = products_list_cache_key(request.query_params)
+        response_data = cache_get_or_compute(
+            cache_key,
+            300,
+            lambda: self._build_product_list_response(request).data,
+        )
+        return Response(response_data)
+
+    def _build_product_list_response(self, request):
+        """Build paginated product list payload (DB + serialization)."""
+        # Optimize database queries: prefetch categories to avoid N+1 in serializer
+        products = (
+            Product.objects.prefetch_related("categories", "images")
+            .filter(active=True)
+        )
+>>>>>>> dev
 
         # Filtering (categories, optional group shortcut, include subcategories)
         from api.services.category_groups import (
@@ -269,11 +292,6 @@ class ProductList(APIView):
             "offset": offset,
         }
 
-        # Cache the response for 5 minutes
-        if not no_cache:
-            cache.set(cache_key, response_data, 300)
-
-        # Return paginated response
         return Response(response_data)
 
     def post(self, request):
@@ -666,11 +684,14 @@ class CategoryList(APIView):
     def get(self, request):
         """Retrieve all categories."""
         # v7: prefer category image_url, else top-seller product image.
-        cache_key = "categories_list_v7"
-        cached_response = cache.get(cache_key)
-        if cached_response:
-            return Response(cached_response)
+        response_data = cache_get_or_compute(
+            CATEGORIES_LIST_CACHE_KEY,
+            3600,
+            lambda: self._build_category_list_data(),
+        )
+        return Response(response_data)
 
+    def _build_category_list_data(self):
         categories = list(ProductCategory.objects.all())
         category_ids = [c.id for c in categories]
 
@@ -681,12 +702,7 @@ class CategoryList(APIView):
             many=True,
             context=category_display_context(category_ids),
         )
-        response_data = serializer.data
-
-        # Cache for 1 hour since categories don't change frequently
-        cache.set(cache_key, response_data, 3600)
-
-        return Response(response_data)
+        return serializer.data
 
 
 class CategoryGroupList(APIView):
@@ -696,15 +712,18 @@ class CategoryGroupList(APIView):
     throttle_classes = []
 
     def get(self, request):
+        response_data = cache_get_or_compute(
+            CATEGORY_GROUPS_LIST_CACHE_KEY,
+            3600,
+            self._build_category_group_list_data,
+        )
+        return Response(response_data)
+
+    @staticmethod
+    def _build_category_group_list_data():
         from api.models import CategoryGroup
         from api.serializers import CategoryGroupSerializer
         from api.services.category_display import products_count_by_category_id
-
-        # v3: group image_url is group-owned only (no member-image fallback in API).
-        cache_key = "category_groups_list_v3"
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return Response(cached)
 
         groups = list(
             CategoryGroup.objects.prefetch_related("categories").order_by("-name")
@@ -729,8 +748,7 @@ class CategoryGroupList(APIView):
             ).data
             data.append(row)
 
-        cache.set(cache_key, data, 3600)
-        return Response(data)
+        return data
 
 
 # class StockUpdateView(APIView):

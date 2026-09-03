@@ -9,6 +9,7 @@ export type FestivalAddition = {
 export type FestivalFilling = {
   id: number;
   name: string;
+  image: string;
 };
 
 export type FestivalProduct = {

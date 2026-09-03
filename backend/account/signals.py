@@ -21,15 +21,20 @@ def trigger_user_merge_on_create(sender, instance, created, **kwargs):
     After a new CustomUser is created, check for similar existing users and
     merge them if the rules allow it.
 
-    The handler only runs when ``created=True`` to avoid infinite recursion:
-    the merge service uses queryset ``.update()`` calls (not model ``.save()``)
-    for the CustomUser table, so no further post_save signals are emitted for
-    CustomUser rows touched during the merge.
+    Website self-registrations skip fuzzy name matching to avoid deleting
+    new customer accounts during signup bursts.
     """
     if not created:
         return
 
-    # Lazy import to avoid circular import at module load time.
+    if getattr(instance, "created_source", None) == CustomUser.CREATED_SOURCE_WEBSITE:
+        logger.debug(
+            "Skipping auto-merge for website signup user pk=%s email=%s",
+            instance.pk,
+            instance.email,
+        )
+        return
+
     from .merge_service import merge_users
 
     try:

@@ -115,6 +115,10 @@ export default function Header() {
     return pathname === href;
   };
 
+  if (pathname === "/festival-menu" || pathname?.startsWith("/festival-menu/")) {
+    return null;
+  }
+
   return (
     <header
       className="sticky top-0 z-50 w-full backdrop-blur-md transition-all duration-300"
