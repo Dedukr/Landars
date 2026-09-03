@@ -4,7 +4,14 @@ import {
   fetchWithTimeout,
 } from "@/utils/fetchWithTimeout";
 
-let cached: ApiCategoryGroup[] | null = null;
+const CATEGORY_GROUPS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+type CategoryGroupsCacheEntry = {
+  data: ApiCategoryGroup[];
+  fetchedAt: number;
+};
+
+let cached: CategoryGroupsCacheEntry | null = null;
 let fetchPromise: Promise<ApiCategoryGroup[]> | null = null;
 
 function normalizeCategoryGroups(data: unknown): ApiCategoryGroup[] {
@@ -16,29 +23,47 @@ function normalizeCategoryGroups(data: unknown): ApiCategoryGroup[] {
   return [];
 }
 
-export async function fetchCategoryGroups(): Promise<ApiCategoryGroup[]> {
-  if (cached) return cached;
-  if (fetchPromise) return fetchPromise;
+function isCacheFresh(entry: CategoryGroupsCacheEntry): boolean {
+  return Date.now() - entry.fetchedAt < CATEGORY_GROUPS_CACHE_TTL_MS;
+}
 
-  fetchPromise = fetchWithTimeout(
+async function fetchCategoryGroupsFromNetwork(): Promise<ApiCategoryGroup[]> {
+  const res = await fetchWithTimeout(
     "/api/category-groups/",
     { headers: { Accept: "application/json" } },
     CATEGORY_FETCH_TIMEOUT_MS
-  )
-    .then(async (res) => {
-      if (!res.ok) return [];
-      const data = await res.json();
-      const groups = normalizeCategoryGroups(data).map((group) => ({
-        ...group,
-        category_ids: (group.category_ids ?? []).map((id) => Number(id)),
-      }));
-      cached = groups;
-      return cached;
+  );
+  if (!res.ok) return [];
+  const data = await res.json();
+  const groups = normalizeCategoryGroups(data).map((group) => ({
+    ...group,
+    category_ids: (group.category_ids ?? []).map((id) => Number(id)),
+  }));
+  cached = { data: groups, fetchedAt: Date.now() };
+  return groups;
+}
+
+export async function fetchCategoryGroups(): Promise<ApiCategoryGroup[]> {
+  if (cached && isCacheFresh(cached)) {
+    return cached.data;
+  }
+
+  if (fetchPromise) return fetchPromise;
+
+  fetchPromise = fetchCategoryGroupsFromNetwork()
+    .catch(() => {
+      if (cached) return cached.data;
+      return [] as ApiCategoryGroup[];
     })
-    .catch(() => [] as ApiCategoryGroup[])
     .finally(() => {
       fetchPromise = null;
     });
 
   return fetchPromise;
+}
+
+/** @internal Test helper */
+export function clearCategoryGroupsCacheForTests(): void {
+  cached = null;
+  fetchPromise = null;
 }

@@ -45,12 +45,12 @@ def check_redis():
                     return False, "Cache test failed"
             except Exception as cache_error:
                 logger.warning(f"Cache operation failed: {cache_error}")
-                return True, "Cache not available (graceful fallback)"
+                return False, f"Cache unavailable: {cache_error}"
         else:
             return True, "Cache not configured (using default)"
     except Exception as e:
         logger.error(f"Cache health check failed: {e}")
-        return True, "Cache not available (graceful fallback)"
+        return False, f"Cache error: {str(e)}"
 
 
 def check_disk_space():
@@ -143,10 +143,13 @@ def comprehensive_health_check(request):
         status_code = 200 if all_healthy else 503
 
         response_data = {
-            "status": "healthy" if all_healthy else "unhealthy",
+            "status": "healthy" if all_healthy else "degraded",
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "checks": {
-                name: {"status": "pass" if result[0] else "fail", "message": result[1]}
+                name: {
+                    "status": "pass" if result[0] else "degraded",
+                    "message": result[1],
+                }
                 for name, result in checks.items()
             },
         }
