@@ -71,21 +71,29 @@ export function FestivalCategorySection({
         />
       </div>
 
-      <ul
-        className="festival-menu-card-grid"
-        aria-label={`${category.name} menu items`}
-      >
-        {category.products.map((product, index) => (
-          <li key={product.name}>
-            <FestivalMenuEntry
-              product={product}
-              brokenImages={brokenImages}
-              onImageError={onImageError}
-              priority={imagePriorityStart + index < 2}
-            />
-          </li>
-        ))}
-      </ul>
+      {(() => {
+        // Sort: products without fillings first, then with fillings, preserving relative API order within each group.
+        const noFillings = category.products.filter((p) => p.fillings.length === 0);
+        const withFillings = category.products.filter((p) => p.fillings.length > 0);
+        const sorted = [...noFillings, ...withFillings];
+        return (
+          <ul
+            className="festival-menu-card-grid"
+            aria-label={`${category.name} menu items`}
+          >
+            {sorted.map((product, index) => (
+              <li key={product.name}>
+                <FestivalMenuEntry
+                  product={product}
+                  brokenImages={brokenImages}
+                  onImageError={onImageError}
+                  priority={imagePriorityStart + index < 2}
+                />
+              </li>
+            ))}
+          </ul>
+        );
+      })()}
     </section>
   );
 }

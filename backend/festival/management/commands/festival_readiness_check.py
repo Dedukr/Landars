@@ -57,7 +57,7 @@ class Command(BaseCommand):
         else:
             warnings.append("Print mode is disabled (local/API testing only).")
 
-        if not FestivalProduct.objects.filter(is_active=True).exists():
+        if not FestivalProduct.objects.sellable().exists():
             errors.append("No active festival products.")
 
         for doc_type in FestivalNumberSequence.DocumentType.values:

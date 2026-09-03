@@ -111,7 +111,11 @@ class FestivalFillingInline(admin.TabularInline):
     model = FestivalFilling
     form = FestivalFillingInlineForm
     extra = 0
-    fields = ["name", "image_url", "image_upload", "description", "allergens", "is_active"]
+    fields = ["name", "image_upload", "description", "allergens", "is_active"]
+    classes = ["festival-filling-inline"]
+
+    class Media:
+        css = {"all": ("festival/admin_filling_inline.css",)}
 
 
 @admin.register(FestivalMenuSettings)
@@ -129,10 +133,12 @@ class FestivalMenuSettingsAdmin(admin.ModelAdmin):
 
 @admin.register(FestivalCategory)
 class FestivalCategoryAdmin(admin.ModelAdmin):
-    list_display = ["name", "product_count", "created_at"]
+    list_display = ["name", "is_active", "product_count", "created_at"]
+    list_filter = ["is_active"]
+    list_editable = ["is_active"]
     search_fields = ["name"]
     ordering = ["created_at", "id"]
-    fields = ["name", "created_at"]
+    fields = ["name", "is_active", "created_at"]
 
     @admin.display(description="Products")
     def product_count(self, obj: FestivalCategory) -> int:

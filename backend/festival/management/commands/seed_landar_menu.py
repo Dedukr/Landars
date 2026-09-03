@@ -246,7 +246,8 @@ def upsert_landar_menu() -> dict[str, int]:
 
     for category_data in LANDAR_MENU_CATALOG:
         category, created = FestivalCategory.objects.get_or_create(
-            name=category_data["name"]
+            name=category_data["name"],
+            defaults={"is_active": True},
         )
         if created:
             stats["categories_created"] += 1

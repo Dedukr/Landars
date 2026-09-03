@@ -150,44 +150,7 @@ export function fillingChoiceLabel(
   if (/water|soft drink|drink/i.test(productName) && fillings.length > 0) {
     return "Choose";
   }
-  if (fillings.length > 1 && fillings.every((f) => /^(savoury|sweet)$/i.test(f.name))) {
-    return "Choose your filling";
-  }
   return "Choose your filling";
-}
-
-const SWEET_FILLING_RE =
-  /apple|cinnamon|sweet|chocolate|berry|jam|honey|nutella|banana|cherry|strawberry|cottage\s*cheese/i;
-const SAVOURY_FILLING_RE =
-  /chicken|pork|beef|meat|mushroom|spinach|cheese\s*&\s*greens|ham|salmon|savoury/i;
-
-export function isSweetCrepeFilling(name: string): boolean {
-  if (SAVOURY_FILLING_RE.test(name) && !/cottage\s*cheese/i.test(name)) {
-    return false;
-  }
-  return SWEET_FILLING_RE.test(name);
-}
-
-/** Split Filled Crepes (and similar) into quiet SAVOURY / SWEET groups when both exist. */
-export function groupCrepeFillings(
-  product: FestivalMenuProduct
-): { savoury: FestivalMenuFilling[]; sweet: FestivalMenuFilling[] } | null {
-  if (!/crepe/i.test(product.name) || product.fillings.length < 2) {
-    return null;
-  }
-  const savoury: FestivalMenuFilling[] = [];
-  const sweet: FestivalMenuFilling[] = [];
-  for (const filling of product.fillings) {
-    if (isSweetCrepeFilling(filling.name)) {
-      sweet.push(filling);
-    } else {
-      savoury.push(filling);
-    }
-  }
-  if (savoury.length === 0 || sweet.length === 0) {
-    return null;
-  }
-  return { savoury, sweet };
 }
 
 export function isDrinkAdditionClass(classLabel: string): boolean {

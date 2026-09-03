@@ -55,6 +55,10 @@ class FestivalMenuSettings(models.Model):
 
 class FestivalCategory(models.Model):
     name = models.CharField(max_length=100, unique=True)
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Inactive categories are hidden from the public menu and till.",
+    )
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -117,6 +121,14 @@ class FestivalAddition(models.Model):
             raise ValidationError({"price": "Price cannot be negative."})
 
 
+class FestivalProductQuerySet(models.QuerySet):
+    def sellable(self):
+        """Active products in an active (or unset) category."""
+        return self.filter(is_active=True).filter(
+            Q(category__isnull=True) | Q(category__is_active=True)
+        )
+
+
 class FestivalProduct(models.Model):
     category = models.ForeignKey(
         FestivalCategory,
@@ -177,6 +189,8 @@ class FestivalProduct(models.Model):
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
+
+    objects = FestivalProductQuerySet.as_manager()
 
     class Meta:
         ordering = ["category__created_at", "category__id", "created_at", "id"]

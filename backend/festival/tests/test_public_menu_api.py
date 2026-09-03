@@ -139,6 +139,24 @@ class FestivalPublicMenuAPITests(TestCase):
         self.assertNotIn("Staff only", names)
         self.assertNotIn("Unavailable", names)
 
+    def test_excludes_inactive_categories(self):
+        hidden = FestivalCategory.objects.create(name="Hidden stall", is_active=False)
+        FestivalProduct.objects.create(
+            name="Secret snack",
+            category=hidden,
+            price=Decimal("6.00"),
+            is_active=True,
+        )
+        resp = self.client.get("/api/festival/menu/")
+        names = [c["name"] for c in resp.data["categories"]]
+        self.assertNotIn("Hidden stall", names)
+        product_names = [
+            product["name"]
+            for category in resp.data["categories"]
+            for product in category["products"]
+        ]
+        self.assertNotIn("Secret snack", product_names)
+
     def test_response_contains_only_public_fields(self):
         resp = self.client.get("/api/festival/menu/")
         self.assertEqual(resp.data["included_meal_offer"], "Main + side + drink for £15")

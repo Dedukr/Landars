@@ -58,7 +58,7 @@ class FestivalProductsView(APIView):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
         products = (
-            FestivalProduct.objects.filter(is_active=True)
+            FestivalProduct.objects.sellable()
             .select_related("category", "addition_class")
             .prefetch_related(
                 Prefetch(
@@ -84,7 +84,7 @@ class FestivalPublicMenuView(APIView):
     def get(self, request):
         settings_row = FestivalMenuSettings.load()
         products = (
-            FestivalProduct.objects.filter(is_active=True)
+            FestivalProduct.objects.sellable()
             .select_related("category", "addition_class")
             .prefetch_related(
                 Prefetch(
@@ -121,7 +121,9 @@ class FestivalPublicMenuView(APIView):
                 uncategorized.append(serialized)
 
         ordered_categories: list[dict] = []
-        for category in FestivalCategory.objects.order_by("created_at", "id"):
+        for category in FestivalCategory.objects.filter(is_active=True).order_by(
+            "created_at", "id"
+        ):
             if category.pk in categories_by_id:
                 ordered_categories.append(categories_by_id[category.pk])
 

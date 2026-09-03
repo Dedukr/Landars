@@ -196,8 +196,8 @@ def place_festival_order(
     with transaction.atomic():
         products = {
             p.id: p
-            for p in FestivalProduct.objects.select_for_update(of=("self",)).filter(
-                id__in=product_ids, is_active=True
+            for p in FestivalProduct.objects.select_for_update(of=("self",)).sellable().filter(
+                id__in=product_ids
             )
         }
         missing = [pid for pid in product_ids if pid not in products]

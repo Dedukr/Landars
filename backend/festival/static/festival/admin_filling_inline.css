@@ -1,0 +1,48 @@
+/* Keep festival filling tabular inlines within the change-form width. */
+.festival-filling-inline table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.festival-filling-inline td.field-name,
+.festival-filling-inline th.column-name {
+  width: 10%;
+}
+
+.festival-filling-inline td.field-image_upload,
+.festival-filling-inline th.column-image_upload {
+  width: 18%;
+}
+
+.festival-filling-inline td.field-description,
+.festival-filling-inline th.column-description {
+  width: 28%;
+}
+
+.festival-filling-inline td.field-allergens,
+.festival-filling-inline th.column-allergens {
+  width: 22%;
+}
+
+.festival-filling-inline td.field-is_active,
+.festival-filling-inline th.column-is_active {
+  width: 6%;
+}
+
+.festival-filling-inline input[type="text"],
+.festival-filling-inline textarea,
+.festival-filling-inline input[type="file"] {
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.festival-filling-inline textarea {
+  height: 3.25rem;
+  resize: vertical;
+}
+
+.festival-filling-inline .help,
+.festival-filling-inline .helptext {
+  display: none;
+}

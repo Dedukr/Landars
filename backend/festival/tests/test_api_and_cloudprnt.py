@@ -148,6 +148,23 @@ class FestivalAPITests(TestCase):
         additions = resp.data["results"][0]["additions"]
         self.assertEqual([a["name"] for a in additions], ["Cola"])
 
+    def test_products_list_omits_inactive_category(self):
+        from festival.models import FestivalCategory
+
+        hidden = FestivalCategory.objects.create(name="Off menu", is_active=False)
+        FestivalProduct.objects.create(
+            name="Hidden dumpling",
+            category=hidden,
+            price=Decimal("6.00"),
+            is_active=True,
+        )
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.get("/api/festival/products/")
+        self.assertEqual(resp.status_code, 200)
+        names = [row["name"] for row in resp.data["results"]]
+        self.assertIn("Varenyky", names)
+        self.assertNotIn("Hidden dumpling", names)
+
     def test_place_order(self):
         self.client.force_authenticate(user=self.staff)
         rid = str(uuid.uuid4())

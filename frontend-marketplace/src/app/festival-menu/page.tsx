@@ -33,7 +33,9 @@ export default function FestivalMenuPage() {
       setMenu(data);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Could not load the festival menu."
+        err instanceof Error
+          ? err.message
+          : "Could not load the festival menu.",
       );
     } finally {
       setLoading(false);
@@ -47,16 +49,16 @@ export default function FestivalMenuPage() {
   const categories = menu?.categories ?? [];
   const allProducts = useMemo(
     () => categories.flatMap((category) => category.products),
-    [categories]
+    [categories],
   );
   const drinksIncludedWithMeals = useMemo(
     () => menuHasDrinkAdditions(allProducts),
-    [allProducts]
+    [allProducts],
   );
   const itemCount = useMemo(
     () =>
       categories.reduce((sum, cat) => sum + countMenuItems(cat.products), 0),
-    [categories]
+    [categories],
   );
 
   const handleImageError = useCallback((key: string) => {
@@ -93,7 +95,10 @@ export default function FestivalMenuPage() {
               <FestivalMenuSkeleton />
             </>
           ) : error ? (
-            <FestivalMenuErrorState message={error} onRetry={() => void load()} />
+            <FestivalMenuErrorState
+              message={error}
+              onRetry={() => void load()}
+            />
           ) : itemCount === 0 ? (
             <FestivalMenuEmptyState />
           ) : (
