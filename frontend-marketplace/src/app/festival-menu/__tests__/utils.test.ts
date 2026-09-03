@@ -9,6 +9,7 @@ import {
   menuHasDrinkAdditions,
   nonDrinkAdditionGroups,
   partitionCategoryProducts,
+  sortCategoryProducts,
 } from "../utils";
 import type { FestivalMenuProduct } from "@/lib/festivalMenuApi";
 
@@ -246,5 +247,45 @@ describe("nonDrinkAdditionGroups", () => {
         { label: "Sides", options: [{ name: "Fries", price: "2.00" }] },
       ])
     ).toEqual([{ label: "Sides", options: [{ name: "Fries", price: "2.00" }] }]);
+  });
+});
+
+describe("sortCategoryProducts", () => {
+  const chips: FestivalMenuProduct = {
+    name: "Chips",
+    category: "Other",
+    image: "",
+    price: "4.00",
+    portion: "",
+    description: "",
+    fillings: [],
+    addition_class: null,
+    additions: [],
+    ingredients: "",
+    toppings: "",
+    allergens: "",
+    created_at: "2026-01-01T00:00:00Z",
+  };
+  const jerky: FestivalMenuProduct = {
+    name: "Jerky",
+    category: "Other",
+    image: "",
+    price: "6.00",
+    portion: "",
+    description: "",
+    fillings: [{ name: "Beef", image: "", description: "", allergens: "" }],
+    addition_class: null,
+    additions: [],
+    ingredients: "",
+    toppings: "",
+    allergens: "",
+    created_at: "2026-06-01T00:00:00Z",
+  };
+
+  it("orders by created_at oldest first", () => {
+    expect(sortCategoryProducts([jerky, chips]).map((p) => p.name)).toEqual([
+      "Chips",
+      "Jerky",
+    ]);
   });
 });

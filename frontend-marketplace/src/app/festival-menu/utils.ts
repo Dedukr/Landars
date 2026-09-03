@@ -176,3 +176,16 @@ export function nonDrinkAdditionGroups(
 ): OptionCategory<FestivalMenuAddition>[] {
   return groups.filter((group) => !isDrinkAdditionClass(group.label));
 }
+
+function createdAtMs(product: FestivalMenuProduct): number {
+  if (!product.created_at) return Number.POSITIVE_INFINITY;
+  const parsed = Date.parse(product.created_at);
+  return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
+}
+
+/** Oldest first by created_at. Missing timestamps stay in original order at the end. */
+export function sortCategoryProducts(
+  products: FestivalMenuProduct[]
+): FestivalMenuProduct[] {
+  return [...products].sort((a, b) => createdAtMs(a) - createdAtMs(b));
+}

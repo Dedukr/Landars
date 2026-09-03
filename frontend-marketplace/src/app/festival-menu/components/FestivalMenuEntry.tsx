@@ -34,7 +34,7 @@ export function FestivalMenuEntry({
     <article
       className={`festival-menu-card${
         hasFillings ? " festival-menu-card--with-fillings" : ""
-      }${manyFillings ? " festival-menu-card--many-fillings" : ""}`}
+      }${manyFillings ? " festival-menu-card--many-fillings festival-menu-card--full-row" : ""}`}
     >
       {/* Suppress parent image when fillings carry the visual weight */}
       {!hasFillings &&
@@ -45,7 +45,7 @@ export function FestivalMenuEntry({
               alt=""
               fill
               className="object-cover"
-              sizes="(min-width: 1120px) 280px, (min-width: 700px) 45vw, 92vw"
+              sizes="(min-width: 1120px) 220px, (min-width: 700px) 45vw, 46vw"
               priority={priority}
               unoptimized
               onError={() => onImageError(imageKey)}
@@ -58,7 +58,11 @@ export function FestivalMenuEntry({
         ))}
 
       <div className="festival-menu-card-body">
-        <div className="festival-menu-card-headline">
+        <div
+          className={`festival-menu-card-headline${
+            hasFillings ? "" : " festival-menu-card-headline--stacked"
+          }`}
+        >
           <h3 className="festival-menu-card-name">{product.name}</h3>
           <span className="festival-menu-card-price">
             {formatFestivalMoney(product.price)}
@@ -75,7 +79,7 @@ export function FestivalMenuEntry({
 
         {product.toppings ? (
           <p className="festival-menu-card-detail">
-            <span className="festival-menu-card-detail-label">Sauces</span>
+            <span className="festival-menu-card-detail-label">Toppings</span>
             <span className="festival-menu-card-detail-sep" aria-hidden>
               {" "}
               ·{" "}
@@ -144,7 +148,7 @@ function ChoiceRow({
             alt=""
             fill
             className="object-cover"
-            sizes="(min-width: 1120px) 280px, (min-width: 700px) calc(50vw - 3rem), 92vw"
+            sizes="(min-width: 1120px) 220px, (min-width: 700px) calc(50vw - 3rem), 46vw"
             loading="lazy"
             unoptimized
             onError={() => onImageError(imageKey)}

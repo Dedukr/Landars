@@ -3,6 +3,7 @@ import {
   categorySectionId,
   collectCategoryAdditionGroups,
   nonDrinkAdditionGroups,
+  sortCategoryProducts,
 } from "../utils";
 import { FestivalCategoryAdditions } from "./FestivalCategoryAdditions";
 import { FestivalMenuEntry } from "./FestivalMenuEntry";
@@ -26,7 +27,7 @@ export function FestivalCategorySection({
 }: FestivalCategorySectionProps) {
   const sectionId = categorySectionId(category.name);
   const additionGroups = nonDrinkAdditionGroups(
-    collectCategoryAdditionGroups(category.products)
+    collectCategoryAdditionGroups(category.products),
   );
 
   if (category.products.length === 0) {
@@ -61,7 +62,9 @@ export function FestivalCategorySection({
             {category.name}
           </h2>
           {showDrinksIncluded ? (
-            <span className="festival-menu-section-included">Drinks included</span>
+            <span className="festival-menu-section-included">
+              Drinks included
+            </span>
           ) : null}
         </div>
         <FestivalSectionDivider />
@@ -72,10 +75,7 @@ export function FestivalCategorySection({
       </div>
 
       {(() => {
-        // Sort: products without fillings first, then with fillings, preserving relative API order within each group.
-        const noFillings = category.products.filter((p) => p.fillings.length === 0);
-        const withFillings = category.products.filter((p) => p.fillings.length > 0);
-        const sorted = [...noFillings, ...withFillings];
+        const sorted = sortCategoryProducts(category.products);
         return (
           <ul
             className="festival-menu-card-grid"

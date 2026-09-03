@@ -27,6 +27,7 @@ export type FestivalMenuProduct = {
   ingredients: string;
   toppings: string;
   allergens: string;
+  created_at?: string;
 };
 
 export type FestivalMenuCategory = {

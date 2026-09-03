@@ -179,6 +179,7 @@ class FestivalPublicMenuAPITests(TestCase):
                 "ingredients",
                 "toppings",
                 "allergens",
+                "created_at",
             },
         )
         self.assertNotIn("id", varenyky)
@@ -186,7 +187,7 @@ class FestivalPublicMenuAPITests(TestCase):
         self.assertEqual(varenyky["portion"], "6 pieces")
         self.assertEqual(varenyky["description"], "Handmade dumplings")
         self.assertEqual(
-            [f["name"] for f in varenyky["fillings"]], ["Cheese", "Potato"]
+            [f["name"] for f in varenyky["fillings"]], ["Potato", "Cheese"]
         )
         self.assertEqual(
             set(varenyky["fillings"][0].keys()),
@@ -231,6 +232,22 @@ class FestivalPublicMenuAPITests(TestCase):
         self.client.force_authenticate(user=staff)
         self.assertEqual(self.client.get("/api/festival/products/").status_code, 200)
         self.assertEqual(self.client.get("/api/festival/status/").status_code, 200)
+
+    def test_categories_and_products_ordered_by_created_at(self):
+        resp = self.client.get("/api/festival/menu/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            [c["name"] for c in resp.data["categories"]],
+            ["Meals", "Drinks"],
+        )
+        meals = next(c for c in resp.data["categories"] if c["name"] == "Meals")
+        names = [p["name"] for p in meals["products"]]
+        self.assertEqual(names[0], "Varenyky")
+        self.assertIn("Shashlik", names)
+        self.assertLess(
+            meals["products"][0]["created_at"],
+            next(p for p in meals["products"] if p["name"] == "Shashlik")["created_at"],
+        )
 
     def test_active_products_appear_on_public_menu(self):
         product = FestivalProduct.objects.create(

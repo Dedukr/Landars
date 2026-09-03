@@ -13,7 +13,9 @@ jest.mock("next/image", () => ({
       <img
         alt={typeof alt === "string" ? alt : ""}
         src={typeof src === "string" ? src : ""}
-        onError={onError as React.ReactEventHandler<HTMLImageElement> | undefined}
+        onError={
+          onError as React.ReactEventHandler<HTMLImageElement> | undefined
+        }
       />
     );
   },
@@ -126,10 +128,12 @@ describe("FestivalMenuPage", () => {
 
   it("loads and renders the public menu without auth redirects", async () => {
     render(<FestivalMenuPage />);
-    expect(await screen.findByRole("heading", { name: "Festival Menu" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Festival Menu" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Landar's Food")).toBeInTheDocument();
     expect(
-      await screen.findByText(sampleMenu.included_meal_offer)
+      await screen.findByText(sampleMenu.included_meal_offer),
     ).toBeInTheDocument();
     expect(mockFetchFestivalMenu).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/sign in/i)).not.toBeInTheDocument();
@@ -137,15 +141,61 @@ describe("FestivalMenuPage", () => {
     expect(screen.queryByText(/place order/i)).not.toBeInTheDocument();
   });
 
-  it("sorts products without fillings before products with fillings within each category", async () => {
+  it("sorts products by created_at within each category", async () => {
+    mockFetchFestivalMenu.mockResolvedValue({
+      included_meal_offer: "",
+      categories: [
+        {
+          name: "Meals",
+          products: [
+            {
+              name: "Shashlik",
+              category: "Meals",
+              image: "",
+              price: "9.00",
+              portion: "",
+              description: "",
+              fillings: [
+                { name: "Chicken", image: "", description: "", allergens: "" },
+              ],
+              additions: [],
+              addition_class: null,
+              ingredients: "",
+              toppings: "",
+              allergens: "",
+              created_at: "2026-09-03T12:00:00Z",
+            },
+            {
+              name: "Varenyky",
+              category: "Meals",
+              image: "",
+              price: "8.50",
+              portion: "",
+              description: "",
+              fillings: [],
+              additions: [],
+              addition_class: null,
+              ingredients: "",
+              toppings: "",
+              allergens: "",
+              created_at: "2026-09-01T12:00:00Z",
+            },
+          ],
+        },
+      ],
+    });
     render(<FestivalMenuPage />);
-    // sampleMenu has Shashlik (fillings) first, then Varenyky (no fillings) in API order.
-    // After sort Varenyky (no fillings) must appear before Shashlik (fillings).
-    const varenykyHeading = await screen.findByRole("heading", { name: "Varenyky", level: 3 });
-    const shashlikHeading = screen.getByRole("heading", { name: "Shashlik", level: 3 });
+    const varenykyHeading = await screen.findByRole("heading", {
+      name: "Varenyky",
+      level: 3,
+    });
+    const shashlikHeading = screen.getByRole("heading", {
+      name: "Shashlik",
+      level: 3,
+    });
     expect(
       varenykyHeading.compareDocumentPosition(shashlikHeading) &
-        Node.DOCUMENT_POSITION_FOLLOWING
+        Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 
@@ -155,7 +205,7 @@ describe("FestivalMenuPage", () => {
 
     // Varenyky has no fillings — its image should render directly on the card
     expect(
-      document.querySelector('img[src="https://example.com/varenyky.jpg"]')
+      document.querySelector('img[src="https://example.com/varenyky.jpg"]'),
     ).toBeTruthy();
 
     // Shashlik has fillings — its parent image must NOT appear on the card itself
@@ -164,17 +214,19 @@ describe("FestivalMenuPage", () => {
       .closest(".festival-menu-card--with-fillings");
     expect(shashlikCard).toBeTruthy();
     const parentImg = shashlikCard!.querySelector(
-      '.festival-menu-card-media img[src="https://example.com/shashlik.jpg"]'
+      '.festival-menu-card-media img[src="https://example.com/shashlik.jpg"]',
     );
     expect(parentImg).toBeNull();
 
     // Filling images are still shown
     expect(
-      document.querySelector('img[src="https://example.com/chicken.jpg"]')
+      document.querySelector('img[src="https://example.com/chicken.jpg"]'),
     ).toBeTruthy();
 
     expect(document.querySelector(".festival-menu-card-grid")).toBeTruthy();
-    expect(document.querySelectorAll(".festival-menu-card").length).toBeGreaterThanOrEqual(2);
+    expect(
+      document.querySelectorAll(".festival-menu-card").length,
+    ).toBeGreaterThanOrEqual(2);
     expect(screen.getByText(/Choose your meat/i)).toBeInTheDocument();
   });
 
@@ -187,29 +239,41 @@ describe("FestivalMenuPage", () => {
 
   it("does not show parent-level allergens on cards that have fillings", async () => {
     render(<FestivalMenuPage />);
-    const shashlikHeading = await screen.findByRole("heading", { name: "Shashlik", level: 3 });
-    const shashlikCard = shashlikHeading.closest(".festival-menu-card--with-fillings");
+    const shashlikHeading = await screen.findByRole("heading", {
+      name: "Shashlik",
+      level: 3,
+    });
+    const shashlikCard = shashlikHeading.closest(
+      ".festival-menu-card--with-fillings",
+    );
     expect(shashlikCard).toBeTruthy();
     // The parent card body should not contain an "Allergens" label at parent level
     const parentBody = shashlikCard!.querySelector(".festival-menu-card-body");
-    const parentAllergenEl = parentBody?.querySelector(".festival-menu-card-allergens");
+    const parentAllergenEl = parentBody?.querySelector(
+      ".festival-menu-card-allergens",
+    );
     expect(parentAllergenEl).toBeNull();
     // Filling allergens are still shown inside filling copy blocks, with the Allergens title
-    const fillingAllergens = shashlikCard!.querySelectorAll(".festival-menu-choice-allergens");
+    const fillingAllergens = shashlikCard!.querySelectorAll(
+      ".festival-menu-choice-allergens",
+    );
     expect(fillingAllergens.length).toBeGreaterThanOrEqual(1);
     expect(fillingAllergens[0].textContent).toMatch(/Allergens/);
   });
 
-  it("places sauces after description and before fillings", async () => {
+  it("places toppings after description and before fillings", async () => {
     render(<FestivalMenuPage />);
-    const varenykyHeading = await screen.findByRole("heading", { name: "Varenyky", level: 3 });
+    const varenykyHeading = await screen.findByRole("heading", {
+      name: "Varenyky",
+      level: 3,
+    });
     const card = varenykyHeading.closest(".festival-menu-card");
     expect(card).toBeTruthy();
     const text = card!.textContent ?? "";
     const descriptionIndex = text.indexOf("Handmade dumplings");
-    const saucesIndex = text.indexOf("Sauces");
+    const toppingsIndex = text.indexOf("Toppings");
     expect(descriptionIndex).toBeGreaterThanOrEqual(0);
-    expect(saucesIndex).toBeGreaterThan(descriptionIndex);
+    expect(toppingsIndex).toBeGreaterThan(descriptionIndex);
   });
 
   it("omits allergen and ingredient rows when empty — no placeholders", async () => {
@@ -217,9 +281,9 @@ describe("FestivalMenuPage", () => {
     await screen.findByRole("heading", { name: "Kvas", level: 3 });
     expect(screen.queryByText(/Not listed/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Ingredients/i)).not.toBeInTheDocument();
-    const kvasCard = screen.getByRole("heading", { name: "Kvas", level: 3 }).closest(
-      ".festival-menu-card"
-    );
+    const kvasCard = screen
+      .getByRole("heading", { name: "Kvas", level: 3 })
+      .closest(".festival-menu-card");
     expect(kvasCard).toBeTruthy();
     expect(kvasCard!.textContent).not.toMatch(/Allergens/i);
   });
@@ -236,24 +300,36 @@ describe("FestivalMenuPage", () => {
     render(<FestivalMenuPage />);
     await screen.findByRole("heading", { name: "Shashlik", level: 3 });
     expect(screen.getByText("Chargrilled chicken skewer")).toBeInTheDocument();
-    expect(screen.getAllByText("Chargrilled skewer").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/None declared/).length).toBeGreaterThanOrEqual(2);
-    expect(document.querySelector(".festival-menu-card--with-fillings")).toBeTruthy();
+    expect(
+      screen.getAllByText("Chargrilled skewer").length,
+    ).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/None declared/).length).toBeGreaterThanOrEqual(
+      2,
+    );
+    expect(
+      document.querySelector(".festival-menu-card--with-fillings"),
+    ).toBeTruthy();
     // Filling images rendered inside choice-media cells
     expect(
-      document.querySelector('img[src="https://example.com/chicken.jpg"]')
+      document.querySelector('img[src="https://example.com/chicken.jpg"]'),
     ).toBeTruthy();
     // Fillings use a grid list (not a plain flex column)
     const choiceList = document.querySelector(".festival-menu-choice-list");
     expect(choiceList).toBeTruthy();
     // Each filling is a separate list item with a choice-row inside
-    expect(document.querySelectorAll(".festival-menu-choice-row").length).toBeGreaterThanOrEqual(2);
+    expect(
+      document.querySelectorAll(".festival-menu-choice-row").length,
+    ).toBeGreaterThanOrEqual(2);
     // Each row contains a media cell and a copy block
-    expect(document.querySelectorAll(".festival-menu-choice-media").length).toBeGreaterThanOrEqual(2);
-    expect(document.querySelectorAll(".festival-menu-choice-copy").length).toBeGreaterThanOrEqual(2);
+    expect(
+      document.querySelectorAll(".festival-menu-choice-media").length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(
+      document.querySelectorAll(".festival-menu-choice-copy").length,
+    ).toBeGreaterThanOrEqual(2);
   });
 
-  it("marks products with four or more fillings for full-width desktop layout", async () => {
+  it("marks products with four or more fillings", async () => {
     mockFetchFestivalMenu.mockResolvedValue({
       included_meal_offer: "",
       categories: [
@@ -285,10 +361,13 @@ describe("FestivalMenuPage", () => {
     });
     render(<FestivalMenuPage />);
     await screen.findByRole("heading", { name: "Filled Crepes", level: 3 });
-    expect(document.querySelector(".festival-menu-card--many-fillings")).toBeTruthy();
     expect(
-      document.querySelectorAll(".festival-menu-card--many-fillings .festival-menu-choice-row")
-        .length
+      document.querySelector(".festival-menu-card--many-fillings"),
+    ).toBeTruthy();
+    expect(
+      document.querySelectorAll(
+        ".festival-menu-card--many-fillings .festival-menu-choice-row",
+      ).length,
     ).toBe(4);
   });
 
@@ -297,16 +376,19 @@ describe("FestivalMenuPage", () => {
     await screen.findByRole("navigation", { name: "Menu categories" });
     expect(screen.getByRole("link", { name: "Meals" })).toHaveAttribute(
       "href",
-      "#category-meals"
+      "#category-meals",
     );
     expect(screen.getByRole("link", { name: "Drinks" })).toHaveAttribute(
       "href",
-      "#category-drinks"
+      "#category-drinks",
     );
   });
 
   it("shows empty menu state", async () => {
-    mockFetchFestivalMenu.mockResolvedValue({ included_meal_offer: "", categories: [] });
+    mockFetchFestivalMenu.mockResolvedValue({
+      included_meal_offer: "",
+      categories: [],
+    });
     render(<FestivalMenuPage />);
     expect(await screen.findByText(/Menu coming soon/i)).toBeInTheDocument();
   });
@@ -323,12 +405,12 @@ describe("FestivalMenuPage", () => {
     render(<FestivalMenuPage />);
     await screen.findByText("Varenyky");
     const img = document.querySelector(
-      'img[src="https://example.com/varenyky.jpg"]'
+      'img[src="https://example.com/varenyky.jpg"]',
     ) as HTMLImageElement;
     fireEvent.error(img);
     await waitFor(() => {
       expect(
-        document.querySelector('img[src="https://example.com/varenyky.jpg"]')
+        document.querySelector('img[src="https://example.com/varenyky.jpg"]'),
       ).toBeNull();
     });
     expect(screen.getByText("Photo unavailable")).toBeInTheDocument();

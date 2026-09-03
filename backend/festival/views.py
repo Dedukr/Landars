@@ -96,7 +96,7 @@ class FestivalPublicMenuView(APIView):
                 Prefetch(
                     "fillings",
                     queryset=FestivalFilling.objects.filter(is_active=True).order_by(
-                        "name"
+                        "id"
                     ),
                 ),
             )
@@ -119,6 +119,10 @@ class FestivalPublicMenuView(APIView):
                 bucket["products"].append(serialized)
             else:
                 uncategorized.append(serialized)
+
+        for bucket in categories_by_id.values():
+            bucket["products"].sort(key=lambda item: item["created_at"])
+        uncategorized.sort(key=lambda item: item["created_at"])
 
         ordered_categories: list[dict] = []
         for category in FestivalCategory.objects.filter(is_active=True).order_by(

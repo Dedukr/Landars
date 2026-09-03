@@ -74,6 +74,7 @@ class PublicFestivalProductSerializer(serializers.ModelSerializer):
             "ingredients",
             "toppings",
             "allergens",
+            "created_at",
         ]
 
     def get_category(self, obj: FestivalProduct) -> str | None:
