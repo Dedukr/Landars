@@ -4,16 +4,20 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0 AS cputil-builder
 ARG TARGETARCH
 SHELL ["/bin/bash", "-c"]
 RUN set -euo pipefail; \
-    apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+    apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
-    && git clone --depth 1 --branch v2.0.1 \
-         https://github.com/star-micronics/cloudprnt-sdk.git /src/cloudprnt-sdk \
+    && curl -fsSL \
+         "https://github.com/star-micronics/cloudprnt-sdk/archive/refs/tags/v2.0.1.tar.gz" \
+         -o /tmp/cloudprnt-sdk.tar.gz \
+    && mkdir -p /src \
+    && tar -xzf /tmp/cloudprnt-sdk.tar.gz -C /src \
+    && rm /tmp/cloudprnt-sdk.tar.gz \
     && case "${TARGETARCH}" in \
          amd64) RID=linux-musl-x64 ;; \
          arm64) RID=linux-musl-arm64 ;; \
          *) echo "Unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
        esac \
-    && cd /src/cloudprnt-sdk/CloudPRNTSDKSamples/cputil \
+    && cd /src/cloudprnt-sdk-2.0.1/CloudPRNTSDKSamples/cputil \
     && dotnet publish -c Release -r "${RID}" --self-contained true \
          -p:PublishSingleFile=true -o /out \
     && test -x /out/cputil

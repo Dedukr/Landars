@@ -125,6 +125,7 @@ export const API_ENDPOINTS = {
   },
 
   FESTIVAL: {
+    MENU: "/api/festival/menu/",
     PRODUCTS: "/api/festival/products/",
     STATUS: "/api/festival/status/",
     ORDERS: "/api/festival/orders/",

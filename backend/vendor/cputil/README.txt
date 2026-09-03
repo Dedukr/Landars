@@ -10,9 +10,11 @@ Override with FESTIVAL_CPUTIL_PATH.
 
 Local macOS (optional):
 
-  git clone --depth 1 --branch v2.0.1 \
-    https://github.com/star-micronics/cloudprnt-sdk.git /tmp/cloudprnt-sdk
-  cd /tmp/cloudprnt-sdk/CloudPRNTSDKSamples/cputil
+  curl -fsSL \
+    "https://github.com/star-micronics/cloudprnt-sdk/archive/refs/tags/v2.0.1.tar.gz" \
+    -o /tmp/cloudprnt-sdk.tar.gz
+  tar -xzf /tmp/cloudprnt-sdk.tar.gz -C /tmp
+  cd /tmp/cloudprnt-sdk-2.0.1/CloudPRNTSDKSamples/cputil
   dotnet publish -c Release -r osx-arm64 --self-contained true \
     -p:PublishSingleFile=true -o /path/to/backend/vendor/cputil-osx-arm64
   export FESTIVAL_CPUTIL_PATH=.../vendor/cputil-osx-arm64/cputil

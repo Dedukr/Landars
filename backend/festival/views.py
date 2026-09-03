@@ -18,11 +18,18 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from django.db.models import Prefetch
 
-from festival.models import FestivalAddition, FestivalProduct
+from festival.models import (
+    FestivalAddition,
+    FestivalCategory,
+    FestivalFilling,
+    FestivalMenuSettings,
+    FestivalProduct,
+)
 from festival.permissions import IsFestivalStaff
 from festival.serializers import (
     FestivalOrderCreateSerializer,
     FestivalProductSerializer,
+    PublicFestivalProductSerializer,
     serialize_order_response,
 )
 from festival.services.cloudprnt import (
@@ -66,6 +73,80 @@ class FestivalProductsView(APIView):
         )
         data = FestivalProductSerializer(products, many=True).data
         return Response({"results": data})
+
+
+class FestivalPublicMenuView(APIView):
+    """Read-only public menu for QR-code customers (no auth)."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        settings_row = FestivalMenuSettings.load()
+        products = (
+            FestivalProduct.objects.filter(is_active=True)
+            .select_related("category", "addition_class")
+            .prefetch_related(
+                Prefetch(
+                    "addition_class__additions",
+                    queryset=FestivalAddition.objects.filter(is_active=True).order_by(
+                        "created_at", "id"
+                    ),
+                ),
+                Prefetch(
+                    "fillings",
+                    queryset=FestivalFilling.objects.filter(is_active=True).order_by(
+                        "name"
+                    ),
+                ),
+            )
+            .order_by("category__created_at", "category__id", "created_at", "id")
+        )
+
+        categories_by_id: dict[int | None, dict] = {}
+        uncategorized: list[dict] = []
+
+        for product in products:
+            serialized = PublicFestivalProductSerializer(product).data
+            if product.category_id:
+                bucket = categories_by_id.setdefault(
+                    product.category_id,
+                    {
+                        "name": product.category.name,
+                        "products": [],
+                    },
+                )
+                bucket["products"].append(serialized)
+            else:
+                uncategorized.append(serialized)
+
+        ordered_categories: list[dict] = []
+        for category in FestivalCategory.objects.order_by("created_at", "id"):
+            if category.pk in categories_by_id:
+                ordered_categories.append(categories_by_id[category.pk])
+
+        if uncategorized:
+            ordered_categories.append(
+                {"name": "Other", "products": uncategorized},
+            )
+
+        payload = {
+            "included_meal_offer": settings_row.included_meal_offer,
+            "categories": ordered_categories,
+        }
+        return Response(payload)
+
+    def post(self, request):
+        return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def put(self, request):
+        return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def patch(self, request):
+        return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def delete(self, request):
+        return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
 
 class FestivalStatusView(APIView):

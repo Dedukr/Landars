@@ -6,6 +6,95 @@ from festival.models import FestivalAddition, FestivalFilling, FestivalProduct
 from festival.services.orders import order_print_status
 
 
+def resolve_filling_image(
+    filling: FestivalFilling, product: FestivalProduct | None = None
+) -> str:
+    if filling.image_url:
+        return filling.image_url
+    if product is not None and product.image_url:
+        return product.image_url
+    if filling.product_id and filling.product.image_url:
+        return filling.product.image_url
+    return ""
+
+
+def resolve_filling_description(
+    filling: FestivalFilling, product: FestivalProduct | None = None
+) -> str:
+    if filling.description:
+        return filling.description
+    if product is not None and product.description:
+        return product.description
+    if filling.product_id and filling.product.description:
+        return filling.product.description
+    return ""
+
+
+class PublicFestivalAdditionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FestivalAddition
+        fields = ["name", "price"]
+
+
+class PublicFestivalFillingSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
+    description = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FestivalFilling
+        fields = ["name", "image", "description", "allergens"]
+
+    def get_image(self, obj: FestivalFilling) -> str:
+        return resolve_filling_image(obj, self.context.get("product"))
+
+    def get_description(self, obj: FestivalFilling) -> str:
+        return resolve_filling_description(obj, self.context.get("product"))
+
+
+class PublicFestivalProductSerializer(serializers.ModelSerializer):
+    image = serializers.CharField(source="image_url", read_only=True)
+    category = serializers.SerializerMethodField()
+    addition_class = serializers.SerializerMethodField()
+    additions = serializers.SerializerMethodField()
+    fillings = serializers.SerializerMethodField()
+    price = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+    class Meta:
+        model = FestivalProduct
+        fields = [
+            "name",
+            "category",
+            "image",
+            "price",
+            "portion",
+            "description",
+            "fillings",
+            "addition_class",
+            "additions",
+            "ingredients",
+            "toppings",
+            "allergens",
+        ]
+
+    def get_category(self, obj: FestivalProduct) -> str | None:
+        return obj.category.name if obj.category_id else None
+
+    def get_addition_class(self, obj: FestivalProduct) -> str | None:
+        return obj.addition_class.name if obj.addition_class_id else None
+
+    def get_additions(self, obj: FestivalProduct) -> list[dict]:
+        if not obj.addition_class_id:
+            return []
+        additions = [a for a in obj.addition_class.additions.all() if a.is_active]
+        return PublicFestivalAdditionSerializer(additions, many=True).data
+
+    def get_fillings(self, obj: FestivalProduct) -> list[dict]:
+        fillings = [f for f in obj.fillings.all() if f.is_active]
+        return PublicFestivalFillingSerializer(
+            fillings, many=True, context={"product": obj}
+        ).data
+
+
 class FestivalAdditionSerializer(serializers.ModelSerializer):
     class Meta:
         model = FestivalAddition
@@ -13,9 +102,14 @@ class FestivalAdditionSerializer(serializers.ModelSerializer):
 
 
 class FestivalFillingSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
+
     class Meta:
         model = FestivalFilling
-        fields = ["id", "name"]
+        fields = ["id", "name", "image", "description", "allergens"]
+
+    def get_image(self, obj: FestivalFilling) -> str:
+        return resolve_filling_image(obj, self.context.get("product"))
 
 
 class FestivalProductSerializer(serializers.ModelSerializer):
@@ -56,7 +150,9 @@ class FestivalProductSerializer(serializers.ModelSerializer):
 
     def get_fillings(self, obj: FestivalProduct) -> list[dict]:
         fillings = [f for f in obj.fillings.all() if f.is_active]
-        return FestivalFillingSerializer(fillings, many=True).data
+        return FestivalFillingSerializer(
+            fillings, many=True, context={"product": obj}
+        ).data
 
 
 class FestivalOrderItemInputSerializer(serializers.Serializer):

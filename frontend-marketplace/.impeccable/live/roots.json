@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "appRoot": "/Users/dedmac/CodeLocal/FoodPlatform/frontend-marketplace",
+  "repoRoot": "/Users/dedmac/CodeLocal/FoodPlatform",
+  "contextRoot": "/Users/dedmac/CodeLocal/FoodPlatform",
+  "sessionRoot": "/Users/dedmac/CodeLocal/FoodPlatform/frontend-marketplace/.impeccable/live",
+  "productPath": "/Users/dedmac/CodeLocal/FoodPlatform/PRODUCT.md",
+  "designPath": "/Users/dedmac/CodeLocal/FoodPlatform/DESIGN.md",
+  "resolvedFrom": "target:frontend-marketplace"
+}

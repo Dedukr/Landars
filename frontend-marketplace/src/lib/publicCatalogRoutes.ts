@@ -16,5 +16,9 @@ export function isPublicCatalogRoute(pathname: string): boolean {
     return true;
   }
 
+  if (path === "/festival-menu") {
+    return true;
+  }
+
   return false;
 }

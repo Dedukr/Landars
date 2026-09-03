@@ -94,6 +94,35 @@ class FestivalAPITests(TestCase):
         self.assertEqual(len(resp.data["results"]), 1)
         self.assertEqual(resp.data["results"][0]["image"], "")
 
+    def test_filling_image_falls_back_to_product_image(self):
+        from festival.models import FestivalFilling
+
+        self.product.image_url = "https://example.com/varenyky.jpg"
+        self.product.save(update_fields=["image_url"])
+        potato = FestivalFilling.objects.create(
+            product=self.product,
+            name="Potato",
+            image_url="https://example.com/potato.jpg",
+            is_active=True,
+        )
+        FestivalFilling.objects.create(
+            product=self.product,
+            name="Cheese",
+            is_active=True,
+        )
+
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.get("/api/festival/products/")
+        self.assertEqual(resp.status_code, 200)
+        fillings = resp.data["results"][0]["fillings"]
+        images = {f["name"]: f["image"] for f in fillings}
+        self.assertEqual(images["Potato"], "https://example.com/potato.jpg")
+        self.assertEqual(images["Cheese"], "https://example.com/varenyky.jpg")
+        self.assertEqual(
+            set(fillings[0].keys()), {"id", "name", "image", "description", "allergens"}
+        )
+        self.assertEqual(potato.image_url, "https://example.com/potato.jpg")
+
     def test_products_list_omits_inactive_additions(self):
         from festival.models import FestivalAddition, FestivalAdditionClass
 
