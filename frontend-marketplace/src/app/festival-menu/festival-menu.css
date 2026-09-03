@@ -155,10 +155,12 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  width: var(--fm-rail);
-  padding-top: 7.5rem;
-  padding-bottom: 8rem;
+  display: flex;
+  flex-direction: column;
   justify-content: space-between;
+  width: var(--fm-rail);
+  padding-top: 12rem;
+  padding-bottom: 8rem;
   opacity: 0.78;
   mask-image: linear-gradient(
     180deg,
@@ -177,6 +179,13 @@
   right: 0;
 }
 
+.festival-menu-decoration-block {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  gap: 2.75rem;
+}
+
 .festival-menu-decoration-cluster {
   flex: 0 0 auto;
   max-width: 100%;
@@ -191,6 +200,16 @@
 
   .festival-menu-decoration-rail {
     opacity: 0.62;
+    padding-top: 8rem;
+    padding-bottom: 5rem;
+  }
+
+  .festival-menu-decoration-rail--left .festival-menu-decoration-block:nth-child(2) {
+    display: none;
+  }
+
+  .festival-menu-decoration-block {
+    gap: 1.75rem;
   }
 
   .festival-menu-decoration-cluster--b,

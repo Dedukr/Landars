@@ -3,18 +3,37 @@ export function FestivalMenuDecoration() {
   return (
     <div className="festival-menu-decoration" aria-hidden="true">
       <div className="festival-menu-decoration-rail festival-menu-decoration-rail--left">
-        <WheatCluster className="festival-menu-decoration-cluster festival-menu-decoration-cluster--a" />
-        <PartialWindmill className="festival-menu-decoration-cluster festival-menu-decoration-cluster--b" />
-        <GrassTuft className="festival-menu-decoration-cluster festival-menu-decoration-cluster--c" />
+        <LeftDecorationBlock />
+        <LeftDecorationBlock />
+        <LeftDecorationBlock />
       </div>
       <div className="festival-menu-decoration-rail festival-menu-decoration-rail--right">
-        <WheatCluster
-          className="festival-menu-decoration-cluster festival-menu-decoration-cluster--d"
-          flip
-        />
-        <FenceFragment className="festival-menu-decoration-cluster festival-menu-decoration-cluster--e" />
-        <RoofPeak className="festival-menu-decoration-cluster festival-menu-decoration-cluster--f" />
+        <RightDecorationBlock />
+        <RightDecorationBlock />
       </div>
+    </div>
+  );
+}
+
+function LeftDecorationBlock() {
+  return (
+    <div className="festival-menu-decoration-block">
+      <WheatCluster className="festival-menu-decoration-cluster festival-menu-decoration-cluster--a" />
+      <PartialWindmill className="festival-menu-decoration-cluster festival-menu-decoration-cluster--b" />
+      <GrassTuft className="festival-menu-decoration-cluster festival-menu-decoration-cluster--c" />
+    </div>
+  );
+}
+
+function RightDecorationBlock() {
+  return (
+    <div className="festival-menu-decoration-block">
+      <WheatCluster
+        className="festival-menu-decoration-cluster festival-menu-decoration-cluster--d"
+        flip
+      />
+      <FenceFragment className="festival-menu-decoration-cluster festival-menu-decoration-cluster--e" />
+      <RoofPeak className="festival-menu-decoration-cluster festival-menu-decoration-cluster--f" />
     </div>
   );
 }
