@@ -111,11 +111,34 @@ class FestivalFillingInline(admin.TabularInline):
     model = FestivalFilling
     form = FestivalFillingInlineForm
     extra = 0
-    fields = ["name", "image_upload", "description", "allergens", "is_active"]
+    fields = [
+        "name",
+        "image_preview",
+        "image_upload",
+        "description",
+        "allergens",
+        "is_active",
+    ]
+    readonly_fields = ["image_preview"]
     classes = ["festival-filling-inline"]
 
     class Media:
         css = {"all": ("festival/admin_filling_inline.css",)}
+        js = ("festival/admin_filling_inline.js",)
+
+    @admin.display(description="Preview")
+    def image_preview(self, obj: FestivalFilling):
+        if obj and obj.pk and obj.image_url:
+            return format_html(
+                '<img class="festival-filling-preview-img" src="{}" alt="" '
+                'style="max-width: 80px; max-height: 80px; object-fit: contain; '
+                'border: 1px solid #ddd; border-radius: 4px;" />',
+                obj.image_url,
+            )
+        return format_html(
+            '<div class="festival-filling-preview-placeholder">'
+            "No image</div>"
+        )
 
 
 @admin.register(FestivalMenuSettings)
@@ -222,6 +245,7 @@ class FestivalProductAdmin(admin.ModelAdmin):
     list_editable = ["is_active"]
     search_fields = ["name", "category__name", "addition_class__name"]
     autocomplete_fields = ["category", "addition_class"]
+    ordering = ["-is_active", "category__created_at", "category__id", "created_at", "id"]
     readonly_fields = ["updated_at", "image_preview"]
     fields = [
         "category",
@@ -242,12 +266,21 @@ class FestivalProductAdmin(admin.ModelAdmin):
         "updated_at",
     ]
 
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related("fillings")
+
     def image_preview(self, obj: FestivalProduct):
-        if not obj.image_url:
+        image_url = obj.image_url
+        if not image_url:
+            for filling in obj.fillings.all():
+                if filling.image_url:
+                    image_url = filling.image_url
+                    break
+        if not image_url:
             return "-"
         return format_html(
             '<img src="{}" alt="" style="max-height:80px;max-width:120px;" />',
-            obj.image_url,
+            image_url,
         )
 
     image_preview.short_description = "Preview"

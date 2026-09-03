@@ -9,9 +9,42 @@
   width: 10%;
 }
 
+.festival-filling-inline td.field-image_preview,
+.festival-filling-inline th.column-image_preview {
+  width: 7rem;
+  vertical-align: middle;
+  text-align: center;
+}
+
+.festival-filling-inline .festival-filling-preview-img {
+  display: block;
+  margin: 0 auto;
+  max-width: 80px;
+  max-height: 80px;
+  object-fit: contain;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.festival-filling-inline .festival-filling-preview-placeholder {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto;
+  border: 2px dashed #ccc;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #999;
+  font-size: 11px;
+  text-align: center;
+  box-sizing: border-box;
+}
+
 .festival-filling-inline td.field-image_upload,
 .festival-filling-inline th.column-image_upload {
-  width: 18%;
+  width: 16%;
 }
 
 .festival-filling-inline td.field-description,
