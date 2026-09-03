@@ -16,7 +16,7 @@ export function isPublicCatalogRoute(pathname: string): boolean {
     return true;
   }
 
-  if (path === "/festival-menu") {
+  if (path === "/festival-menu" || path.startsWith("/festival-menu/")) {
     return true;
   }
 

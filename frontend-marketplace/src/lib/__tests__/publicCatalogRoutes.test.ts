@@ -19,6 +19,7 @@ describe("isPublicCatalogRoute", () => {
 
   it("allows festival menu", () => {
     expect(isPublicCatalogRoute("/festival-menu")).toBe(true);
+    expect(isPublicCatalogRoute("/festival-menu/")).toBe(true);
   });
 
   it("blocks checkout and account routes", () => {

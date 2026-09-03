@@ -115,7 +115,7 @@ export default function Header() {
     return pathname === href;
   };
 
-  if (pathname === "/festival-menu") {
+  if (pathname === "/festival-menu" || pathname?.startsWith("/festival-menu/")) {
     return null;
   }
 

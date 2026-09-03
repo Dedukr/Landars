@@ -25,7 +25,12 @@ const supportLinks = [
 
 export default function Footer() {
   const pathname = usePathname();
-  if (pathname === "/festival" || pathname?.startsWith("/festival/")) {
+  if (
+    pathname === "/festival-menu" ||
+    pathname?.startsWith("/festival-menu/") ||
+    pathname === "/festival" ||
+    pathname?.startsWith("/festival/")
+  ) {
     return null;
   }
 

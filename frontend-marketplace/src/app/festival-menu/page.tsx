@@ -9,6 +9,8 @@ import {
 import { isMealsCategory, menuHasDrinkAdditions } from "./utils";
 import { FestivalCategoryNav } from "./components/FestivalCategoryNav";
 import { FestivalCategorySection } from "./components/FestivalCategorySection";
+import { FestivalMenuDecoration } from "./components/FestivalMenuDecoration";
+import { FestivalMenuFooter } from "./components/FestivalMenuFooter";
 import { FestivalMenuHeader } from "./components/FestivalMenuHeader";
 import { FestivalMenuSkeleton } from "./components/FestivalMenuSkeleton";
 import {
@@ -61,46 +63,59 @@ export default function FestivalMenuPage() {
     setBrokenImages((prev) => ({ ...prev, [key]: true }));
   }, []);
 
+  const categoryImageOffsets = useMemo(() => {
+    const offsets: number[] = [];
+    let running = 0;
+    for (const category of categories) {
+      offsets.push(running);
+      running += category.products.length;
+    }
+    return offsets;
+  }, [categories]);
+
   return (
     <div className="festival-menu-page">
-      <FestivalMenuHeader includedMealOffer={menu?.included_meal_offer} />
+      <FestivalMenuDecoration />
 
-      {!loading && !error && categories.length > 0 ? (
-        <FestivalCategoryNav categories={categories} />
-      ) : null}
+      <div className="festival-menu-sheet">
+        <FestivalMenuHeader includedMealOffer={menu?.included_meal_offer} />
 
-      <main className="festival-menu-main">
-        {loading ? (
-          <>
-            <p className="sr-only" role="status" aria-live="polite">
-              Loading festival menu…
-            </p>
-            <FestivalMenuSkeleton />
-          </>
-        ) : error ? (
-          <FestivalMenuErrorState message={error} onRetry={() => void load()} />
-        ) : itemCount === 0 ? (
-          <FestivalMenuEmptyState />
-        ) : (
-          <div className="festival-menu-sections">
-            {categories.map((category) => (
-              <FestivalCategorySection
-                key={category.name}
-                category={category}
-                showDrinksIncluded={
-                  drinksIncludedWithMeals && isMealsCategory(category.name)
-                }
-                brokenImages={brokenImages}
-                onImageError={handleImageError}
-              />
-            ))}
-          </div>
-        )}
-      </main>
+        {!loading && !error && categories.length > 0 ? (
+          <FestivalCategoryNav categories={categories} />
+        ) : null}
 
-      <p className="festival-menu-footer-note">
-        Order at the festival counter — we&apos;ll prepare it fresh for you.
-      </p>
+        <main className="festival-menu-main">
+          {loading ? (
+            <>
+              <p className="sr-only" role="status" aria-live="polite">
+                Loading festival menu…
+              </p>
+              <FestivalMenuSkeleton />
+            </>
+          ) : error ? (
+            <FestivalMenuErrorState message={error} onRetry={() => void load()} />
+          ) : itemCount === 0 ? (
+            <FestivalMenuEmptyState />
+          ) : (
+            <div className="festival-menu-sections">
+              {categories.map((category, catIndex) => (
+                <FestivalCategorySection
+                  key={category.name}
+                  category={category}
+                  showDrinksIncluded={
+                    drinksIncludedWithMeals && isMealsCategory(category.name)
+                  }
+                  brokenImages={brokenImages}
+                  onImageError={handleImageError}
+                  imagePriorityStart={categoryImageOffsets[catIndex] ?? 0}
+                />
+              ))}
+            </div>
+          )}
+        </main>
+
+        <FestivalMenuFooter />
+      </div>
     </div>
   );
 }

@@ -137,29 +137,29 @@ describe("FestivalMenuPage", () => {
     expect(screen.queryByText(/place order/i)).not.toBeInTheDocument();
   });
 
-  it("lists simple products first, then product groups with filling cards", async () => {
+  it("preserves API product order in one card grid with fillings inside parents", async () => {
     render(<FestivalMenuPage />);
-    expect(await screen.findByRole("heading", { name: "Varenyky", level: 3 })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Shashlik", level: 3 })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Chicken", level: 4 })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Pork", level: 4 })).toBeInTheDocument();
-    expect(screen.getByLabelText("Shashlik fillings")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Shashlik", level: 3 })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Varenyky", level: 3 })).toBeInTheDocument();
+    expect(screen.getByText("Chicken")).toBeInTheDocument();
+    expect(screen.getByText("Pork")).toBeInTheDocument();
+    expect(screen.getByLabelText("Shashlik choices")).toBeInTheDocument();
 
+    const shashlikHeading = screen.getByRole("heading", { name: "Shashlik", level: 3 });
     const varenykyHeading = screen.getByRole("heading", { name: "Varenyky", level: 3 });
-    const shashlikGroupHeading = screen.getByRole("heading", { name: "Shashlik", level: 3 });
     expect(
-      varenykyHeading.compareDocumentPosition(shashlikGroupHeading) &
+      shashlikHeading.compareDocumentPosition(varenykyHeading) &
         Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
 
     expect(
-      document.querySelector('img[src="https://example.com/chicken.jpg"]')
+      document.querySelector('img[src="https://example.com/shashlik.jpg"]')
     ).toBeTruthy();
     expect(
       document.querySelector('img[src="https://example.com/varenyky.jpg"]')
     ).toBeTruthy();
-    expect(document.querySelector(".festival-menu-simple-products")).toBeTruthy();
-    expect(document.querySelector(".festival-menu-entry-groups")).toBeTruthy();
+    expect(document.querySelector(".festival-menu-card-grid")).toBeTruthy();
+    expect(document.querySelectorAll(".festival-menu-card").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText(/Choose your meat/i)).toBeInTheDocument();
   });
 
@@ -170,9 +170,9 @@ describe("FestivalMenuPage", () => {
     expect(screen.getByText(/Gluten, milk/)).toBeInTheDocument();
   });
 
-  it("shows description and allergens on filling cards", async () => {
+  it("shows description and allergens on filling choice rows", async () => {
     render(<FestivalMenuPage />);
-    await screen.findByRole("heading", { name: "Chicken", level: 4 });
+    await screen.findByRole("heading", { name: "Shashlik", level: 3 });
     expect(screen.getByText("Chargrilled chicken skewer")).toBeInTheDocument();
     expect(screen.getAllByText("Chargrilled skewer").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/None declared/).length).toBeGreaterThanOrEqual(2);
@@ -217,6 +217,7 @@ describe("FestivalMenuPage", () => {
         document.querySelector('img[src="https://example.com/varenyky.jpg"]')
       ).toBeNull();
     });
+    expect(screen.getByText("Photo unavailable")).toBeInTheDocument();
     expect(screen.getAllByText("Varenyky").length).toBeGreaterThanOrEqual(1);
   });
 

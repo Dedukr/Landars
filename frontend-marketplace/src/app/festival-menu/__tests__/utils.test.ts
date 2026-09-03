@@ -6,6 +6,7 @@ import {
   fillingsOptionCategory,
   fillingChoiceLabel,
   formatCategoryAdditionSummary,
+  groupCrepeFillings,
   menuHasDrinkAdditions,
   nonDrinkAdditionGroups,
   partitionCategoryProducts,
@@ -192,10 +193,68 @@ describe("fillingChoiceLabel", () => {
     ).toBe("Choose your meat");
   });
 
+  it("uses Choose your variety for jerky", () => {
+    expect(
+      fillingChoiceLabel("Jerky", [{ name: "Beef", image: "", description: "", allergens: "" }])
+    ).toBe("Choose your variety");
+  });
+
   it("uses Choose your filling by default", () => {
     expect(
       fillingChoiceLabel("Chebureki", [{ name: "Beef", image: "", description: "", allergens: "" }])
     ).toBe("Choose your filling");
+  });
+});
+
+describe("groupCrepeFillings", () => {
+  it("splits crepe fillings into savoury and sweet when both exist", () => {
+    const product: FestivalMenuProduct = {
+      name: "Filled Crepes",
+      category: "Meals",
+      image: "",
+      price: "9.99",
+      portion: "",
+      description: "",
+      fillings: [
+        { name: "Chicken&Cheese", image: "", description: "", allergens: "" },
+        { name: "Apple&Cinnamon", image: "", description: "", allergens: "" },
+        { name: "Cottage Cheese", image: "", description: "", allergens: "" },
+      ],
+      addition_class: null,
+      additions: [],
+      ingredients: "",
+      toppings: "",
+      allergens: "",
+    };
+    expect(groupCrepeFillings(product)).toEqual({
+      savoury: [{ name: "Chicken&Cheese", image: "", description: "", allergens: "" }],
+      sweet: [
+        { name: "Apple&Cinnamon", image: "", description: "", allergens: "" },
+        { name: "Cottage Cheese", image: "", description: "", allergens: "" },
+      ],
+    });
+  });
+
+  it("returns null when product is not a crepe", () => {
+    expect(
+      groupCrepeFillings({
+        name: "Chebureki",
+        category: "Meals",
+        image: "",
+        price: "9.99",
+        portion: "",
+        description: "",
+        fillings: [
+          { name: "Beef", image: "", description: "", allergens: "" },
+          { name: "Cheese", image: "", description: "", allergens: "" },
+        ],
+        addition_class: null,
+        additions: [],
+        ingredients: "",
+        toppings: "",
+        allergens: "",
+      })
+    ).toBeNull();
   });
 });
 

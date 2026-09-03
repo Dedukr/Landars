@@ -6,6 +6,7 @@ type FestivalCategoryAdditionsProps = {
   groups: OptionCategory<FestivalMenuAddition>[];
 };
 
+/** Slim ruled information band — not a filled promo banner. */
 export function FestivalCategoryAdditions({
   categoryName,
   groups,
