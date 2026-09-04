@@ -63,6 +63,7 @@ export type FestivalOrderResponse = {
   id: number;
   order_number: string;
   total_price: string;
+  cash: boolean;
   created_at: string;
   invoice_number: string;
   print_status: string;
@@ -98,6 +99,7 @@ export async function unstickFestivalPrinter(): Promise<FestivalPrinterUnstickRe
 export async function placeFestivalOrder(payload: {
   client_request_id: string;
   items: FestivalOrderItemInput[];
+  cash?: boolean;
 }): Promise<FestivalOrderResponse> {
   return httpClient.post<FestivalOrderResponse>("/api/festival/orders/", payload);
 }

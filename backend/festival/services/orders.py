@@ -23,6 +23,7 @@ from festival.services.cloudprnt import (
     create_print_batch,
     get_active_printer,
 )
+from festival.services.documents import create_paid_invoice
 from festival.services.numbering import allocate_ticket_number
 from festival.services.pricing import price_line, price_order
 from festival.services.tickets import (
@@ -104,8 +105,12 @@ def normalize_items(items: list[dict]) -> list[dict]:
     ]
 
 
-def request_fingerprint(normalized_items: list[dict]) -> str:
-    payload = json.dumps(normalized_items, separators=(",", ":"), sort_keys=True)
+def request_fingerprint(normalized_items: list[dict], *, cash: bool = False) -> str:
+    payload = json.dumps(
+        {"items": normalized_items, "cash": bool(cash)},
+        separators=(",", ":"),
+        sort_keys=True,
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -135,6 +140,7 @@ def place_festival_order(
     user,
     client_request_id: uuid.UUID | str,
     items: list[dict],
+    cash: bool = False,
 ) -> PlaceOrderResult:
     _ensure_can_place(user)
     try:
@@ -142,8 +148,9 @@ def place_festival_order(
     except (TypeError, ValueError) as exc:
         raise FestivalOrderError("client_request_id must be a valid UUID.") from exc
 
+    cash_paid = bool(cash)
     normalized = normalize_items(items)
-    fingerprint = request_fingerprint(normalized)
+    fingerprint = request_fingerprint(normalized, cash=cash_paid)
 
     existing = FestivalOrder.objects.filter(client_request_id=request_id).first()
     if existing:
@@ -308,6 +315,7 @@ def place_festival_order(
             order = FestivalOrder.objects.create(
                 order_number=ticket.order_number,
                 total_price=pricing.total_gross,
+                cash=cash_paid,
                 client_request_id=request_id,
                 request_fingerprint=fingerprint,
                 status=FestivalOrder.Status.PAID,
@@ -345,11 +353,34 @@ def place_festival_order(
                 line_total=line.line_total,
             )
 
-        # Invoices are created manually from the admin panel (same pattern as
-        # credit notes), not automatically on order placement.
+        # Non-cash: create the invoice row in this transaction (reuses pricing;
+        # one extra INSERT, no PDF/WeasyPrint). PDF is queued after commit only.
+        # Cash orders skip invoicing (create manually from admin if needed).
+        invoice_id: int | None = None
+        if not cash_paid:
+            invoice = create_paid_invoice(order=order, pricing=pricing)
+            invoice_id = invoice.pk
+
         should_enqueue_prints = mode == "cloudprnt" and printer is not None
         printer_id = printer.pk if should_enqueue_prints else None
         order_id = order.pk
+
+        def enqueue_invoice_pdf():
+            if invoice_id is None:
+                return
+            try:
+                from festival.tasks import generate_festival_invoice_pdf_task
+
+                # Fire-and-forget only — never generate PDF in the request
+                # worker (WeasyPrint is too slow for the till path).
+                generate_festival_invoice_pdf_task.delay(invoice_id)
+            except Exception:
+                logger.exception(
+                    "Failed to enqueue invoice PDF for festival order %s "
+                    "invoice %s (invoice row already saved; retry from admin)",
+                    order_id,
+                    invoice_id,
+                )
 
         def enqueue_prints():
             if not printer_id:
@@ -417,6 +448,7 @@ def place_festival_order(
                         order_id,
                     )
 
+        transaction.on_commit(enqueue_invoice_pdf)
         transaction.on_commit(enqueue_prints)
 
     order = FestivalOrder.objects.select_related("invoice").prefetch_related(

@@ -1184,15 +1184,14 @@ class PrintRecoveryTests(TestCase):
     def test_cancel_while_claimed_clears_token_and_is_idempotent(self):
         from festival.services.cancellations import cancel_festival_order
         from festival.services.cloudprnt import handle_job_delete, handle_job_get
-        from festival.services.documents import issue_invoice_for_order
 
         owner = make_staff(email="owner@example.com")
         owner.user_permissions.add(
             Permission.objects.get(codename="cancel_festival_order")
         )
         order = self._place_order()
-        # Cancellation requires an invoice (created manually from the admin).
-        issue_invoice_for_order(order=order)
+        # Non-cash till orders create an invoice in the same transaction.
+        self.assertTrue(order.invoice.invoice_number)
         # Re-assign creator so cancel perm path is clear; use superuser-style via perm.
         token = self._poll()["jobToken"]
         self.printer.refresh_from_db()

@@ -165,6 +165,7 @@ describe("FestivalTillPage", () => {
       id: 10,
       order_number: "7",
       total_price: "10.00",
+      cash: false,
       created_at: "2026-07-13T12:00:00Z",
       invoice_number: "FINV-000001",
       print_status: "queued",
@@ -242,6 +243,20 @@ describe("FestivalTillPage", () => {
     expect(placeOrder.mock.calls[0][0].items).toEqual([
       { product_id: 1, quantity: 1 },
     ]);
+  });
+
+  it("toggles cash payment and sends cash flag on place order", async () => {
+    render(<FestivalTillPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Order Kvas" }));
+    const cashBtn = screen.getByRole("button", { name: "Mark as cash payment" });
+    expect(cashBtn).toHaveTextContent("Cash?");
+    fireEvent.click(cashBtn);
+    expect(
+      screen.getByRole("button", { name: "Cash payment selected" })
+    ).toHaveTextContent("Cash");
+    fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
+    await waitFor(() => expect(placeOrder).toHaveBeenCalled());
+    expect(placeOrder.mock.calls[0][0].cash).toBe(true);
   });
 
   it("adds to cart with addition and updates total", async () => {

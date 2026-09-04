@@ -249,6 +249,7 @@ export default function FestivalTillPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [cartExpanded, setCartExpanded] = useState(false);
+  const [cashPayment, setCashPayment] = useState(false);
   const [scrollToCartKey, setScrollToCartKey] = useState<string | null>(null);
   const cartListRef = useRef<HTMLUListElement | null>(null);
   const cartPanelRef = useRef<HTMLDivElement | null>(null);
@@ -565,6 +566,7 @@ export default function FestivalTillPage() {
   function clearCart() {
     setCart([]);
     setCartExpanded(false);
+    setCashPayment(false);
     lastCartFocusKeyRef.current = null;
     setLastOrderNumber(null);
   }
@@ -674,6 +676,7 @@ export default function FestivalTillPage() {
       const response = await placeFestivalOrder({
         client_request_id: clientRequestId,
         items,
+        cash: cashPayment,
       });
       setLastOrderNumber(response.order_number);
       toast.success(
@@ -683,6 +686,7 @@ export default function FestivalTillPage() {
       );
       setCart([]);
       setCartExpanded(false);
+      setCashPayment(false);
       lastCartFocusKeyRef.current = null;
       setClientRequestId(crypto.randomUUID());
       const refreshed = await fetchFestivalStatus().catch(() => null);
@@ -948,22 +952,37 @@ export default function FestivalTillPage() {
             </ul>
           )}
           <div className="flex flex-row items-center gap-2 md:gap-3 justify-between">
-            <div className="min-w-0 shrink">
-              <p
-                className="text-xs md:text-sm leading-tight"
-                style={{ color: "var(--muted-foreground)" }}
+            <div className="flex min-w-0 shrink items-end gap-3 md:gap-4">
+              <div className="min-w-0">
+                <p
+                  className="text-xs md:text-sm leading-tight"
+                  style={{ color: "var(--muted-foreground)" }}
+                >
+                  Cart{cartItemCount > 0 ? ` · ${cartItemCount}` : ""} (inc. VAT)
+                </p>
+                <p
+                  className="text-lg md:text-2xl font-black leading-tight tabular-nums"
+                  style={{ color: "var(--primary)" }}
+                  aria-live="polite"
+                >
+                  {formatFestivalMoney(cartTotal)}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="mb-0.5 bg-transparent border-0 p-0 text-sm md:text-base font-semibold underline underline-offset-4 decoration-2"
+                style={{
+                  color: cashPayment ? "#16a34a" : "var(--muted-foreground)",
+                }}
+                aria-pressed={cashPayment}
+                aria-label={cashPayment ? "Cash payment selected" : "Mark as cash payment"}
+                onClick={() => setCashPayment((prev) => !prev)}
+                disabled={submitting || cart.length === 0}
               >
-                Cart{cartItemCount > 0 ? ` · ${cartItemCount}` : ""} (inc. VAT)
-              </p>
-              <p
-                className="text-lg md:text-2xl font-black leading-tight tabular-nums"
-                style={{ color: "var(--primary)" }}
-                aria-live="polite"
-              >
-                {formatFestivalMoney(cartTotal)}
-              </p>
+                {cashPayment ? "Cash" : "Cash?"}
+              </button>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2 md:gap-3">
               {cart.length > 0 && (
                 <button
                   type="button"

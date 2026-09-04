@@ -79,29 +79,95 @@ class FestivalOrderServiceTests(TestCase):
         p = FestivalProduct.objects.create(name="X", price=Decimal("1.00"))
         self.assertEqual(p.vat_rate, Decimal("0"))
 
-    def test_place_order_paid_without_automatic_invoice(self):
-        result = place_festival_order(
-            user=self.user,
-            client_request_id=uuid.uuid4(),
-            items=[{"product_id": self.product.id, "quantity": 2}],
-        )
+    def test_place_order_cash_skips_automatic_invoice(self):
+        with mock.patch(
+            "festival.tasks.generate_festival_invoice_pdf_task.delay"
+        ) as mock_pdf:
+            with self.captureOnCommitCallbacks(execute=True):
+                result = place_festival_order(
+                    user=self.user,
+                    client_request_id=uuid.uuid4(),
+                    items=[{"product_id": self.product.id, "quantity": 2}],
+                    cash=True,
+                )
         order = result.order
         self.assertFalse(result.replayed)
         self.assertEqual(order.status, FestivalOrder.Status.PAID)
-        self.assertIsNotNone(order.created_at)
+        self.assertTrue(order.cash)
         self.assertEqual(order.total_price, Decimal("17.00"))
         item = order.items.get()
         self.assertEqual(item.product_name, "Varenyky")
         self.assertEqual(item.unit_price, Decimal("8.50"))
+        mock_pdf.assert_not_called()
+        with self.assertRaises(FestivalInvoice.DoesNotExist):
+            _ = order.invoice
+
+    def test_place_order_non_cash_creates_invoice_and_queues_pdf(self):
+        with mock.patch(
+            "festival.tasks.generate_festival_invoice_pdf_task.delay"
+        ) as mock_pdf:
+            with self.captureOnCommitCallbacks(execute=True):
+                result = place_festival_order(
+                    user=self.user,
+                    client_request_id=uuid.uuid4(),
+                    items=[{"product_id": self.product.id, "quantity": 2}],
+                    cash=False,
+                )
+        order = result.order
+        invoice = order.invoice
+        self.assertFalse(order.cash)
+        self.assertTrue(invoice.invoice_number.startswith("FINV-"))
+        self.assertEqual(invoice.total_gross, Decimal("17.00"))
+        mock_pdf.assert_called_once_with(invoice.pk)
+
+    def test_auto_invoice_task_creates_invoice_and_queues_pdf(self):
+        # Recovery path: cash=True so place_order skips invoice, then flip cash
+        # and run the recovery task.
+        with mock.patch("festival.tasks.generate_festival_invoice_pdf_task.delay"):
+            with self.captureOnCommitCallbacks(execute=True):
+                order = place_festival_order(
+                    user=self.user,
+                    client_request_id=uuid.uuid4(),
+                    items=[{"product_id": self.product.id, "quantity": 1}],
+                    cash=True,
+                ).order
+        FestivalOrder.objects.filter(pk=order.pk).update(cash=False)
+        order.refresh_from_db()
+        with mock.patch(
+            "festival.tasks.generate_festival_invoice_pdf_task.delay"
+        ) as mock_pdf:
+            from festival.tasks import issue_festival_invoice_for_order_task
+
+            invoice_id = issue_festival_invoice_for_order_task(order.pk)
+        self.assertIsNotNone(invoice_id)
+        order.refresh_from_db()
+        self.assertEqual(order.invoice.pk, invoice_id)
+        mock_pdf.assert_called_once_with(invoice_id)
+
+    def test_auto_invoice_task_skips_cash_orders(self):
+        with mock.patch("festival.tasks.generate_festival_invoice_pdf_task.delay"):
+            with self.captureOnCommitCallbacks(execute=True):
+                order = place_festival_order(
+                    user=self.user,
+                    client_request_id=uuid.uuid4(),
+                    items=[{"product_id": self.product.id, "quantity": 1}],
+                    cash=True,
+                ).order
+        from festival.tasks import issue_festival_invoice_for_order_task
+
+        self.assertIsNone(issue_festival_invoice_for_order_task(order.pk))
         with self.assertRaises(FestivalInvoice.DoesNotExist):
             _ = order.invoice
 
     def test_issue_invoice_for_order_from_snapshots(self):
-        order = place_festival_order(
-            user=self.user,
-            client_request_id=uuid.uuid4(),
-            items=[{"product_id": self.product.id, "quantity": 2}],
-        ).order
+        with mock.patch("festival.tasks.generate_festival_invoice_pdf_task.delay"):
+            with self.captureOnCommitCallbacks(execute=True):
+                order = place_festival_order(
+                    user=self.user,
+                    client_request_id=uuid.uuid4(),
+                    items=[{"product_id": self.product.id, "quantity": 2}],
+                    cash=True,
+                ).order
         with mock.patch(
             "festival.tasks.generate_festival_invoice_pdf_task.delay"
         ):
@@ -179,8 +245,8 @@ class FestivalOrderServiceTests(TestCase):
                 user=self.user,
                 client_request_id=uuid.uuid4(),
                 items=[{"product_id": self.vat_product.id, "quantity": 1}],
+                cash=False,
             )
-            issue_invoice_for_order(order=result.order)
             order = cancel_festival_order(
                 order=result.order, user=owner, reason="Test cancel"
             )
@@ -205,6 +271,7 @@ class FestivalOrderServiceTests(TestCase):
             user=self.user,
             client_request_id=uuid.uuid4(),
             items=[{"product_id": self.product.id, "quantity": 1}],
+            cash=True,
         )
         with self.assertRaises(FestivalCancellationError) as ctx:
             cancel_festival_order(
@@ -691,6 +758,7 @@ class FestivalOrderAdminDeleteTests(TestCase):
             user=self.staff,
             client_request_id=uuid.uuid4(),
             items=[{"product_id": self.product.id, "quantity": 1}],
+            cash=True,
         ).order
 
     def test_staff_cannot_delete_orders(self):
@@ -769,6 +837,7 @@ class FestivalProductDeletionTests(TestCase):
             user=self.user,
             client_request_id=uuid.uuid4(),
             items=[{"product_id": self.product.id, "quantity": 2}],
+            cash=True,
         ).order
         item = order.items.get()
         self.assertEqual(item.product_id, self.product.id)

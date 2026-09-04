@@ -231,6 +231,7 @@ class FestivalOrdersView(APIView):
                 user=request.user,
                 client_request_id=client_request_id,
                 items=serializer.validated_data["items"],
+                cash=serializer.validated_data.get("cash", False),
             )
         except FestivalOrderError as exc:
             return Response(

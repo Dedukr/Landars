@@ -335,6 +335,10 @@ class FestivalOrder(models.Model):
         help_text="Rotating display ticket number 1–99.",
     )
     total_price = models.DecimalField(max_digits=10, decimal_places=2)
+    cash = models.BooleanField(
+        default=False,
+        help_text="True when the order was paid in cash at the till.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     client_request_id = models.UUIDField(unique=True)
     request_fingerprint = models.CharField(max_length=64)

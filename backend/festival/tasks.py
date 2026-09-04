@@ -19,6 +19,7 @@ __all__ = [
     "send_festival_alert_task",
     "generate_festival_invoice_pdf_task",
     "generate_festival_credit_note_pdf_task",
+    "issue_festival_invoice_for_order_task",
     "recover_stale_festival_print_claims",
     "check_festival_printer_health",
     "verify_festival_order_prints",
@@ -84,6 +85,68 @@ def verify_festival_order_prints(order_id: int) -> dict | None:
             len(pending_jobs),
         )
     return {"order_id": order_id, "pending": len(pending_jobs), "alerted": sent}
+
+
+@shared_task(bind=True, max_retries=5, default_retry_delay=30, ignore_result=True)
+def issue_festival_invoice_for_order_task(self, order_id: int) -> int | None:
+    """
+    Recovery path: create a paid invoice for a non-cash order if missing, then
+    queue PDF generation. Normal till flow creates the invoice in-transaction
+    and only queues PDF — this task is for retries / backfill.
+    """
+    from festival.models import FestivalInvoice, FestivalOrder
+    from festival.services.documents import issue_invoice_for_order
+
+    try:
+        order = (
+            FestivalOrder.objects.select_related("invoice")
+            .prefetch_related("items")
+            .get(pk=order_id)
+        )
+    except FestivalOrder.DoesNotExist:
+        logger.warning("Festival order %s missing for auto-invoice task", order_id)
+        return None
+
+    if order.cash:
+        logger.info("Skipping auto-invoice for cash order %s", order_id)
+        return None
+
+    if order.status == FestivalOrder.Status.CANCELLED:
+        logger.info("Skipping auto-invoice for cancelled order %s", order_id)
+        return None
+
+    try:
+        invoice = order.invoice
+    except FestivalInvoice.DoesNotExist:
+        try:
+            invoice = issue_invoice_for_order(order=order)
+        except ValueError as exc:
+            # Race: another worker may have created the invoice.
+            logger.info("Auto-invoice skipped for order %s: %s", order_id, exc)
+            try:
+                invoice = (
+                    FestivalOrder.objects.select_related("invoice")
+                    .get(pk=order_id)
+                    .invoice
+                )
+            except FestivalInvoice.DoesNotExist:
+                raise self.retry(exc=exc)
+        except Exception as exc:
+            logger.exception("Auto-invoice failed for order %s", order_id)
+            raise self.retry(exc=exc)
+
+    # Never generate PDF inline — always queue so workers stay responsive.
+    try:
+        generate_festival_invoice_pdf_task.delay(invoice.pk)
+    except Exception as exc:
+        logger.exception(
+            "Failed to queue invoice PDF for order %s invoice %s",
+            order_id,
+            invoice.pk,
+        )
+        raise self.retry(exc=exc)
+
+    return invoice.pk
 
 
 @shared_task(bind=True, max_retries=5, default_retry_delay=60, ignore_result=True)

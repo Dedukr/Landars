@@ -292,6 +292,7 @@ class FestivalOrderAdmin(admin.ModelAdmin):
         "id",
         "order_number",
         "total_price",
+        "cash",
         "status",
         "created_at",
         "created_by",
@@ -299,12 +300,13 @@ class FestivalOrderAdmin(admin.ModelAdmin):
         "print_status_summary",
     ]
     list_display_links = ["id", "order_number"]
-    list_filter = ["status", "created_at"]
+    list_filter = ["status", "cash", "created_at"]
     search_fields = ["id", "order_number", "client_request_id", "invoice__invoice_number"]
     inlines = [FestivalOrderItemInline]
     readonly_fields = [
         "order_number",
         "total_price",
+        "cash",
         "created_at",
         "created_by",
         "status",
