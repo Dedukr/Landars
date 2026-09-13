@@ -310,8 +310,11 @@ export class HttpClient {
       headers.set("X-CSRFToken", token);
     }
 
-    // Add Content-Type if not already set
-    if (!headers.has("Content-Type")) {
+    // Add Content-Type if not already set (skip for FormData — browser sets boundary)
+    const body = requestConfig.body;
+    const isFormData =
+      typeof FormData !== "undefined" && body instanceof FormData;
+    if (!headers.has("Content-Type") && !isFormData) {
       headers.set("Content-Type", "application/json");
     }
 
@@ -405,10 +408,17 @@ export class HttpClient {
     data?: unknown,
     config: Omit<RequestConfig, "method"> = {}
   ): Promise<T> {
+    const isFormData =
+      typeof FormData !== "undefined" && data instanceof FormData;
     return this.request<T>(url, {
       ...config,
       method: "POST",
-      body: data ? JSON.stringify(data) : undefined,
+      body:
+        data === undefined || data === null
+          ? undefined
+          : isFormData
+            ? (data as FormData)
+            : JSON.stringify(data),
     });
   }
 

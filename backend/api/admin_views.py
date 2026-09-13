@@ -18,7 +18,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.models import Product, ProductReview
-from api.serializers import ReviewAdminSerializer
+from api.serializers import (
+    ReviewAdminSerializer,
+    _create_review_images,
+    _normalize_review_images_payload,
+)
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -29,9 +33,11 @@ User = get_user_model()
 class AdminReviewCreateSerializer(serializers.ModelSerializer):
     """Writable serializer for staff-initiated review creation."""
 
+    images = serializers.ListField(required=False, allow_empty=True, write_only=True)
+
     class Meta:
         model = ProductReview
-        fields = ["rating", "title", "comment", "is_approved", "is_featured"]
+        fields = ["rating", "title", "comment", "is_approved", "is_featured", "images"]
 
     def validate_rating(self, value):
         if not 1 <= value <= 5:
@@ -46,6 +52,15 @@ class AdminReviewCreateSerializer(serializers.ModelSerializer):
 
     def validate_title(self, value):
         return (value or "").strip()
+
+    def validate_images(self, value):
+        return _normalize_review_images_payload(value)
+
+    def create(self, validated_data):
+        images_data = validated_data.pop("images", [])
+        review = ProductReview.objects.create(**validated_data)
+        _create_review_images(review, images_data)
+        return review
 
 
 # ── List + Create ───────────────────────────────────────────────────────────
@@ -71,7 +86,9 @@ class AdminReviewListView(APIView):
     _VALID_ORDERINGS = {"id", "-id", "rating", "-rating", "created_at", "-created_at"}
 
     def get(self, request):
-        qs = ProductReview.objects.select_related("user", "product")
+        qs = ProductReview.objects.select_related("user", "product").prefetch_related(
+            "images"
+        )
 
         # ── Search ──────────────────────────────────────────────────────────
         search = request.query_params.get("search", "").strip()
@@ -189,7 +206,9 @@ class AdminReviewDetailView(APIView):
 
     def _get_review(self, pk):
         try:
-            return ProductReview.objects.select_related("user", "product").get(pk=pk)
+            return ProductReview.objects.select_related("user", "product").prefetch_related(
+                "images"
+            ).get(pk=pk)
         except ProductReview.DoesNotExist:
             return None
 
@@ -208,8 +227,8 @@ class AdminReviewDetailView(APIView):
                 {"error": "Review not found."}, status=status.HTTP_404_NOT_FOUND
             )
 
-        # Only allow editing moderation fields + content; user/product cannot change
-        EDITABLE = {"rating", "title", "comment", "is_approved", "is_featured"}
+        # Only allow editing moderation fields + content + photos; user/product cannot change
+        EDITABLE = {"rating", "title", "comment", "is_approved", "is_featured", "images"}
         data = {k: v for k, v in request.data.items() if k in EDITABLE}
 
         serializer = ReviewAdminSerializer(review, data=data, partial=True)

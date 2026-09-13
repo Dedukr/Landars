@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Award, ShieldCheck, Package, ChevronRight } from "lucide-react";
 import { StarDisplay } from "./StarRating";
 import ReviewTypeBadge from "./ReviewTypeBadge";
+import { ReviewPhotoGallery } from "./ReviewPhotoPicker";
 import type { PublicReview } from "./types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -132,6 +133,8 @@ export default function ReviewCard({ review, maxCommentLength = 200 }: ReviewCar
       >
         {comment || "No comment provided."}
       </p>
+
+      <ReviewPhotoGallery images={review.images} />
 
       {/* Product link */}
       {hasProductLink && (

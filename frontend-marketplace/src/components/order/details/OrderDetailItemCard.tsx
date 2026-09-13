@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronRight, ImageOff } from "lucide-react";
 import { formatGbpPrice } from "@/lib/formatPrice";
 import type { OrderDetailItem } from "@/lib/orderDetailTypes";
+
 function safeLineTotal(item: OrderDetailItem): string | null {
   const direct =
     item.total_price ?? item.get_total_price ?? null;
@@ -12,7 +13,9 @@ function safeLineTotal(item: OrderDetailItem): string | null {
     const p = parseFloat(String(direct));
     if (Number.isFinite(p)) return p.toFixed(2);
   }
-  const unitRaw = item.product_price ?? item.product?.price;
+  const nestedPrice =
+    item.product && typeof item.product === "object" ? item.product.price : null;
+  const unitRaw = item.product_price ?? nestedPrice;
   if (unitRaw == null) return null;
   const unit = parseFloat(String(unitRaw));
   const qty = parseFloat(String(item.quantity));
@@ -21,23 +24,35 @@ function safeLineTotal(item: OrderDetailItem): string | null {
 }
 
 function unitPrice(item: OrderDetailItem): string | null {
-  const raw = item.product_price ?? item.product?.price;
+  const nestedPrice =
+    item.product && typeof item.product === "object" ? item.product.price : null;
+  const raw = item.product_price ?? nestedPrice;
   if (raw == null || String(raw).trim() === "") return null;
   const n = parseFloat(String(raw));
   if (!Number.isFinite(n)) return null;
   return n.toFixed(2);
 }
 
+function resolveProductId(item: OrderDetailItem): number | null {
+  const p = item.product;
+  if (p == null) return null;
+  if (typeof p === "number" && Number.isFinite(p) && p > 0) return p;
+  if (typeof p === "object" && typeof p.id === "number" && p.id > 0) return p.id;
+  return null;
+}
+
 export function OrderDetailItemCard({ item }: { item: OrderDetailItem }) {
+  const nestedProduct =
+    item.product && typeof item.product === "object" ? item.product : null;
   const name =
     item.product_name?.trim() ||
-    item.product?.name?.trim() ||
+    nestedProduct?.name?.trim() ||
     "Product";
   const imageUrl =
     item.product_image_url?.trim() ||
-    item.product?.image_url?.trim() ||
+    nestedProduct?.image_url?.trim() ||
     null;
-  const productId = item.product?.id;
+  const productId = resolveProductId(item);
   const qty = parseFloat(String(item.quantity));
   const qtyLabel = Number.isFinite(qty) ? qty : item.quantity;
   const line = safeLineTotal(item);
@@ -47,7 +62,9 @@ export function OrderDetailItemCard({ item }: { item: OrderDetailItem }) {
 
   const inner = (
     <div
-      className="flex gap-3 rounded-2xl border p-3 transition-colors sm:gap-4 sm:p-4"
+      className={`flex gap-3 rounded-2xl border p-3 transition-colors sm:gap-4 sm:p-4${
+        productId ? " hover:border-[var(--accent)]/50 hover:bg-[var(--card-bg)]" : ""
+      }`}
       style={{
         background: "var(--sidebar-bg)",
         borderColor: "var(--sidebar-border)",
@@ -80,23 +97,25 @@ export function OrderDetailItemCard({ item }: { item: OrderDetailItem }) {
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <h3
-              className="text-base font-semibold leading-snug sm:text-lg"
+              className={`text-base font-semibold leading-snug sm:text-lg${
+                productId ? " underline-offset-2 group-hover:underline" : ""
+              }`}
               style={{ color: "var(--foreground)" }}
             >
               {name}
             </h3>
-            {item.product?.description ? (
+            {nestedProduct?.description ? (
               <p
                 className="mt-1 line-clamp-2 text-xs sm:text-sm"
                 style={{ color: "var(--muted-foreground)" }}
               >
-                {item.product.description}
+                {nestedProduct.description}
               </p>
             ) : null}
           </div>
           {productId ? (
             <ChevronRight
-              className="mt-1 h-5 w-5 shrink-0 opacity-40 sm:hidden"
+              className="mt-1 h-5 w-5 shrink-0 opacity-40 transition-opacity group-hover:opacity-70"
               aria-hidden
             />
           ) : null}
@@ -143,7 +162,7 @@ export function OrderDetailItemCard({ item }: { item: OrderDetailItem }) {
       <Link
         href={`/product/${productId}`}
         aria-label={`View ${name}`}
-        className="block rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card-bg)]"
+        className="group block rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card-bg)]"
       >
         {inner}
       </Link>

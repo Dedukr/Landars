@@ -313,6 +313,46 @@ class ProductReview(models.Model):
         return f"Shop review by {self.user} ({self.rating}★)"
 
 
+class ReviewImage(models.Model):
+    """Photo attached to a product or shop review (stored as public R2 CDN URL)."""
+
+    review = models.ForeignKey(
+        ProductReview,
+        related_name="images",
+        on_delete=models.CASCADE,
+    )
+    image_url = models.URLField(max_length=500)
+    sort_order = models.PositiveIntegerField(default=0)
+    alt_text = models.CharField(max_length=255, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Review Image"
+        verbose_name_plural = "Review Images"
+        ordering = ["sort_order", "created_at"]
+        indexes = [
+            models.Index(fields=["review", "sort_order"]),
+        ]
+
+    def __str__(self):
+        return f"Review #{self.review_id} image {self.sort_order}"
+
+    def delete_from_r2(self) -> None:
+        """Best-effort remove of the CDN object. Safe to call multiple times."""
+        if not self.image_url:
+            return
+        try:
+            from .r2_storage import delete_image_from_r2, object_key_from_public_url
+
+            object_key = object_key_from_public_url(self.image_url)
+            if object_key:
+                delete_image_from_r2(object_key)
+        except Exception as e:
+            # Don't fail the DB delete if R2 cleanup fails
+            print(f"Error deleting review image from R2: {e}")
+
+
 # Cleaner alias for new code — same underlying model & table
 Review = ProductReview
 

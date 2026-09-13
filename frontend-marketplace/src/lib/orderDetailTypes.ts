@@ -29,7 +29,8 @@ export interface OrderBillingAddress {
 
 export interface OrderDetailItem {
   id: number;
-  product?: {
+  /** FK id from the API, or a nested product object in some payloads */
+  product?: number | {
     id: number;
     name: string;
     price: string;

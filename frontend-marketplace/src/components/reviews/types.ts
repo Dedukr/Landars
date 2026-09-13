@@ -3,6 +3,13 @@
  * These mirror the backend's ReviewPublicSerializer and ShopReviewMeView output.
  */
 
+export interface ReviewImage {
+  id?: number;
+  image_url: string;
+  sort_order?: number;
+  alt_text?: string | null;
+}
+
 export interface PublicReview {
   id: number;
   user: number;
@@ -17,6 +24,7 @@ export interface PublicReview {
   is_featured: boolean;
   is_verified_purchase?: boolean;
   created_at: string;
+  images?: ReviewImage[];
 }
 
 export interface ReviewMeStatus {
@@ -29,6 +37,7 @@ export interface ReviewMeStatus {
     title: string;
     comment: string;
     created_at: string;
+    images?: ReviewImage[];
   } | null;
 }
 

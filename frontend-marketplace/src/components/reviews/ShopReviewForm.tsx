@@ -29,12 +29,17 @@ import { Textarea } from "@/components/ui/Textarea";
 import AlertMessage from "@/components/AlertMessage";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import { StarPicker, StarDisplay } from "./StarRating";
+import ReviewPhotoPicker, {
+  ReviewPhotoGallery,
+  type ReviewPhotoDraft,
+} from "./ReviewPhotoPicker";
 import type { ReviewMeStatus } from "./types";
 import { useAuth } from "@/contexts/AuthContext";
 import { getAuthUrl } from "@/utils/authHelpers";
 import { httpClient } from "@/utils/httpClient";
 import { API_ENDPOINTS } from "@/config/api";
 import { formatReviewDate } from "./ReviewCard";
+import { uploadReviewImages } from "@/utils/uploadReviewImage";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -56,6 +61,7 @@ interface FormErrors {
   rating?: string;
   title?: string;
   comment?: string;
+  images?: string;
 }
 
 const EMPTY_FORM: FormState = { rating: 0, title: "", comment: "" };
@@ -72,6 +78,7 @@ export default function ShopReviewForm({ onSuccess }: ShopReviewFormProps) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [submitting, setSubmitting] = useState(false);
+  const [photos, setPhotos] = useState<ReviewPhotoDraft[]>([]);
 
   // Fetch eligibility status whenever the user changes
   const fetchStatus = useCallback(async () => {
@@ -117,14 +124,26 @@ export default function ShopReviewForm({ onSuccess }: ShopReviewFormProps) {
     if (!validate()) return;
     setSubmitting(true);
     try {
+      const files = photos.map((p) => p.file).filter((f): f is File => Boolean(f));
+      const uploaded = files.length ? await uploadReviewImages(files) : [];
+      const existingUrls = photos
+        .filter((p) => !p.file && p.imageUrl)
+        .map((p, i) => ({
+          image_url: p.imageUrl as string,
+          sort_order: uploaded.length + i,
+        }));
+      const images = [...uploaded, ...existingUrls];
+
       await httpClient.post(`/api${API_ENDPOINTS.REVIEWS.SHOP}`, {
         rating: form.rating,
         title: form.title.trim() || undefined,
         comment: form.comment.trim(),
+        images: images.length ? images : undefined,
       });
       toast.success("Thank you. Your review has been submitted successfully.");
       setForm(EMPTY_FORM);
       setFormErrors({});
+      setPhotos([]);
       await fetchStatus();
       onSuccess?.();
     } catch (err: unknown) {
@@ -141,6 +160,7 @@ export default function ShopReviewForm({ onSuccess }: ShopReviewFormProps) {
           if (parsed.rating) newErrs.rating = parsed.rating[0];
           if (parsed.comment) newErrs.comment = parsed.comment[0];
           if (parsed.title) newErrs.title = parsed.title[0];
+          if (parsed.images) newErrs.images = parsed.images[0];
           setFormErrors(newErrs);
           return;
         } catch {
@@ -321,6 +341,9 @@ export default function ShopReviewForm({ onSuccess }: ShopReviewFormProps) {
           <p className="text-sm leading-relaxed" style={{ color: "var(--foreground)" }}>
             {r.comment}
           </p>
+          {r.images && r.images.length > 0 && (
+            <ReviewPhotoGallery images={r.images} />
+          )}
           <p className="text-xs pt-2" style={{ color: "var(--muted-foreground)" }}>
             You&apos;ve already submitted a shop review. Contact us if you need to make changes.
           </p>
@@ -410,6 +433,13 @@ export default function ShopReviewForm({ onSuccess }: ShopReviewFormProps) {
             {form.comment.length} / 2000
           </p>
         </div>
+
+        <ReviewPhotoPicker
+          photos={photos}
+          onChange={setPhotos}
+          disabled={submitting}
+          error={formErrors.images}
+        />
 
         <Button
           type="submit"

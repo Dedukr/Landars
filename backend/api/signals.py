@@ -9,7 +9,7 @@ Bulk status changes should use ``Order.objects.update(status=...)`` or
 import logging
 
 from django.core.cache import cache
-from django.db.models.signals import m2m_changed, post_delete, post_save, pre_save
+from django.db.models.signals import m2m_changed, post_delete, post_save, pre_delete, pre_save
 from django.dispatch import receiver
 
 from api.models import (
@@ -19,6 +19,7 @@ from api.models import (
     Product,
     ProductCategory,
     ProductImage,
+    ReviewImage,
 )
 from api.cache_utils import (
     CATEGORIES_LIST_CACHE_KEY,
@@ -129,6 +130,17 @@ def order_schedule_sales_on_status_change(sender, instance, **kwargs):
 @receiver(post_delete, sender=ProductImage, dispatch_uid="api.product_image_delete_cache_invalidate")
 def product_invalidate_list_cache(sender, instance, **kwargs):
     invalidate_product_list_caches()
+
+
+@receiver(pre_delete, sender=ReviewImage, dispatch_uid="api.review_image_r2_delete")
+def review_image_delete_from_r2(sender, instance, **kwargs):
+    """
+    Remove the file from Cloudflare R2 whenever a ReviewImage row is deleted.
+
+    Covers instance.delete(), QuerySet.delete(), and CASCADE when a review is
+    deleted (Django emits pre_delete for collected related objects).
+    """
+    instance.delete_from_r2()
 
 
 @receiver(post_save, sender=ProductCategory, dispatch_uid="api.product_category_cache_clear")

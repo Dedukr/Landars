@@ -116,6 +116,12 @@ export const API_ENDPOINTS = {
     PRODUCT_REVIEWS: (productId: number) => `/products/${productId}/reviews/`,
   },
 
+  // Image uploads (auth required)
+  IMAGES: {
+    UPLOAD: "/images/upload/",
+    PRESIGNED_UPLOAD: "/images/presigned-upload/",
+  },
+
   // Admin API (staff only)
   ADMIN: {
     REVIEWS: {

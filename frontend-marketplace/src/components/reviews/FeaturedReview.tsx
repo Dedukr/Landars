@@ -4,6 +4,7 @@ import { Quote, Package, ChevronRight, Award } from "lucide-react";
 import { StarDisplay } from "./StarRating";
 import ReviewTypeBadge from "./ReviewTypeBadge";
 import { ReviewAvatar, formatReviewDate } from "./ReviewCard";
+import { ReviewPhotoGallery } from "./ReviewPhotoPicker";
 import type { PublicReview } from "./types";
 
 interface FeaturedReviewProps {
@@ -75,6 +76,12 @@ export default function FeaturedReview({ review }: FeaturedReviewProps) {
             </p>
           </blockquote>
         </div>
+
+        {review.images && review.images.length > 0 && (
+          <div className="mt-5 pl-8 sm:pl-10">
+            <ReviewPhotoGallery images={review.images} size="md" />
+          </div>
+        )}
 
         {/* Footer: reviewer + product link */}
         <div

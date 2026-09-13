@@ -8,7 +8,7 @@ from django.core.exceptions import ValidationError
 from django.forms.models import BaseInlineFormSet
 from django.utils.html import format_html
 
-from .models import CategoryGroup, Order, OrderItem, ProductCategory, ProductImage
+from .models import CategoryGroup, Order, OrderItem, ProductCategory, ProductImage, ReviewImage
 from .r2_storage import (
     delete_image_from_r2,
     object_key_from_public_url,
@@ -228,6 +228,94 @@ class ProductImageInlineForm(forms.ModelForm):
 
                 error_details = traceback.format_exc()
                 print(f"R2 Upload Error: {error_details}")
+                raise ValidationError(f"Failed to upload image to R2: {str(e)}")
+
+        if commit:
+            instance.save()
+
+        return instance
+
+
+class ReviewImageInlineForm(forms.ModelForm):
+    """Inline form for review photos — uploads to Cloudflare R2 under reviews/{id}/."""
+
+    image_file = forms.ImageField(
+        required=False, label="Upload", help_text="Upload image"
+    )
+
+    class Meta:
+        model = ReviewImage
+        fields = ["image_url", "sort_order", "alt_text"]
+        widgets = {
+            "image_url": forms.URLInput(
+                attrs={"placeholder": "Or paste URL", "style": "width: 100%;"}
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["image_url"].required = False
+        self.fields["image_file"].widget.attrs.update(
+            {"accept": "image/jpeg,image/png,image/webp", "class": "image-upload-field"}
+        )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        image_file = cleaned_data.get("image_file")
+        image_url = cleaned_data.get("image_url")
+
+        if self.cleaned_data.get("DELETE"):
+            return cleaned_data
+
+        if not image_file and not image_url and self.instance.pk is None:
+            return cleaned_data
+
+        if not image_file and not image_url and self.instance.pk:
+            raise ValidationError(
+                "Please either upload an image file or provide an image URL."
+            )
+
+        if image_file:
+            if not validate_image_size(image_file.size):
+                max_size_mb = settings.MAX_IMAGE_SIZE / (1024 * 1024)
+                raise ValidationError(
+                    f"Image file size exceeds maximum allowed size of {max_size_mb}MB"
+                )
+            content_type = image_file.content_type
+            if not validate_image_type(content_type):
+                raise ValidationError(
+                    f"Invalid image type. Allowed types: {', '.join(settings.ALLOWED_IMAGE_TYPES)}"
+                )
+
+        return cleaned_data
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        image_file = self.cleaned_data.get("image_file")
+
+        if image_file:
+            try:
+                review_id = instance.review_id or (
+                    instance.review.id if instance.review else None
+                )
+                folder = f"reviews/{review_id}" if review_id else "reviews/temp"
+
+                image_file.seek(0)
+                file_content = image_file.read()
+
+                upload_result = upload_compressed_image_to_r2(
+                    file_content,
+                    image_file.name,
+                    folder=folder,
+                    max_width=1920,
+                    max_height=1920,
+                    quality=85,
+                )
+                instance.image_url = upload_result["public_url"]
+            except Exception as e:
+                import traceback
+
+                print(f"R2 Upload Error: {traceback.format_exc()}")
                 raise ValidationError(f"Failed to upload image to R2: {str(e)}")
 
         if commit:

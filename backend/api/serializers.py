@@ -17,6 +17,7 @@ from .models import (
     ProductCategory,
     ProductImage,
     ProductReview,
+    ReviewImage,
     Wishlist,
     WishlistItem,
 )
@@ -112,6 +113,109 @@ class ProductImageSerializer(serializers.ModelSerializer):
         return data
 
 
+MAX_REVIEW_IMAGES = 5
+
+
+class ReviewImageSerializer(serializers.ModelSerializer):
+    """Read/write nested image for reviews (URL already uploaded to R2)."""
+
+    class Meta:
+        model = ReviewImage
+        fields = ["id", "image_url", "sort_order", "alt_text"]
+        read_only_fields = ["id"]
+
+
+def _normalize_review_images_payload(images_data):
+    """Accept list of URLs or ``{image_url, sort_order?, alt_text?}`` dicts."""
+    if images_data is None:
+        return []
+    if not isinstance(images_data, list):
+        raise serializers.ValidationError("Images must be a list of URLs or objects.")
+    if len(images_data) > MAX_REVIEW_IMAGES:
+        raise serializers.ValidationError(
+            f"You can attach at most {MAX_REVIEW_IMAGES} photos."
+        )
+
+    normalized = []
+    for i, item in enumerate(images_data):
+        if isinstance(item, str):
+            url = item.strip()
+            if not url:
+                continue
+            normalized.append({"image_url": url, "sort_order": i, "alt_text": ""})
+            continue
+        if isinstance(item, dict):
+            url = (item.get("image_url") or "").strip()
+            if not url:
+                continue
+            sort_order = item.get("sort_order", i)
+            try:
+                sort_order = int(sort_order)
+            except (TypeError, ValueError):
+                sort_order = i
+            if sort_order < 0:
+                raise serializers.ValidationError("Sort order must be non-negative.")
+            alt_text = item.get("alt_text") or ""
+            if not isinstance(alt_text, str):
+                alt_text = str(alt_text)
+            normalized.append(
+                {
+                    "image_url": url[:500],
+                    "sort_order": sort_order,
+                    "alt_text": alt_text[:255],
+                }
+            )
+            continue
+        raise serializers.ValidationError(
+            "Each image must be a URL string or an object with image_url."
+        )
+    return normalized
+
+
+def _create_review_images(review, images_data):
+    for img in images_data:
+        ReviewImage.objects.create(review=review, **img)
+
+
+def _replace_review_images(review, images_data):
+    """
+    Sync review photos with the payload.
+
+    Photos whose URL is removed are deleted (and cleaned from R2).
+    Photos that remain keep their R2 object — only metadata / order is updated.
+    """
+    existing_by_url = {img.image_url: img for img in review.images.all()}
+    new_url_set = {img["image_url"] for img in images_data}
+
+    for url, img in list(existing_by_url.items()):
+        if url not in new_url_set:
+            img.delete()
+            del existing_by_url[url]
+
+    seen_urls: set[str] = set()
+    for img_data in images_data:
+        url = img_data["image_url"]
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+
+        current = existing_by_url.get(url)
+        if current is not None:
+            update_fields = []
+            if current.sort_order != img_data["sort_order"]:
+                current.sort_order = img_data["sort_order"]
+                update_fields.append("sort_order")
+            alt = img_data.get("alt_text") or ""
+            if (current.alt_text or "") != alt:
+                current.alt_text = alt
+                update_fields.append("alt_text")
+            if update_fields:
+                update_fields.append("updated_at")
+                current.save(update_fields=update_fields)
+        else:
+            ReviewImage.objects.create(review=review, **img_data)
+
+
 # ── Shared helpers ────────────────────────────────────────────────────────────
 
 def _get_safe_display_name(user) -> str:
@@ -172,6 +276,7 @@ class ReviewPublicSerializer(serializers.ModelSerializer):
     product_slug = serializers.SerializerMethodField()
     review_type = serializers.SerializerMethodField()
     is_verified_purchase = serializers.SerializerMethodField()
+    images = ReviewImageSerializer(many=True, read_only=True)
 
     def get_user_name(self, obj):
         return _get_safe_display_name(getattr(obj, "user", None))
@@ -220,6 +325,7 @@ class ReviewPublicSerializer(serializers.ModelSerializer):
             "created_at",
             "is_featured",
             "is_verified_purchase",
+            "images",
         ]
         read_only_fields = [
             "id",
@@ -230,6 +336,7 @@ class ReviewPublicSerializer(serializers.ModelSerializer):
             "created_at",
             "is_featured",
             "is_verified_purchase",
+            "images",
         ]
 
 
@@ -243,6 +350,7 @@ class ShopReviewCreateSerializer(serializers.ModelSerializer):
     - ``rating``  required  — integer 1–5
     - ``title``   optional  — up to 120 characters
     - ``comment`` required  — must not be blank
+    - ``images``  optional  — up to 5 photo URLs (already uploaded to R2)
 
     The view always calls ``serializer.save(product=None, user=request.user)``
     so neither ``product`` nor ``user`` can be injected by the client.
@@ -250,6 +358,8 @@ class ShopReviewCreateSerializer(serializers.ModelSerializer):
     After a successful save the view responds with ``ReviewPublicSerializer``
     so the client receives the full public representation.
     """
+
+    images = serializers.ListField(required=False, allow_empty=True, write_only=True)
 
     def validate_rating(self, value):
         if value is None:
@@ -264,9 +374,18 @@ class ShopReviewCreateSerializer(serializers.ModelSerializer):
     def validate_title(self, value):
         return value.strip() if value else value
 
+    def validate_images(self, value):
+        return _normalize_review_images_payload(value)
+
+    def create(self, validated_data):
+        images_data = validated_data.pop("images", [])
+        review = ProductReview.objects.create(**validated_data)
+        _create_review_images(review, images_data)
+        return review
+
     class Meta:
         model = ProductReview
-        fields = ["rating", "title", "comment"]
+        fields = ["rating", "title", "comment", "images"]
 
 
 # ── Admin serializer (for future API-based admin views) ────────────────────
@@ -279,9 +398,7 @@ class ReviewAdminSerializer(serializers.ModelSerializer):
     - ``user`` PK and ``user_email`` for identifying the reviewer
     - ``is_approved`` and ``is_featured`` as writable for moderation
     - ``updated_at`` for audit trail
-
-    Not currently wired to any URL — ready for use when an API-based
-    admin panel is built under api/admin_api/.
+    - ``images`` for multi-photo attach / replace
     """
 
     user_display = serializers.SerializerMethodField()
@@ -289,6 +406,7 @@ class ReviewAdminSerializer(serializers.ModelSerializer):
     product_name = serializers.SerializerMethodField()
     product_slug = serializers.SerializerMethodField()
     review_type = serializers.SerializerMethodField()
+    images = ReviewImageSerializer(many=True, required=False)
 
     def get_user_display(self, obj):
         user = getattr(obj, "user", None)
@@ -314,6 +432,19 @@ class ReviewAdminSerializer(serializers.ModelSerializer):
     def get_review_type(self, obj):
         return "product" if obj.product_id else "shop"
 
+    def validate_images(self, value):
+        # Nested serializer already validated; re-normalize for URL-string payloads
+        return _normalize_review_images_payload(value)
+
+    def update(self, instance, validated_data):
+        images_data = validated_data.pop("images", None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        if images_data is not None:
+            _replace_review_images(instance, images_data)
+        return instance
+
     class Meta:
         model = ProductReview
         fields = [
@@ -323,6 +454,7 @@ class ReviewAdminSerializer(serializers.ModelSerializer):
             "rating", "title", "comment",
             "is_approved", "is_featured",
             "created_at", "updated_at",
+            "images",
         ]
         read_only_fields = [
             "id",
@@ -350,6 +482,7 @@ class ReviewSerializer(serializers.ModelSerializer):
     product_name = serializers.SerializerMethodField()
     product_slug = serializers.SerializerMethodField()
     review_type = serializers.SerializerMethodField()
+    images = serializers.ListField(required=False, allow_empty=True, write_only=True)
 
     def get_user_name(self, obj):
         # Internal use: safe fallback chain (email visible to authenticated user who left the review)
@@ -367,6 +500,15 @@ class ReviewSerializer(serializers.ModelSerializer):
     def get_review_type(self, obj):
         return "product" if obj.product_id else "shop"
 
+    def validate_images(self, value):
+        return _normalize_review_images_payload(value)
+
+    def create(self, validated_data):
+        images_data = validated_data.pop("images", [])
+        review = ProductReview.objects.create(**validated_data)
+        _create_review_images(review, images_data)
+        return review
+
     class Meta:
         model = ProductReview
         fields = [
@@ -375,6 +517,7 @@ class ReviewSerializer(serializers.ModelSerializer):
             "rating", "title", "comment",
             "is_approved", "is_featured",
             "created_at", "is_verified_purchase",
+            "images",
         ]
         read_only_fields = [
             "id", "user", "user_name",

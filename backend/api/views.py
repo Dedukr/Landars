@@ -27,6 +27,7 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
@@ -367,6 +368,7 @@ class ProductReviewListCreate(APIView):
         reviews = (
             product.reviews.filter(is_approved=True)
             .select_related("user", "product")
+            .prefetch_related("images")
         )
         serializer = ReviewPublicSerializer(reviews, many=True)
         return Response(serializer.data)
@@ -405,6 +407,7 @@ class ShopReviewListCreate(APIView):
         reviews = (
             ProductReview.objects.filter(product__isnull=True, is_approved=True)
             .select_related("user")
+            .prefetch_related("images")
         )
         serializer = ReviewPublicSerializer(reviews, many=True)
         return Response(serializer.data)
@@ -486,6 +489,7 @@ class ReviewHighlightsView(APIView):
             .filter(is_approved=True)
             .exclude(comment="")           # never surface reviews with empty comments
             .select_related("user", "product")
+            .prefetch_related("images")
         )
 
         # ── Phase 1: Featured reviews — always first ──────────────────────
@@ -566,6 +570,7 @@ class ShopReviewView(APIView):
         reviews = (
             ProductReview.objects.filter(product__isnull=True, is_approved=True)
             .select_related("user")
+            .prefetch_related("images")
             .order_by("-created_at")
         )
         serializer = ReviewPublicSerializer(reviews, many=True)
@@ -623,6 +628,7 @@ class ShopReviewMeView(APIView):
         existing = (
             ProductReview.objects.filter(user=user, product__isnull=True)
             .select_related("user")
+            .prefetch_related("images")
             .first()
         )
         has_existing = existing is not None
@@ -636,6 +642,15 @@ class ShopReviewMeView(APIView):
                 "title": existing.title,
                 "comment": existing.comment,
                 "created_at": existing.created_at,
+                "images": [
+                    {
+                        "id": img.id,
+                        "image_url": img.image_url,
+                        "sort_order": img.sort_order,
+                        "alt_text": img.alt_text,
+                    }
+                    for img in existing.images.all()
+                ],
             }
 
         return Response(
@@ -1983,6 +1998,8 @@ class CompressedImageUploadView(APIView):
     """
 
     permission_classes = [IsAuthenticated]
+    # Global DEFAULT_PARSER_CLASSES is JSON-only; this endpoint needs file uploads.
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def post(self, request):
         """
@@ -2040,5 +2057,75 @@ class CompressedImageUploadView(APIView):
         if not validate_image_size(image_file.size):
             max_size_mb = settings.MAX_IMAGE_SIZE / (1024 * 1024)
             return Response(
-                {"message": "Stock updated successfully."}, status=status.HTTP_200_OK
+                {"error": f"File size exceeds maximum allowed size of {max_size_mb}MB"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Optional folder (e.g. reviews/temp) or product_id for key prefix
+        folder = (request.data.get("folder") or "").strip() or None
+        if folder:
+            allowed_prefixes = (
+                "products/",
+                "reviews/",
+                "categories/",
+                "category-groups/",
+            )
+            if (
+                not folder.startswith(allowed_prefixes)
+                or ".." in folder
+                or folder.startswith("/")
+            ):
+                return Response(
+                    {"error": "Invalid folder. Use a reviews/ or products/ prefix."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        product_id = None
+        if not folder and request.data.get("product_id"):
+            try:
+                product_id = int(request.data.get("product_id"))
+                Product.objects.get(id=product_id)
+            except (ValueError, Product.DoesNotExist):
+                return Response(
+                    {"error": "Invalid product_id"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        try:
+            max_width = int(request.data.get("max_width", 1920))
+            max_height = int(request.data.get("max_height", 1920))
+            quality = int(request.data.get("quality", 85))
+            if quality < 1 or quality > 100:
+                return Response(
+                    {"error": "Quality must be between 1 and 100"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        except ValueError:
+            return Response(
+                {
+                    "error": "Invalid compression parameters. "
+                    "max_width, max_height, and quality must be integers."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            image_file.seek(0)
+            file_content = image_file.read()
+            upload_result = upload_compressed_image_to_r2(
+                file_content,
+                filename,
+                product_id=product_id,
+                folder=folder,
+                max_width=max_width,
+                max_height=max_height,
+                quality=quality,
+            )
+            return Response(upload_result, status=status.HTTP_201_CREATED)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to upload image: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )

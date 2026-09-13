@@ -22,6 +22,11 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { httpClient } from "@/utils/httpClient";
 import { API_ENDPOINTS } from "@/config/api";
+import ReviewPhotoPicker, {
+  type ReviewPhotoDraft,
+} from "@/components/reviews/ReviewPhotoPicker";
+import { uploadReviewImages } from "@/utils/uploadReviewImage";
+import type { ReviewImage } from "@/components/reviews/types";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,6 +46,7 @@ interface AdminReview {
   is_featured: boolean;
   created_at: string;
   updated_at: string;
+  images?: ReviewImage[];
 }
 
 interface ReviewsResponse {
@@ -209,6 +215,7 @@ function DeleteModal({
 function ReviewFormModal({
   mode,
   initial,
+  initialPhotos = [],
   onSave,
   onClose,
   loading,
@@ -216,12 +223,14 @@ function ReviewFormModal({
 }: {
   mode: "edit" | "add";
   initial: EditFormData | CreateFormData;
-  onSave: (data: EditFormData | CreateFormData) => void;
+  initialPhotos?: ReviewPhotoDraft[];
+  onSave: (data: EditFormData | CreateFormData, photos: ReviewPhotoDraft[]) => void;
   onClose: () => void;
   loading: boolean;
   errors: Record<string, string>;
 }) {
   const [form, setForm] = useState<EditFormData | CreateFormData>(initial);
+  const [photos, setPhotos] = useState<ReviewPhotoDraft[]>(initialPhotos);
   const isAdd = mode === "add";
 
   const set = <K extends keyof (EditFormData & CreateFormData)>(
@@ -318,6 +327,13 @@ function ReviewFormModal({
             )}
           </div>
 
+          <ReviewPhotoPicker
+            photos={photos}
+            onChange={setPhotos}
+            disabled={loading}
+            error={errors.images}
+          />
+
           {/* Approved / Featured toggles */}
           <div className="flex gap-6">
             <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -350,7 +366,7 @@ function ReviewFormModal({
           <Button variant="outline" size="sm" onClick={onClose} disabled={loading}>
             Cancel
           </Button>
-          <Button size="sm" onClick={() => onSave(form)} loading={loading}>
+          <Button size="sm" onClick={() => onSave(form, photos)} loading={loading}>
             {isAdd ? "Add review" : "Save changes"}
           </Button>
         </div>
@@ -524,14 +540,34 @@ export default function AdminReviewsPage() {
   };
 
   // ── Edit ───────────────────────────────────────────────────────────────────
-  const handleEditSave = async (data: EditFormData | CreateFormData) => {
+  const handleEditSave = async (
+    data: EditFormData | CreateFormData,
+    photos: ReviewPhotoDraft[]
+  ) => {
     if (!editReview) return;
     setActionLoading(true);
     setModalErrors({});
     try {
+      const files = photos.map((p) => p.file).filter((f): f is File => Boolean(f));
+      const uploaded = files.length ? await uploadReviewImages(files) : [];
+      const kept = photos
+        .filter((p) => !p.file && p.imageUrl)
+        .map((p, i) => ({
+          image_url: p.imageUrl as string,
+          sort_order: i,
+        }));
+      // Re-index uploaded after kept for stable sort_order
+      const images = [
+        ...kept,
+        ...uploaded.map((img, i) => ({
+          ...img,
+          sort_order: kept.length + i,
+        })),
+      ];
+
       const updated = await httpClient.patch<AdminReview>(
         `/api${API_ENDPOINTS.ADMIN.REVIEWS.DETAIL(editReview.id)}`,
-        data
+        { ...data, images }
       );
       setReviews((prev) => prev.map((r) => (r.id === editReview.id ? updated : r)));
       toast.success("Review updated.");
@@ -554,7 +590,10 @@ export default function AdminReviewsPage() {
   };
 
   // ── Create ─────────────────────────────────────────────────────────────────
-  const handleAddSave = async (data: EditFormData | CreateFormData) => {
+  const handleAddSave = async (
+    data: EditFormData | CreateFormData,
+    photos: ReviewPhotoDraft[]
+  ) => {
     setActionLoading(true);
     setModalErrors({});
     const createData = data as CreateFormData;
@@ -564,6 +603,8 @@ export default function AdminReviewsPage() {
       return;
     }
     try {
+      const files = photos.map((p) => p.file).filter((f): f is File => Boolean(f));
+      const uploaded = files.length ? await uploadReviewImages(files) : [];
       const created = await httpClient.post<AdminReview>(
         `/api${API_ENDPOINTS.ADMIN.REVIEWS.LIST}`,
         {
@@ -574,6 +615,7 @@ export default function AdminReviewsPage() {
           comment: createData.comment,
           is_approved: createData.is_approved,
           is_featured: createData.is_featured,
+          images: uploaded.length ? uploaded : undefined,
         }
       );
       setReviews((prev) => [created, ...prev]);
@@ -622,6 +664,10 @@ export default function AdminReviewsPage() {
             is_approved: editReview.is_approved,
             is_featured: editReview.is_featured,
           }}
+          initialPhotos={(editReview.images ?? []).map((img) => ({
+            previewUrl: img.image_url,
+            imageUrl: img.image_url,
+          }))}
           onSave={handleEditSave}
           onClose={() => { setEditReview(null); setModalErrors({}); }}
           loading={actionLoading}
@@ -744,7 +790,7 @@ export default function AdminReviewsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--sidebar-border)] bg-[var(--sidebar-border)]/20">
-                  {["ID", "Type", "Rating", "Title", "Preview", "Customer", "Product", "Approved", "Featured", "Created", "Actions"].map(
+                  {["ID", "Type", "Rating", "Title", "Preview", "Photos", "Customer", "Product", "Approved", "Featured", "Created", "Actions"].map(
                     (h) => (
                       <th
                         key={h}
@@ -798,6 +844,30 @@ export default function AdminReviewsPage() {
                       >
                         {review.comment ? review.comment.slice(0, 60) + (review.comment.length > 60 ? "…" : "") : "—"}
                       </span>
+                    </td>
+
+                    {/* Photos */}
+                    <td className="px-3 py-3">
+                      {review.images && review.images.length > 0 ? (
+                        <div className="flex -space-x-1">
+                          {review.images.slice(0, 3).map((img, i) => (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              key={`${img.image_url}-${i}`}
+                              src={img.image_url}
+                              alt=""
+                              className="w-8 h-8 rounded object-cover border border-[var(--card-bg)]"
+                            />
+                          ))}
+                          {review.images.length > 3 && (
+                            <span className="text-xs text-[var(--muted-foreground)] self-center pl-2">
+                              +{review.images.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-[var(--muted-foreground)]">—</span>
+                      )}
                     </td>
 
                     {/* Customer */}

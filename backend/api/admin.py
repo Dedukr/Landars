@@ -60,6 +60,7 @@ from .forms import (
     ProductCategoryAdminForm,
     ProductImageAdminForm,
     ProductImageInlineForm,
+    ReviewImageInlineForm,
 )
 from .search_text import whole_word_regex_pattern
 from .models import (
@@ -73,6 +74,7 @@ from .models import (
     ProductCategory,
     ProductImage,
     ProductReview,
+    ReviewImage,
     Wishlist,
     WishlistItem,
 )
@@ -306,6 +308,33 @@ class ProductImageInline(admin.TabularInline):
                 '<img src="{}" style="max-width: 100px; max-height: 100px; object-fit: contain; {}; border-radius: 4px; padding: 2px;" />',
                 obj.image_url,
                 border_style,
+            )
+        return format_html(
+            '<div style="width: 100px; height: 100px; border: 2px dashed #ccc; border-radius: 4px; '
+            'display: flex; align-items: center; justify-content: center; color: #999; font-size: 11px; text-align: center;">'
+            "No image<br>yet</div>"
+        )
+
+    image_preview.short_description = "Preview"
+
+
+class ReviewImageInline(admin.TabularInline):
+    model = ReviewImage
+    form = ReviewImageInlineForm
+    extra = 1
+    fields = ["image_preview", "image_file", "image_url", "sort_order", "alt_text"]
+    readonly_fields = ["image_preview"]
+    ordering = ["sort_order"]
+
+    class Media:
+        css = {"all": ("admin/css/product_image_inline.css",)}
+
+    def image_preview(self, obj):
+        if obj.image_url:
+            return format_html(
+                '<img src="{}" style="max-width: 100px; max-height: 100px; object-fit: contain; '
+                'border: 1px solid #ddd; border-radius: 4px; padding: 2px;" />',
+                obj.image_url,
             )
         return format_html(
             '<div style="width: 100px; height: 100px; border: 2px dashed #ccc; border-radius: 4px; '
@@ -642,6 +671,7 @@ class ReviewAdmin(admin.ModelAdmin):
         "get_rating_display",
         "title",
         "comment_preview",
+        "photo_count",
         "is_approved",
         "is_featured",
         "created_at",
@@ -667,11 +697,15 @@ class ReviewAdmin(admin.ModelAdmin):
     ordering = ["-created_at"]
     date_hierarchy = "created_at"
     actions = ["mark_approved", "mark_not_approved", "mark_featured", "remove_featured"]
+    inlines = [ReviewImageInline]
 
     class Media:
         js = ("admin/js/prevent_double_submit.js",)
 
     # ── List columns ───────────────────────────────────────────────────────
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related("images")
 
     def review_type(self, obj):
         return "Product" if obj.product_id else "Shop"
@@ -693,6 +727,11 @@ class ReviewAdmin(admin.ModelAdmin):
         return preview
 
     comment_preview.short_description = "Comment"
+
+    def photo_count(self, obj):
+        return obj.images.count()
+
+    photo_count.short_description = "Photos"
 
     # ── Actions ────────────────────────────────────────────────────────────
 

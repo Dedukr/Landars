@@ -6,6 +6,12 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { getAuthUrl } from "@/utils/authHelpers";
 import { httpClient } from "@/utils/httpClient";
+import ReviewPhotoPicker, {
+  ReviewPhotoGallery,
+  type ReviewPhotoDraft,
+} from "@/components/reviews/ReviewPhotoPicker";
+import { uploadReviewImages } from "@/utils/uploadReviewImage";
+import type { ReviewImage } from "@/components/reviews/types";
 
 export interface Review {
   id: number;
@@ -21,6 +27,7 @@ export interface Review {
   is_featured: boolean;
   created_at: string;
   is_verified_purchase?: boolean;
+  images?: ReviewImage[];
 }
 
 interface ProductReviewBlockProps {
@@ -92,6 +99,7 @@ export default function ProductReviewBlock({ productId }: ProductReviewBlockProp
   const [error, setError] = useState<string | null>(null);
   const [formRating, setFormRating] = useState(5);
   const [formComment, setFormComment] = useState("");
+  const [photos, setPhotos] = useState<ReviewPhotoDraft[]>([]);
 
   const fetchReviews = useCallback(async () => {
     setLoading(true);
@@ -121,12 +129,16 @@ export default function ProductReviewBlock({ productId }: ProductReviewBlockProp
     setSubmitting(true);
     setError(null);
     try {
+      const files = photos.map((p) => p.file).filter((f): f is File => Boolean(f));
+      const uploaded = files.length ? await uploadReviewImages(files) : [];
       await httpClient.post(`/api/products/${productId}/reviews/`, {
         rating: formRating,
         comment: formComment.trim(),
+        images: uploaded.length ? uploaded : undefined,
       });
       setFormRating(5);
       setFormComment("");
+      setPhotos([]);
       await fetchReviews();
     } catch (err: unknown) {
       let message = "Failed to submit review.";
@@ -301,6 +313,11 @@ export default function ProductReviewBlock({ productId }: ProductReviewBlockProp
                     {formComment.length}/2000
                   </p>
                 </div>
+                <ReviewPhotoPicker
+                  photos={photos}
+                  onChange={setPhotos}
+                  disabled={submitting}
+                />
                 {error && (
                   <p className="text-sm" style={{ color: "var(--destructive)" }}>
                     {error}
@@ -404,6 +421,11 @@ export default function ProductReviewBlock({ productId }: ProductReviewBlockProp
                           <p className="text-sm mt-2 italic" style={{ color: "var(--muted-foreground)" }}>
                             No comment provided
                           </p>
+                        )}
+                        {review.images && review.images.length > 0 && (
+                          <div className="mt-3">
+                            <ReviewPhotoGallery images={review.images} />
+                          </div>
                         )}
                       </div>
                     </div>
