@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Interactive similar-user review + optional merge (runs inside Docker backend).
+#
+# Usage (from repo root):
+#   ./management/review_similar_users
+#   ./management/review_similar_users --dry-run
+#   ./management/review_similar_users --threshold 0.95 --limit 20
+#
+# Extra args are passed through to: python manage.py review_similar_users …
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+CMD_HOST="$ROOT/backend/account/management/commands/review_similar_users.py"
+CMD_CONTAINER="/backend/account/management/commands/review_similar_users.py"
+
+if [[ ! -f "$CMD_HOST" ]]; then
+  echo "ERROR: missing $CMD_HOST" >&2
+  exit 1
+fi
+
+if ! docker info >/dev/null 2>&1; then
+  echo "ERROR: Docker is not running. Start Docker Desktop, then retry." >&2
+  exit 1
+fi
+
+if ! docker compose ps --status running --services 2>/dev/null | grep -qx backend; then
+  echo "Backend is not running — starting stack…"
+  docker compose up -d backend
+  echo "Waiting for backend…"
+  for _ in $(seq 1 60); do
+    if docker compose exec -T backend python -c "print('ok')" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 2
+  done
+fi
+
+# Keep container command in sync with the host file (no image rebuild needed).
+docker compose cp "$CMD_HOST" "backend:$CMD_CONTAINER" >/dev/null
+
+needs_tty=1
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help|--dry-run) needs_tty=0 ;;
+  esac
+done
+
+echo "Running review_similar_users in backend container…"
+
+if [[ "$needs_tty" -eq 1 ]]; then
+  if [[ ! -t 0 ]]; then
+    echo "ERROR: merge prompts need an interactive terminal." >&2
+    echo "Run from a real shell: ./management/review_similar_users" >&2
+    echo "Or preview only: ./management/review_similar_users --dry-run" >&2
+    exit 1
+  fi
+  exec docker compose exec -it backend python manage.py review_similar_users "$@"
+fi
+
+exec docker compose exec -T backend python manage.py review_similar_users "$@"
