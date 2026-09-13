@@ -506,6 +506,23 @@ describe("HttpClient", () => {
       expect(mockFetch).toHaveBeenCalledWith(TEST_API_URL, expect.any(Object));
     });
 
+    test("should honor timeoutMs via fetchWithTimeout", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ok: true }),
+      });
+
+      await httpClient.post(
+        "/api/auth/register/",
+        { email: "a@b.com" },
+        { skipAuth: true, skipCSRF: true, timeoutMs: 5000 }
+      );
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [, init] = mockFetch.mock.calls[0];
+      expect(init.signal).toBeDefined();
+    });
+
     test("should include custom headers", async () => {
       const customHeaders = new Headers({ "X-Custom": "value" });
 

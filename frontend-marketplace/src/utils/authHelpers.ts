@@ -46,3 +46,30 @@ export function getAuthUrl(options: {
   const q = params.toString();
   return q ? `/auth?${q}` : "/auth";
 }
+
+const NETWORK_ERROR_PATTERNS = [
+  "load failed",
+  "failed to fetch",
+  "networkerror",
+  "network request failed",
+  "network error",
+  "request timed out",
+  "the internet connection appears to be offline",
+];
+
+/**
+ * Safari surfaces TypeError "Load failed" when fetch fails before an HTTP
+ * response. Map that (and similar browser network errors) to a clear message.
+ */
+export function isAuthNetworkError(error: unknown): boolean {
+  if (error instanceof TypeError) return true;
+  if (!(error instanceof Error) || !error.message) return false;
+  const msg = error.message.toLowerCase();
+  return NETWORK_ERROR_PATTERNS.some((p) => msg.includes(p));
+}
+
+export const AUTH_NETWORK_ERROR_MESSAGE =
+  "Network error. Your account may have been created — try signing in or resend verification.";
+
+export const AUTH_LOGIN_NETWORK_ERROR_MESSAGE =
+  "Network error. Please check your connection and try again.";

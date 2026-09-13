@@ -22,3 +22,21 @@ export function isPublicCatalogRoute(pathname: string): boolean {
 
   return false;
 }
+
+/**
+ * Auth/recovery pages that must render immediately (no session-restore spinner).
+ */
+export function isPublicAuthRoute(pathname: string): boolean {
+  const path = (pathname.split("?")[0] ?? pathname).replace(/\/+$/, "") || "/";
+
+  return (
+    path === "/auth" ||
+    path === "/verify-email" ||
+    path === "/reset-password"
+  );
+}
+
+/** Catalog or auth routes that should not block on AuthWrapper loading. */
+export function isPublicUnauthenticatedRoute(pathname: string): boolean {
+  return isPublicCatalogRoute(pathname) || isPublicAuthRoute(pathname);
+}

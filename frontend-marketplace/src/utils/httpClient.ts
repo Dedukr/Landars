@@ -26,6 +26,8 @@ interface RequestConfig extends RequestInit {
   skipCSRF?: boolean;
   retryCount?: number;
   maxRetries?: number;
+  /** When set, wraps the request in fetchWithTimeout (ms). */
+  timeoutMs?: number;
 }
 
 interface RefreshTokenResponse {
@@ -292,6 +294,7 @@ export class HttpClient {
       skipCSRF = false,
       retryCount = 0,
       maxRetries = 1,
+      timeoutMs,
       ...requestConfig
     } = config;
 
@@ -323,12 +326,21 @@ export class HttpClient {
       headers.delete("Authorization");
     }
 
-    // Make the request
-    const response = await fetch(this.resolveBaseURL() + url, {
+    const fetchInit: RequestInit = {
       ...requestConfig,
       headers,
       credentials: "include",
-    });
+    };
+
+    // Make the request (optional timeout for auth / long-poll sensitive calls)
+    const response =
+      typeof timeoutMs === "number"
+        ? await fetchWithTimeout(
+            this.resolveBaseURL() + url,
+            fetchInit,
+            timeoutMs
+          )
+        : await fetch(this.resolveBaseURL() + url, fetchInit);
 
     // Handle token expiration
     if (!skipAuth && isTokenExpired(response) && retryCount < maxRetries) {

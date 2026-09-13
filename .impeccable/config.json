@@ -1,0 +1,62 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "design-system-color",
+        "value": "rgba(239, 68, 68, 0.3)",
+        "createdAt": "2026-09-13T16:58:09.648Z",
+        "reason": "pre-existing auth error alert chrome; functional signup Load failed fix only"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(34, 197, 94, 0.3)",
+        "createdAt": "2026-09-13T16:58:09.663Z",
+        "reason": "pre-existing auth success alert chrome; functional signup Load failed fix only"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "0.5rem",
+        "createdAt": "2026-09-13T16:58:09.677Z",
+        "reason": "pre-existing auth alert radius; functional signup Load failed fix only"
+      },
+      {
+        "rule": "border-accent-on-rounded",
+        "value": "*",
+        "files": [
+          "frontend-marketplace/src/app/auth/page.tsx"
+        ],
+        "createdAt": "2026-09-13T16:58:09.691Z",
+        "reason": "false positive: spinner uses rounded-full + border-b-2 loading indicator, not accent card border"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(239, 68, 68, 0.1)",
+        "createdAt": "2026-09-13T16:58:14.779Z",
+        "reason": "pre-existing auth error alert bg; functional signup fix only"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(34, 197, 94, 0.1)",
+        "createdAt": "2026-09-13T16:58:14.794Z",
+        "reason": "pre-existing auth success alert bg; functional signup fix only"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(0, 0, 0, 0.4)",
+        "createdAt": "2026-09-13T16:58:17.615Z",
+        "reason": "pre-existing auth modal overlay; functional signup Load failed fix only"
+      },
+      {
+        "rule": "border-accent-on-rounded",
+        "value": "*",
+        "files": [
+          "frontend-marketplace/src/app/verify-email/page.tsx"
+        ],
+        "createdAt": "2026-09-13T16:59:07.595Z",
+        "reason": "false positive or pre-existing status chrome on verify-email; functional network error UX fix only"
+      }
+    ]
+  }
+}

@@ -1,4 +1,5 @@
 from django.test import SimpleTestCase, override_settings
+from unittest.mock import patch
 
 from account.frontend_urls import get_public_frontend_base_url
 
@@ -18,10 +19,23 @@ class FrontendUrlHelperTests(SimpleTestCase):
         FRONTEND_URL="",
         URL_BASE="https://localhost/",
         SITE_URL="https://fallback.example",
+        DEBUG=True,
     )
     def test_falls_back_to_url_base_and_strips_slash(self):
         self.assertEqual(get_public_frontend_base_url(), "https://localhost")
 
-    @override_settings(FRONTEND_URL="", URL_BASE="", SITE_URL="")
+    @override_settings(FRONTEND_URL="", URL_BASE="", SITE_URL="", DEBUG=True)
     def test_default_when_unset(self):
         self.assertEqual(get_public_frontend_base_url(), "https://localhost")
+
+    @override_settings(
+        FRONTEND_URL="https://localhost",
+        URL_BASE="https://localhost",
+        SITE_URL="",
+        DEBUG=False,
+    )
+    @patch("account.frontend_urls.logger")
+    def test_logs_error_when_localhost_in_production(self, mock_logger):
+        self.assertEqual(get_public_frontend_base_url(), "https://localhost")
+        mock_logger.error.assert_called_once()
+        self.assertIn("DEBUG=False", mock_logger.error.call_args[0][0])

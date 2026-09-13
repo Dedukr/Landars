@@ -59,22 +59,41 @@ from .serializers import PaymentInformationListSerializer, PaymentInformationSer
 logger = logging.getLogger("account")
 
 
-def _queue_verification_email(token_id: int) -> bool:
-    """Enqueue verification email; fall back to synchronous send if broker unavailable."""
+def _try_enqueue_verification_email(token_id: int) -> bool:
+    """Publish verification email task to Celery. Never sync-sends via SES."""
     try:
         send_verification_email_task.delay(token_id)
         return True
     except Exception:
         logger.exception(
-            "Celery unavailable for verification email token %s — sending synchronously",
+            "Failed to enqueue verification email for token %s — "
+            "user should use Resend verification",
             token_id,
         )
-        try:
-            send_verification_email_task(token_id)
-            return True
-        except Exception:
-            logger.exception("Synchronous verification email failed for token %s", token_id)
-            return False
+        return False
+
+
+def _queue_verification_email(token_id: int) -> bool:
+    """
+    Enqueue verification email after DB commit.
+
+    Never blocks the HTTP request on sync SES. Broker publish failures return
+    False so the client can prompt Resend. Django runs on_commit immediately
+    when not inside an atomic block (normal register/resend path after
+    autocommit saves); Redis socket timeouts keep .delay() fail-fast.
+    """
+    result: list[bool] = []
+
+    def _enqueue() -> None:
+        result.append(_try_enqueue_verification_email(token_id))
+
+    transaction.on_commit(_enqueue)
+
+    # Immediate when not in an atomic block; otherwise deferred until commit.
+    if result:
+        return result[0]
+    # Still inside a surrounding atomic transaction: publish is scheduled.
+    return True
 
 
 # Custom throttle base — fail open when cache/Redis is unavailable
@@ -1279,17 +1298,18 @@ def verify_email(request):
             user.is_email_verified = True
             user.save(update_fields=["is_email_verified"])
 
-        try:
-            send_verification_confirmation_email_task.delay(user.pk)
-        except Exception:
-            logger.exception(
-                "Failed to queue confirmation email for user %s — sending synchronously",
-                user.email,
-            )
+        def _enqueue_confirmation() -> None:
             try:
-                send_verification_confirmation_email_task(user.pk)
+                send_verification_confirmation_email_task.delay(user.pk)
             except Exception:
-                logger.exception("Synchronous confirmation email failed for %s", user.email)
+                logger.exception(
+                    "Failed to enqueue confirmation email for user %s — "
+                    "skipping (verification already succeeded)",
+                    user.email,
+                )
+
+        # Never sync-send SES on the request path (same hang class as signup Load failed).
+        transaction.on_commit(_enqueue_confirmation)
 
         logger.info(
             f"Email verified for user: {user.email} from IP: {request.META.get('REMOTE_ADDR')}"

@@ -93,12 +93,15 @@ COMMON_DOMAIN_TYPOS = {
     "aol.com": ["aol.co", "aol.cm", "aol.con"],
 }
 
-# Major email providers
+# Major email providers (never treat these as disposable — e.g. hotmail.com /
+# outlook.com rejection would be a JSON 400, not Safari's fetch "Load failed").
 MAJOR_EMAIL_PROVIDERS = {
     "gmail.com",
     "yahoo.com",
     "hotmail.com",
     "outlook.com",
+    "live.com",
+    "msn.com",
     "icloud.com",
     "aol.com",
     "protonmail.com",

@@ -4,7 +4,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { useAuth } from "@/contexts/AuthContext";
 import { httpClient } from "@/utils/httpClient";
-import { getSafeNextRedirect } from "@/utils/authHelpers";
+import {
+  AUTH_LOGIN_NETWORK_ERROR_MESSAGE,
+  AUTH_NETWORK_ERROR_MESSAGE,
+  getSafeNextRedirect,
+  isAuthNetworkError,
+} from "@/utils/authHelpers";
+import { AUTH_FETCH_TIMEOUT_MS } from "@/utils/fetchWithTimeout";
 import { hasSolidAuthSession } from "@/utils/authSessionGuard";
 import EmailVerificationPopup from "@/components/EmailVerificationPopup";
 import { latinScriptError } from "@/utils/latinValidation";
@@ -235,7 +241,11 @@ function AuthForm() {
             email: formData.email,
             password: formData.password,
           },
-          { skipAuth: true, skipCSRF: true }
+          {
+            skipAuth: true,
+            skipCSRF: true,
+            timeoutMs: AUTH_FETCH_TIMEOUT_MS,
+          }
         );
 
         // Register always requires email verification (no immediate JWT)
@@ -263,9 +273,14 @@ function AuthForm() {
             errorMessage = payload.error;
           } else if (Array.isArray(payload.error)) {
             errorMessage = payload.error.filter((m) => typeof m === "string").join(" ");
+          } else if (isAuthNetworkError(error)) {
+            errorMessage = AUTH_NETWORK_ERROR_MESSAGE;
           } else if (error instanceof Error && error.message) {
             errorMessage = error.message;
           }
+        } else if (isAuthNetworkError(error)) {
+          // Safari "Load failed" / Chrome "Failed to fetch" — not an API body
+          errorMessage = AUTH_NETWORK_ERROR_MESSAGE;
         } else if (error instanceof Error && error.message) {
           errorMessage = error.message;
         }
@@ -282,7 +297,11 @@ function AuthForm() {
             email: formData.email,
             password: formData.password,
           },
-          { skipAuth: true, skipCSRF: true }
+          {
+            skipAuth: true,
+            skipCSRF: true,
+            timeoutMs: AUTH_FETCH_TIMEOUT_MS,
+          }
         );
 
         // Check if email verification is required
@@ -347,6 +366,8 @@ function AuthForm() {
               showCreateAccountSuggestion = true;
             }
           }
+        } else if (isAuthNetworkError(error)) {
+          errorMessage = AUTH_LOGIN_NETWORK_ERROR_MESSAGE;
         } else if (error instanceof Error) {
           errorMessage = error.message;
         }
@@ -888,7 +909,11 @@ function AuthForm() {
                           {
                             email: formData.email,
                           },
-                          { skipAuth: true, skipCSRF: true }
+                          {
+                            skipAuth: true,
+                            skipCSRF: true,
+                            timeoutMs: AUTH_FETCH_TIMEOUT_MS,
+                          }
                         );
                         setSuccessMessage(
                           "Verification email sent! Please check your inbox."
@@ -922,6 +947,8 @@ function AuthForm() {
                               "Failed to resend verification email. Please try again."
                             );
                           }
+                        } else if (isAuthNetworkError(error)) {
+                          setError(AUTH_LOGIN_NETWORK_ERROR_MESSAGE);
                         } else {
                           setError(
                             "Failed to resend verification email. Please try again."

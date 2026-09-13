@@ -1,9 +1,15 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { httpClient } from "@/utils/httpClient";
-import { getAuthUrl, getSafeNextRedirect } from "@/utils/authHelpers";
+import {
+  AUTH_NETWORK_ERROR_MESSAGE,
+  getAuthUrl,
+  getSafeNextRedirect,
+  isAuthNetworkError,
+} from "@/utils/authHelpers";
+import { AUTH_FETCH_TIMEOUT_MS } from "@/utils/fetchWithTimeout";
 
 interface VerificationResponse {
   message: string;
@@ -38,14 +44,18 @@ function postVerifyEmail(token: string): Promise<VerificationResponse> {
     promise = httpClient.post<VerificationResponse>(
       "/api/auth/verify-email/",
       { token },
-      { skipAuth: true, skipCSRF: true }
+      {
+        skipAuth: true,
+        skipCSRF: true,
+        timeoutMs: AUTH_FETCH_TIMEOUT_MS,
+      }
     );
     verifyPromises.set(token, promise);
   }
   return promise;
 }
 
-export default function VerifyEmailPage() {
+function VerifyEmailContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
@@ -146,6 +156,9 @@ export default function VerifyEmailPage() {
         setMessage(
           "This verification link has expired or has already been used."
         );
+      } else if (isAuthNetworkError(error)) {
+        setStatus("error");
+        setMessage(AUTH_NETWORK_ERROR_MESSAGE);
       } else {
         setStatus("error");
         setMessage(errorMessage || "Failed to verify email address");
@@ -322,5 +335,22 @@ export default function VerifyEmailPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function VerifyEmailPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4" />
+            <p className="text-gray-600">Loading…</p>
+          </div>
+        </div>
+      }
+    >
+      <VerifyEmailContent />
+    </Suspense>
   );
 }

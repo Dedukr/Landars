@@ -29,6 +29,17 @@ describe("AuthWrapper", () => {
     expect(screen.queryByText(/Restoring your session/i)).not.toBeInTheDocument();
   });
 
+  it("renders children on public auth routes while auth is loading", () => {
+    mockPathname.mockReturnValue("/auth");
+    render(
+      <AuthWrapper>
+        <p>Sign up form</p>
+      </AuthWrapper>
+    );
+    expect(screen.getByText("Sign up form")).toBeInTheDocument();
+    expect(screen.queryByText(/Restoring your session/i)).not.toBeInTheDocument();
+  });
+
   it("blocks protected routes until auth restore completes", () => {
     mockPathname.mockReturnValue("/checkout/");
     render(

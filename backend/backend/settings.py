@@ -551,6 +551,13 @@ CELERY_TASK_SOFT_TIME_LIMIT = 240
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = os.getenv(
     "CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP", "true"
 ).lower() in ("1", "true", "yes")
+# Fail fast on Redis hang so request-path .delay() cannot block signup for minutes.
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "socket_connect_timeout": float(
+        os.getenv("CELERY_BROKER_SOCKET_CONNECT_TIMEOUT", "2")
+    ),
+    "socket_timeout": float(os.getenv("CELERY_BROKER_SOCKET_TIMEOUT", "3")),
+}
 CELERY_RESULT_EXPIRES = 3600  # 1 hour - prevent Redis result buildup
 # Safe: no code reads AsyncResult; festival tasks already use ignore_result=True.
 CELERY_TASK_IGNORE_RESULT = True
@@ -566,7 +573,9 @@ if _django_cache_redis_url:
     }
 
 
-# Frontend URL for email verification links - derive from URL_BASE
+# Frontend URL for email verification links - derive from URL_BASE.
+# Production must set FRONTEND_URL to the public origin (e.g. https://landarsfood.com).
+# Localhost values with DEBUG=False are logged as errors by get_public_frontend_base_url.
 def get_frontend_url():
     """Get frontend URL from URL_BASE environment variable"""
     return os.getenv("URL_BASE", "https://localhost")
