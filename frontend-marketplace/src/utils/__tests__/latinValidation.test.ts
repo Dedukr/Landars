@@ -14,9 +14,18 @@ describe("latinValidation", () => {
     expect(isLatinScriptText("")).toBe(true);
   });
 
+  it("accepts typographic punctuation", () => {
+    // Smart/typographic marks (e.g. from mobile keyboards), not hardcoded.
+    expect(isLatinScriptText("30 knight’s park")).toBe(true);
+    expect(isLatinScriptText("“Flat 2” – building A")).toBe(true);
+    expect(isLatinScriptText("£12 High Street")).toBe(true);
+    expect(isLatinScriptText("O’Neill Road")).toBe(true);
+  });
+
   it("rejects Cyrillic", () => {
     expect(isLatinScriptText("Юлія")).toBe(false);
     expect(latinScriptError("Київ")).toBe(LATIN_SCRIPT_ERROR);
+    expect(isLatinScriptText("30 knight’s парк")).toBe(false);
   });
 
   it("applies errors only to non-empty invalid fields", () => {

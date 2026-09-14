@@ -11,9 +11,17 @@ class LatinScriptValidationTests(SimpleTestCase):
         self.assertTrue(is_latin_script_text("10 High Street, Flat 2"))
         self.assertTrue(is_latin_script_text("SW1A 1AA"))
 
+    def test_accepts_typographic_punctuation(self):
+        # Smart/typographic marks (e.g. from mobile keyboards), not hardcoded.
+        self.assertTrue(is_latin_script_text("30 knight’s park"))
+        self.assertTrue(is_latin_script_text("“Flat 2” – building A"))
+        self.assertTrue(is_latin_script_text("£12 High Street"))
+        self.assertTrue(is_latin_script_text("O’Neill Road"))
+
     def test_rejects_cyrillic(self):
         self.assertFalse(is_latin_script_text("Юлія"))
         self.assertEqual(latin_script_error("Київ"), "Use Latin characters only")
+        self.assertFalse(is_latin_script_text("30 knight’s парк"))
 
     def test_street_address_rejects_non_latin_city(self):
         errors = validate_street_address(

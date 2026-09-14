@@ -1087,14 +1087,24 @@ class OrderListView(APIView):
         if payment_intent_id:
             order_data["payment_intent_id"] = payment_intent_id
 
-        # Handle address from form data — already validated above
-        address = Address.objects.create(
-            address_line=(address_data.get("address_line") or "").strip(),
-            address_line2=(address_data.get("address_line2") or "").strip(),
-            city=(address_data.get("city") or "").strip(),
-            postal_code=(address_data.get("postal_code") or "").strip(),
-        )
-        order_data["address"] = address
+        # Keep order address live: update the customer profile from checkout,
+        # leave order.address / order.billing_address empty until a freeze status.
+        from account.models import Profile
+
+        profile, _ = Profile.objects.get_or_create(user=request.user)
+        if profile.address_id:
+            address = profile.address
+        else:
+            address = Address()
+        address.address_line = (address_data.get("address_line") or "").strip()
+        address.address_line2 = (address_data.get("address_line2") or "").strip()
+        address.city = (address_data.get("city") or "").strip()
+        address.postal_code = (address_data.get("postal_code") or "").strip()
+        address.save()
+        if profile.address_id != address.pk:
+            profile.address = address
+            profile.save(update_fields=["address"])
+        order_data["address"] = None
 
         # Billing address: when use-delivery is checked, leave order billing empty.
         bill_use_delivery = request.data.get("bill_use_delivery_address")
@@ -1110,12 +1120,14 @@ class OrderListView(APIView):
 
         from account.billing_address import (
             billing_payload_from_request,
-            create_order_billing_address,
+            upsert_profile_billing_address,
             validate_billing_street,
         )
 
         if order_data["bill_use_delivery_address"]:
             order_data["billing_address"] = None
+            profile.bill_use_delivery_address = True
+            profile.save(update_fields=["bill_use_delivery_address"])
         else:
             billing_fields = billing_payload_from_request(request.data)
             street_errors = validate_billing_street(
@@ -1129,15 +1141,10 @@ class OrderListView(APIView):
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            customer = order_data.get("customer")
-            if not customer:
-                return Response(
-                    {"error": "Customer is required for a billing address."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            order_data["billing_address"] = create_order_billing_address(
-                customer, billing_fields
-            )
+            profile.bill_use_delivery_address = False
+            upsert_profile_billing_address(profile, billing_fields)
+            profile.save(update_fields=["bill_use_delivery_address", "billing_address"])
+            order_data["billing_address"] = None
 
         order = Order.objects.create(**order_data)
         if shipping_details_data:

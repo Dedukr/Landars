@@ -2271,25 +2271,23 @@ class OrderAdmin(admin.ModelAdmin):
         # This will be handled in save_related after inlines are processed
         # Delivery date order ID reassignment is handled in Order.save() method
 
-        # Track if status changed to "paid" to update invoice
+        # Track status transitions for invoice / address freeze / cancellation side-effects
         status_changed_to_paid = False
-        if change and "status" in form.changed_data and obj.status == "paid":
-            status_changed_to_paid = True
-
-        status_changed_to_cancelled = (
-            change and "status" in form.changed_data and obj.status == "cancelled"
-        )
-        status_changed_to_ready_to_ship = (
-            change and "status" in form.changed_data and obj.status == "ready_to_ship"
-        )
+        status_changed = False
         previous_status = None
-        if (
-            status_changed_to_cancelled or status_changed_to_ready_to_ship
-        ) and obj.pk:
+        if change and "status" in form.changed_data and obj.pk:
             previous_status = (
                 Order.objects.filter(pk=obj.pk).values_list("status", flat=True).first()
             )
+            status_changed = previous_status != obj.status
+            status_changed_to_paid = obj.status == "paid"
 
+        status_changed_to_cancelled = (
+            status_changed and obj.status == "cancelled"
+        )
+        status_changed_to_ready_to_ship = (
+            status_changed and obj.status == "ready_to_ship"
+        )
         # list_editable / change form safety net: never let ready-to-ship failures
         # raise out of admin (that becomes a 500). Skip the save and show the error.
         if status_changed_to_ready_to_ship and previous_status != "ready_to_ship":
@@ -2322,7 +2320,7 @@ class OrderAdmin(admin.ModelAdmin):
             customer = form.cleaned_data.get("customer") or obj.customer
             if customer:
                 profile, _ = Profile.objects.get_or_create(user=customer)
-                billing = upsert_profile_billing_address(
+                upsert_profile_billing_address(
                     profile,
                     {
                         "company_name": form.cleaned_data.get("bill_company_name"),
@@ -2334,7 +2332,9 @@ class OrderAdmin(admin.ModelAdmin):
                     },
                 )
                 profile.save(update_fields=["billing_address"])
-                obj.billing_address = billing
+            # Keep order billing detached while unfrozen; freeze statuses copy
+            # from the profile via sync_order_address_freeze_for_status.
+            obj.billing_address = None
 
         try:
             super().save_model(request, obj, form, change)
@@ -2355,6 +2355,13 @@ class OrderAdmin(admin.ModelAdmin):
         # Update related invoice when order status changes to "paid"
         if status_changed_to_paid:
             self._update_invoice_to_paid(obj)
+
+        # Freeze/release order address from customer according to current status.
+        from api.services.order_address_snapshot import (
+            sync_order_address_freeze_for_status,
+        )
+
+        sync_order_address_freeze_for_status(obj)
 
         # Credit note when transitioning to cancelled (shipment cancel runs via post_save)
         if status_changed_to_cancelled and previous_status != "cancelled":

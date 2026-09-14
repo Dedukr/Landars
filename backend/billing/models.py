@@ -147,6 +147,11 @@ def create_invoice(order, request):
     Unified function to create an invoice from an order and upload PDF to S3.
     Also updates the order status to "issued".
 
+    Address data is frozen only on the Invoice JSON snapshots — the order itself
+    is not frozen here. Moving to ``issued`` releases any order address freeze
+    so the order can again follow the customer profile (credit note → edit →
+    re-invoice).
+
     Args:
         order: The order to create an invoice for
         request: Django request object (for PDF generation)
@@ -161,7 +166,6 @@ def create_invoice(order, request):
     set_order_status(order, "issued")
 
     return invoice
-
 
 def create_credit_note(invoice, reason: str = "", request=None):
     """
@@ -388,6 +392,8 @@ class Invoice(models.Model):
 
         # Billing address snapshot follows the order flag:
         # false → billing address; true → shipping/delivery address.
+        # Copied into immutable JSON so later order/profile edits cannot change
+        # this invoice.
         delivery_address = order.get_delivery_address()
         billing_fields = order.billing_address_fields()
 

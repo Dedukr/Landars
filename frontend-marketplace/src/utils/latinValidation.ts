@@ -1,5 +1,7 @@
 /**
  * Latin-script validation for names and address fields (matches backend).
+ * Only letters are constrained to Latin script; punctuation and symbols
+ * (including typographic marks from mobile keyboards) are allowed.
  * Rejects Cyrillic and other non-Latin letters; accented Latin (José) is allowed.
  */
 
@@ -12,20 +14,14 @@ export function isLatinScriptText(value: string | null | undefined): boolean {
   }
 
   for (const ch of text) {
-    if (/\s/u.test(ch) || /\d/u.test(ch)) {
+    // Only alphabetic characters are constrained to Latin script.
+    // Punctuation / symbols (curly apostrophes, dashes, £, etc.) pass.
+    if (!/\p{L}/u.test(ch)) {
       continue;
     }
-    if (/\p{L}/u.test(ch)) {
-      if (!/\p{Script=Latin}/u.test(ch)) {
-        return false;
-      }
-      continue;
+    if (!/\p{Script=Latin}/u.test(ch)) {
+      return false;
     }
-    // Allow ASCII punctuation / symbols used in names and addresses.
-    if ((ch.codePointAt(0) ?? 0) < 128) {
-      continue;
-    }
-    return false;
   }
   return true;
 }

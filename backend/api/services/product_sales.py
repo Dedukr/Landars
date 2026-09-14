@@ -217,7 +217,11 @@ def set_order_status(order, status: str, **extra_fields) -> None:
 
     Pass additional model fields as keywords, e.g.
     ``set_order_status(order, "paid", payment_status="succeeded")``.
+
+    Address freeze/release follows status: paid / ready_to_ship / cancelled freeze;
+    any other status releases the order freeze so it follows the customer profile.
     """
+    previous = order.status
     order.status = status
     update_fields = ["status"]
     for name, value in extra_fields.items():
@@ -225,14 +229,42 @@ def set_order_status(order, status: str, **extra_fields) -> None:
         update_fields.append(name)
     order.save(update_fields=update_fields)
 
+    if status != previous:
+        from api.services.order_address_snapshot import (
+            sync_order_address_freeze_for_status,
+        )
+
+        sync_order_address_freeze_for_status(order, status)
+
 
 def bulk_set_order_status(queryset, status: str) -> int:
     """
     Bulk ``Order`` status update. Prefer this over raw ``queryset.update(status=...)``.
 
     ``OrderQuerySet.update`` schedules product sales counter rebuilds when ``status`` changes.
+    Address freeze/release is applied per order for rows whose status actually changes.
     """
-    return queryset.update(status=status)
+    transitioning_ids = list(
+        queryset.exclude(status=status).values_list("pk", flat=True)
+    )
+
+    count = queryset.update(status=status)
+
+    if transitioning_ids:
+        from api.models import Order
+        from api.services.order_address_snapshot import (
+            sync_order_address_freeze_for_status,
+        )
+
+        for order in Order.objects.filter(pk__in=transitioning_ids).select_related(
+            "customer__profile__address",
+            "customer__profile__billing_address",
+            "address",
+            "billing_address",
+        ):
+            sync_order_address_freeze_for_status(order, status)
+
+    return count
 
 
 def rebuild_all_product_sales_counters() -> int:

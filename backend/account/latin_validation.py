@@ -1,4 +1,4 @@
-"""Require Latin-script text for names and address fields (Sendcloud / UK shipping)."""
+"""Require Latin-script letters for names and address fields (Sendcloud / UK shipping)."""
 
 from __future__ import annotations
 
@@ -9,29 +9,24 @@ LATIN_SCRIPT_ERROR = "Use Latin characters only"
 
 def is_latin_script_text(value: str | None) -> bool:
     """
-    Return True when ``value`` is empty or every letter is Latin-script.
+    Return True when ``value`` is empty or every *letter* is Latin-script.
 
-    Digits, whitespace, and common punctuation are allowed. Cyrillic and other
-    non-Latin letters are rejected. Accented Latin (e.g. José, Müller) is OK.
+    Digits, whitespace, punctuation, and symbols are allowed (including
+    typographic marks from mobile keyboards). Cyrillic and other non-Latin
+    letters are rejected. Accented Latin (e.g. José, Müller) is OK.
     """
     text = value if value is not None else ""
     if not str(text).strip():
         return True
 
     for ch in str(text):
-        if ch.isspace() or ch.isdigit():
+        # Only alphabetic characters are constrained to Latin script.
+        # Punctuation / symbols (curly apostrophes, dashes, £, etc.) pass.
+        if not ch.isalpha():
             continue
-        if ch.isalpha():
-            name = unicodedata.name(ch, "")
-            if not name.startswith("LATIN"):
-                return False
-            continue
-        # Allow common address / name punctuation (including ASCII symbols).
-        if ord(ch) < 128:
-            continue
-        # Non-ASCII punctuation (e.g. typographic quotes) — reject to keep
-        # courier payloads simple.
-        return False
+        name = unicodedata.name(ch, "")
+        if not name.startswith("LATIN"):
+            return False
     return True
 
 
