@@ -6,7 +6,11 @@ import {
   type FestivalMenuFilling,
   type FestivalMenuProduct,
 } from "@/lib/festivalMenuApi";
-import { fillingChoiceLabel, productImageKey } from "../utils";
+import {
+  fillingChoiceLabel,
+  isDrinkAdditionClass,
+  productImageKey,
+} from "../utils";
 
 type FestivalMenuEntryProps = {
   product: FestivalMenuProduct;
@@ -14,13 +18,29 @@ type FestivalMenuEntryProps = {
   onImageError: (key: string) => void;
   /** Eager-load only the first 1–2 product photos on the page. */
   priority?: boolean;
+  /** Meals category already tells customers a drink is included. */
+  drinksIncluded?: boolean;
 };
+
+function servingDescription(
+  product: FestivalMenuProduct,
+  allowHalf: boolean
+): string | null {
+  const full = product.portion?.trim() ?? "";
+  const half = product.half_portion?.trim() ?? "";
+  if (!allowHalf) return full || null;
+  const parts: string[] = [];
+  if (full) parts.push(`Full ${full}`);
+  if (half) parts.push(`Half ${half}`);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
 
 export function FestivalMenuEntry({
   product,
   brokenImages,
   onImageError,
   priority = false,
+  drinksIncluded = false,
 }: FestivalMenuEntryProps) {
   const imageKey = productImageKey(product.name, null, product.image);
   const showImage = Boolean(product.image) && !brokenImages[imageKey];
@@ -29,6 +49,14 @@ export function FestivalMenuEntry({
   const choiceLabel = hasFillings
     ? fillingChoiceLabel(product.name, product.fillings)
     : null;
+  const allowHalf = Boolean(product.allow_half_portion && product.half_price);
+  const servings = servingDescription(product, allowHalf);
+  const drinkWithEitherSize =
+    allowHalf &&
+    (drinksIncluded ||
+      (product.addition_class
+        ? isDrinkAdditionClass(product.addition_class)
+        : false));
 
   return (
     <article
@@ -64,13 +92,29 @@ export function FestivalMenuEntry({
           }`}
         >
           <h3 className="festival-menu-card-name">{product.name}</h3>
-          <span className="festival-menu-card-price">
-            {formatFestivalMoney(product.price)}
-          </span>
+          {allowHalf ? (
+            <span className="festival-menu-card-price festival-menu-card-price--with-half">
+              <span>Full {formatFestivalMoney(product.price)}</span>
+              <span className="festival-menu-card-price-sep" aria-hidden="true">
+                ·
+              </span>
+              <span>Half {formatFestivalMoney(product.half_price ?? "")}</span>
+            </span>
+          ) : (
+            <span className="festival-menu-card-price">
+              {formatFestivalMoney(product.price)}
+            </span>
+          )}
         </div>
 
-        {product.portion ? (
-          <p className="festival-menu-card-portion">{product.portion}</p>
+        {servings ? (
+          <p className="festival-menu-card-portion">{servings}</p>
+        ) : null}
+
+        {drinkWithEitherSize ? (
+          <p className="festival-menu-card-portion-note">
+            Included drink applies to either size.
+          </p>
         ) : null}
 
         {product.description ? (

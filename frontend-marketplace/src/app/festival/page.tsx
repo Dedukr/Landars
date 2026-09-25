@@ -20,6 +20,7 @@ import {
   placeFestivalOrder,
   unstickFestivalPrinter,
   type FestivalFilling,
+  type FestivalPortionSize,
   type FestivalProduct,
   type FestivalStatus,
 } from "@/lib/festivalApi";
@@ -41,6 +42,7 @@ type CartLine = {
   productId: number;
   fillingId: number | null;
   additionId: number | null;
+  portionSize: FestivalPortionSize;
   productName: string;
   fillingName: string;
   additionName: string;
@@ -48,17 +50,23 @@ type CartLine = {
   quantity: number;
 };
 
+function productOffersHalf(product: FestivalProduct): boolean {
+  return Boolean(product.allow_half_portion) && Boolean(product.half_price);
+}
+
 function cartLineKey(
   productId: number,
   fillingId: number | null,
-  additionId: number | null
+  additionId: number | null,
+  portionSize: FestivalPortionSize
 ): string {
-  return `${productId}:${fillingId ?? "none"}:${additionId ?? "none"}`;
+  return `${productId}:${fillingId ?? "none"}:${additionId ?? "none"}:${portionSize}`;
 }
 
 function cartLineLabel(line: CartLine): string {
   let label = line.productName;
   if (line.fillingName) label = `${label} (${line.fillingName})`;
+  if (line.portionSize === "HALF") label = `${label} — Half portion`;
   if (line.additionName) label = `${label} + ${line.additionName}`;
   return label;
 }
@@ -284,6 +292,7 @@ export default function FestivalTillPage() {
   const [selectedAdditionId, setSelectedAdditionId] = useState<number | null>(
     null
   );
+  const [portionSize, setPortionSize] = useState<FestivalPortionSize>("FULL");
   const [quantity, setQuantity] = useState(1);
 
   const canUse = Boolean(user?.can_use_festival);
@@ -430,8 +439,12 @@ export default function FestivalTillPage() {
     const additionPrice = selectedAddition
       ? Number(selectedAddition.price)
       : 0;
-    return Number(activeProduct.price) + additionPrice;
-  }, [activeProduct, selectedAddition]);
+    const mealPrice =
+      portionSize === "HALF" && activeProduct.half_price
+        ? Number(activeProduct.half_price)
+        : Number(activeProduct.price);
+    return mealPrice + additionPrice;
+  }, [activeProduct, selectedAddition, portionSize]);
 
   const modalLineTotal = unitTotal * quantity;
 
@@ -458,6 +471,7 @@ export default function FestivalTillPage() {
     setActiveFilling(filling);
     setQuantity(1);
     setSelectedAdditionId(null);
+    setPortionSize("FULL");
     setLastOrderNumber(null);
   }
 
@@ -469,10 +483,16 @@ export default function FestivalTillPage() {
       fillingName: string;
       additionId: number | null;
       additionName: string;
+      portionSize: FestivalPortionSize;
       unitPrice: number;
     }
   ) {
-    const key = cartLineKey(product.id, opts.fillingId, opts.additionId);
+    const key = cartLineKey(
+      product.id,
+      opts.fillingId,
+      opts.additionId,
+      opts.portionSize
+    );
     setCart((prev) => {
       const existing = prev.find((line) => line.key === key);
       if (existing) {
@@ -488,6 +508,7 @@ export default function FestivalTillPage() {
           productId: product.id,
           fillingId: opts.fillingId,
           additionId: opts.additionId,
+          portionSize: opts.portionSize,
           productName: product.name,
           fillingName: opts.fillingName,
           additionName: opts.additionName,
@@ -499,8 +520,9 @@ export default function FestivalTillPage() {
     setScrollToCartKey(key);
     lastCartFocusKeyRef.current = key;
     setLastOrderNumber(null);
+    const sizeLabel = opts.portionSize === "HALF" ? " — Half portion" : "";
     toast.success(
-      `Added ${product.name}${opts.fillingName ? ` (${opts.fillingName})` : ""}`
+      `Added ${product.name}${opts.fillingName ? ` (${opts.fillingName})` : ""}${sizeLabel}`
     );
   }
 
@@ -508,7 +530,7 @@ export default function FestivalTillPage() {
     product: FestivalProduct,
     filling: FestivalFilling | null = null
   ) {
-    if (product.addition_class_id) {
+    if (product.addition_class_id || productOffersHalf(product)) {
       openProductModal(product, filling);
       return;
     }
@@ -518,6 +540,7 @@ export default function FestivalTillPage() {
       fillingName: filling?.name ?? "",
       additionId: null,
       additionName: "",
+      portionSize: "FULL",
       unitPrice: Number(product.price),
     });
   }
@@ -527,6 +550,7 @@ export default function FestivalTillPage() {
     setActiveProduct(null);
     setActiveFilling(null);
     setSelectedAdditionId(null);
+    setPortionSize("FULL");
     setQuantity(1);
   }
 
@@ -545,6 +569,7 @@ export default function FestivalTillPage() {
       fillingName: activeFilling?.name ?? "",
       additionId,
       additionName,
+      portionSize: productOffersHalf(activeProduct) ? portionSize : "FULL",
       unitPrice: unitTotal,
     });
     closeProductModal();
@@ -661,9 +686,11 @@ export default function FestivalTillPage() {
           quantity: number;
           filling_id?: number;
           addition_id?: number;
+          portion_size: FestivalPortionSize;
         } = {
           product_id: line.productId,
           quantity: line.quantity,
+          portion_size: line.portionSize,
         };
         if (line.fillingId != null) {
           item.filling_id = line.fillingId;
@@ -1051,7 +1078,15 @@ export default function FestivalTillPage() {
                   className="mt-1 text-sm tabular-nums"
                   style={{ color: "var(--muted-foreground)" }}
                 >
-                  From {formatFestivalMoney(activeProduct.price)}
+                  {productOffersHalf(activeProduct) ? (
+                    <>
+                      Full {formatFestivalMoney(activeProduct.price)}
+                      <span aria-hidden="true"> · </span>
+                      Half {formatFestivalMoney(activeProduct.half_price ?? "")}
+                    </>
+                  ) : (
+                    <>From {formatFestivalMoney(activeProduct.price)}</>
+                  )}
                 </p>
               </div>
               <button
@@ -1141,6 +1176,73 @@ export default function FestivalTillPage() {
                   </ul>
                 </fieldset>
               )}
+
+              {productOffersHalf(activeProduct) ? (
+                <fieldset className="mb-4">
+                  <legend
+                    className="mb-2 text-sm font-semibold"
+                    style={{ color: "var(--foreground)" }}
+                  >
+                    Portion
+                  </legend>
+                  <div
+                    className="grid grid-cols-2 gap-2"
+                    role="radiogroup"
+                    aria-label="Portion size"
+                  >
+                    <button
+                      type="button"
+                      role="radio"
+                      className="flex min-h-12 flex-col items-start justify-center rounded-xl px-3 py-3 text-left"
+                      style={{
+                        background:
+                          portionSize === "FULL"
+                            ? "color-mix(in srgb, var(--primary) 12%, var(--background))"
+                            : "var(--background)",
+                        border:
+                          portionSize === "FULL"
+                            ? "2px solid var(--primary)"
+                            : "1px solid var(--sidebar-border)",
+                        color: "var(--foreground)",
+                      }}
+                      aria-checked={portionSize === "FULL"}
+                      aria-label={`Full portion ${formatFestivalMoney(activeProduct.price)}`}
+                      onClick={() => setPortionSize("FULL")}
+                      disabled={submitting}
+                    >
+                      <span className="font-medium">Full</span>
+                      <span className="tabular-nums font-semibold">
+                        {formatFestivalMoney(activeProduct.price)}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      role="radio"
+                      className="flex min-h-12 flex-col items-start justify-center rounded-xl px-3 py-3 text-left"
+                      style={{
+                        background:
+                          portionSize === "HALF"
+                            ? "color-mix(in srgb, var(--primary) 12%, var(--background))"
+                            : "var(--background)",
+                        border:
+                          portionSize === "HALF"
+                            ? "2px solid var(--primary)"
+                            : "1px solid var(--sidebar-border)",
+                        color: "var(--foreground)",
+                      }}
+                      aria-checked={portionSize === "HALF"}
+                      aria-label={`Half portion ${formatFestivalMoney(activeProduct.half_price ?? "")}`}
+                      onClick={() => setPortionSize("HALF")}
+                      disabled={submitting}
+                    >
+                      <span className="font-medium">Half</span>
+                      <span className="tabular-nums font-semibold">
+                        {formatFestivalMoney(activeProduct.half_price ?? "")}
+                      </span>
+                    </button>
+                  </div>
+                </fieldset>
+              ) : null}
 
               <div className="flex items-center justify-center gap-2">
                 <button

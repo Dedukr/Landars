@@ -185,6 +185,86 @@ class FestivalAPITests(TestCase):
         self.assertEqual(resp2.status_code, 200)
         self.assertTrue(resp2.data["replayed"])
 
+    def test_staff_products_expose_calculated_half_price(self):
+        self.product.price = Decimal("8.99")
+        self.product.allow_half_portion = True
+        self.product.half_portion = "125g"
+        self.product.save()
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.get("/api/festival/products/")
+        self.assertEqual(resp.status_code, 200)
+        row = next(item for item in resp.data["results"] if item["id"] == self.product.id)
+        self.assertTrue(row["allow_half_portion"])
+        self.assertEqual(row["half_portion"], "125g")
+        self.assertEqual(row["half_price"], "4.50")
+        self.assertNotIn("half_price_override", row)
+
+    def test_invalid_portion_size_rejected(self):
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.post(
+            "/api/festival/orders/",
+            {
+                "client_request_id": str(uuid.uuid4()),
+                "items": [
+                    {
+                        "product_id": self.product.id,
+                        "quantity": 1,
+                        "portion_size": "SMALL",
+                    }
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_half_portion_rejected_when_product_disallows_it(self):
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.post(
+            "/api/festival/orders/",
+            {
+                "client_request_id": str(uuid.uuid4()),
+                "items": [
+                    {
+                        "product_id": self.product.id,
+                        "quantity": 1,
+                        "portion_size": "HALF",
+                    }
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data["code"], "half_portion_unavailable")
+
+    def test_explicit_full_replays_omitted_portion_order(self):
+        self.client.force_authenticate(user=self.staff)
+        rid = str(uuid.uuid4())
+        first = self.client.post(
+            "/api/festival/orders/",
+            {
+                "client_request_id": rid,
+                "items": [{"product_id": self.product.id, "quantity": 1}],
+            },
+            format="json",
+        )
+        self.assertEqual(first.status_code, 201)
+        second = self.client.post(
+            "/api/festival/orders/",
+            {
+                "client_request_id": rid,
+                "items": [
+                    {
+                        "product_id": self.product.id,
+                        "quantity": 1,
+                        "portion_size": "FULL",
+                    }
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(second.status_code, 200)
+        self.assertTrue(second.data["replayed"])
+
     def test_no_cancellation_endpoint(self):
         self.client.force_authenticate(user=self.staff)
         resp = self.client.post("/api/festival/orders/1/cancel/", {}, format="json")

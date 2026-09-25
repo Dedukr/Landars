@@ -164,7 +164,23 @@ class FestivalProduct(models.Model):
         max_length=120,
         blank=True,
         default="",
-        help_text="Serving size shown on the public menu (e.g. 6 pieces).",
+        help_text="Full portion description shown on the public menu (e.g. 6 pieces or 250g).",
+    )
+    allow_half_portion = models.BooleanField(
+        default=False,
+        help_text=(
+            "Offer a half portion at 50% of the meal price. "
+            "Paid extras keep their own price."
+        ),
+    )
+    half_portion = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        help_text=(
+            "Optional half-portion description (e.g. 125g or 3 pieces). "
+            "Shown only when half portions are enabled."
+        ),
     )
     description = models.TextField(
         blank=True,
@@ -385,7 +401,34 @@ class FestivalOrder(models.Model):
         return self.status == self.Status.CANCELLED
 
 
+PORTION_FULL = "FULL"
+PORTION_HALF = "HALF"
+HALF_PORTION_LABEL = "HALF PORTION"
+
+
+def format_festival_item_name(
+    *,
+    product_name: str,
+    filling_name: str = "",
+    addition_name: str = "",
+    portion_size: str = PORTION_FULL,
+) -> str:
+    """Line name used on tickets, invoices, and the pending-ticket board."""
+    name = product_name or ""
+    if filling_name:
+        name = f"{name} ({filling_name})"
+    if portion_size == PORTION_HALF:
+        name = f"{name} — {HALF_PORTION_LABEL}"
+    if addition_name:
+        name = f"{name} + {addition_name}"
+    return name
+
+
 class FestivalOrderItem(models.Model):
+    class PortionSize(models.TextChoices):
+        FULL = PORTION_FULL, "Full"
+        HALF = PORTION_HALF, "Half"
+
     order = models.ForeignKey(
         FestivalOrder,
         on_delete=models.PROTECT,
@@ -421,6 +464,12 @@ class FestivalOrderItem(models.Model):
     product_name = models.CharField(max_length=200)
     filling_name = models.CharField(max_length=100, blank=True, default="")
     addition_name = models.CharField(max_length=200, blank=True, default="")
+    portion_size = models.CharField(
+        max_length=8,
+        choices=PortionSize.choices,
+        default=PortionSize.FULL,
+        help_text="FULL or HALF. Existing orders stay FULL.",
+    )
     addition_unit_price = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -445,8 +494,12 @@ class FestivalOrderItem(models.Model):
         ordering = ["id"]
         constraints = [
             models.UniqueConstraint(
-                fields=["order", "product", "filling", "addition"],
-                name="festival_order_item_unique_product_filling_addition",
+                fields=["order", "product", "filling", "addition", "portion_size"],
+                name="festival_order_item_unique_product_filling_addition_portion",
+            ),
+            models.CheckConstraint(
+                condition=Q(portion_size__in=[PORTION_FULL, PORTION_HALF]),
+                name="festival_order_item_portion_size_valid",
             ),
             models.CheckConstraint(
                 condition=Q(quantity__gte=1),
@@ -459,12 +512,12 @@ class FestivalOrderItem(models.Model):
 
     @property
     def display_name(self) -> str:
-        name = self.product_name
-        if self.filling_name:
-            name = f"{name} ({self.filling_name})"
-        if self.addition_name:
-            name = f"{name} + {self.addition_name}"
-        return name
+        return format_festival_item_name(
+            product_name=self.product_name,
+            filling_name=self.filling_name,
+            addition_name=self.addition_name,
+            portion_size=self.portion_size or PORTION_FULL,
+        )
 
     def clean(self):
         if self.pk:
@@ -478,6 +531,7 @@ class FestivalOrderItem(models.Model):
                 "product_name",
                 "filling_name",
                 "addition_name",
+                "portion_size",
                 "addition_unit_price",
                 "unit_price",
                 "vat_rate",

@@ -25,7 +25,7 @@ from festival.services.cloudprnt import (
 )
 from festival.services.documents import create_paid_invoice
 from festival.services.numbering import allocate_ticket_number
-from festival.services.pricing import price_line, price_order
+from festival.services.pricing import portion_meal_unit_price, price_line, price_order
 from festival.services.tickets import (
     render_customer_ticket_for_print,
     render_kitchen_ticket_for_print,
@@ -65,10 +65,25 @@ def _optional_id(raw_value, *, field: str) -> int | None:
     return value
 
 
+def _portion_size(raw_value) -> str:
+    """Omitted values stay FULL so legacy fingerprints are unchanged."""
+    if raw_value is None or raw_value == "":
+        return FestivalOrderItem.PortionSize.FULL
+    if not isinstance(raw_value, str) or raw_value not in (
+        FestivalOrderItem.PortionSize.FULL,
+        FestivalOrderItem.PortionSize.HALF,
+    ):
+        raise FestivalOrderError(
+            "portion_size must be FULL or HALF.",
+            code="invalid_portion_size",
+        )
+    return raw_value
+
+
 def normalize_items(items: list[dict]) -> list[dict]:
     if not items:
         raise FestivalOrderError("Order must contain at least one item.")
-    normalized: dict[tuple[int, int | None, int | None], int] = {}
+    normalized: dict[tuple[int, int | None, int | None, str], int] = {}
     for raw in items:
         try:
             product_id = int(raw["product_id"])
@@ -79,30 +94,40 @@ def normalize_items(items: list[dict]) -> list[dict]:
             ) from exc
         filling_id = _optional_id(raw.get("filling_id"), field="filling_id")
         addition_id = _optional_id(raw.get("addition_id"), field="addition_id")
+        portion_size = _portion_size(raw.get("portion_size"))
         if quantity < 1:
             raise FestivalOrderError("Item quantity must be at least 1.")
         if quantity > _max_item_qty():
             raise FestivalOrderError(
                 f"Item quantity cannot exceed {_max_item_qty()}."
             )
-        key = (product_id, filling_id, addition_id)
+        key = (product_id, filling_id, addition_id, portion_size)
         normalized[key] = normalized.get(key, 0) + quantity
         if normalized[key] > _max_item_qty():
             raise FestivalOrderError(
                 f"Item quantity cannot exceed {_max_item_qty()}."
             )
-    return [
-        {
+    rows = []
+    for (product_id, filling_id, addition_id, portion_size), qty in sorted(
+        normalized.items(),
+        key=lambda pair: (
+            pair[0][0],
+            pair[0][1] or 0,
+            pair[0][2] or 0,
+            pair[0][3],
+        ),
+    ):
+        row = {
             "product_id": product_id,
             "filling_id": filling_id,
             "addition_id": addition_id,
             "quantity": qty,
         }
-        for (product_id, filling_id, addition_id), qty in sorted(
-            normalized.items(),
-            key=lambda pair: (pair[0][0], pair[0][1] or 0, pair[0][2] or 0),
-        )
-    ]
+        # FULL is omitted so retries of existing full-portion orders match.
+        if portion_size != FestivalOrderItem.PortionSize.FULL:
+            row["portion_size"] = portion_size
+        rows.append(row)
+    return rows
 
 
 def request_fingerprint(normalized_items: list[dict], *, cash: bool = False) -> str:
@@ -281,7 +306,19 @@ def place_festival_order(
                     code="invalid_addition",
                 )
 
-            unit_gross = product.price + addition_unit_price
+            portion_size = row.get(
+                "portion_size", FestivalOrderItem.PortionSize.FULL
+            )
+            if (
+                portion_size == FestivalOrderItem.PortionSize.HALF
+                and not product.allow_half_portion
+            ):
+                raise FestivalOrderError(
+                    f"Product {product.id} does not allow half portions.",
+                    code="half_portion_unavailable",
+                )
+            meal_unit_price = portion_meal_unit_price(product.price, portion_size)
+            unit_gross = meal_unit_price + addition_unit_price
             priced_lines.append(
                 price_line(
                     product_id=product.id,
@@ -299,6 +336,7 @@ def place_festival_order(
                     "addition_id": addition.id if addition else None,
                     "addition_name": addition_name,
                     "addition_unit_price": addition_unit_price,
+                    "portion_size": portion_size,
                     "quantity": row["quantity"],
                 }
             )
@@ -345,6 +383,7 @@ def place_festival_order(
                 product_name=line.product_name,
                 filling_name=resolved["filling_name"],
                 addition_name=resolved["addition_name"],
+                portion_size=resolved["portion_size"],
                 addition_unit_price=resolved["addition_unit_price"],
                 unit_price=line.unit_price,
                 vat_rate=line.vat_rate,

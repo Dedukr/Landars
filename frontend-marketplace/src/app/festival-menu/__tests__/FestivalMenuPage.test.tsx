@@ -434,6 +434,84 @@ describe("FestivalMenuPage", () => {
     expect(screen.queryByText("+£1.50")).not.toBeInTheDocument();
   });
 
+  it("shows full and half prices, servings, and the included drink on one card", async () => {
+    mockFetchFestivalMenu.mockResolvedValue({
+      included_meal_offer: "",
+      categories: [
+        {
+          name: "Meals",
+          products: [
+            {
+              name: "Varenyky",
+              category: "Meals",
+              image: "",
+              price: "8.99",
+              portion: "250g",
+              allow_half_portion: true,
+              half_portion: "125g",
+              half_price: "4.50",
+              description: "Handmade dumplings",
+              fillings: [
+                {
+                  name: "Potato",
+                  image: "",
+                  description: "Potato filling",
+                  allergens: "Gluten",
+                },
+              ],
+              additions: [{ name: "Cola", price: "1.50" }],
+              addition_class: "Soft drinks",
+              ingredients: "Flour",
+              toppings: "Sour cream",
+              allergens: "Gluten",
+            },
+            {
+              name: "Syrnyky",
+              category: "Meals",
+              image: "",
+              price: "9.00",
+              portion: "4 pcs",
+              allow_half_portion: false,
+              half_portion: "",
+              half_price: null,
+              description: "Cheese pancakes",
+              fillings: [],
+              additions: [],
+              addition_class: null,
+              ingredients: "",
+              toppings: "",
+              allergens: "Milk",
+            },
+          ],
+        },
+      ],
+    });
+
+    render(<FestivalMenuPage />);
+    const halfCard = (
+      await screen.findByRole("heading", { name: "Varenyky", level: 3 })
+    ).closest("article");
+    expect(halfCard).toHaveTextContent("Full £8.99");
+    expect(halfCard).toHaveTextContent("Half £4.50");
+    expect(halfCard).toHaveTextContent("Full 250g · Half 125g");
+    expect(halfCard).toHaveTextContent(
+      "Included drink applies to either size."
+    );
+    expect(halfCard).toHaveTextContent("Handmade dumplings");
+    expect(halfCard).toHaveTextContent("Sour cream");
+    expect(halfCard).toHaveTextContent("Potato");
+    expect(halfCard).toHaveTextContent("Gluten");
+
+    const fullOnly = screen
+      .getByRole("heading", { name: "Syrnyky", level: 3 })
+      .closest("article");
+    expect(fullOnly).toHaveTextContent("£9.00");
+    expect(fullOnly).toHaveTextContent("4 pcs");
+    expect(fullOnly).not.toHaveTextContent("Half");
+    expect(fullOnly).not.toHaveTextContent("Included drink");
+    expect(fullOnly).toHaveTextContent("Milk");
+  });
+
   it("does not call staff festival APIs", async () => {
     render(<FestivalMenuPage />);
     await screen.findByRole("heading", { name: "Festival Menu" });

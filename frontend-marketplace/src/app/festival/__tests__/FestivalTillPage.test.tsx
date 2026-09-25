@@ -241,7 +241,7 @@ describe("FestivalTillPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
     await waitFor(() => expect(placeOrder).toHaveBeenCalled());
     expect(placeOrder.mock.calls[0][0].items).toEqual([
-      { product_id: 1, quantity: 1 },
+      { product_id: 1, quantity: 1, portion_size: "FULL" },
     ]);
   });
 
@@ -378,8 +378,8 @@ describe("FestivalTillPage", () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     );
     expect(placeOrder.mock.calls[0][0].items).toEqual([
-      { product_id: 1, quantity: 1, addition_id: 10 },
-      { product_id: 2, quantity: 1 },
+      { product_id: 1, quantity: 1, addition_id: 10, portion_size: "FULL" },
+      { product_id: 2, quantity: 1, portion_size: "FULL" },
     ]);
     await screen.findByText("#7");
     expect(screen.queryByLabelText("Festival cart")).not.toBeInTheDocument();
@@ -476,8 +476,8 @@ describe("FestivalTillPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
     await waitFor(() => expect(placeOrder).toHaveBeenCalled());
     expect(placeOrder.mock.calls[0][0].items).toEqual([
-      { product_id: 3, quantity: 1, filling_id: 31 },
-      { product_id: 3, quantity: 1, filling_id: 32 },
+      { product_id: 3, quantity: 1, filling_id: 31, portion_size: "FULL" },
+      { product_id: 3, quantity: 1, filling_id: 32, portion_size: "FULL" },
     ]);
   });
 
@@ -519,7 +519,13 @@ describe("FestivalTillPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
     await waitFor(() => expect(placeOrder).toHaveBeenCalled());
     expect(placeOrder.mock.calls[0][0].items).toEqual([
-      { product_id: 4, quantity: 1, filling_id: 41, addition_id: 10 },
+      {
+        product_id: 4,
+        quantity: 1,
+        filling_id: 41,
+        addition_id: 10,
+        portion_size: "FULL",
+      },
     ]);
   });
 
@@ -648,5 +654,151 @@ describe("FestivalTillPage", () => {
         name: /Printer online · 2 queued · oldest 45s/i,
       })
     ).toBeInTheDocument();
+  });
+
+  it("offers full and half in the popup and keeps them as separate cart lines", async () => {
+    fetchProducts.mockResolvedValue([
+      ...products,
+      {
+        id: 5,
+        name: "Borscht",
+        category_id: 1,
+        category: "Mains",
+        addition_class_id: null,
+        addition_class: null,
+        additions: [],
+        fillings: [],
+        image: "",
+        price: "8.99",
+        vat_rate: "0",
+        allow_half_portion: true,
+        half_portion: "250ml",
+        half_price: "4.49",
+      },
+      {
+        id: 6,
+        name: "Solyanka",
+        category_id: 1,
+        category: "Mains",
+        addition_class_id: null,
+        addition_class: null,
+        additions: [],
+        fillings: [],
+        image: "",
+        price: "7.00",
+        vat_rate: "0",
+        allow_half_portion: true,
+        half_portion: "",
+        half_price: "3.50",
+      },
+    ]);
+    render(<FestivalTillPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Order Borscht" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      screen.getByRole("radio", { name: "Full portion £8.99" })
+    ).toHaveAttribute("aria-checked", "true");
+    expect(
+      screen.getByRole("radio", { name: "Half portion £4.49" })
+    ).toHaveAttribute("aria-checked", "false");
+    expect(dialog).toHaveTextContent("Full £8.99");
+    expect(dialog).toHaveTextContent("Half £4.49");
+    expect(
+      screen.getByRole("button", { name: /Add to cart for £8.99/i })
+    ).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Half portion £4.49" }));
+    expect(
+      screen.getByRole("button", { name: /Add to cart for £4.49/i })
+    ).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: /Add to cart for £4.49/i }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    );
+    expect(screen.getByLabelText("Festival cart")).toHaveTextContent(
+      /Borscht — Half portion/
+    );
+    expect(
+      screen.getByLabelText("Quantity for Borscht — Half portion")
+    ).toHaveTextContent("1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Order Borscht" }));
+    expect(
+      await screen.findByRole("radio", { name: "Full portion £8.99" })
+    ).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(screen.getByRole("button", { name: /Add to cart for £8.99/i }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    );
+    expect(screen.getByLabelText("Quantity for Borscht")).toHaveTextContent("1");
+    expect(
+      screen.getByLabelText("Quantity for Borscht — Half portion")
+    ).toHaveTextContent("1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Order Solyanka" }));
+    expect(
+      await screen.findByRole("radio", { name: "Full portion £7.00" })
+    ).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(screen.getByText("Close"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Order Borscht" }));
+    fireEvent.click(
+      await screen.findByRole("radio", { name: "Half portion £4.49" })
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Add to cart for £4.49/i }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    );
+    expect(
+      screen.getByLabelText("Quantity for Borscht — Half portion")
+    ).toHaveTextContent("2");
+    expect(
+      screen.getByRole("button", { name: /Place order for £17.97/i })
+    ).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
+    await waitFor(() => expect(placeOrder).toHaveBeenCalled());
+    expect(placeOrder.mock.calls[0][0].items).toEqual([
+      { product_id: 5, quantity: 2, portion_size: "HALF" },
+      { product_id: 5, quantity: 1, portion_size: "FULL" },
+    ]);
+  });
+
+  it("adds a paid extra on top of the backend half price", async () => {
+    fetchProducts.mockResolvedValue([
+      {
+        ...products[0],
+        price: "8.99",
+        allow_half_portion: true,
+        half_portion: "3 pieces",
+        half_price: "4.50",
+      },
+    ]);
+    render(<FestivalTillPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Order Varenyky" }));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByRole("radio", { name: "Half portion £4.50" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Cola/i }));
+    expect(
+      screen.getByRole("button", { name: /Add to cart for £6.00/i })
+    ).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: /Add to cart for £6.00/i }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    );
+    expect(screen.getByLabelText("Festival cart")).toHaveTextContent(
+      /Varenyky — Half portion \+ Cola/
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Place order/i }));
+    await waitFor(() => expect(placeOrder).toHaveBeenCalled());
+    expect(placeOrder.mock.calls[0][0].items).toEqual([
+      {
+        product_id: 1,
+        quantity: 1,
+        addition_id: 10,
+        portion_size: "HALF",
+      },
+    ]);
   });
 });

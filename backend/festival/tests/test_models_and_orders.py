@@ -1028,3 +1028,281 @@ class ConcurrentTicketAllocationTests(TransactionTestCase):
         with ThreadPoolExecutor(max_workers=5) as pool:
             numbers = list(pool.map(worker, range(10)))
         self.assertEqual(len(numbers), len(set(numbers)))
+
+
+@override_settings(
+    FESTIVAL_ENABLED=True,
+    FESTIVAL_PRINT_MODE="disabled",
+    FESTIVAL_PRINTER_REQUIRED=False,
+)
+class FestivalHalfPortionTests(TestCase):
+    def setUp(self):
+        self.user = _staff_user("half-staff@example.com")
+        self.product = FestivalProduct.objects.create(
+            name="Varenyky",
+            price=Decimal("8.99"),
+            vat_rate=Decimal("0"),
+            allow_half_portion=True,
+            portion="250g",
+            half_portion="125g",
+        )
+        self.full_only = FestivalProduct.objects.create(
+            name="Kvas",
+            price=Decimal("3.00"),
+            vat_rate=Decimal("20"),
+        )
+
+    def test_defaults_keep_existing_full_orders(self):
+        self.assertFalse(
+            FestivalProduct.objects.get(pk=self.full_only.pk).allow_half_portion
+        )
+        result = place_festival_order(
+            user=self.user,
+            client_request_id=uuid.uuid4(),
+            items=[{"product_id": self.product.id, "quantity": 2}],
+        )
+        item = result.order.items.get()
+        self.assertEqual(item.portion_size, FestivalOrderItem.PortionSize.FULL)
+        self.assertEqual(item.unit_price, Decimal("8.99"))
+        self.assertEqual(item.line_total, Decimal("17.98"))
+        self.assertEqual(item.display_name, "Varenyky")
+
+    def test_half_price_rounds_before_quantity_and_keeps_extras(self):
+        addition_class = FestivalAdditionClass.objects.create(name="Soft drinks")
+        cola = FestivalAddition.objects.create(
+            name="Cola",
+            addition_class=addition_class,
+            price=Decimal("1.50"),
+        )
+        water = FestivalAddition.objects.create(
+            name="Water",
+            addition_class=addition_class,
+            price=Decimal("0.00"),
+        )
+        self.product.addition_class = addition_class
+        self.product.save(update_fields=["addition_class"])
+        potato = FestivalFilling.objects.create(product=self.product, name="Potato")
+
+        result = place_festival_order(
+            user=self.user,
+            client_request_id=uuid.uuid4(),
+            items=[
+                {
+                    "product_id": self.product.id,
+                    "filling_id": potato.id,
+                    "quantity": 1,
+                    "portion_size": "FULL",
+                },
+                {
+                    "product_id": self.product.id,
+                    "filling_id": potato.id,
+                    "addition_id": cola.id,
+                    "quantity": 1,
+                    "portion_size": "HALF",
+                },
+                {
+                    "product_id": self.product.id,
+                    "filling_id": potato.id,
+                    "addition_id": cola.id,
+                    "quantity": 1,
+                    "portion_size": "HALF",
+                },
+                {
+                    "product_id": self.product.id,
+                    "filling_id": potato.id,
+                    "addition_id": water.id,
+                    "quantity": 2,
+                    "portion_size": "HALF",
+                },
+            ],
+        )
+        order = result.order
+        items = list(order.items.order_by("id"))
+        self.assertEqual(len(items), 3)
+        full, half_cola, half_water = items
+        self.assertEqual(full.portion_size, "FULL")
+        self.assertEqual(full.unit_price, Decimal("8.99"))
+        self.assertEqual(full.display_name, "Varenyky (Potato)")
+        self.assertEqual(half_cola.portion_size, "HALF")
+        self.assertEqual(half_cola.quantity, 2)
+        self.assertEqual(half_cola.filling_name, "Potato")
+        self.assertEqual(half_cola.addition_unit_price, Decimal("1.50"))
+        self.assertEqual(half_cola.unit_price, Decimal("6.00"))
+        self.assertEqual(half_cola.line_total, Decimal("12.00"))
+        self.assertEqual(
+            half_cola.display_name, "Varenyky (Potato) — HALF PORTION + Cola"
+        )
+        self.assertEqual(half_water.quantity, 2)
+        self.assertEqual(half_water.unit_price, Decimal("4.50"))
+        self.assertEqual(half_water.line_total, Decimal("9.00"))
+        self.assertEqual(half_water.addition_name, "Water")
+        self.assertEqual(order.total_price, Decimal("29.99"))
+
+    def test_three_halves_use_rounded_unit_price(self):
+        result = place_festival_order(
+            user=self.user,
+            client_request_id=uuid.uuid4(),
+            items=[
+                {
+                    "product_id": self.product.id,
+                    "quantity": 3,
+                    "portion_size": "HALF",
+                }
+            ],
+        )
+        item = result.order.items.get()
+        self.assertEqual(item.unit_price, Decimal("4.50"))
+        self.assertEqual(item.line_total, Decimal("13.50"))
+        self.assertEqual(item.display_name, "Varenyky — HALF PORTION")
+
+    def test_half_rejected_when_disabled_and_invalid_sizes_rejected(self):
+        with self.assertRaises(FestivalOrderError) as disabled:
+            place_festival_order(
+                user=self.user,
+                client_request_id=uuid.uuid4(),
+                items=[
+                    {
+                        "product_id": self.full_only.id,
+                        "quantity": 1,
+                        "portion_size": "HALF",
+                    }
+                ],
+            )
+        self.assertEqual(disabled.exception.code, "half_portion_unavailable")
+
+        for bad in ("SMALL", "half", 1, "FULL "):
+            with self.assertRaises(FestivalOrderError) as invalid:
+                place_festival_order(
+                    user=self.user,
+                    client_request_id=uuid.uuid4(),
+                    items=[
+                        {
+                            "product_id": self.product.id,
+                            "quantity": 1,
+                            "portion_size": bad,
+                        }
+                    ],
+                )
+            self.assertEqual(invalid.exception.code, "invalid_portion_size")
+
+    def test_omitted_and_explicit_full_share_legacy_fingerprint(self):
+        from festival.services.orders import normalize_items, request_fingerprint
+
+        legacy = [
+            {
+                "product_id": self.product.id,
+                "filling_id": None,
+                "addition_id": None,
+                "quantity": 1,
+            }
+        ]
+        omitted = normalize_items(
+            [{"product_id": self.product.id, "quantity": 1}]
+        )
+        explicit = normalize_items(
+            [
+                {
+                    "product_id": self.product.id,
+                    "quantity": 1,
+                    "portion_size": "FULL",
+                }
+            ]
+        )
+        half = normalize_items(
+            [
+                {
+                    "product_id": self.product.id,
+                    "quantity": 1,
+                    "portion_size": "HALF",
+                }
+            ]
+        )
+        self.assertEqual(omitted, legacy)
+        self.assertEqual(explicit, legacy)
+        self.assertEqual(
+            request_fingerprint(omitted, cash=False),
+            request_fingerprint(legacy, cash=False),
+        )
+        self.assertEqual(
+            request_fingerprint(explicit, cash=True),
+            request_fingerprint(legacy, cash=True),
+        )
+        self.assertNotEqual(
+            request_fingerprint(half),
+            request_fingerprint(legacy),
+        )
+
+        rid = uuid.uuid4()
+        first = place_festival_order(
+            user=self.user,
+            client_request_id=rid,
+            items=[{"product_id": self.product.id, "quantity": 1}],
+        )
+        replay = place_festival_order(
+            user=self.user,
+            client_request_id=rid,
+            items=[
+                {
+                    "product_id": self.product.id,
+                    "quantity": 1,
+                    "portion_size": "FULL",
+                }
+            ],
+        )
+        self.assertTrue(replay.replayed)
+        self.assertEqual(first.order.pk, replay.order.pk)
+        with self.assertRaises(FestivalOrderError) as conflict:
+            place_festival_order(
+                user=self.user,
+                client_request_id=rid,
+                items=[
+                    {
+                        "product_id": self.product.id,
+                        "quantity": 1,
+                        "portion_size": "HALF",
+                    }
+                ],
+            )
+        self.assertEqual(conflict.exception.status, 409)
+
+    def test_historical_snapshot_ignores_later_catalog_edits(self):
+        result = place_festival_order(
+            user=self.user,
+            client_request_id=uuid.uuid4(),
+            items=[
+                {
+                    "product_id": self.product.id,
+                    "quantity": 2,
+                    "portion_size": "HALF",
+                }
+            ],
+        )
+        item = result.order.items.get()
+        self.product.price = Decimal("12.00")
+        self.product.allow_half_portion = False
+        self.product.name = "Renamed"
+        self.product.save()
+        item.refresh_from_db()
+        result.order.refresh_from_db()
+        self.assertEqual(item.portion_size, "HALF")
+        self.assertEqual(item.product_name, "Varenyky")
+        self.assertEqual(item.unit_price, Decimal("4.50"))
+        self.assertEqual(item.line_total, Decimal("9.00"))
+        self.assertEqual(result.order.total_price, Decimal("9.00"))
+        self.assertEqual(item.display_name, "Varenyky — HALF PORTION")
+
+        item.portion_size = FestivalOrderItem.PortionSize.FULL
+        from django.core.exceptions import ValidationError
+
+        with self.assertRaises(ValidationError):
+            item.full_clean()
+
+    def test_admin_exposes_portion_fields(self):
+        from festival.admin import FestivalOrderItemInline, FestivalProductAdmin
+
+        self.assertIn("portion_display", FestivalOrderItemInline.fields)
+        self.assertIn("portion_display", FestivalOrderItemInline.readonly_fields)
+        self.assertIn("allow_half_portion", FestivalProductAdmin.fields)
+        self.assertIn("half_portion", FestivalProductAdmin.fields)
+        self.assertIn("half_price_preview", FestivalProductAdmin.readonly_fields)
+        self.assertNotIn("half_price", FestivalProductAdmin.fields)

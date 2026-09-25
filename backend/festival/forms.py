@@ -19,6 +19,8 @@ class FestivalProductAdminForm(forms.ModelForm):
             "price",
             "vat_rate",
             "portion",
+            "allow_half_portion",
+            "half_portion",
             "description",
             "ingredients",
             "toppings",

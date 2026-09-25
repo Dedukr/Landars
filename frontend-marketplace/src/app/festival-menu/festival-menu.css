@@ -717,6 +717,33 @@
   flex-shrink: 0;
 }
 
+.festival-menu-card-price--with-half {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.35rem;
+  white-space: normal;
+  font-size: clamp(0.95rem, 3.6vw, 1.25rem);
+  line-height: 1.2;
+}
+
+.festival-menu-card-headline--stacked .festival-menu-card-price--with-half {
+  justify-content: flex-start;
+}
+
+.festival-menu-card-price-sep {
+  font-weight: 500;
+  color: var(--fm-label);
+}
+
+.festival-menu-card-portion-note {
+  margin: 0;
+  font-family: var(--fm-sans);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--fm-body);
+}
+
 .festival-menu-card-portion {
   margin: 0;
   font-family: var(--fm-sans);
