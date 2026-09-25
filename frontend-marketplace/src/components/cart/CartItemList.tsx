@@ -17,6 +17,8 @@ interface Product {
 interface CartItemListProps {
   products: Product[];
   cart: Array<{ productId: number; quantity: number }>;
+  /** Promo free units per product id, from the server cart payload. */
+  freeQuantities?: Record<number, number>;
   removingIds: Set<number>;
   onRemove: (productId: number) => void;
   onDecreaseQuantity: (productId: number) => void;
@@ -28,6 +30,7 @@ const CartItemList = memo<CartItemListProps>(
   ({
     products,
     cart,
+    freeQuantities,
     removingIds,
     onRemove,
     onDecreaseQuantity,
@@ -72,6 +75,7 @@ const CartItemList = memo<CartItemListProps>(
                 key={product.id}
                 product={product}
                 quantity={cartItem.quantity}
+                freeQuantity={freeQuantities?.[product.id] ?? 0}
                 isRemoving={removingIds.has(product.id)}
                 onRemove={onRemove}
                 onDecreaseQuantity={onDecreaseQuantity}

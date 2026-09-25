@@ -1,6 +1,7 @@
 // CSRF token utility functions
 import { getClientApiBaseUrl } from "@/config/api";
 import { getAccessToken } from "@/utils/authTokenStore";
+import { resetCSRFToken as resetHttpClientCSRFToken } from "@/utils/httpClient";
 
 let csrfToken: string | null = null;
 
@@ -94,8 +95,11 @@ export async function makeAuthenticatedRequest(
 }
 
 /**
- * Reset CSRF token (useful when token expires)
+ * Reset CSRF token (useful when token expires).
+ * Also clears httpClient's cached token: both modules cache the same server token, so
+ * resetting only one would leave the other sending a stale value.
  */
 export function resetCSRFToken(): void {
   csrfToken = null;
+  resetHttpClientCSRFToken();
 }

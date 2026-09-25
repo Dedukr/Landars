@@ -43,6 +43,10 @@ export interface OrderDetailItem {
   quantity: number;
   get_total_price?: string;
   total_price?: string;
+  /** Units given free by a promotion (jerky 5+1). */
+  free_quantity?: string | number;
+  /** Money taken off this line by the promotion. */
+  promo_discount?: string | number;
 }
 
 export interface MarketplaceOrderDetail {
@@ -63,6 +67,9 @@ export interface MarketplaceOrderDetail {
   is_home_delivery: boolean;
   delivery_fee: string;
   discount: string;
+  promo_discount?: string | number;
+  promo_free_units?: number;
+  promo_label?: string;
   created_at: string;
   status: string;
   invoice_link: string;

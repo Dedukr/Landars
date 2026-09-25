@@ -25,6 +25,9 @@ export interface OrderListEntry {
   is_home_delivery: boolean;
   delivery_fee: string;
   discount: string;
+  promo_discount?: string | number;
+  promo_free_units?: number;
+  promo_label?: string;
   created_at: string;
   status: OrderListStatus | string;
   invoice_link?: string | null;

@@ -1,8 +1,21 @@
 "use client";
-import React, { useState, useEffect, Suspense, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  Suspense,
+  useCallback,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
+import { AUTH_FETCH_TIMEOUT_MS } from "@/utils/fetchWithTimeout";
 import { httpClient } from "@/utils/httpClient";
+import {
+  describeAuthError,
+  isTransientAuthError,
+  type AuthErrorCode,
+  type DescribedAuthError,
+} from "@/utils/authHelpers";
 
 interface User {
   name: string;
@@ -14,13 +27,41 @@ interface TokenValidationResponse {
   user: User;
 }
 
+// Helper function to format error messages
+const formatErrorMessage = (error: string): string => {
+  // Capitalize first letter and ensure proper punctuation
+  let formatted = error.trim();
+  if (
+    formatted &&
+    !formatted.endsWith(".") &&
+    !formatted.endsWith("!") &&
+    !formatted.endsWith("?")
+  ) {
+    formatted += ".";
+  }
+  return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+};
+
+// Our own copy is already a finished sentence (and may end with a support
+// reference); only server-authored validation text needs tidying up.
+const presentError = (described: DescribedAuthError): string =>
+  described.code === "validation_error"
+    ? formatErrorMessage(described.message)
+    : described.message;
+
 function ResetPasswordForm() {
   const [token, setToken] = useState("");
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
   const [validating, setValidating] = useState(true);
   const [error, setError] = useState("");
+  const [errorCode, setErrorCode] = useState<AuthErrorCode | null>(null);
+  // Checking the link failed for a reason that a retry can fix (network, 5xx, wait)
+  const [linkCheckRetryable, setLinkCheckRetryable] = useState(false);
   const [success, setSuccess] = useState(false);
+  // Synchronous in-flight guard: state updates land too late for double submits
+  const submittingRef = useRef(false);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [formData, setFormData] = useState({
     newPassword: "",
     confirmPassword: "",
@@ -30,30 +71,19 @@ function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Helper function to format error messages
-  const formatErrorMessage = (error: string): string => {
-    // Capitalize first letter and ensure proper punctuation
-    let formatted = error.trim();
-    if (
-      formatted &&
-      !formatted.endsWith(".") &&
-      !formatted.endsWith("!") &&
-      !formatted.endsWith("?")
-    ) {
-      formatted += ".";
-    }
-    return formatted.charAt(0).toUpperCase() + formatted.slice(1);
-  };
-
   const validateToken = useCallback(async (tokenToValidate: string) => {
     try {
       setValidating(true);
       setError("");
+      setErrorCode(null);
+      setLinkCheckRetryable(false);
 
       // Validate token with backend
       const response = await httpClient.get(
-        `/api/auth/password-reset/validate/?token=${tokenToValidate}`,
-        { skipAuth: true }
+        `/api/auth/password-reset/validate/?token=${encodeURIComponent(
+          tokenToValidate
+        )}`,
+        { skipAuth: true, skipCSRF: true, timeoutMs: AUTH_FETCH_TIMEOUT_MS }
       );
 
       if (
@@ -67,6 +97,7 @@ function ResetPasswordForm() {
           (response as TokenValidationResponse).user.email
         );
       } else {
+        setErrorCode("token_invalid");
         setError(
           formatErrorMessage(
             "Invalid or expired reset token. Please request a new password reset"
@@ -76,48 +107,10 @@ function ResetPasswordForm() {
     } catch (err: unknown) {
       console.error("Token validation failed:", err);
 
-      // Enhanced error handling for token validation
-      let errorMessage =
-        "Invalid or expired reset token. Please request a new password reset.";
-
-      if (err && typeof err === "object" && "response" in err) {
-        const response = (
-          err as {
-            response: { data?: { error?: string | string[] }; status?: number };
-          }
-        ).response;
-
-        if (response && response.data && response.data.error) {
-          const backendError = response.data.error;
-          if (typeof backendError === "string") {
-            errorMessage = backendError;
-          } else if (Array.isArray(backendError)) {
-            errorMessage = backendError.join(", ");
-          }
-        }
-
-        // Handle specific HTTP status codes
-        if (response.status === 400) {
-          errorMessage =
-            "Invalid reset token. Please request a new password reset.";
-        } else if (response.status === 404) {
-          errorMessage =
-            "Reset token not found. Please request a new password reset.";
-        } else if (response.status && response.status >= 500) {
-          errorMessage = "Server error. Please try again later.";
-        }
-      } else if (err && typeof err === "object" && "message" in err) {
-        const networkError = (err as { message: string }).message;
-        if (
-          networkError.includes("Network Error") ||
-          networkError.includes("fetch")
-        ) {
-          errorMessage =
-            "Network error. Please check your connection and try again.";
-        }
-      }
-
-      setError(formatErrorMessage(errorMessage));
+      const described = describeAuthError(err, "reset");
+      setErrorCode(described.code);
+      setLinkCheckRetryable(isTransientAuthError(described.code));
+      setError(presentError(described));
     } finally {
       setValidating(false);
     }
@@ -137,6 +130,13 @@ function ResetPasswordForm() {
       setValidating(false);
     }
   }, [searchParams, validateToken]);
+
+  useEffect(
+    () => () => {
+      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
+    },
+    []
+  );
 
   const validatePassword = (password: string): string | null => {
     if (password.length < 8) {
@@ -166,12 +166,16 @@ function ResetPasswordForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     setError("");
+    setErrorCode(null);
 
     // Validate passwords match
     if (formData.newPassword !== formData.confirmPassword) {
       setError(formatErrorMessage("Passwords do not match"));
+      submittingRef.current = false;
       setLoading(false);
       return;
     }
@@ -180,6 +184,7 @@ function ResetPasswordForm() {
     const passwordError = validatePassword(formData.newPassword);
     if (passwordError) {
       setError(formatErrorMessage(passwordError));
+      submittingRef.current = false;
       setLoading(false);
       return;
     }
@@ -191,119 +196,23 @@ function ResetPasswordForm() {
           token: token,
           new_password: formData.newPassword,
         },
-        { skipAuth: true }
+        { skipAuth: true, skipCSRF: true, timeoutMs: AUTH_FETCH_TIMEOUT_MS }
       );
 
       setSuccess(true);
-      setTimeout(() => {
+      redirectTimerRef.current = setTimeout(() => {
         router.push("/auth");
       }, 3000);
     } catch (err: unknown) {
       console.error("Password reset failed:", err);
 
-      // Enhanced error handling to show specific error messages
-      let errorMessage = "Failed to reset password. Please try again.";
-
-      if (err && typeof err === "object" && "response" in err) {
-        const response = (
-          err as {
-            response: {
-              data?: {
-                error?: string | string[];
-                message?: string;
-                detail?: string;
-                non_field_errors?: string | string[];
-                new_password?: string | string[];
-                token?: string | string[];
-              };
-              status?: number;
-            };
-          }
-        ).response;
-
-        if (response && response.data) {
-          const data = response.data;
-
-          // Handle different error response formats
-          if (typeof data === "object") {
-            if (data.error) {
-              // Handle single error message
-              if (Array.isArray(data.error)) {
-                errorMessage = data.error.join(", ");
-              } else {
-                errorMessage = data.error;
-              }
-            } else if (data.message) {
-              errorMessage = data.message;
-            } else if (data.detail) {
-              errorMessage = data.detail;
-            } else if (data.non_field_errors) {
-              // Handle Django form errors
-              if (Array.isArray(data.non_field_errors)) {
-                errorMessage = data.non_field_errors.join(", ");
-              } else {
-                errorMessage = data.non_field_errors;
-              }
-            } else if (data.new_password) {
-              // Handle password validation errors
-              if (Array.isArray(data.new_password)) {
-                errorMessage = data.new_password.join(", ");
-              } else {
-                errorMessage = data.new_password;
-              }
-            } else if (data.token) {
-              // Handle token validation errors
-              if (Array.isArray(data.token)) {
-                errorMessage = data.token.join(", ");
-              } else {
-                errorMessage = data.token;
-              }
-            }
-          }
-        }
-
-        // Handle HTTP status codes
-        if (response.status === 400) {
-          // Bad request - validation errors
-          if (
-            !errorMessage.includes("Invalid") &&
-            !errorMessage.includes("expired")
-          ) {
-            errorMessage =
-              "Please check your input and try again. " + errorMessage;
-          }
-        } else if (response.status === 401) {
-          errorMessage =
-            "Authentication failed. Please request a new password reset link.";
-        } else if (response.status === 403) {
-          errorMessage =
-            "Access denied. Please request a new password reset link.";
-        } else if (response.status === 404) {
-          errorMessage =
-            "Password reset service not found. Please try again later.";
-        } else if (response.status === 429) {
-          errorMessage =
-            "Too many attempts. Please wait a few minutes before trying again.";
-        } else if (response.status && response.status >= 500) {
-          errorMessage =
-            "Server error. Please try again later or contact support.";
-        }
-      } else if (err && typeof err === "object" && "message" in err) {
-        // Handle network errors
-        const networkError = (err as { message: string }).message;
-        if (
-          networkError.includes("Network Error") ||
-          networkError.includes("fetch")
-        ) {
-          errorMessage =
-            "Network error. Please check your connection and try again.";
-        } else {
-          errorMessage = networkError;
-        }
-      }
-
-      setError(formatErrorMessage(errorMessage));
+      // Validation messages (weak password, ...) come from the server; other
+      // outcomes (link expired, rate limit, 5xx, network) get our own copy
+      const described = describeAuthError(err, "reset");
+      setErrorCode(described.code);
+      setError(presentError(described));
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -366,10 +275,10 @@ function ResetPasswordForm() {
               Password Reset Successful!
             </h2>
             <p className="mb-6" style={{ color: "var(--muted-foreground)" }}>
-              {user?.name
-                ? `Hi ${user.name}, your password has been successfully reset.`
-                : "Your password has been successfully reset."}{" "}
-              You will be redirected to the login page shortly.
+              {user?.name ? `Hi ${user.name}, your` : "Your"} password has been
+              changed and your email address is confirmed. You can now sign in
+              with your new password. You will be redirected to the login page
+              shortly.
             </p>
             <button
               onClick={() => router.push("/auth")}
@@ -427,7 +336,9 @@ function ResetPasswordForm() {
               className="text-3xl font-bold mb-4"
               style={{ color: "var(--foreground)" }}
             >
-              Invalid Reset Link
+              {linkCheckRetryable
+                ? "Couldn't Check Your Reset Link"
+                : "Invalid Reset Link"}
             </h2>
             <p className="mb-4" style={{ color: "var(--muted-foreground)" }}>
               {error}
@@ -436,9 +347,24 @@ function ResetPasswordForm() {
               className="mb-6 text-sm"
               style={{ color: "var(--muted-foreground)" }}
             >
-              If you need a new password reset link, please request one from the
-              login page.
+              {linkCheckRetryable
+                ? "Your link may still be valid. Please try again in a moment."
+                : "If you need a new password reset link, please request one from the login page."}
             </p>
+            {linkCheckRetryable && token && (
+              <button
+                type="button"
+                onClick={() => validateToken(token)}
+                className="w-full py-3 px-4 mb-3 rounded-lg font-semibold transition-colors"
+                style={{
+                  backgroundColor: "var(--btn-primary)",
+                  color: "var(--card-bg)",
+                  border: "1px solid var(--btn-primary)",
+                }}
+              >
+                Try Again
+              </button>
+            )}
             <button
               onClick={() => router.push("/auth?forgotPassword=true")}
               className="w-full py-3 px-4 rounded-lg font-semibold transition-colors"
@@ -656,6 +582,7 @@ function ResetPasswordForm() {
 
           {error && (
             <div
+              role="alert"
               className="text-sm text-center"
               style={{
                 color: "var(--foreground)",
@@ -667,6 +594,19 @@ function ResetPasswordForm() {
               }}
             >
               {error}
+              {(errorCode === "token_invalid" ||
+                errorCode === "token_expired") && (
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => router.push("/auth?forgotPassword=true")}
+                    className="text-sm font-medium underline hover:opacity-80"
+                    style={{ color: "var(--primary)" }}
+                  >
+                    Request a new reset link
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

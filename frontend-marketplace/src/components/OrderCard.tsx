@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import StatusBadge from "@/components/StatusBadge";
+import { jerkyPromoRowLabel } from "@/lib/jerkyPromo";
 
 interface OrderItem {
   id: number;
@@ -33,6 +34,9 @@ interface Order {
   is_home_delivery: boolean;
   delivery_fee: string;
   discount: string;
+  promo_discount?: string;
+  promo_free_units?: number;
+  promo_label?: string;
   created_at: string;
   status: "pending" | "paid" | "issued" | "cancelled";
   invoice_link?: string;
@@ -72,8 +76,15 @@ function formatCurrency(amount: string) {
   return `£${parseFloat(amount).toFixed(2)}`;
 }
 
+function promoDiscountOf(order: Order): number {
+  const n = parseFloat(String(order.promo_discount ?? "0"));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 export default function OrderCard({ order, onReorder }: OrderCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const promoDiscount = promoDiscountOf(order);
+  const promoFreeUnits = Number(order.promo_free_units ?? 0);
 
   const canCancel =
     order.status === "pending" ||
@@ -364,7 +375,8 @@ export default function OrderCard({ order, onReorder }: OrderCardProps) {
                       (
                         parseFloat(order.total_price) -
                         parseFloat(order.delivery_fee) +
-                        parseFloat(order.discount)
+                        parseFloat(order.discount) +
+                        promoDiscount
                       ).toFixed(2)
                     )}
                   </span>
@@ -382,6 +394,19 @@ export default function OrderCard({ order, onReorder }: OrderCardProps) {
                     <span style={{ color: "var(--success)" }}>Discount</span>
                     <span style={{ color: "var(--success)" }}>
                       -{formatCurrency(order.discount)}
+                    </span>
+                  </div>
+                )}
+                {promoDiscount > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span style={{ color: "var(--success)" }}>
+                      {jerkyPromoRowLabel(
+                        Number.isFinite(promoFreeUnits) ? promoFreeUnits : 0,
+                        order.promo_label
+                      )}
+                    </span>
+                    <span style={{ color: "var(--success)" }}>
+                      -{formatCurrency(promoDiscount.toFixed(2))}
                     </span>
                   </div>
                 )}

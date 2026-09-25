@@ -1,20 +1,25 @@
 "use client";
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { httpClient } from "@/utils/httpClient";
 import {
-  AUTH_LOGIN_NETWORK_ERROR_MESSAGE,
-  AUTH_NETWORK_ERROR_MESSAGE,
+  describeAuthError,
+  formatCountdown,
+  formatWaitTime,
+  getAuthErrorPayload,
   getSafeNextRedirect,
-  isAuthNetworkError,
+  describeResendQueuedNotice,
+  type AuthErrorCode,
+  type DescribedAuthError,
 } from "@/utils/authHelpers";
 import { AUTH_FETCH_TIMEOUT_MS } from "@/utils/fetchWithTimeout";
 import { hasSolidAuthSession } from "@/utils/authSessionGuard";
 import EmailVerificationPopup from "@/components/EmailVerificationPopup";
 import { latinScriptError } from "@/utils/latinValidation";
-import { validateEmail } from "@/utils/emailValidation";
+import { normalizeEmail, validateEmail } from "@/utils/emailValidation";
 
 interface AuthResponse {
   access?: string;
@@ -27,8 +32,32 @@ interface AuthResponse {
     email: string;
   };
   email_verification_required?: boolean;
+  /** `email_not_verified` when a sign-in hit an unverified account. */
+  code?: string;
+  /** False when the backend could not queue the verification email. */
+  email_queued?: boolean;
+  /** True when an unfinished sign-up was resumed instead of duplicated. */
+  resumed?: boolean;
   message?: string;
 }
+
+interface ResendResponse {
+  message?: string;
+  already_verified?: boolean;
+  email_queued?: boolean;
+  next_request_allowed_in?: number;
+}
+
+/** Applies to rate limits the server did not put a duration on. */
+const DEFAULT_RATE_LIMIT_SECONDS = 60;
+
+const safeDecode = (value: string): string => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
 
 function AuthForm() {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -41,6 +70,7 @@ function AuthForm() {
     confirmPassword: "",
   });
   const [error, setError] = useState("");
+  const [errorCode, setErrorCode] = useState<AuthErrorCode | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -57,8 +87,25 @@ function AuthForm() {
   const [showEmailVerificationPopup, setShowEmailVerificationPopup] =
     useState(false);
   const [verificationEmail, setVerificationEmail] = useState("");
+  const [emailQueued, setEmailQueued] = useState(true);
   const [emailFieldError, setEmailFieldError] = useState("");
+  const [typoSuggestion, setTypoSuggestion] = useState<string | null>(null);
+  // Sign-in hit an unverified account: (normalised) email + resend feedback
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendFeedback, setResendFeedback] = useState<{
+    kind: "success" | "error";
+    message: string;
+  } | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [rateLimitRemaining, setRateLimitRemaining] = useState(0);
+  // Synchronous in-flight guards: `loading` state lands after a re-render, so
+  // two submit events in the same tick would both pass a state-only check.
+  const submittingRef = useRef(false);
+  const resendingRef = useRef(false);
+  const forgotSubmittingRef = useRef(false);
+  // Normalised email the customer chose to keep despite a typo suggestion
+  const typoAcknowledgedRef = useRef<string | null>(null);
   const router = useRouter();
   const { login, user, token, loading: authLoading } = useAuth();
 
@@ -84,7 +131,7 @@ function AuthForm() {
 
     // Handle email prefilling from verification
     if (email) {
-      setFormData((prev) => ({ ...prev, email: decodeURIComponent(email) }));
+      setFormData((prev) => ({ ...prev, email: safeDecode(email) }));
 
       // Show success message if coming from verification
       if (verified === "true") {
@@ -147,12 +194,24 @@ function AuthForm() {
     };
   }, [resendCooldown]);
 
-  // Clear error when countdown reaches 0 (for any remaining cooldown-related errors)
+  // Rate-limit countdown: keeps the submit button disabled until the server's
+  // retry-after has passed (one interval for the whole countdown)
+  const rateLimited = rateLimitRemaining > 0;
   useEffect(() => {
-    if (resendCooldown === 0 && error && error.includes("Please wait")) {
+    if (!rateLimited) return;
+    const interval = setInterval(() => {
+      setRateLimitRemaining((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [rateLimited]);
+
+  // Drop the "too many attempts" message once the wait is over
+  useEffect(() => {
+    if (rateLimitRemaining === 0 && errorCode === "rate_limited") {
       setError("");
+      setErrorCode(null);
     }
-  }, [resendCooldown, error]);
+  }, [rateLimitRemaining, errorCode]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -176,219 +235,241 @@ function AuthForm() {
     return null;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  /** Show a described API failure; rate limits also start the button countdown. */
+  const showAuthError = (described: DescribedAuthError, err: unknown) => {
+    setError(described.message);
+    setErrorCode(described.code);
+    if (described.code === "rate_limited") {
+      setRateLimitRemaining(described.retryAfter ?? DEFAULT_RATE_LIMIT_SECONDS);
+    }
+    if (
+      described.code === "validation_error" &&
+      getAuthErrorPayload(err)?.field === "email"
+    ) {
+      setEmailFieldError(described.message);
+    }
+  };
+
+  const submitAuth = async (options: { typoAcknowledged?: boolean } = {}) => {
+    if (submittingRef.current || rateLimitRemaining > 0) return;
+    submittingRef.current = true;
     setLoading(true);
     setError("");
+    setErrorCode(null);
     setSuccessMessage("");
     setShowCreateAccountSuggestion(false);
     setEmailFieldError("");
+    setTypoSuggestion(null);
 
-    const emailResult = validateEmail(formData.email, {
-      allowDisposable: isSignUp ? false : true,
-      checkTypos: false,
-    });
+    try {
+      // What we validate is exactly what we send (and what the backend stores)
+      const email = normalizeEmail(formData.email);
+      const emailResult = validateEmail(email, {
+        allowDisposable: isSignUp ? false : true,
+        checkTypos: isSignUp,
+      });
 
-    if (!emailResult.isValid) {
-      const message = emailResult.error || "Enter a valid email address";
-      setEmailFieldError(message);
-      setError(message);
-      setLoading(false);
-      return;
-    }
-
-    if (isSignUp) {
-      // Validate passwords match
-      if (formData.password !== formData.confirmPassword) {
-        setError("Passwords do not match");
-        setLoading(false);
+      if (!emailResult.isValid) {
+        const message = emailResult.error || "Enter a valid email address";
+        setEmailFieldError(message);
+        setError(message);
         return;
       }
 
-      // Validate password strength
-      const passwordError = validatePassword(formData.password);
-      if (passwordError) {
-        setError(passwordError);
-        setLoading(false);
-        return;
-      }
-
-      if (!formData.first_name.trim() || !formData.surname.trim()) {
-        setError("First name and surname are required");
-        setLoading(false);
-        return;
-      }
-
-      const firstNameLatinError = latinScriptError(formData.first_name);
-      if (firstNameLatinError) {
-        setError(`First name: ${firstNameLatinError}`);
-        setLoading(false);
-        return;
-      }
-      const surnameLatinError = latinScriptError(formData.surname);
-      if (surnameLatinError) {
-        setError(`Surname: ${surnameLatinError}`);
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const data = await httpClient.post<AuthResponse>(
-          "/api/auth/register/",
-          {
-            first_name: formData.first_name.trim(),
-            surname: formData.surname.trim(),
-            email: formData.email,
-            password: formData.password,
-          },
-          {
-            skipAuth: true,
-            skipCSRF: true,
-            timeoutMs: AUTH_FETCH_TIMEOUT_MS,
-          }
-        );
-
-        // Register always requires email verification (no immediate JWT)
-        if (data.email_verification_required) {
-          setError("");
-          setVerificationEmail(formData.email);
-          setShowEmailVerificationPopup(true);
-          setLoading(false);
+      if (isSignUp) {
+        // Validate passwords match
+        if (formData.password !== formData.confirmPassword) {
+          setError("Passwords do not match");
           return;
         }
 
-        setError("Unexpected registration response. Please try signing in.");
-      } catch (error: unknown) {
-        // Prefer structured API payload when present (e.g. password validator list)
-        const apiData =
-          error &&
-          typeof error === "object" &&
-          "response" in error &&
-          (error as { response?: { data?: unknown } }).response?.data;
-
-        let errorMessage = "Registration failed";
-        if (apiData && typeof apiData === "object") {
-          const payload = apiData as Record<string, unknown>;
-          if (typeof payload.error === "string") {
-            errorMessage = payload.error;
-          } else if (Array.isArray(payload.error)) {
-            errorMessage = payload.error.filter((m) => typeof m === "string").join(" ");
-          } else if (isAuthNetworkError(error)) {
-            errorMessage = AUTH_NETWORK_ERROR_MESSAGE;
-          } else if (error instanceof Error && error.message) {
-            errorMessage = error.message;
-          }
-        } else if (isAuthNetworkError(error)) {
-          // Safari "Load failed" / Chrome "Failed to fetch" — not an API body
-          errorMessage = AUTH_NETWORK_ERROR_MESSAGE;
-        } else if (error instanceof Error && error.message) {
-          errorMessage = error.message;
-        }
-
-        setError(errorMessage);
-        // Registration error occurred
-      }
-    } else {
-      // Sign in logic
-      try {
-        const data = await httpClient.post<AuthResponse>(
-          "/api/auth/login/",
-          {
-            email: formData.email,
-            password: formData.password,
-          },
-          {
-            skipAuth: true,
-            skipCSRF: true,
-            timeoutMs: AUTH_FETCH_TIMEOUT_MS,
-          }
-        );
-
-        // Check if email verification is required
-        if (data.email_verification_required) {
-          setError(""); // Clear any previous errors
-          setSuccessMessage(
-            `Please verify your email address (${formData.email}) before logging in. Check your email for a verification link.`
-          );
-          setLoading(false); // Re-enable the button
+        // Validate password strength
+        const passwordError = validatePassword(formData.password);
+        if (passwordError) {
+          setError(passwordError);
           return;
         }
 
-        // Access in SPA; refresh is set as httpOnly cookie by the API
-        if (data.access) {
-          login({ access: data.access }, data.user);
-          const next = getSafeNextRedirect(searchParams.get("next"));
-          // replace avoids stacking /auth in history; safe next never loops to /auth
-          router.replace(next || "/");
+        if (!formData.first_name.trim() || !formData.surname.trim()) {
+          setError("First name and surname are required");
           return;
-        } else if (!data.email_verification_required) {
-          setError("Unexpected login response. Please try again.");
-        }
-      } catch (error: unknown) {
-        // Enhanced error handling for login
-        let errorMessage = "Login failed";
-        let showCreateAccountSuggestion = false;
-
-        if (error && typeof error === "object" && "response" in error) {
-          const response = (
-            error as {
-              response: {
-                data?: {
-                  error?: string | string[];
-                  detail?: string | string[];
-                  non_field_errors?: string | string[];
-                  suggestion?: string;
-                };
-                status?: number;
-              };
-            }
-          ).response;
-
-          if (response && response.data) {
-            const data = response.data;
-            const asText = (value: unknown): string | null => {
-              if (typeof value === "string" && value.trim()) return value;
-              if (Array.isArray(value)) {
-                const parts = value.filter((v): v is string => typeof v === "string");
-                return parts.length ? parts.join(" ") : null;
-              }
-              return null;
-            };
-
-            errorMessage =
-              asText(data.error) ||
-              asText(data.detail) ||
-              asText(data.non_field_errors) ||
-              errorMessage;
-
-            // Check if backend suggests creating an account
-            if (data.suggestion === "create_account") {
-              showCreateAccountSuggestion = true;
-            }
-          }
-        } else if (isAuthNetworkError(error)) {
-          errorMessage = AUTH_LOGIN_NETWORK_ERROR_MESSAGE;
-        } else if (error instanceof Error) {
-          errorMessage = error.message;
         }
 
-        setError(errorMessage);
+        const firstNameLatinError = latinScriptError(formData.first_name);
+        if (firstNameLatinError) {
+          setError(`First name: ${firstNameLatinError}`);
+          return;
+        }
+        const surnameLatinError = latinScriptError(formData.surname);
+        if (surnameLatinError) {
+          setError(`Surname: ${surnameLatinError}`);
+          return;
+        }
 
-        // Show create account suggestion if appropriate
+        // Typo guard (sign-up only): a mistyped domain creates an account whose
+        // verification email never arrives. Ask once; "Keep as typed" proceeds.
+        const suggestion = emailResult.suggestions?.[0];
         if (
-          showCreateAccountSuggestion ||
-          errorMessage.includes("Would you like to create an account")
+          suggestion &&
+          !options.typoAcknowledged &&
+          typoAcknowledgedRef.current !== email
         ) {
-          setShowCreateAccountSuggestion(true);
+          setTypoSuggestion(suggestion);
+          return;
+        }
+
+        try {
+          const data = await httpClient.post<AuthResponse>(
+            "/api/auth/register/",
+            {
+              first_name: formData.first_name.trim(),
+              surname: formData.surname.trim(),
+              email,
+              password: formData.password,
+            },
+            {
+              skipAuth: true,
+              skipCSRF: true,
+              timeoutMs: AUTH_FETCH_TIMEOUT_MS,
+            }
+          );
+
+          // Register always requires email verification (no immediate JWT).
+          // `resumed` (an unfinished sign-up was continued) looks the same.
+          if (data.email_verification_required) {
+            setVerificationEmail(email);
+            // Only an explicit `false` means the email was not queued
+            setEmailQueued(data.email_queued !== false);
+            setShowEmailVerificationPopup(true);
+            return;
+          }
+
+          setError("Unexpected registration response. Please try signing in.");
+        } catch (err: unknown) {
+          showAuthError(describeAuthError(err, "register"), err);
+        }
+      } else {
+        // Sign in logic
+        try {
+          const data = await httpClient.post<AuthResponse>(
+            "/api/auth/login/",
+            {
+              email,
+              password: formData.password,
+            },
+            {
+              skipAuth: true,
+              skipCSRF: true,
+              timeoutMs: AUTH_FETCH_TIMEOUT_MS,
+            }
+          );
+
+          // Unverified account: not a success, not a failure — a warning with
+          // a persistent Resend button (rendered below the form fields)
+          if (
+            data.email_verification_required ||
+            data.code === "email_not_verified"
+          ) {
+            setUnverifiedEmail(email);
+            setResendFeedback(null);
+            return;
+          }
+
+          // Access in SPA; refresh is set as httpOnly cookie by the API
+          if (data.access) {
+            login({ access: data.access }, data.user);
+            const next = getSafeNextRedirect(searchParams.get("next"));
+            // replace avoids stacking /auth in history; safe next never loops to /auth
+            router.replace(next || "/");
+            return;
+          }
+
+          setError("Unexpected login response. Please try again.");
+        } catch (err: unknown) {
+          setUnverifiedEmail(null);
+          showAuthError(describeAuthError(err, "login"), err);
         }
       }
+    } finally {
+      submittingRef.current = false;
+      setLoading(false);
     }
+  };
 
-    setLoading(false);
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    void submitAuth();
+  };
+
+  const handleUseTypoSuggestion = () => {
+    if (!typoSuggestion) return;
+    setFormData((prev) => ({ ...prev, email: typoSuggestion }));
+    setTypoSuggestion(null);
+    setEmailFieldError("");
+  };
+
+  const handleKeepTypedEmail = () => {
+    typoAcknowledgedRef.current = normalizeEmail(formData.email);
+    setTypoSuggestion(null);
+    void submitAuth({ typoAcknowledged: true });
+  };
+
+  /** Resend from the sign-in "please verify your email" warning. */
+  const handleResendVerification = async () => {
+    if (!unverifiedEmail || resendingRef.current || resendCooldown > 0) return;
+    resendingRef.current = true;
+    setResendLoading(true);
+    setResendFeedback(null);
+
+    try {
+      const data = await httpClient.post<ResendResponse>(
+        "/api/auth/resend-verification/",
+        { email: unverifiedEmail },
+        {
+          skipAuth: true,
+          skipCSRF: true,
+          timeoutMs: AUTH_FETCH_TIMEOUT_MS,
+        }
+      );
+
+      if (data?.already_verified) {
+        setUnverifiedEmail(null);
+        setSuccessMessage(
+          "Your email address is already verified. You can sign in now."
+        );
+      } else {
+        const notice = describeResendQueuedNotice(data, unverifiedEmail);
+        setResendFeedback(notice);
+      }
+      const wait = Number(data?.next_request_allowed_in);
+      if (Number.isFinite(wait) && wait > 0) {
+        setResendCooldown(Math.ceil(wait));
+      }
+    } catch (err: unknown) {
+      const described = describeAuthError(err, "resend");
+      if (
+        (described.code === "cooldown" || described.code === "rate_limited") &&
+        described.retryAfter
+      ) {
+        // The live countdown under the button is the message
+        setResendCooldown(described.retryAfter);
+      } else {
+        setResendFeedback({ kind: "error", message: described.message });
+      }
+    } finally {
+      resendingRef.current = false;
+      setResendLoading(false);
+    }
   };
 
   const handleForgotPassword = async () => {
-    if (forgotPasswordCooldown > 0 || forgotPasswordLoading) return;
+    if (
+      forgotPasswordCooldown > 0 ||
+      forgotPasswordLoading ||
+      forgotSubmittingRef.current
+    )
+      return;
+    forgotSubmittingRef.current = true;
 
     try {
       setForgotPasswordLoading(true);
@@ -396,7 +477,8 @@ function AuthForm() {
       setForgotPasswordWarning("");
       setShowCreateAccountSuggestion(false);
 
-      if (!forgotPasswordEmail.trim()) {
+      const resetEmail = normalizeEmail(forgotPasswordEmail);
+      if (!resetEmail) {
         setForgotPasswordError("Email is required");
         return;
       }
@@ -412,9 +494,9 @@ function AuthForm() {
       }>(
         "/api/auth/password-reset/",
         {
-          email: forgotPasswordEmail.trim(),
+          email: resetEmail,
         },
-        { skipAuth: true, skipCSRF: true }
+        { skipAuth: true, skipCSRF: true, timeoutMs: AUTH_FETCH_TIMEOUT_MS }
       );
 
       if (response.message) {
@@ -448,78 +530,80 @@ function AuthForm() {
     } catch (err: unknown) {
       console.error("Failed to request password reset:", err);
 
-      let errorMessage = "Failed to send password reset email";
+      const described = describeAuthError(err, "reset");
+      const payload = getAuthErrorPayload(err);
 
-      if (err && typeof err === "object" && "response" in err) {
-        const response = (
-          err as {
-            response: {
-              data?: {
-                error?: string;
-                warning?: string;
-                cooldown_remaining?: number;
-                suggestion?: string;
-              };
-              status?: number;
-            };
-          }
-        ).response;
-
-        if (response && response.data) {
-          const data = response.data;
-
-          if (data.cooldown_remaining) {
-            setForgotPasswordCooldown(data.cooldown_remaining);
-            errorMessage =
-              data.error ||
-              `Please wait ${data.cooldown_remaining} seconds before requesting another reset link.`;
-          } else if (data.warning) {
-            setForgotPasswordWarning(data.warning);
-            if (data.suggestion === "create_account") {
-              setShowCreateAccountSuggestion(true);
-            }
-            return; // Don't set error for warnings
-          } else if (data.error) {
-            errorMessage = data.error;
-            // Show create account suggestion if the error suggests it
-            if (data.suggestion === "create_account") {
-              setShowCreateAccountSuggestion(true);
-            }
-            // Handle cooldown from error response
-            if (data.cooldown_remaining) {
-              setForgotPasswordCooldown(data.cooldown_remaining);
-            }
-          }
+      if (typeof payload?.warning === "string" && payload.warning) {
+        setForgotPasswordWarning(payload.warning);
+        if (payload.suggestion === "create_account") {
+          setShowCreateAccountSuggestion(true);
         }
+        return; // Don't set error for warnings
       }
 
-      setForgotPasswordError(errorMessage);
+      if (
+        (described.code === "cooldown" || described.code === "rate_limited") &&
+        described.retryAfter
+      ) {
+        // The countdown under the buttons is the message
+        setForgotPasswordCooldown(described.retryAfter);
+        return;
+      }
+      if (described.code === "account_not_found") {
+        setShowCreateAccountSuggestion(true);
+      }
+      setForgotPasswordError(described.message);
     } finally {
+      forgotSubmittingRef.current = false;
       setForgotPasswordLoading(false);
     }
   };
 
-  const toggleMode = () => {
-    const newMode = !isSignUp;
-    setIsSignUp(newMode);
-    // Preserve email when switching from sign-in to sign-up
-    const preservedEmail = newMode ? formData.email : "";
+  const switchMode = (toSignUp: boolean, keepEmail: boolean) => {
+    setIsSignUp(toSignUp);
     setFormData({
       first_name: "",
       surname: "",
-      email: preservedEmail,
+      email: keepEmail ? formData.email : "",
       password: "",
       confirmPassword: "",
     });
     setError("");
+    setErrorCode(null);
     setSuccessMessage("");
     setEmailFieldError("");
+    setTypoSuggestion(null);
+    setUnverifiedEmail(null);
+    setResendFeedback(null);
     // Update URL to reflect the new mode, preserve next if present
     const nextParam = searchParams.get("next");
     const next = nextParam ? `&next=${encodeURIComponent(nextParam)}` : "";
-    const newUrl = newMode ? `/auth?mode=signup${next}` : `/auth?mode=signin${next}`;
+    const newUrl = toSignUp ? `/auth?mode=signup${next}` : `/auth?mode=signin${next}`;
     router.replace(newUrl);
   };
+
+  // Preserve email when switching from sign-in to sign-up
+  const toggleMode = () => switchMode(!isSignUp, !isSignUp);
+
+  // Duplicate sign-up: continue as a sign-in (keeps the email) ...
+  const handleSignInInstead = () => switchMode(false, true);
+
+  // ... or reset the password of the existing account
+  const handleResetPasswordInstead = () => {
+    setForgotPasswordEmail(formData.email); // Pre-fill with current email
+    setForgotPasswordError("");
+    setForgotPasswordWarning("");
+    setError("");
+    setErrorCode(null);
+    setShowForgotPassword(true);
+  };
+
+  // The warning belongs to the address that was just refused: hide it in
+  // sign-up mode or once the customer edits the email
+  const showUnverifiedBox =
+    !isSignUp &&
+    unverifiedEmail !== null &&
+    normalizeEmail(formData.email) === unverifiedEmail;
 
   // Wait for auth bootstrap; solid session keeps spinner while redirecting
   if (authLoading || hasSolidAuthSession(token, user)) {
@@ -635,6 +719,7 @@ function AuthForm() {
                 onChange={(e) => {
                   handleChange(e);
                   if (emailFieldError) setEmailFieldError("");
+                  if (typoSuggestion) setTypoSuggestion(null);
                 }}
                 placeholder="Email address"
                 required
@@ -658,6 +743,44 @@ function AuthForm() {
                 >
                   {emailFieldError}
                 </p>
+              ) : null}
+              {typoSuggestion ? (
+                <div
+                  className="mt-2 p-3 rounded-md border text-sm"
+                  role="status"
+                  style={{
+                    backgroundColor: "rgba(251, 191, 36, 0.1)",
+                    borderColor: "rgba(251, 191, 36, 0.35)",
+                    color: "var(--foreground)",
+                  }}
+                >
+                  <p className="mb-2">{`Did you mean ${typoSuggestion}?`}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleUseTypoSuggestion}
+                      className="px-3 py-1.5 rounded-md text-sm font-medium transition-opacity hover:opacity-80"
+                      style={{
+                        backgroundColor: "var(--btn-primary)",
+                        color: "var(--btn-primary-fg)",
+                      }}
+                    >
+                      {`Use ${typoSuggestion}`}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleKeepTypedEmail}
+                      className="px-3 py-1.5 rounded-md text-sm font-medium transition-opacity hover:opacity-80"
+                      style={{
+                        color: "var(--btn-primary)",
+                        border: "1px solid var(--btn-primary)",
+                        background: "transparent",
+                      }}
+                    >
+                      Keep as typed
+                    </button>
+                  </div>
+                </div>
               ) : null}
             </div>
             <div>
@@ -835,6 +958,7 @@ function AuthForm() {
 
           {error && (
             <div
+              role="alert"
               className="text-sm text-center"
               style={{
                 color: "var(--foreground)",
@@ -845,14 +969,15 @@ function AuthForm() {
                 marginTop: "0.5rem",
               }}
             >
-              {error.includes("create an account") ? (
+              {errorCode === "account_not_found" ? (
                 <div>
-                  No account found with this email address. Would you like to{" "}
+                  {error} Would you like to{" "}
                   <button
                     type="button"
                     onClick={() => {
                       setIsSignUp(true);
                       setError("");
+                      setErrorCode(null);
                       setShowCreateAccountSuggestion(false);
                       const url = new URL(window.location.href);
                       url.searchParams.set("mode", "signup");
@@ -880,11 +1005,127 @@ function AuthForm() {
               ) : (
                 error
               )}
+              {errorCode === "email_exists" && (
+                <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSignInInstead}
+                    className="px-3 py-1.5 rounded-md text-sm font-medium transition-opacity hover:opacity-80"
+                    style={{
+                      backgroundColor: "var(--btn-primary)",
+                      color: "var(--btn-primary-fg)",
+                    }}
+                  >
+                    Sign in instead
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResetPasswordInstead}
+                    className="px-3 py-1.5 rounded-md text-sm font-medium transition-opacity hover:opacity-80"
+                    style={{
+                      color: "var(--btn-primary)",
+                      border: "1px solid var(--btn-primary)",
+                      background: "transparent",
+                    }}
+                  >
+                    Reset password
+                  </button>
+                </div>
+              )}
+              {errorCode === "account_inactive" && (
+                <div className="mt-2">
+                  <Link
+                    href="/contact"
+                    className="text-sm font-medium underline hover:opacity-80"
+                    style={{ color: "var(--primary)" }}
+                  >
+                    Contact support
+                  </Link>
+                </div>
+              )}
+            </div>
+          )}
+
+          {showUnverifiedBox && (
+            <div
+              className="text-sm"
+              role="status"
+              style={{
+                color: "var(--foreground)",
+                backgroundColor: "rgba(251, 191, 36, 0.1)",
+                border: "1px solid rgba(251, 191, 36, 0.35)",
+                borderRadius: "0.5rem",
+                padding: "0.75rem",
+                marginTop: "0.5rem",
+              }}
+            >
+              <p className="text-center">
+                Please verify your email address (
+                <span className="font-semibold">{unverifiedEmail}</span>) before
+                signing in. Check your inbox (and spam folder) for the
+                verification link, or send yourself a new one.
+              </p>
+              <div className="mt-2 text-center">
+                <button
+                  type="button"
+                  onClick={() => void handleResendVerification()}
+                  disabled={resendLoading || resendCooldown > 0}
+                  aria-busy={resendLoading}
+                  className="text-sm font-medium underline disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ color: "var(--primary)" }}
+                >
+                  Resend verification email
+                </button>
+              </div>
+              {resendLoading ? (
+                <p className="mt-2 text-xs text-center">Sending...</p>
+              ) : null}
+              {resendFeedback ? (
+                <p
+                  role={resendFeedback.kind === "error" ? "alert" : undefined}
+                  className="mt-2 text-xs text-center"
+                  style={{
+                    color:
+                      resendFeedback.kind === "error"
+                        ? "var(--destructive)"
+                        : "var(--foreground)",
+                  }}
+                >
+                  {resendFeedback.message}
+                </p>
+              ) : null}
+              {resendCooldown > 0 && (
+                <div
+                  className="mt-2 text-xs text-center"
+                  style={{ color: "var(--accent)" }}
+                >
+                  <div className="flex items-center justify-center space-x-1">
+                    <svg
+                      className="w-3 h-3 animate-spin"
+                      style={{ color: "var(--accent)" }}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    <span>
+                      Resend available in {formatWaitTime(resendCooldown)}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
           {successMessage && (
             <div
+              role="status"
               className="text-sm text-center"
               style={{
                 color: "var(--foreground)",
@@ -896,108 +1137,13 @@ function AuthForm() {
               }}
             >
               {successMessage}
-              {successMessage.includes("verify your email") && (
-                <div className="mt-2">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (resendCooldown > 0) return;
-
-                      try {
-                        await httpClient.post(
-                          "/api/auth/resend-verification/",
-                          {
-                            email: formData.email,
-                          },
-                          {
-                            skipAuth: true,
-                            skipCSRF: true,
-                            timeoutMs: AUTH_FETCH_TIMEOUT_MS,
-                          }
-                        );
-                        setSuccessMessage(
-                          "Verification email sent! Please check your inbox."
-                        );
-                      } catch (error: unknown) {
-                        // Check if it's a cooldown error
-                        if (
-                          error &&
-                          typeof error === "object" &&
-                          "response" in error
-                        ) {
-                          const response = (
-                            error as {
-                              response: {
-                                data?: {
-                                  cooldown_remaining?: number;
-                                  error?: string;
-                                };
-                                status?: number;
-                              };
-                            }
-                          ).response;
-
-                          if (response?.data?.cooldown_remaining) {
-                            setResendCooldown(response.data.cooldown_remaining);
-                            // Don't set error message for cooldown - let countdown display handle it
-                          } else if (response?.data?.error) {
-                            setError(response.data.error);
-                          } else {
-                            setError(
-                              "Failed to resend verification email. Please try again."
-                            );
-                          }
-                        } else if (isAuthNetworkError(error)) {
-                          setError(AUTH_LOGIN_NETWORK_ERROR_MESSAGE);
-                        } else {
-                          setError(
-                            "Failed to resend verification email. Please try again."
-                          );
-                        }
-                      }
-                    }}
-                    disabled={resendCooldown > 0}
-                    className="text-blue-600 hover:text-blue-700 underline text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Resend verification email
-                  </button>
-
-                  {/* Countdown display */}
-                  {resendCooldown > 0 && (
-                    <div
-                      className="mt-2 text-xs text-center"
-                      style={{ color: "var(--accent)" }}
-                    >
-                      <div className="flex items-center justify-center space-x-1">
-                        <svg
-                          className="w-3 h-3 animate-spin"
-                          style={{ color: "var(--accent)" }}
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                          />
-                        </svg>
-                        <span>
-                          Resend available in {resendCooldown} seconds
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           )}
 
           <div>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || rateLimitRemaining > 0}
               className="w-full py-3 px-4 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               style={{
                 backgroundColor: "var(--btn-primary)",
@@ -1005,14 +1151,14 @@ function AuthForm() {
                 border: "1px solid var(--btn-primary)",
               }}
               onMouseEnter={(e) => {
-                if (!loading) {
+                if (!loading && rateLimitRemaining === 0) {
                   e.currentTarget.style.backgroundColor =
                     "var(--btn-primary-hover)";
                   e.currentTarget.style.borderColor = "var(--btn-primary-hover)";
                 }
               }}
               onMouseLeave={(e) => {
-                if (!loading) {
+                if (!loading && rateLimitRemaining === 0) {
                   e.currentTarget.style.backgroundColor = "var(--btn-primary)";
                   e.currentTarget.style.borderColor = "var(--btn-primary)";
                 }
@@ -1022,6 +1168,8 @@ function AuthForm() {
                 ? isSignUp
                   ? "Creating account..."
                   : "Signing in..."
+                : rateLimitRemaining > 0
+                ? `Try again in ${formatCountdown(rateLimitRemaining)}`
                 : isSignUp
                 ? "Create account"
                 : "Sign in"}
@@ -1338,8 +1486,8 @@ function AuthForm() {
                           className="mt-2 text-xs text-center"
                           style={{ color: "var(--muted-foreground)" }}
                         >
-                          Please wait {forgotPasswordCooldown} seconds before
-                          requesting another reset link
+                          Please wait {formatWaitTime(forgotPasswordCooldown)}{" "}
+                          before requesting another reset link
                         </p>
                       )}
                     </div>
@@ -1357,6 +1505,7 @@ function AuthForm() {
           userEmail={verificationEmail}
           userName={`${formData.first_name} ${formData.surname}`.trim()}
           next={searchParams.get("next")}
+          emailQueued={emailQueued}
         />
       </div>
     </div>

@@ -146,6 +146,11 @@ class ProductImage(models.Model):
 
 # Product model
 class Product(models.Model):
+    class PromoGroup(models.TextChoices):
+        """Automatic multi-buy promotions a product can take part in."""
+
+        JERKY_5_1 = "jerky_5_1", "Jerky 5+1 (buy 5 get 1 free)"
+
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     active = models.BooleanField(
@@ -193,6 +198,17 @@ class Product(models.Model):
         default=0,
         db_index=True,
         help_text="Distinct completed orders containing this product.",
+    )
+    promo_group = models.CharField(
+        max_length=32,
+        choices=PromoGroup.choices,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text=(
+            "Automatic multi-buy promotion this product belongs to. Leave empty for "
+            "no promotion. Units pool across every product sharing the same group."
+        ),
     )
     # image = models.ImageField(
     #     upload_to="products/", blank=True, null=True
@@ -449,6 +465,19 @@ class Order(models.Model):
     discount = models.DecimalField(
         max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0)]
     )
+    # Wider than ``discount`` (which caps at 999.99) because multi-buy promos scale
+    # with basket size. Snapshotted at checkout from api.services.promotions.
+    promo_discount = models.DecimalField(
+        max_digits=7,
+        decimal_places=2,
+        default=0,
+        blank=True,
+        validators=[MinValueValidator(0)],
+        help_text=(
+            "Automatic promotion discount (e.g. Jerky 5+1) frozen at checkout. "
+            "Applied on top of any coupon discount."
+        ),
+    )
     holiday_fee = models.DecimalField(
         max_digits=3,
         decimal_places=0,
@@ -553,15 +582,38 @@ class Order(models.Model):
 
     @property
     def total_price(self):
-        """Calculate the total price of the order including holiday fee, discount and delivery fee."""
+        """Calculate the total price of the order including holiday fee, discounts and delivery fee."""
         from decimal import Decimal
 
-        # Total = sum_price + holiday_fee + delivery_fee - discount
+        # Total = sum_price + holiday_fee + delivery_fee - discount - promo_discount
         total = (
-            self.sum_price + self.holiday_fee_amount + self.delivery_fee - self.discount
+            self.sum_price
+            + self.holiday_fee_amount
+            + self.delivery_fee
+            - self.discount
+            - (self.promo_discount or Decimal("0"))
         )
         # Round to 2 decimal places (consistent with OrderItem.get_total_price pattern)
         return round(total, 2)
+
+    @property
+    def promo_free_units(self):
+        """Total units given away free across the order's lines (frozen at checkout)."""
+        from decimal import Decimal
+
+        total = sum(
+            (item.free_quantity or Decimal("0")) for item in self.items.all()
+        )
+        return int(Decimal(str(total)))
+
+    @property
+    def promo_label(self) -> str:
+        """Human label for the applied promotion ('' when the order has no promo)."""
+        if not self.promo_discount:
+            return ""
+        from api.services.promotions import promo_label_for_items
+
+        return promo_label_for_items(self.items.all())
 
     @property
     def holiday_fee_amount(self):
@@ -976,6 +1028,17 @@ class OrderItem(models.Model):
         validators=[MinValueValidator(0)],
         help_text="Stored item price at time of purchase (preserved if product is deleted)",
     )
+    # Matches the ``quantity`` type so free units can be compared/summed with it.
+    free_quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text=(
+            "Units on this line given away by an automatic promotion. Included in "
+            "quantity (not added to it); their value is deducted via promo_discount."
+        ),
+    )
 
     class Meta:
         verbose_name_plural = "Order Items"
@@ -1034,6 +1097,29 @@ class OrderItem(models.Model):
             return ""
 
         return round(price * self.quantity, 2)
+
+    @property
+    def unit_price(self):
+        """Price of one unit: the ``item_price`` snapshot, else the live product price."""
+        if self.item_price is not None:
+            return self.item_price
+        return self.product.price if self.product else None
+
+    def get_promo_discount(self):
+        """Monetary value of the free units on this line (0.00 when no promo applies)."""
+        if not self.free_quantity:
+            return Decimal("0.00")
+        price = self.unit_price
+        if price is None:
+            return Decimal("0.00")
+        return round(price * self.free_quantity, 2)
+
+    def get_net_total_price(self):
+        """Line total after the promotion. ``get_total_price()`` stays gross."""
+        gross = self.get_total_price()
+        if gross == "" or gross is None:
+            return gross
+        return round(Decimal(str(gross)) - self.get_promo_discount(), 2)
 
     def get_item_details(self):
         """
@@ -1144,9 +1230,26 @@ class Cart(models.Model):
         return sum(item.get_total_price() for item in self.items.all())
 
     @property
+    def promo_summary(self):
+        """
+        Live :class:`api.services.promotions.PromoResult` for this cart.
+
+        Carts are working data, never snapshots, so the promo is always recomputed
+        from the current lines. Orders freeze it into ``Order.promo_discount``.
+        """
+        from api.services.promotions import compute_promo
+
+        return compute_promo(self.items.all())
+
+    @property
+    def promo_discount(self):
+        """Automatic promotion discount (e.g. Jerky 5+1) for the current lines."""
+        return self.promo_summary.discount
+
+    @property
     def total_price(self):
-        """Calculate the total price of the cart including delivery fee and discount."""
-        return self.sum_price + self.delivery_fee - self.discount
+        """Calculate the total price of the cart including delivery fee and discounts."""
+        return self.sum_price + self.delivery_fee - self.discount - self.promo_discount
 
     @property
     def total_items(self):

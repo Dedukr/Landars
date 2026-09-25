@@ -5,6 +5,7 @@ from django.contrib.auth.forms import UserChangeForm, UserCreationForm
 
 from .address_validation import validate_street_address
 from .billing_address import upsert_profile_billing_address
+from .email_normalization import normalize_email
 from .latin_validation import add_latin_script_errors
 from .models import Address, CustomUser, Profile
 
@@ -98,6 +99,16 @@ def _validate_latin_name_and_address_fields(form):
     add_latin_script_errors(form, NAME_AND_ADDRESS_LATIN_FIELDS)
 
 
+def _canonical_email(form):
+    """Canonical email (same rules as CustomUser.clean and the API); blank stays NULL.
+
+    Without this the ModelForm's own uniqueness check compares the raw string, so a
+    case variant of an existing email passed the form and then blew up in
+    ``CustomUser.save()`` (HTTP 500 in the admin) instead of showing a form error.
+    """
+    return normalize_email(form.cleaned_data.get("email")) or None
+
+
 class CustomUserForm(UserChangeForm):
     first_name = forms.CharField(label="First name", required=False)
     surname = forms.CharField(label="Surname", required=False)
@@ -159,6 +170,9 @@ class CustomUserForm(UserChangeForm):
                     self.fields["address_line2"].initial = address.address_line2
                     self.fields["city"].initial = address.city
                     self.fields["postal_code"].initial = address.postal_code
+
+    def clean_email(self):
+        return _canonical_email(self)
 
     def clean(self):
         cleaned_data = super().clean()
@@ -253,6 +267,9 @@ class CustomUserCreationForm(forms.ModelForm):
     class Meta:
         model = CustomUser
         fields = ("first_name", "surname", "email")
+
+    def clean_email(self):
+        return _canonical_email(self)
 
     def clean(self):
         cleaned_data = super().clean()

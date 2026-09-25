@@ -53,6 +53,9 @@ export default function OrderHistoryCard({
 
   const shipmentLabel = order.shipment_status?.trim() || null;
 
+  const promoNum = parseFloat(String(order.promo_discount ?? "0"));
+  const showPromoChip = Number.isFinite(promoNum) && promoNum > 0;
+
   return (
     <article
       className={cn(
@@ -134,6 +137,18 @@ export default function OrderHistoryCard({
               <span className="inline-flex items-center gap-1">
                 <Package className="h-3.5 w-3.5 shrink-0" aria-hidden />
                 {itemCount}
+              </span>
+            ) : null}
+            {showPromoChip ? (
+              <span
+                className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-bold"
+                style={{
+                  background: "var(--success-bg)",
+                  borderColor: "var(--success-border)",
+                  color: "var(--success-text)",
+                }}
+              >
+                5+1 applied
               </span>
             ) : null}
           </div>

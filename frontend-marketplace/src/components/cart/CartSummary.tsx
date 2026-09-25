@@ -4,6 +4,7 @@ import Link from "next/link";
 import SubtotalDisplay from "./SubtotalDisplay";
 import TotalDisplay from "./TotalDisplay";
 import DiscountDisplay from "./DiscountDisplay";
+import PromoDiscountDisplay from "./PromoDiscountDisplay";
 import DeliveryFeeDisplay from "./DeliveryFeeDisplay";
 import {
   ClipboardList,
@@ -22,6 +23,10 @@ import {
 interface CartSummaryProps {
   subtotal: number;
   discount: number;
+  promoDiscount?: number;
+  promoFreeUnits?: number;
+  promoUnitsToNextFree?: number;
+  promoLabel?: string | null;
   total: number;
   totalItems: number;
   deliveryCalculation: DeliveryFeeCalculation;
@@ -32,6 +37,10 @@ const CartSummary = memo<CartSummaryProps>(
   ({
     subtotal,
     discount,
+    promoDiscount = 0,
+    promoFreeUnits = 0,
+    promoUnitsToNextFree = 0,
+    promoLabel,
     total,
     totalItems,
     deliveryCalculation,
@@ -208,6 +217,12 @@ const CartSummary = memo<CartSummaryProps>(
           <div className="space-y-2.5">
             <SubtotalDisplay subtotal={subtotal} />
             <DiscountDisplay discount={discount} />
+            <PromoDiscountDisplay
+              promoDiscount={promoDiscount}
+              freeUnits={promoFreeUnits}
+              unitsToNextFree={promoUnitsToNextFree}
+              label={promoLabel}
+            />
             <DeliveryFeeDisplay
               deliveryFee={deliveryFee}
               isFree={!allPostDelivery && qualifiesForFreeHomeDelivery}

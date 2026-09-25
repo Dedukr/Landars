@@ -10,10 +10,41 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
+from .email_normalization import normalize_email
 from .name_utils import display_name_from_parts, split_legacy_name
+
+# Saves that only touch these columns skip ``full_clean()`` (see CustomUser.save):
+# a legacy row that fails validation must still be able to log in (last_login,
+# password rehash), verify its email and be (de)activated.
+SYSTEM_UPDATE_FIELDS = frozenset(
+    {"last_login", "password", "is_email_verified", "is_active"}
+)
 
 
 class CustomUserManager(BaseUserManager):
+    # NB: bare ``normalize_email`` below is the canonical helper from
+    # ``email_normalization``; ``self.normalize_email`` is Django's (domain-only).
+    def get_by_natural_key(self, username):
+        """
+        Resolve a login identifier without ever raising MultipleObjectsReturned.
+
+        Django's ModelBackend (admin login, ``authenticate()``) calls this with
+        whatever was typed. The input is normalised, then an exact match on the
+        normalised value wins; otherwise the case-insensitive match with the
+        lowest id is used (legacy mixed-case rows / case-duplicates).
+        """
+        normalized = normalize_email(username)
+        if normalized:
+            queryset = self.get_queryset()
+            user = queryset.filter(email=normalized).order_by("pk").first()
+            if user is None:
+                user = queryset.filter(email__iexact=normalized).order_by("pk").first()
+            if user is not None:
+                return user
+        raise self.model.DoesNotExist(
+            f"{self.model._meta.object_name} matching query does not exist."
+        )
+
     def create_user(
         self,
         name=None,
@@ -35,20 +66,13 @@ class CustomUserManager(BaseUserManager):
         if not first_name:
             raise ValueError("Name must be set")
 
+        email = normalize_email(email)
         if not email:
             raise ValueError("Email must be set")
 
-        # Normalize email
-        normalized_email = self.normalize_email(email)
-        # Also lowercase the local part for consistency
-        if "@" in normalized_email:
-            local_part, domain = normalized_email.split("@", 1)
-            email = f"{local_part.lower()}@{domain}"
-        else:
-            email = normalized_email
-
-        # Check for email uniqueness (user-friendly error; DB also enforces)
-        if self.filter(email=email).exists():
+        # Case-insensitive uniqueness (user-friendly error; the DB index is
+        # case-sensitive, so legacy rows may differ only by case).
+        if self.filter(email__iexact=email).exists():
             raise ValueError("A user with this email already exists")
 
         user = self.model(
@@ -135,14 +159,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         if not self.email:
             # Legacy rows may have NULL email; application-level flows must enforce email.
             return
-        # Normalize email before validation (lowercase domain part only)
-        normalized_email = self.__class__.objects.normalize_email(self.email)
-        # Also lowercase the local part for consistency
-        if "@" in normalized_email:
-            local_part, domain = normalized_email.split("@", 1)
-            self.email = f"{local_part.lower()}@{domain}"
-        else:
-            self.email = normalized_email
+        # Canonical form (NFKC, invisible chars, trim, lowercase) before validation
+        self.email = normalize_email(self.email)
 
         # Use the custom validator
         from .validators import validate_unique_email
@@ -150,11 +168,12 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         validate_unique_email(self.email, exclude_user_id=self.pk)
 
     def save(self, *args, **kwargs):
-        # Skip validation if only updating specific fields like last_login
-        # to avoid unnecessary validation errors during login
+        # Skip validation for system-field-only saves (last_login, password
+        # rehash at login, email verification, activation): a legacy row that
+        # fails full_clean() (e.g. its lowercase twin exists) must not turn
+        # login / verify / password reset into HTTP 500.
         update_fields = kwargs.get("update_fields")
-        if update_fields and set(update_fields) <= {"last_login"}:
-            # Only updating last_login, skip validation
+        if update_fields and set(update_fields) <= SYSTEM_UPDATE_FIELDS:
             super().save(*args, **kwargs)
         else:
             # Run full validation (email normalization happens in clean())

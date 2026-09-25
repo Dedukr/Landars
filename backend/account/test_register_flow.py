@@ -56,6 +56,9 @@ class RegisterFlowTests(TransactionTestCase):
             password="SecurePass1",
             first_name="Existing",
             surname="User",
+            # Verified: an *unverified* twin with the same password is resumed
+            # (201, see test_auth_regressions), not rejected.
+            is_email_verified=True,
         )
         response = self.client.post(
             "/api/auth/register/",
@@ -69,6 +72,7 @@ class RegisterFlowTests(TransactionTestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("already exists", response.data["error"].lower())
+        self.assertEqual(response.data["code"], "email_exists")
 
     @patch("account.views.send_verification_email_task.delay", side_effect=RuntimeError("broker down"))
     @patch("account.views.send_verification_email_task")
@@ -159,6 +163,10 @@ class VerifyEmailAtomicTests(TransactionTestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 200)
+        # Verifying an address never signs anyone in (login-CSRF via emailed links).
+        self.assertNotIn("access", response.data)
+        self.assertNotIn("refresh_token", response.cookies)
+        self.assertNotIn("refresh", response.data)
         self.user.refresh_from_db()
         self.assertTrue(self.user.is_email_verified)
         mock_delay.assert_called_once_with(self.user.pk)

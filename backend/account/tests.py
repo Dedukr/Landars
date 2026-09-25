@@ -1129,17 +1129,21 @@ class VerifyEmailIdempotentTests(TestCase):
     @patch("account.views.send_verification_confirmation_email_task.delay")
     def test_first_verify_succeeds_and_sends_confirmation(self, mock_confirm):
         token = EmailVerificationToken.objects.create(user=self.user)
-        response = self.client.post(
-            "/api/auth/verify-email/",
-            {"token": token.token},
-            format="json",
-        )
+        # The view enqueues the confirmation mail in transaction.on_commit; TestCase
+        # never commits, so run the captured callbacks explicitly.
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                "/api/auth/verify-email/",
+                {"token": token.token},
+                format="json",
+            )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["message"], "Email verified successfully")
+        self.assertFalse(response.data["already_verified"])
         self.assertIn("user", response.data)
         self.user.refresh_from_db()
         self.assertTrue(self.user.is_email_verified)
-        mock_confirm.assert_called_once()
+        mock_confirm.assert_called_once_with(self.user.pk)
 
     @patch("account.views.send_verification_confirmation_email_task.delay")
     def test_reused_token_when_already_verified_returns_200(self, mock_confirm):
@@ -1155,6 +1159,7 @@ class VerifyEmailIdempotentTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["message"], "Email verified successfully")
+        self.assertTrue(response.data["already_verified"])
         self.assertIn("user", response.data)
         mock_confirm.assert_not_called()
 
@@ -1190,6 +1195,7 @@ class VerifyEmailIdempotentTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "token_expired")
         self.assertEqual(response.data["email"], self.user.email)
         self.assertTrue(response.data["can_resend"])
 
@@ -1205,6 +1211,7 @@ class VerifyEmailIdempotentTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], "token_expired")
         self.assertEqual(response.data["email"], self.user.email)
         self.assertTrue(response.data["can_resend"])
 

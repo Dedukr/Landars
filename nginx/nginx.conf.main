@@ -1,0 +1,38 @@
+user  nginx;
+# Cap workers: `auto` follows CPU count (8 on many VPSes) and OOMs this
+# 192MB container (SIGKILL 137). Two workers are enough for a reverse proxy.
+worker_processes  2;
+worker_rlimit_nofile 4096;
+
+error_log  /var/log/nginx/error.log warn;
+pid        /run/nginx.pid;
+
+events {
+    worker_connections  1024;
+    multi_accept        on;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    sendfile            on;
+    tcp_nopush          on;
+    tcp_nodelay         on;
+    server_tokens       off;
+
+    # Scanners (and slowloris) hold connections cheaply; keep these short.
+    keepalive_timeout         15s;
+    client_header_timeout     10s;
+    client_body_timeout       10s;
+    send_timeout              10s;
+    reset_timedout_connection on;
+    client_max_body_size      10m;
+
+    # Docker embedded DNS: re-resolve backend/frontend after container recreate.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    limit_conn_zone $binary_remote_addr zone=perip:5m;
+
+    include /etc/nginx/conf.d/*.conf;
+}

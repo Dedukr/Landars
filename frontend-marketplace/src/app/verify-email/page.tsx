@@ -4,44 +4,49 @@ import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { httpClient } from "@/utils/httpClient";
 import {
-  AUTH_NETWORK_ERROR_MESSAGE,
+  describeAuthError,
+  formatCountdown,
+  formatWaitTime,
+  getAuthErrorPayload,
   getAuthUrl,
   getSafeNextRedirect,
-  isAuthNetworkError,
+  isTransientAuthError,
+  describeResendQueuedNotice,
 } from "@/utils/authHelpers";
 import { AUTH_FETCH_TIMEOUT_MS } from "@/utils/fetchWithTimeout";
+import { normalizeEmail, validateEmail } from "@/utils/emailValidation";
 
 interface VerificationResponse {
   message: string;
+  already_verified?: boolean;
   user?: {
     id: number;
     name: string;
+    first_name?: string | null;
+    surname?: string | null;
     email: string;
   };
 }
 
-type VerifyApiError = Error & {
-  response?: {
-    data?: {
-      email?: string;
-      can_resend?: boolean;
-      error?: string;
-      message?: string;
-      user?: VerificationResponse["user"];
-    };
-  };
-};
+interface ResendResponse {
+  message?: string;
+  already_verified?: boolean;
+  email_queued?: boolean;
+  next_request_allowed_in?: number;
+}
 
 /**
  * One POST per token across Strict Mode remounts.
- * Remounts await the same in-flight (or settled) promise.
+ * Remounts await the same in-flight (or settled) promise. A failed attempt
+ * does not consume the token, so failures are forgotten and "Try again" (or a
+ * later visit) posts again.
  */
 const verifyPromises = new Map<string, Promise<VerificationResponse>>();
 
 function postVerifyEmail(token: string): Promise<VerificationResponse> {
   let promise = verifyPromises.get(token);
   if (!promise) {
-    promise = httpClient.post<VerificationResponse>(
+    const request = httpClient.post<VerificationResponse>(
       "/api/auth/verify-email/",
       { token },
       {
@@ -50,9 +55,27 @@ function postVerifyEmail(token: string): Promise<VerificationResponse> {
         timeoutMs: AUTH_FETCH_TIMEOUT_MS,
       }
     );
-    verifyPromises.set(token, promise);
+    verifyPromises.set(token, request);
+    request.catch(() => {
+      if (verifyPromises.get(token) === request) verifyPromises.delete(token);
+    });
+    promise = request;
   }
   return promise;
+}
+
+/** Seconds left until `0`, ticking once a second while positive. */
+function useCountdown() {
+  const [remaining, setRemaining] = useState(0);
+  const active = remaining > 0;
+  useEffect(() => {
+    if (!active) return;
+    const interval = setInterval(() => {
+      setRemaining((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [active]);
+  return [remaining, setRemaining] as const;
 }
 
 function VerifyEmailContent() {
@@ -65,14 +88,36 @@ function VerifyEmailContent() {
     "loading" | "success" | "error" | "expired"
   >("loading");
   const [message, setMessage] = useState("");
+  // The verification could not be completed but retrying may work
+  const [retryable, setRetryable] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [waitSeconds, setWaitSeconds] = useCountdown();
   const [user, setUser] = useState<{ name: string; email: string } | null>(
     null
   );
+  // Email the API told us the link belongs to (expired / already used links)
   const [resendEmail, setResendEmail] = useState("");
+  // Email typed by the customer when we do not know it
+  const [typedEmail, setTypedEmail] = useState("");
   const [isResending, setIsResending] = useState(false);
+  const [resendNotice, setResendNotice] = useState<{
+    kind: "success" | "error";
+    message: string;
+  } | null>(null);
+  const [resendCooldown, setResendCooldown] = useCountdown();
 
   // Prevents duplicate apply/redirect scheduling within a single mount
   const appliedResultRef = useRef(false);
+  // Synchronous in-flight guard for the resend actions
+  const resendingRef = useRef(false);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
+    },
+    []
+  );
 
   const redirectToAuth = useCallback(
     (email?: string) => {
@@ -92,14 +137,22 @@ function VerifyEmailContent() {
   );
 
   const handleVerifiedSuccess = useCallback(
-    (responseMessage: string, verifiedUser?: VerificationResponse["user"]) => {
+    (response: VerificationResponse) => {
+      const verifiedUser = response.user;
       setStatus("success");
-      setMessage(responseMessage || "Email verified successfully");
+      setMessage(
+        response.message ||
+          (response.already_verified
+            ? "Your email is already verified. You can sign in."
+            : "Email verified successfully")
+      );
       if (verifiedUser) {
         setUser(verifiedUser);
       }
 
-      setTimeout(() => {
+      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
+
+      redirectTimerRef.current = setTimeout(() => {
         redirectToAuth(verifiedUser?.email);
       }, 3000);
     },
@@ -109,62 +162,52 @@ function VerifyEmailContent() {
   const applyVerifyError = useCallback(
     (error: unknown) => {
       console.error("Verification error:", error);
-      const errorMessage =
-        error instanceof Error ? error.message || "" : "";
-      const apiData =
-        error && typeof error === "object" && "response" in error
-          ? (error as VerifyApiError).response?.data
-          : undefined;
+      const described = describeAuthError(error, "verify");
+      const payload = getAuthErrorPayload(error);
+      const email = typeof payload?.email === "string" ? payload.email : "";
 
-      const combinedMessage = (
-        apiData?.message ||
-        apiData?.error ||
-        errorMessage ||
-        ""
-      ).toLowerCase();
+      // Link problems come from the HTTP status / `code`, never from wording:
+      // 400 is what verify-email answers for a token it cannot use.
+      const linkProblem =
+        described.code === "token_invalid" ||
+        described.code === "token_expired" ||
+        (described.code === "validation_error" && described.status === 400);
 
-      // Idempotent / already-verified responses (success-like UX)
-      const alreadyVerified =
-        combinedMessage.includes("already verified") ||
-        (combinedMessage.includes("already been used") &&
-          apiData?.can_resend === false);
-
-      if (alreadyVerified) {
-        const email = apiData?.email || apiData?.user?.email;
-        if (email) {
-          setUser({ name: apiData?.user?.name || "", email });
+      if (linkProblem) {
+        // Older backends: `can_resend: false` = the account is already verified
+        if (email && payload?.can_resend === false) {
+          handleVerifiedSuccess({
+            message: "Your email is already verified. You can sign in.",
+            user: { id: 0, name: "", email },
+          });
+          return;
         }
-        handleVerifiedSuccess(
-          apiData?.message ||
-            "Your email is already verified. You can sign in.",
-          apiData?.user || (email ? { id: 0, name: "", email } : undefined)
+        if (email) {
+          setResendEmail(email);
+          setUser({ name: "", email });
+        }
+        setStatus("expired");
+        setMessage(
+          described.code === "token_expired" ||
+            described.code === "token_invalid"
+            ? described.message
+            : "This verification link has expired or has already been used."
         );
         return;
       }
 
-      if (apiData?.email) {
-        setResendEmail(apiData.email);
-        setUser({ name: "", email: apiData.email });
-      }
-
+      setStatus("error");
+      setMessage(described.message);
+      // The token is not consumed by a failed attempt, so retrying is safe
+      setRetryable(isTransientAuthError(described.code));
       if (
-        errorMessage.includes("expired") ||
-        errorMessage.includes("already been used") ||
-        apiData?.can_resend
+        (described.code === "rate_limited" || described.code === "cooldown") &&
+        described.retryAfter
       ) {
-        setStatus("expired");
-        setMessage(
-          "This verification link has expired or has already been used."
-        );
-      } else if (isAuthNetworkError(error)) {
-        setStatus("error");
-        setMessage(AUTH_NETWORK_ERROR_MESSAGE);
-      } else {
-        setStatus("error");
-        setMessage(errorMessage || "Failed to verify email address");
+        setWaitSeconds(described.retryAfter);
       }
     },
-    [handleVerifiedSuccess]
+    [handleVerifiedSuccess, setWaitSeconds]
   );
 
   // Keep latest handlers without re-firing verify when they change
@@ -176,8 +219,11 @@ function VerifyEmailContent() {
 
   useEffect(() => {
     if (!token) {
-      setStatus("error");
-      setMessage("No verification token provided");
+      // Mail clients sometimes cut long links: let the customer ask for a new one
+      setStatus("expired");
+      setMessage(
+        "This verification link is incomplete. Enter your email address and we'll send you a new one."
+      );
       return;
     }
 
@@ -189,10 +235,7 @@ function VerifyEmailContent() {
         const response = await postVerifyEmail(token);
         if (cancelled || appliedResultRef.current) return;
         appliedResultRef.current = true;
-        handlersRef.current.handleVerifiedSuccess(
-          response.message,
-          response.user
-        );
+        handlersRef.current.handleVerifiedSuccess(response);
       } catch (error: unknown) {
         if (cancelled || appliedResultRef.current) return;
         appliedResultRef.current = true;
@@ -203,32 +246,65 @@ function VerifyEmailContent() {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, attempt]);
 
-  const resendVerification = async () => {
-    const email = user?.email || resendEmail;
-    if (!email) return;
+  const retryVerification = () => {
+    if (!token) return;
+    verifyPromises.delete(token);
+    setRetryable(false);
+    setWaitSeconds(0);
+    setStatus("loading");
+    setAttempt((n) => n + 1);
+  };
 
+  const resendVerification = async (rawEmail: string) => {
+    if (resendingRef.current || resendCooldown > 0) return;
+
+    const email = normalizeEmail(rawEmail);
+    const emailResult = validateEmail(email, {
+      allowDisposable: false,
+      checkTypos: false,
+    });
+    if (!emailResult.isValid) {
+      setResendNotice({
+        kind: "error",
+        message: emailResult.error || "Enter a valid email address",
+      });
+      return;
+    }
+
+    resendingRef.current = true;
     setIsResending(true);
+    setResendNotice(null);
     try {
-      await httpClient.post(
+      const data = await httpClient.post<ResendResponse>(
         "/api/auth/resend-verification/",
         { email },
-        { skipAuth: true, skipCSRF: true }
+        { skipAuth: true, skipCSRF: true, timeoutMs: AUTH_FETCH_TIMEOUT_MS }
       );
-      setMessage(
-        "A new verification email has been sent to your email address."
-      );
+      setResendNotice(describeResendQueuedNotice(data, email));
+      const wait = Number(data?.next_request_allowed_in);
+      if (Number.isFinite(wait) && wait > 0) {
+        setResendCooldown(Math.ceil(wait));
+      }
     } catch (error: unknown) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "Failed to resend verification email"
-      );
+      const described = describeAuthError(error, "resend");
+      if (
+        (described.code === "cooldown" || described.code === "rate_limited") &&
+        described.retryAfter
+      ) {
+        // The countdown under the button is the message
+        setResendCooldown(described.retryAfter);
+      } else {
+        setResendNotice({ kind: "error", message: described.message });
+      }
     } finally {
+      resendingRef.current = false;
       setIsResending(false);
     }
   };
+
+  const knownEmail = user?.email || resendEmail;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
@@ -264,23 +340,45 @@ function VerifyEmailContent() {
               Email verified
             </h1>
             <p className="text-gray-600 mb-6">{message}</p>
-            <p className="text-sm text-gray-500">Redirecting to sign in…</p>
+            <p className="text-sm text-gray-500">
+              Redirecting to sign in…
+            </p>
           </div>
         )}
 
         {status === "error" && (
           <div className="text-center">
             <h1 className="text-2xl font-bold text-gray-900 mb-2">
-              Verification Failed
+              {retryable ? "We couldn’t verify your email" : "Verification Failed"}
             </h1>
-            <p className="text-gray-600 mb-6">{message}</p>
-            <button
-              type="button"
-              onClick={() => redirectToAuth()}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Back to Login
-            </button>
+            <p role="alert" className="text-gray-600 mb-6">
+              {message}
+            </p>
+            <div className="space-y-4">
+              {retryable && (
+                <button
+                  type="button"
+                  onClick={retryVerification}
+                  disabled={waitSeconds > 0}
+                  className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {waitSeconds > 0
+                    ? `Try again in ${formatCountdown(waitSeconds)}`
+                    : "Try again"}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => redirectToAuth()}
+                className={
+                  retryable
+                    ? "w-full bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 transition-colors"
+                    : "w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+                }
+              >
+                Back to Login
+              </button>
+            </div>
           </div>
         )}
 
@@ -302,24 +400,71 @@ function VerifyEmailContent() {
               </svg>
             </div>
             <h1 className="text-2xl font-bold text-gray-900 mb-2">
-              Link Expired
+              Link expired or already used
             </h1>
             <p className="text-gray-600 mb-6">{message}</p>
 
             <div className="space-y-4">
-              {user?.email || resendEmail ? (
+              {knownEmail ? (
                 <button
                   type="button"
-                  onClick={resendVerification}
-                  disabled={isResending}
-                  className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                  onClick={() => void resendVerification(knownEmail)}
+                  disabled={isResending || resendCooldown > 0}
+                  className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isResending ? "Sending..." : "Resend Verification Email"}
                 </button>
               ) : (
+                <form
+                  className="space-y-3 text-left"
+                  noValidate
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void resendVerification(typedEmail);
+                  }}
+                >
+                  <label
+                    htmlFor="resend-email"
+                    className="block text-sm font-medium text-gray-700"
+                  >
+                    Email address
+                  </label>
+                  <input
+                    id="resend-email"
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    value={typedEmail}
+                    onChange={(e) => setTypedEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isResending || resendCooldown > 0}
+                    className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isResending ? "Sending..." : "Send me a new link"}
+                  </button>
+                </form>
+              )}
+
+              {resendCooldown > 0 && (
                 <p className="text-sm text-gray-500">
-                  Sign in and use “Resend verification email”, or request a new
-                  link from the sign-in page.
+                  You can request another link in{" "}
+                  {formatWaitTime(resendCooldown)}.
+                </p>
+              )}
+              {resendNotice && (
+                <p
+                  role={resendNotice.kind === "error" ? "alert" : "status"}
+                  className={
+                    resendNotice.kind === "error"
+                      ? "text-sm text-red-600"
+                      : "text-sm text-green-700"
+                  }
+                >
+                  {resendNotice.message}
                 </p>
               )}
 

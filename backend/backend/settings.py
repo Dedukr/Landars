@@ -11,8 +11,10 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -26,12 +28,32 @@ load_dotenv(os.path.join(BASE_DIR, "../.env"))
 
 # SECURITY WARNING: keep the secret key used in production secret!
 
-SECRET_KEY = os.getenv(
-    "SECRET_KEY", "django-insecure-+c6w+lxtf*1xscm)4_f#6e5n+xsz4=@r-&08__hli=b!%7v-=9"
+_INSECURE_DEFAULT_SECRET_KEY = (
+    "django-insecure-+c6w+lxtf*1xscm)4_f#6e5n+xsz4=@r-&08__hli=b!%7v-=9"
 )
+SECRET_KEY = os.getenv("SECRET_KEY", _INSECURE_DEFAULT_SECRET_KEY)
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "True") == "True"
+if os.getenv("DEBUG") is None:
+    # An unset DEBUG means True (debug pages, CORS_ALLOW_ALL_ORIGINS with credentials,
+    # non-Secure cookies). Loud on purpose: production must set DEBUG=False explicitly.
+    print(
+        "WARNING: the DEBUG environment variable is not set - defaulting to DEBUG=True. "
+        "Set DEBUG=False in production.",
+        file=sys.stderr,
+    )
+
+# The fallback above is public (it is in git). Signing JWTs, CSRF/session cookies and
+# the auth-log email hashes with it makes them forgeable. Refuse to boot in production.
+if not DEBUG and (
+    SECRET_KEY == _INSECURE_DEFAULT_SECRET_KEY
+    or SECRET_KEY.startswith(("django-insecure-", "change-me"))
+):
+    raise ImproperlyConfigured(
+        "SECRET_KEY is the built-in insecure default or a placeholder while DEBUG is off. "
+        "Set a unique SECRET_KEY in the environment (see generate_secret_key.py)."
+    )
 
 ALLOWED_HOSTS = os.getenv(
     "ALLOWED_HOSTS", "localhost,127.0.0.1,backend,frontend-marketplace,nginx"
@@ -68,6 +90,8 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # First, so every response (CORS pre-flights, errors) carries X-Request-ID.
+    "account.observability.RequestIDMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -78,11 +102,13 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-# Disable CSRF for API endpoints in development
-if DEBUG:
-    CSRF_COOKIE_SECURE = False
-    CSRF_COOKIE_HTTPONLY = False
-    CSRF_COOKIE_SAMESITE = "Lax"
+# CSRF/session cookies are Secure (HTTPS only) everywhere except local DEBUG - production
+# is HTTPS-only behind Cloudflare/nginx. The SPA reads the csrftoken cookie from
+# JavaScript, so it must stay non-HttpOnly.
+CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_SAMESITE = "Lax"
 
 ROOT_URLCONF = "backend.urls"
 # Allow Django to append trailing slashes for API consistency
@@ -154,6 +180,9 @@ CORS_EXPOSE_HEADERS = [
     "Content-Type",
     "X-CSRFToken",
     "Authorization",
+    # Readable by the SPA when it is served from a different origin (dev).
+    "X-Request-ID",
+    "Retry-After",
 ]
 
 # Preflight cache time
@@ -178,11 +207,33 @@ REST_FRAMEWORK = {
     # Tell DRF how many trusted proxies sit in front so per-client throttling
     # keys on the real visitor IP instead of the shared nginx address.
     "NUM_PROXIES": int(os.getenv("DRF_NUM_PROXIES", "1")),
+    # Friendly 429 bodies + request_id on /api/auth/* errors (account.api_errors).
+    "EXCEPTION_HANDLER": "account.api_errors.exception_handler",
 }
 
-# Anonymous auth throttle rates (env-overridable so testing isn't painful).
-REGISTER_RATE_LIMIT = os.getenv("REGISTER_RATE_LIMIT", "10/hour")
-LOGIN_RATE_LIMIT = os.getenv("LOGIN_RATE_LIMIT", "5/minute")
+# Auth throttle rates ("N/second|minute|hour|day"), env-overridable. IP scopes use the
+# real client IP (see account.throttles); register/resend also have a hashed-email
+# scope so a shared NAT/CF edge cannot lock the next customer out. Read at request
+# time; a malformed value falls back to the default. Documented in docs/AUTH_OBSERVABILITY.md.
+#
+# Per-IP buckets are generous so a launch, office NAT, or a mis-read edge IP cannot
+# cap legitimate signups/verifies. Per-address buckets stay tight (abuse, not capacity).
+REGISTER_RATE_LIMIT = os.getenv("REGISTER_RATE_LIMIT", "300/hour")
+REGISTER_EMAIL_RATE_LIMIT = os.getenv("REGISTER_EMAIL_RATE_LIMIT", "8/hour")
+LOGIN_RATE_LIMIT = os.getenv("LOGIN_RATE_LIMIT", "20/minute")
+# Per (client IP, email): slows guessing one account's password.
+LOGIN_EMAIL_RATE_LIMIT = os.getenv("LOGIN_EMAIL_RATE_LIMIT", "8/minute")
+PASSWORD_RESET_RATE_LIMIT = os.getenv("PASSWORD_RESET_RATE_LIMIT", "100/hour")
+PASSWORD_RESET_EMAIL_RATE_LIMIT = os.getenv("PASSWORD_RESET_EMAIL_RATE_LIMIT", "8/hour")
+EMAIL_VERIFICATION_RATE_LIMIT = os.getenv("EMAIL_VERIFICATION_RATE_LIMIT", "1000/hour")
+EMAIL_VERIFICATION_RESEND_RATE_LIMIT = os.getenv(
+    "EMAIL_VERIFICATION_RESEND_RATE_LIMIT", "12/hour"
+)
+EMAIL_VERIFICATION_RESEND_IP_RATE_LIMIT = os.getenv(
+    "EMAIL_VERIFICATION_RESEND_IP_RATE_LIMIT", "300/hour"
+)
+# Browser failure beacon (POST /api/auth/client-event/).
+CLIENT_EVENT_RATE_LIMIT = os.getenv("CLIENT_EVENT_RATE_LIMIT", "60/minute")
 
 # JWT Settings
 from datetime import timedelta
@@ -222,6 +273,11 @@ JWT_REFRESH_COOKIE_SECURE = os.getenv(
     "JWT_REFRESH_COOKIE_SECURE",
     "False" if DEBUG else "True",
 ).lower() in ("1", "true", "yes")
+# Seconds a just-rotated refresh token is still honoured, so two tabs refreshing at once
+# do not kill the session (account.views.CookieTokenRefreshSerializer). 0 disables.
+JWT_REFRESH_ROTATION_GRACE_SECONDS = int(
+    os.getenv("JWT_REFRESH_ROTATION_GRACE_SECONDS", "30")
+)
 
 TEMPLATES = [
     {
@@ -379,6 +435,15 @@ S3_BACKUP_DIR = os.getenv("S3_BACKUP_DIR")  # Directory prefix in S3
 EMAIL_BACKEND = os.getenv("EMAIL_BACKEND")
 AWS_SES_REGION_NAME = os.getenv("AWS_SES_REGION_NAME")
 AWS_SES_REGION_ENDPOINT = os.getenv("AWS_SES_REGION_ENDPOINT")
+# django-ses default is 0.5: it sleeps in the worker to stay at 50% of the SES
+# max-send-rate. That caps throughput and holds Celery slots. Leave it off and
+# retry SES throttling via Celery (account.tasks). Set e.g. 0.5 to re-enable.
+_raw_ses_auto_throttle = (os.getenv("AWS_SES_AUTO_THROTTLE") or "").strip().lower()
+if _raw_ses_auto_throttle in ("", "none", "off", "false", "0"):
+    AWS_SES_AUTO_THROTTLE = None
+else:
+    AWS_SES_AUTO_THROTTLE = float(_raw_ses_auto_throttle)
+AWS_SES_CONFIGURATION_SET = (os.getenv("AWS_SES_CONFIGURATION_SET") or "").strip() or None
 
 SUPPORT_FROM_EMAIL = os.getenv("SUPPORT_FROM_EMAIL")
 NOREPLY_FROM_EMAIL = os.getenv("NOREPLY_FROM_EMAIL")
@@ -393,9 +458,14 @@ EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
 
 EMAIL_SUBJECT_PREFIX = os.getenv("EMAIL_SUBJECT_PREFIX")
 
-# Email Delivery Settings
-EMAIL_TIMEOUT = os.getenv("EMAIL_TIMEOUT")
-EMAIL_USE_LOCALTIME = os.getenv("EMAIL_USE_LOCALTIME")
+# Email Delivery Settings (SMTP backends only; SES uses boto3 timeouts).
+_email_timeout = (os.getenv("EMAIL_TIMEOUT") or "").strip()
+EMAIL_TIMEOUT = int(_email_timeout) if _email_timeout else None
+EMAIL_USE_LOCALTIME = os.getenv("EMAIL_USE_LOCALTIME", "False").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 
 # AWS S3 Media files storage
 DEFAULT_FILE_STORAGE = os.getenv("DEFAULT_FILE_STORAGE")
@@ -439,18 +509,15 @@ BUSINESS_INFO = {
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # Password Reset Settings
-PASSWORD_RESET_TIMEOUT = 900  # 15 minutes in seconds (enhanced security)
+# Reset emails are queued through Celery/SES, so 15 minutes was tight (the email itself
+# promises 1 hour). Env-overridable; read by PasswordResetToken and Django's token generator.
+PASSWORD_RESET_TIMEOUT = int(os.getenv("PASSWORD_RESET_TIMEOUT", "3600"))
 PASSWORD_RESET_COOLDOWN = 60  # 1 minute cooldown between requests
-
-# Rate limiting for password reset
-PASSWORD_RESET_RATE_LIMIT = "15/hour"  # 15 requests per hour per IP
-PASSWORD_RESET_EMAIL_RATE_LIMIT = "3/hour"
+# (auth throttle rates live in the "Auth throttle rates" block next to REST_FRAMEWORK)
 
 # Email Verification Settings
 EMAIL_VERIFICATION_TIMEOUT = 86400  # 24 hours in seconds
 EMAIL_VERIFICATION_COOLDOWN = 60  # 1 minute cooldown between resend requests
-EMAIL_VERIFICATION_RATE_LIMIT = "5/hour"  # 5 verification requests per hour per IP
-EMAIL_VERIFICATION_RESEND_RATE_LIMIT = "10/hour"  # 10 resend requests per hour per IP
 
 # Stripe Configuration
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
@@ -561,6 +628,21 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {
 CELERY_RESULT_EXPIRES = 3600  # 1 hour - prevent Redis result buildup
 # Safe: no code reads AsyncResult; festival tasks already use ignore_result=True.
 CELERY_TASK_IGNORE_RESULT = True
+# One reserved task per worker process so a slow SES call cannot hide a backlog.
+CELERY_WORKER_PREFETCH_MULTIPLIER = int(
+    os.getenv("CELERY_WORKER_PREFETCH_MULTIPLIER", "1")
+)
+# Transactional mail on a dedicated queue so festival/print work cannot starve it.
+CELERY_TASK_DEFAULT_QUEUE = "celery"
+CELERY_TASK_ROUTES = {
+    "account.tasks.send_verification_email_task": {"queue": "email"},
+    "account.tasks.send_verification_confirmation_email_task": {"queue": "email"},
+    "account.tasks.send_password_reset_email_task": {"queue": "email"},
+    "account.tasks.send_password_reset_confirmation_email_task": {"queue": "email"},
+}
+# Compose: celery-email worker consumes this queue. Beat alerts when it backs up.
+EMAIL_QUEUE_NAME = os.getenv("EMAIL_QUEUE_NAME", "email")
+EMAIL_QUEUE_BACKLOG_ALERT = int(os.getenv("EMAIL_QUEUE_BACKLOG_ALERT", "100"))
 
 # Shared cache (set in Docker to Redis so Gunicorn + Celery see the same keys, e.g. Sendcloud locks).
 _django_cache_redis_url = (os.getenv("DJANGO_CACHE_REDIS_URL") or "").strip()
@@ -569,6 +651,15 @@ if _django_cache_redis_url:
         "default": {
             "BACKEND": "django.core.cache.backends.redis.RedisCache",
             "LOCATION": _django_cache_redis_url,
+            # Django passes OPTIONS to redis-py's ConnectionPool. Without socket timeouts a
+            # stalled Redis blocks every cache call - including the auth throttle check on
+            # each login/register - until the OS gives up (gunicorn allows 300 s).
+            "OPTIONS": {
+                "socket_connect_timeout": float(
+                    os.getenv("DJANGO_CACHE_SOCKET_CONNECT_TIMEOUT", "2")
+                ),
+                "socket_timeout": float(os.getenv("DJANGO_CACHE_SOCKET_TIMEOUT", "2")),
+            },
         }
     }
 
@@ -676,16 +767,54 @@ CELERY_BEAT_SCHEDULE = {
         "task": "festival.tasks.cleanup_old_festival_ticket_payloads",
         "schedule": crontab(hour=3, minute=30),
     },
+    "auth-cleanup-expired-tokens": {
+        "task": "account.tasks.cleanup_expired_auth_tokens_task",
+        "schedule": crontab(hour=4, minute=15),
+    },
+    "auth-alert-unsent-verification-emails": {
+        "task": "account.tasks.alert_unsent_verification_emails_task",
+        "schedule": crontab(minute="*/10"),
+    },
+    "auth-alert-email-queue-backlog": {
+        "task": "account.tasks.alert_email_queue_backlog_task",
+        "schedule": crontab(minute="*/2"),
+    },
 }
 
-# Simple logging configuration
+# Optional persistent copy of the auth event stream (JSON lines, 10 MB x 10 files).
+# docker's json-file driver only keeps 3 x 10 MB per container; point this at a mounted
+# volume (e.g. /backend/logs/auth_events.log) for longer retention. See
+# docs/AUTH_OBSERVABILITY.md. Unusable paths are skipped with a warning, never fatal.
+_auth_event_log_file = (os.getenv("AUTH_EVENT_LOG_FILE") or "").strip()
+if _auth_event_log_file:
+    try:
+        _auth_event_log_dir = os.path.dirname(os.path.abspath(_auth_event_log_file))
+        os.makedirs(_auth_event_log_dir, exist_ok=True)
+        if not os.access(_auth_event_log_dir, os.W_OK):
+            raise OSError("directory is not writable")
+    except OSError as _exc:
+        print(
+            f"WARNING: AUTH_EVENT_LOG_FILE ignored ({_exc}); auth events go to stdout only.",
+            file=sys.stderr,
+        )
+        _auth_event_log_file = ""
+
+# Text log lines: timestamp with UTC offset (TIME_ZONE is Europe/London, so plain
+# asctime would be ambiguous), level, logger, request id ("-" outside a request).
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
         "simple": {
-            "format": "{levelname} {message}",
+            # Scrubs emails/JWTs out of tracebacks (driver errors quote the offending value).
+            "()": "account.observability.ScrubbingFormatter",
+            "format": "{asctime} {levelname} {name} rid={request_id} {message}",
+            "datefmt": "%Y-%m-%dT%H:%M:%S%z",
             "style": "{",
+        },
+        # One JSON object per line, message only (account.observability.log_auth_event).
+        "auth_event": {
+            "()": "account.observability.AuthEventFormatter",
         },
     },
     "filters": {
@@ -694,16 +823,26 @@ LOGGING = {
         "suppress_cloudprnt_auth_challenge": {
             "()": "festival.logging_filters.SuppressCloudPRNTAuthChallenge",
         },
+        # Provides %(request_id)s to the "simple" formatter.
+        "request_id": {
+            "()": "account.observability.RequestIDLogFilter",
+        },
     },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "simple",
+            "filters": ["request_id"],
         },
         "console_django_request": {
             "class": "logging.StreamHandler",
             "formatter": "simple",
-            "filters": ["suppress_cloudprnt_auth_challenge"],
+            "filters": ["request_id", "suppress_cloudprnt_auth_challenge"],
+        },
+        "auth_events_console": {
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stdout",
+            "formatter": "auth_event",
         },
     },
     "root": {
@@ -744,5 +883,24 @@ LOGGING = {
             "level": "WARNING",
             "propagate": False,
         },
+        # Structured auth events (account.observability.log_auth_event): JSON lines on
+        # stdout only - they must not be duplicated into the text console log.
+        "account.auth": {
+            "handlers": ["auth_events_console"],
+            "level": "INFO",
+            "propagate": False,
+        },
     },
 }
+
+if _auth_event_log_file:
+    LOGGING["handlers"]["auth_events_file"] = {
+        "class": "logging.handlers.RotatingFileHandler",
+        "filename": _auth_event_log_file,
+        "maxBytes": 10 * 1024 * 1024,
+        "backupCount": 10,
+        "encoding": "utf-8",
+        "delay": True,
+        "formatter": "auth_event",
+    }
+    LOGGING["loggers"]["account.auth"]["handlers"].append("auth_events_file")

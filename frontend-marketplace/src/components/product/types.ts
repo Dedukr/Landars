@@ -1,3 +1,14 @@
+/** Promo definition from the API; absent when the product is not in a promotion. */
+export interface ProductPromo {
+  group?: string;
+  label?: string;
+  description?: string;
+  group_size?: number;
+  free_per_group?: number;
+  paid_per_group?: number;
+  badge?: string;
+}
+
 /** Product shape from GET /api/products/:id/ (aligned with shop listing where possible). */
 export interface ProductDetail {
   id: number;
@@ -12,6 +23,8 @@ export interface ProductDetail {
   categories?: string[];
   sold_quantity?: number;
   sold_orders_count?: number;
+  promo_group?: string;
+  promo?: ProductPromo | null;
   category?: {
     id: number;
     name: string;

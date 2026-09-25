@@ -15,6 +15,11 @@ import ProductReviewBlock from "@/components/ProductReviewBlock";
 import { scopeProductsQueryString } from "@/utils/catalogScope";
 import { Button } from "@/components/ui/Button";
 import type { ProductDetail } from "@/components/product/types";
+import {
+  isJerkyPromoProduct,
+  jerkyPromoPillLabel,
+  JERKY_PROMO_DESCRIPTION,
+} from "@/lib/jerkyPromo";
 import { collectProductImageUrls } from "@/components/product/collectProductImageUrls";
 import ProductDetailSkeleton from "@/components/product/ProductDetailSkeleton";
 import ProductNotFoundState from "@/components/product/ProductNotFoundState";
@@ -46,6 +51,22 @@ function stockUnavailable(product: ProductDetail): boolean {
 function lowStock(product: ProductDetail): boolean {
   if (typeof product.stock_quantity !== "number") return false;
   return product.stock_quantity > 0 && product.stock_quantity < 5;
+}
+
+function promoOffer(
+  product: ProductDetail
+): { pill: string; description: string } | null {
+  const group = product.promo?.group ?? product.promo_group;
+  if (!isJerkyPromoProduct(group)) return null;
+  return {
+    pill:
+      product.promo?.badge?.trim() ||
+      jerkyPromoPillLabel(
+        product.promo?.group_size,
+        product.promo?.free_per_group
+      ),
+    description: product.promo?.description?.trim() || JERKY_PROMO_DESCRIPTION,
+  };
 }
 
 export default function ProductPage() {
@@ -152,6 +173,7 @@ export default function ProductPage() {
     [product]
   );
   const low = useMemo(() => (product ? lowStock(product) : false), [product]);
+  const promo = useMemo(() => (product ? promoOffer(product) : null), [product]);
   const cartQuantity = useMemo(
     () => (product ? cart.find((item) => item.productId === product.id)?.quantity || 0 : 0),
     [cart, product]
@@ -293,6 +315,19 @@ export default function ProductPage() {
                     Low stock
                   </span>
                 )}
+                {promo && (
+                  <span
+                    className="inline-flex rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wide"
+                    style={{
+                      background: "var(--success-bg)",
+                      color: "var(--success-text)",
+                      border: "1px solid var(--success-border)",
+                    }}
+                    title={promo.description}
+                  >
+                    {promo.pill}
+                  </span>
+                )}
               </div>
               <button
                 type="button"
@@ -331,6 +366,15 @@ export default function ProductPage() {
             ) : (
               <p className="text-lg font-medium" style={{ color: "var(--muted-foreground)" }}>
                 See details for pricing
+              </p>
+            )}
+
+            {promo && (
+              <p
+                className="text-sm font-semibold -mt-2"
+                style={{ color: "var(--success-text)" }}
+              >
+                {promo.description} — applied automatically in your basket.
               </p>
             )}
 
@@ -460,6 +504,7 @@ export default function ProductPage() {
 
       <MobileProductActionBar
         priceDisplay={priceStr}
+        promoNote={promo ? `${promo.pill} · ${promo.description}` : null}
         quantity={quantity}
         cartQuantity={cartQuantity}
         isAvailable={!unavailable}

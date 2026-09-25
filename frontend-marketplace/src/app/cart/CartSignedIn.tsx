@@ -37,17 +37,30 @@ interface CartData {
     quantity: string;
     total_price: string;
     added_date: string;
+    free_quantity?: string;
+    promo_discount?: string;
   }>;
   notes?: string;
   delivery_date?: string | null;
   is_home_delivery?: boolean;
   delivery_fee?: string;
   discount?: string;
+  promo_discount?: string;
+  promo_free_units?: number;
+  promo_eligible_quantity?: number;
+  promo_units_to_next_free?: number;
+  promo_label?: string;
   sum_price?: string;
   total_price?: string;
   total_items?: number;
   created_at?: string;
   updated_at?: string;
+}
+
+function parseApiNumber(value: number | string | undefined): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = typeof value === "number" ? value : parseFloat(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 export default function CartSignedIn() {
@@ -119,17 +132,35 @@ export default function CartSignedIn() {
     return () => clearTimeout(timeoutId);
   }, [cartKey, fetchCartData, cartIsLoading]);
 
-  const { subtotal, cartProducts } = useCartCalculations(
+  const { subtotal, cartProducts, promo: localPromo } = useCartCalculations(
     filteredProducts,
     cart
   );
 
   const discount = cartData?.discount ? parseFloat(cartData.discount) : 0;
 
+  const promoDiscount =
+    parseApiNumber(cartData?.promo_discount) ?? localPromo.discount;
+  const promoFreeUnits =
+    parseApiNumber(cartData?.promo_free_units) ?? localPromo.freeUnits;
+  const promoUnitsToNextFree =
+    parseApiNumber(cartData?.promo_units_to_next_free) ??
+    localPromo.unitsToNextFree;
+
+  const freeQuantities = useMemo(() => {
+    const byProduct: Record<number, number> = {};
+    for (const item of cartData?.items ?? []) {
+      const free = parseApiNumber(item.free_quantity);
+      if (free != null && free > 0) byProduct[item.product] = free;
+    }
+    return byProduct;
+  }, [cartData]);
+
   const { deliveryCalculation, totalPrice } = useDeliveryFee({
     products: cartProducts,
     subtotal,
     discount,
+    promoDiscount,
     postDeliveryGroup,
     categoryRecords,
   });
@@ -209,6 +240,7 @@ export default function CartSignedIn() {
               <CartItemList
                 products={filteredProducts}
                 cart={cart}
+                freeQuantities={freeQuantities}
                 removingIds={removingIds}
                 onRemove={removeItem}
                 onDecreaseQuantity={decreaseQuantity}
@@ -228,6 +260,10 @@ export default function CartSignedIn() {
               <CartSummary
                 subtotal={subtotal}
                 discount={discount}
+                promoDiscount={promoDiscount}
+                promoFreeUnits={promoFreeUnits}
+                promoUnitsToNextFree={promoUnitsToNextFree}
+                promoLabel={cartData?.promo_label ?? null}
                 total={total}
                 totalItems={visibleQuantitySum}
                 deliveryCalculation={deliveryCalculation}

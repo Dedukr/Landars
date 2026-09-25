@@ -25,6 +25,8 @@ export interface CartProduct {
   quantity: number;
   /** Optional unit weight (kg) for parcel estimate; when set, total weight uses Σ(weight×qty). */
   weightKg?: number;
+  /** Promo group flag from the API (e.g. `jerky_5_1`); empty when not in a promo. */
+  promoGroup?: string;
 }
 
 export interface DeliveryFeeCalculation {
@@ -101,7 +103,7 @@ export function calculateDeliveryFee(
       deliveryFee = 0;
       dependsOnCourier = true;
       reasoning =
-        "Post delivery price is set at checkout from live courier rates (includes markup).";
+        "Post delivery price is set at checkout from live courier rates.";
     }
   } else {
     isHomeDelivery = true;
@@ -147,13 +149,14 @@ export function getDeliveryFeeBreakdown(calculation: DeliveryFeeCalculation) {
 }
 
 /**
- * Calculate total order price including delivery fee and discount
- * Matches Order.total_price = sum_price + delivery_fee - discount
+ * Calculate total order price including delivery fee and discounts
+ * Matches Order.total_price = sum_price + delivery_fee - discount - promo_discount
  */
 export function calculateTotalPrice(
   subtotal: number,
   deliveryFee: number,
-  discount: number = 0
+  discount: number = 0,
+  promoDiscount: number = 0
 ): number {
-  return subtotal + deliveryFee - discount;
+  return subtotal + deliveryFee - discount - promoDiscount;
 }

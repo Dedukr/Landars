@@ -536,6 +536,7 @@ class ProductSerializer(ProductImageValidationMixin, serializers.ModelSerializer
     primary_image = serializers.SerializerMethodField()
     price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     categories = serializers.SerializerMethodField()
+    promo = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -551,13 +552,27 @@ class ProductSerializer(ProductImageValidationMixin, serializers.ModelSerializer
             "primary_image",
             "sold_quantity",
             "sold_orders_count",
+            "promo_group",
+            "promo",
         ]
-        read_only_fields = ["id", "primary_image", "sold_quantity", "sold_orders_count"]
+        read_only_fields = [
+            "id",
+            "primary_image",
+            "sold_quantity",
+            "sold_orders_count",
+            "promo",
+        ]
 
     def get_categories(self, obj):
         """Return the product's own (leaf) category names."""
         categories = sorted(obj.categories.all(), key=lambda cat: cat.name)
         return [cat.name for cat in categories]
+
+    def get_promo(self, obj):
+        """Promotion descriptor for the product detail page (null when none applies)."""
+        from api.services.promotions import promo_payload_for_product
+
+        return promo_payload_for_product(obj)
 
     # def get_stock_quantity(self, obj):
     #     stock = Stock.objects.filter(product=obj).first()
@@ -632,6 +647,8 @@ class ProductListSerializer(serializers.ModelSerializer):
             "images",
             "sold_quantity",
             "sold_orders_count",
+            # Needed so the client-side (guest) cart can mirror the promo maths.
+            "promo_group",
         ]
 
     def get_primary_image(self, obj):
@@ -654,6 +671,8 @@ class OrderItemSerializer(serializers.ModelSerializer):
     product_name = serializers.SerializerMethodField()
     product_price = serializers.SerializerMethodField()
     total_price = serializers.SerializerMethodField()
+    promo_discount = serializers.SerializerMethodField()
+    net_total_price = serializers.SerializerMethodField()
 
     class Meta:
         model = OrderItem
@@ -664,8 +683,20 @@ class OrderItemSerializer(serializers.ModelSerializer):
             "product_price",
             "quantity",
             "total_price",
+            "free_quantity",
+            "promo_discount",
+            "net_total_price",
         ]
-        read_only_fields = ["id", "product_name", "product_price", "total_price"]
+        read_only_fields = [
+            "id",
+            "product_name",
+            "product_price",
+            "total_price",
+            # Free units are attributed by the promo calculator at checkout.
+            "free_quantity",
+            "promo_discount",
+            "net_total_price",
+        ]
 
     def get_product_name(self, obj):
         """Return stored item name if product is deleted, otherwise current product name."""
@@ -682,6 +713,15 @@ class OrderItemSerializer(serializers.ModelSerializer):
     def get_total_price(self, obj):
         """Use the model's get_total_price method which handles deleted products."""
         total = obj.get_total_price()
+        return total if total != "" else Decimal("0.00")
+
+    def get_promo_discount(self, obj):
+        """Value of the promotion free units on this line (0.00 when none)."""
+        return obj.get_promo_discount()
+
+    def get_net_total_price(self, obj):
+        """Line total after the promotion (``total_price`` stays gross)."""
+        total = obj.get_net_total_price()
         return total if total != "" else Decimal("0.00")
 
     def validate_quantity(self, value):
@@ -737,6 +777,8 @@ class OrderSerializer(serializers.ModelSerializer):
         source="shipping_details.status",
         read_only=True,
     )
+    promo_label = serializers.SerializerMethodField()
+    promo_free_units = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -751,6 +793,9 @@ class OrderSerializer(serializers.ModelSerializer):
             "delivery_fee_manual",
             "delivery_fee",
             "discount",
+            "promo_discount",
+            "promo_label",
+            "promo_free_units",
             "status",
             "created_at",
             "total_price",
@@ -772,6 +817,10 @@ class OrderSerializer(serializers.ModelSerializer):
             "created_at",
             "total_price",
             "total_items",
+            # Promo money is derived server-side at checkout, never client-supplied.
+            "promo_discount",
+            "promo_label",
+            "promo_free_units",
             # Shipping tracking fields are read-only (set by backend)
             "shipping_tracking_number",
             "shipping_tracking_url",
@@ -797,6 +846,12 @@ class OrderSerializer(serializers.ModelSerializer):
 
     def get_total_weight(self, obj):
         return str(obj.total_weight)
+
+    def get_promo_label(self, obj):
+        return obj.promo_label
+
+    def get_promo_free_units(self, obj):
+        return obj.promo_free_units
 
     def validate_delivery_date(self, value):
         # Allow past dates; business logic can handle downstream
@@ -969,6 +1024,8 @@ class CartItemSerializer(serializers.ModelSerializer):
     )
     product_image_url = serializers.SerializerMethodField()
     total_price = serializers.SerializerMethodField()
+    free_quantity = serializers.SerializerMethodField()
+    promo_discount = serializers.SerializerMethodField()
 
     class Meta:
         model = CartItem
@@ -980,9 +1037,17 @@ class CartItemSerializer(serializers.ModelSerializer):
             "product_image_url",
             "quantity",
             "total_price",
+            "free_quantity",
+            "promo_discount",
             "added_date",
         ]
-        read_only_fields = ["id", "added_date", "total_price"]
+        read_only_fields = [
+            "id",
+            "added_date",
+            "total_price",
+            "free_quantity",
+            "promo_discount",
+        ]
 
     def get_product_image_url(self, obj):
         # Return the image URL if exists
@@ -993,6 +1058,20 @@ class CartItemSerializer(serializers.ModelSerializer):
     def get_total_price(self, obj):
         return str(obj.get_total_price())
 
+    def get_free_quantity(self, obj):
+        """Units on this line currently free thanks to the cart-wide promotion."""
+        from api.services.promotions import promo_result_for_cart
+
+        promo = promo_result_for_cart(obj.cart)
+        return str(promo.free_quantity_for_product(obj.product_id))
+
+    def get_promo_discount(self, obj):
+        """Value of this line's free units (cheapest eligible units are the free ones)."""
+        from api.services.promotions import promo_result_for_cart
+
+        promo = promo_result_for_cart(obj.cart)
+        return str(promo.discount_for_product(obj.product_id))
+
 
 class CartSerializer(serializers.ModelSerializer):
     items = CartItemSerializer(many=True, read_only=True)
@@ -1000,6 +1079,11 @@ class CartSerializer(serializers.ModelSerializer):
     sum_price = serializers.SerializerMethodField()
     total_items = serializers.SerializerMethodField()
     total_weight = serializers.SerializerMethodField()
+    promo_discount = serializers.SerializerMethodField()
+    promo_free_units = serializers.SerializerMethodField()
+    promo_eligible_quantity = serializers.SerializerMethodField()
+    promo_units_to_next_free = serializers.SerializerMethodField()
+    promo_label = serializers.SerializerMethodField()
 
     class Meta:
         model = Cart
@@ -1015,10 +1099,20 @@ class CartSerializer(serializers.ModelSerializer):
             "total_price",
             "total_items",
             "total_weight",
+            "promo_discount",
+            "promo_free_units",
+            "promo_eligible_quantity",
+            "promo_units_to_next_free",
+            "promo_label",
             "created_at",
             "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def _promo(self, obj):
+        from api.services.promotions import promo_result_for_cart
+
+        return promo_result_for_cart(obj)
 
     def get_total_price(self, obj):
         return str(obj.total_price)
@@ -1032,12 +1126,34 @@ class CartSerializer(serializers.ModelSerializer):
     def get_total_weight(self, obj):
         return str(obj.total_weight)
 
+    def get_promo_discount(self, obj):
+        """Automatic promotion discount already reflected in ``total_price``."""
+        return str(self._promo(obj).discount)
+
+    def get_promo_free_units(self, obj):
+        return self._promo(obj).free_units
+
+    def get_promo_eligible_quantity(self, obj):
+        """Whole units in the cart that count towards the promotion."""
+        return self._promo(obj).eligible_quantity
+
+    def get_promo_units_to_next_free(self, obj):
+        """Units still needed to earn the next free one (nudge copy in the cart)."""
+        return self._promo(obj).units_to_next_free
+
+    def get_promo_label(self, obj):
+        """Promotion name, or '' when the cart has not earned anything yet."""
+        promo = self._promo(obj)
+        return promo.label if promo.applies else ""
+
 
 class OrderItemSerializer(serializers.ModelSerializer):
     product_name = serializers.SerializerMethodField()
     product_price = serializers.SerializerMethodField()
     product_image_url = serializers.SerializerMethodField()
     total_price = serializers.SerializerMethodField()
+    promo_discount = serializers.SerializerMethodField()
+    net_total_price = serializers.SerializerMethodField()
 
     class Meta:
         model = OrderItem
@@ -1049,8 +1165,17 @@ class OrderItemSerializer(serializers.ModelSerializer):
             "product_image_url",
             "quantity",
             "total_price",
+            "free_quantity",
+            "promo_discount",
+            "net_total_price",
         ]
-        read_only_fields = ["id", "total_price"]
+        read_only_fields = [
+            "id",
+            "total_price",
+            "free_quantity",
+            "promo_discount",
+            "net_total_price",
+        ]
 
     def get_product_name(self, obj):
         """Return stored item name if product is deleted, otherwise current product name."""
@@ -1074,6 +1199,14 @@ class OrderItemSerializer(serializers.ModelSerializer):
     def get_total_price(self, obj):
         """Use the model's get_total_price method which handles deleted products."""
         return str(obj.get_total_price())
+
+    def get_promo_discount(self, obj):
+        """Value of the promotion free units on this line (0.00 when none)."""
+        return str(obj.get_promo_discount())
+
+    def get_net_total_price(self, obj):
+        """Line total after the promotion (``total_price`` stays gross)."""
+        return str(obj.get_net_total_price())
 
 
 class OrderSerializer(serializers.ModelSerializer):
@@ -1106,6 +1239,9 @@ class OrderSerializer(serializers.ModelSerializer):
     delivered_at = serializers.SerializerMethodField()
     # Customer-safe error hint when shipping has failed (blank when no issue).
     shipping_error_message = serializers.SerializerMethodField()
+    # Automatic promotion frozen at checkout (already deducted from total_price).
+    promo_label = serializers.SerializerMethodField()
+    promo_free_units = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -1125,6 +1261,9 @@ class OrderSerializer(serializers.ModelSerializer):
             "is_home_delivery",
             "delivery_fee",
             "discount",
+            "promo_discount",
+            "promo_label",
+            "promo_free_units",
             "status",
             "created_at",
             "invoice_link",
@@ -1155,6 +1294,10 @@ class OrderSerializer(serializers.ModelSerializer):
             "total_items",
             "invoice_link",
             "billing_address",
+            # Promo money is derived server-side at checkout, never client-supplied.
+            "promo_discount",
+            "promo_label",
+            "promo_free_units",
         ]
 
     def _shipping(self, obj):
@@ -1172,6 +1315,14 @@ class OrderSerializer(serializers.ModelSerializer):
 
     def get_total_items(self, obj):
         return float(obj.total_items)
+
+    def get_promo_label(self, obj):
+        """Promotion name for the summary row ('' when the order has no promo)."""
+        return obj.promo_label
+
+    def get_promo_free_units(self, obj):
+        """Total free units across the order's lines (frozen at checkout)."""
+        return obj.promo_free_units
 
     def get_customer_name(self, obj):
         if obj.customer:

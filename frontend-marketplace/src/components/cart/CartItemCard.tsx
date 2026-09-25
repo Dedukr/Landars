@@ -23,6 +23,8 @@ interface Product {
 interface CartItemCardProps {
   product: Product;
   quantity: number;
+  /** Units on this line currently free thanks to a promotion. */
+  freeQuantity?: number;
   isRemoving: boolean;
   onRemove: (productId: number) => void;
   onDecreaseQuantity: (productId: number) => void;
@@ -34,6 +36,7 @@ const CartItemCard = memo<CartItemCardProps>(
   ({
     product,
     quantity,
+    freeQuantity = 0,
     isRemoving,
     onRemove,
     onDecreaseQuantity,
@@ -47,6 +50,8 @@ const CartItemCard = memo<CartItemCardProps>(
 
     const unitPrice = parseFloat(product.price) || 0;
     const lineTotal = unitPrice * quantity;
+    const freeUnits =
+      Number.isFinite(freeQuantity) && freeQuantity > 0 ? freeQuantity : 0;
     const imageUrl = getPrimaryProductImageUrl(product);
 
     const handleSaveForLater = useCallback(async () => {
@@ -153,43 +158,57 @@ const CartItemCard = memo<CartItemCardProps>(
             {/* Quantity + actions */}
             <div className="mt-3 flex items-center justify-between gap-2">
               {/* Quantity stepper */}
-              <div
-                className="flex items-center rounded-xl overflow-hidden"
-                style={{ border: "1px solid var(--sidebar-border)" }}
-                role="group"
-                aria-label={`Quantity controls for ${product.name || "item"}`}
-              >
-                <button
-                  onClick={() => onDecreaseQuantity(product.id)}
-                  disabled={quantity <= 1}
-                  aria-label={`Decrease quantity of ${product.name || "item"}`}
-                  className="flex items-center justify-center w-9 h-9 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                  style={{
-                    background: "var(--sidebar-bg)",
-                    color: "var(--foreground)",
-                  }}
+              <div className="flex items-center gap-2">
+                <div
+                  className="flex items-center rounded-xl overflow-hidden"
+                  style={{ border: "1px solid var(--sidebar-border)" }}
+                  role="group"
+                  aria-label={`Quantity controls for ${product.name || "item"}`}
                 >
-                  <Minus className="w-3.5 h-3.5" />
-                </button>
-                <span
-                  className="w-9 text-center text-sm font-semibold select-none"
-                  style={{ color: "var(--foreground)" }}
-                  aria-live="polite"
-                  aria-atomic="true"
-                >
-                  {quantity}
-                </span>
-                <button
-                  onClick={() => onIncreaseQuantity(product.id)}
-                  aria-label={`Increase quantity of ${product.name || "item"}`}
-                  className="flex items-center justify-center w-9 h-9 transition-colors"
-                  style={{
-                    background: "var(--sidebar-bg)",
-                    color: "var(--foreground)",
-                  }}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
+                  <button
+                    onClick={() => onDecreaseQuantity(product.id)}
+                    disabled={quantity <= 1}
+                    aria-label={`Decrease quantity of ${product.name || "item"}`}
+                    className="flex items-center justify-center w-9 h-9 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    style={{
+                      background: "var(--sidebar-bg)",
+                      color: "var(--foreground)",
+                    }}
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <span
+                    className="w-9 text-center text-sm font-semibold select-none"
+                    style={{ color: "var(--foreground)" }}
+                    aria-live="polite"
+                    aria-atomic="true"
+                  >
+                    {quantity}
+                  </span>
+                  <button
+                    onClick={() => onIncreaseQuantity(product.id)}
+                    aria-label={`Increase quantity of ${product.name || "item"}`}
+                    className="flex items-center justify-center w-9 h-9 transition-colors"
+                    style={{
+                      background: "var(--sidebar-bg)",
+                      color: "var(--foreground)",
+                    }}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                {freeUnits > 0 && (
+                  <span
+                    className="inline-flex items-center rounded-lg px-2 py-1 text-xs font-bold tabular-nums"
+                    style={{
+                      background: "var(--success-bg)",
+                      color: "var(--success-text)",
+                      border: "1px solid var(--success-border)",
+                    }}
+                  >
+                    {freeUnits} free
+                  </span>
+                )}
               </div>
 
               {/* Save / Remove */}

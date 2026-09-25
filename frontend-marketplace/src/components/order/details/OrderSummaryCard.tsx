@@ -1,6 +1,7 @@
 "use client";
 
 import { formatGbpPrice } from "@/lib/formatPrice";
+import { jerkyPromoRowLabel } from "@/lib/jerkyPromo";
 import type { MarketplaceOrderDetail, OrderDetailItem } from "@/lib/orderDetailTypes";
 import { OrderSectionCard } from "./OrderSectionCard";
 import { Button } from "@/components/ui/Button";
@@ -80,6 +81,12 @@ export function OrderSummaryCard({
     ? `−£${discountNum.toFixed(2)}`
     : null;
 
+  const promoNum = parseFloat(String(order.promo_discount ?? "0"));
+  const showPromo = Number.isFinite(promoNum) && promoNum > 0;
+  const promoFreeUnits = Number(order.promo_free_units ?? 0);
+  const promoFormatted = showPromo ? `−£${promoNum.toFixed(2)}` : null;
+  const promoLabel = jerkyPromoRowLabel(promoFreeUnits, order.promo_label);
+
   const totalFormatted = formatGbpPrice(order.total_price);
 
   return (
@@ -107,6 +114,9 @@ export function OrderSummaryCard({
         <PriceRow label="Delivery" value={deliveryFormatted} />
         {showDiscount ? (
           <PriceRow label="Discount" value={discountFormatted} emphasize="success" />
+        ) : null}
+        {showPromo ? (
+          <PriceRow label={promoLabel} value={promoFormatted} emphasize="success" />
         ) : null}
       </div>
 

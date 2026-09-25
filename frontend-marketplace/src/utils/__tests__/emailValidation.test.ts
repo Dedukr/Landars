@@ -3,6 +3,7 @@
  */
 import {
   validateEmail,
+  normalizeEmail,
   sanitizeEmail,
   formatEmailForDisplay,
   extractDomain,
@@ -147,6 +148,110 @@ describe("Email Validation", () => {
         expect(callback).toHaveBeenCalled();
         done();
       }, 150);
+    });
+  });
+
+  describe("normalizeEmail (shared vectors with backend normalize_email)", () => {
+    it("rejects input containing a NUL character (same rule as the backend)", () => {
+      expect(normalizeEmail("a\0b@example.com")).toBe("");
+      expect(normalizeEmail("\0")).toBe("");
+    });
+
+    const ZWSP = "\u200B";
+    const vectors: Array<[string, string]> = [
+      ["  User@Example.COM  ", "user@example.com"],
+      [`user@example.com${ZWSP}`, "user@example.com"],
+      [" user@example.com ", "user@example.com"],
+      [
+        "\uFF55\uFF53\uFF45\uFF52\uFF20\uFF45\uFF58\uFF41\uFF4D\uFF50\uFF4C\uFF45\uFF0E\uFF43\uFF4F\uFF4D",
+        "user@example.com",
+      ],
+      ["O'Brien+Tag@Example.com", "o'brien+tag@example.com"],
+      ["a b@example.com", "a b@example.com"],
+    ];
+
+    it.each(vectors)("normalises %j", (input, expected) => {
+      expect(normalizeEmail(input)).toBe(expected);
+    });
+
+    it("returns an empty string for non-strings", () => {
+      for (const value of ["", null, undefined, 123, ["a@b.c"], {}, true]) {
+        expect(normalizeEmail(value)).toBe("");
+      }
+    });
+
+    it("removes every invisible character the backend removes", () => {
+      const invisible = "\u200B\u200C\u200D\u2060\uFEFF\u00AD";
+      expect(normalizeEmail(`us${invisible}er@exa${invisible}mple.com`)).toBe(
+        "user@example.com"
+      );
+    });
+
+    it("turns non-breaking and ideographic spaces into trimmed whitespace", () => {
+      expect(normalizeEmail("\u00A0user@example.com\u3000")).toBe(
+        "user@example.com"
+      );
+    });
+
+    it("is idempotent", () => {
+      for (const [input] of vectors) {
+        const once = normalizeEmail(input);
+        expect(normalizeEmail(once)).toBe(once);
+      }
+    });
+
+    it("is what sanitizeEmail returns", () => {
+      for (const [input, expected] of vectors) {
+        expect(sanitizeEmail(input)).toBe(expected);
+      }
+    });
+  });
+
+  describe("validateEmail with un-normalised input", () => {
+    it("accepts what the forms will actually send", () => {
+      expect(validateEmail("  USER@Example.COM  ").isValid).toBe(true);
+      expect(validateEmail("user@example.com\u200B").isValid).toBe(true);
+      expect(
+        validateEmail(
+          "\uFF55\uFF53\uFF45\uFF52\uFF20\uFF45\uFF58\uFF41\uFF4D\uFF50\uFF4C\uFF45\uFF0E\uFF43\uFF4F\uFF4D"
+        ).isValid
+      ).toBe(true);
+    });
+
+    it("still rejects an inner space", () => {
+      expect(validateEmail("a b@example.com").isValid).toBe(false);
+    });
+
+    it("rejects an address that is only invisible characters", () => {
+      expect(validateEmail("\u200B\u200B\u200B\u200B\u200B\u200B").isValid).toBe(
+        false
+      );
+    });
+
+    it("suggests the normalised, corrected address for a typo'd domain", () => {
+      const result = validateEmail("  Test@GMIAL.com ");
+      expect(result.isValid).toBe(true);
+      expect(result.suggestions).toEqual(["test@gmail.com"]);
+      expect(result.warning).toBe("Did you mean test@gmail.com?");
+    });
+
+    it("only replaces the domain, never a lookalike in the local part", () => {
+      expect(validateEmail("gmial.com@gmial.com").suggestions).toEqual([
+        "gmial.com@gmail.com",
+      ]);
+    });
+
+    it("catches the very common .con typo", () => {
+      expect(validateEmail("jo@gmail.con").suggestions).toEqual(["jo@gmail.com"]);
+      expect(validateEmail("jo@hotmail.con").suggestions).toEqual([
+        "jo@hotmail.com",
+      ]);
+    });
+
+    it("does not suggest anything when typo checks are off", () => {
+      const result = validateEmail("test@gmial.com", { checkTypos: false });
+      expect(result.isValid).toBe(true);
+      expect(result.suggestions).toBeUndefined();
     });
   });
 });

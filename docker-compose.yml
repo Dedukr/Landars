@@ -34,6 +34,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+      start_period: 60s
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -78,6 +79,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+      start_period: 10s
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -98,16 +100,21 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    # No host ports — only nginx (and other services) reach Django on the Docker network.
+    # nginx and the other services reach Django over the Docker network (expose). The host port is bound to
+    # loopback ONLY (local debugging, management scripts); never publish 8000 on 0.0.0.0 - gunicorn would then
+    # be reachable directly, bypassing nginx and Cloudflare (rate limits, real client IP, request ids).
     expose:
       - "8000"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     env_file:
       - .env
     volumes:
       - static_volume:/backend/static
       - ./backend/db:/backend/db
+      # Optional longer auth-event retention (JSON lines). Uncomment together with AUTH_EVENT_LOG_FILE
+      # below; chown once for uid 1000 — see docs/AUTH_OBSERVABILITY.md §8.
+      # - auth_logs:/backend/logs
     environment:
       - PYTHONUNBUFFERED=1
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1,backend,frontend-marketplace,nginx}
@@ -119,6 +126,8 @@ services:
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
       - DJANGO_CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
+      # Optional: AUTH_EVENT_LOG_FILE is unset by default (events stay in Docker's 3×10 MB stdout window).
+      # - AUTH_EVENT_LOG_FILE=/backend/logs/auth_events.log
     depends_on:
       postgres:
         condition: service_healthy
@@ -137,6 +146,7 @@ services:
       retries: 3
       start_period: 40s
     restart: unless-stopped
+    stop_grace_period: 30s
     logging:
       driver: "json-file"
       options:
@@ -157,6 +167,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     working_dir: /backend
+    # Consumes BOTH queues on purpose: auth mail goes to the "email" queue, which the dedicated
+    # celery-email worker below also serves (so print/PDF jobs cannot delay verification mail).
+    # If celery-email is not running, mail must still flow - never drop "email" from -Q here.
     command:
       [
         "celery",
@@ -165,8 +178,16 @@ services:
         "worker",
         "-l",
         "info",
+        "-Q",
+        "celery,email",
         "--concurrency",
         "2",
+        "--prefetch-multiplier",
+        "1",
+        "--without-gossip",
+        "--without-mingle",
+        "--max-memory-per-child",
+        "250000",
       ]
     env_file:
       - .env
@@ -184,12 +205,15 @@ services:
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
       - DJANGO_CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
+      - CELERY_BROKER_SOCKET_CONNECT_TIMEOUT=5
+      - CELERY_BROKER_SOCKET_TIMEOUT=30
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
+    stop_grace_period: 40s
     logging:
       driver: "json-file"
       options:
@@ -199,6 +223,72 @@ services:
       resources:
         limits:
           memory: 768M
+        reservations:
+          memory: 256M
+
+  celery-email:
+    mem_limit: 512m
+    mem_reservation: 256m
+    image: dedukr/landar-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    working_dir: /backend
+    command:
+      [
+        "celery",
+        "-A",
+        "backend",
+        "worker",
+        "-l",
+        "info",
+        "-Q",
+        "email",
+        "--concurrency",
+        "2",
+        "--prefetch-multiplier",
+        "1",
+        "-O",
+        "fair",
+        "--without-gossip",
+        "--without-mingle",
+        "--max-memory-per-child",
+        "200000",
+      ]
+    env_file:
+      - .env
+    volumes:
+      - static_volume:/backend/static
+      - ./backend/db:/backend/db
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1,backend,frontend-marketplace,nginx}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - DJANGO_CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
+      - CELERY_BROKER_SOCKET_CONNECT_TIMEOUT=5
+      - CELERY_BROKER_SOCKET_TIMEOUT=30
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
         reservations:
           memory: 256M
 
@@ -233,12 +323,16 @@ services:
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
       - DJANGO_CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
+      - CELERY_BROKER_SOCKET_CONNECT_TIMEOUT=5
+      - CELERY_BROKER_SOCKET_TIMEOUT=30
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       celery:
+        condition: service_started
+      celery-email:
         condition: service_started
     restart: unless-stopped
     logging:
@@ -254,8 +348,8 @@ services:
           memory: 64M
 
   frontend-marketplace:
-    mem_limit: 256m
-    mem_reservation: 128m
+    mem_limit: 384m
+    mem_reservation: 192m
     image: dedukr/landar-frontend-marketplace:latest
     build:
       context: ./frontend-marketplace
@@ -276,6 +370,9 @@ services:
       # Stable Server Action encryption key (fixes "Failed to find Server Action" across rebuilds).
       # Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
       - NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=${NEXT_SERVER_ACTIONS_ENCRYPTION_KEY:-}
+      # Next standalone uses HOSTNAME as the listen address; Docker sets it to the
+      # container id, so healthchecks on 127.0.0.1 fail unless we bind all interfaces.
+      - HOSTNAME=0.0.0.0
     depends_on:
       - backend
     healthcheck:
@@ -286,12 +383,12 @@ services:
           "--quiet",
           "--tries=1",
           "--spider",
-          "http://localhost:3000/",
+          "http://127.0.0.1:3000/",
         ]
       interval: 30s
-      timeout: 10s
+      timeout: 15s
       retries: 3
-      start_period: 40s
+      start_period: 90s
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -301,12 +398,12 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 384M
         reservations:
-          memory: 128M
+          memory: 192M
 
   nginx:
-    mem_limit: 128m
+    mem_limit: 192m
     mem_reservation: 64m
     image: dedukr/landar-nginx:latest
     build:
@@ -331,20 +428,23 @@ services:
         [
           "CMD",
           "wget",
-          "--quiet",
+          "-q",
           "--tries=1",
-          "--spider",
-          "http://localhost/health/",
+          "-O",
+          "/dev/null",
+          "--header=Host:localhost",
+          "http://127.0.0.1/nginx-health",
         ]
-      interval: 30s
-      timeout: 10s
+      interval: 15s
+      timeout: 3s
       retries: 3
-      start_period: 40s
+      start_period: 10s
     restart: unless-stopped
+    stop_grace_period: 15s
     deploy:
       resources:
         limits:
-          memory: 128M
+          memory: 192M
         reservations:
           memory: 64M
 
@@ -373,3 +473,7 @@ volumes:
 
   redis_data:
     name: landars_redis_data
+
+  # Optional named volume for AUTH_EVENT_LOG_FILE (uncomment with the backend mount above).
+  # auth_logs:
+  #   name: landars_auth_logs

@@ -14,6 +14,7 @@ export interface CachedListingProduct {
   discount_percentage?: number;
   in_stock?: boolean;
   stock_quantity?: number;
+  promo_group?: string;
 }
 
 export type ListingProductCacheScope = "cart" | "wishlist";

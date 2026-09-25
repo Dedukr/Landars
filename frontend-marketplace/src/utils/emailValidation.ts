@@ -76,11 +76,58 @@ const DISPOSABLE_EMAIL_DOMAINS = [
 
 // Common typos in popular email domains
 const COMMON_DOMAIN_TYPOS = {
-  "gmail.com": ["gmial.com", "gmail.co", "gmai.com", "gmail.cm"],
-  "yahoo.com": ["yaho.com", "yahoo.co", "yaho.com", "yahoo.cm"],
-  "hotmail.com": ["hotmial.com", "hotmail.co", "hotmai.com", "hotmail.cm"],
-  "outlook.com": ["outlok.com", "outlook.co", "outlok.com", "outlook.cm"],
+  "gmail.com": [
+    "gmial.com",
+    "gmail.co",
+    "gmai.com",
+    "gmail.cm",
+    "gmail.con",
+    "gamil.com",
+    "gmal.com",
+  ],
+  "yahoo.com": ["yaho.com", "yahoo.co", "yaho.com", "yahoo.cm", "yahoo.con"],
+  "hotmail.com": [
+    "hotmial.com",
+    "hotmail.co",
+    "hotmai.com",
+    "hotmail.cm",
+    "hotmail.con",
+  ],
+  "outlook.com": [
+    "outlok.com",
+    "outlook.co",
+    "outlok.com",
+    "outlook.cm",
+    "outlook.con",
+  ],
 };
+
+// Invisible characters that autofill, password managers and copy/paste add to
+// an address: ZWSP, ZWNJ, ZWJ, WORD JOINER, BOM and SOFT HYPHEN. Keep in sync
+// with backend/account/email_normalization.py.
+const INVISIBLE_EMAIL_CHARS = /[\u200B\u200C\u200D\u2060\uFEFF\u00AD]/g;
+
+/**
+ * Canonical email form shared by every authentication flow. Mirrors
+ * `backend/account/email_normalization.py::normalize_email` step for step
+ * (both test suites assert the same vectors):
+ *
+ * 1. NFKC (fullwidth at-sign/letters and non-breaking spaces become ASCII)
+ * 2. drop invisible characters (see INVISIBLE_EMAIL_CHARS)
+ * 3. trim surrounding whitespace
+ * 4. lowercase
+ *
+ * Never throws: anything that is not a string (or contains a NUL) yields `""`.
+ */
+export function normalizeEmail(value: unknown): string {
+  // NUL is never part of an address (and PostgreSQL rejects it): same rule as the backend.
+  if (typeof value !== "string" || value.includes("\0")) return "";
+  return value
+    .normalize("NFKC")
+    .replace(INVISIBLE_EMAIL_CHARS, "")
+    .trim()
+    .toLowerCase();
+}
 
 export interface EmailValidationResult {
   isValid: boolean;
@@ -118,7 +165,8 @@ export function validateEmail(
     };
   }
 
-  const trimmedEmail = email.trim().toLowerCase();
+  // Validate exactly what the forms send (and the backend stores)
+  const trimmedEmail = normalizeEmail(email);
 
   // Length checks
   if (trimmedEmail.length < minLength) {
@@ -236,9 +284,9 @@ export function validateEmail(
     };
   }
 
-  // Check for common typos
+  // Check for common typos (suggest the normalised address, not the raw input)
   if (checkTypos) {
-    const typoSuggestion = checkForCommonTypos(email, domain);
+    const typoSuggestion = checkForCommonTypos(localPart, domain);
     if (typoSuggestion) {
       return {
         isValid: true,
@@ -264,20 +312,24 @@ function isDisposableEmail(email: string): boolean {
 /**
  * Checks for common typos in email domains
  */
-function checkForCommonTypos(email: string, domain: string): string | null {
+function checkForCommonTypos(
+  localPart: string,
+  domain: string
+): string | null {
   for (const [correctDomain, typos] of Object.entries(COMMON_DOMAIN_TYPOS)) {
     if (typos.includes(domain)) {
-      return email.replace(domain, correctDomain);
+      return `${localPart}@${correctDomain}`;
     }
   }
   return null;
 }
 
 /**
- * Sanitizes an email address for safe storage
+ * Sanitizes an email address for safe storage (same canonical form as
+ * {@link normalizeEmail}).
  */
 export function sanitizeEmail(email: string): string {
-  return email.trim().toLowerCase();
+  return normalizeEmail(email);
 }
 
 /**

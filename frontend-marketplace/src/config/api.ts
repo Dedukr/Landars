@@ -21,28 +21,16 @@ export const getApiBaseUrl = (): string => {
 
 /**
  * Base URL for fetch/httpClient in the current runtime.
- * In the browser we prefer same-origin `/api/...` so Cloudflare tunnel / phone testing
- * does not call https://localhost on the remote device.
+ * In the browser this is ALWAYS "" (same-origin `/api/...`): the site is served with
+ * `/api` on the visitor's own origin (nginx in production, Next rewrites in dev), so a
+ * configured absolute origin (build-time NEXT_PUBLIC_API_BASE_URL) must never make the
+ * browser go cross-origin - e.g. `www.` vs apex host, Cloudflare tunnel, phone testing.
  */
 export function getClientApiBaseUrl(): string {
   const configured = process.env.NEXT_PUBLIC_API_BASE_URL?.trim().replace(/\/$/, "") ?? "";
 
   if (typeof window !== "undefined") {
-    if (
-      !configured ||
-      /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/i.test(configured)
-    ) {
-      return "";
-    }
-    try {
-      const target = new URL(configured);
-      if (target.hostname === window.location.hostname) {
-        return "";
-      }
-    } catch {
-      return "";
-    }
-    return configured;
+    return "";
   }
 
   if (configured) return configured;

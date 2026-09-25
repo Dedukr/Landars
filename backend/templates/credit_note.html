@@ -751,7 +751,11 @@
                         <td>
                             <div style="word-break: break-word; padding-left: 0px; padding-right: 5px;">
                                 {{ item.description }}
-                            </div>
+                            </div>{% if item.free_quantity > 0 %}
+                            <div class="mid-gray"
+                                style="word-break: break-word; padding-left: 0px; padding-right: 5px;">
+                                incl. {{ item.free_quantity|floatformat:0 }} free (5+1)
+                            </div>{% endif %}
                         </td>
                         <td class="break-word align-right">
                             {{ item.quantity|floatformat:0 }}
@@ -824,7 +828,23 @@
                             +£{{ credit_note.discount_amount|floatformat:2 }}
                         </td>
                     </tr>
-                    {% endif %}
+                    {% endif %}{% if credit_note.promo_discount_amount > 0 %}
+                    <tr class="summary-amount-border mt30">
+                        <td>
+                        </td>
+                        <td colspan="4">
+                        </td>
+                    </tr>
+                    <tr class="summary-amount">
+                        <td>
+                        </td>
+                        <td colspan="3">
+                            {{ credit_note.promo_label|default:"Promotion" }} discount reversal
+                        </td>
+                        <td class="break-word align-right">
+                            +£{{ credit_note.promo_discount_amount|floatformat:2 }}
+                        </td>
+                    </tr>{% endif %}
                     <tr class="summary-amount-border mt30">
                         <td>
                         </td>

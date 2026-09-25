@@ -158,6 +158,189 @@
         "value": "rgba(100,116,139,0.3)",
         "createdAt": "2026-09-13T18:23:54.611Z",
         "reason": "Pre-existing admin bool no badge border"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "10px",
+        "createdAt": "2026-09-16T10:49:45.082Z",
+        "reason": "Pre-existing marketplace 10px uppercase label size, used across ~14 storefront components; DESIGN.md documents the festival-menu surface only"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "1rem",
+        "createdAt": "2026-09-16T10:52:20.587Z",
+        "reason": "Pre-existing checkout Place Order button fontSize; DESIGN.md documents the festival-menu surface only"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(220,38,38,0.06)",
+        "createdAt": "2026-09-16T10:54:19.376Z",
+        "reason": "Pre-existing legacy OrderCard cancel-button chrome; promo work only touches the price breakdown"
+      },
+      {
+        "rule": "undersized-ui-text",
+        "value": "*",
+        "files": [
+          "backend/templates/invoice.html"
+        ],
+        "createdAt": "2026-09-16T11:05:39.352Z",
+        "reason": "Pre-existing WeasyPrint accounting-PDF chrome (10px table headers, Inter print stack); DESIGN.md documents the storefront surface, not printed documents. Jerky 5+1 promo work only adds a promo note and summary row."
+      },
+      {
+        "rule": "undersized-ui-text",
+        "value": "*",
+        "files": [
+          "backend/templates/credit_note.html"
+        ],
+        "createdAt": "2026-09-16T11:05:39.369Z",
+        "reason": "Pre-existing WeasyPrint accounting-PDF chrome (10px table headers, Inter print stack); DESIGN.md documents the storefront surface, not printed documents. Jerky 5+1 promo work only adds a promo note and summary row."
+      },
+      {
+        "rule": "tiny-text",
+        "value": "*",
+        "files": [
+          "backend/templates/invoice.html"
+        ],
+        "createdAt": "2026-09-16T11:05:39.385Z",
+        "reason": "Pre-existing WeasyPrint accounting-PDF chrome (10px table headers, Inter print stack); DESIGN.md documents the storefront surface, not printed documents. Jerky 5+1 promo work only adds a promo note and summary row."
+      },
+      {
+        "rule": "tiny-text",
+        "value": "*",
+        "files": [
+          "backend/templates/credit_note.html"
+        ],
+        "createdAt": "2026-09-16T11:05:39.401Z",
+        "reason": "Pre-existing WeasyPrint accounting-PDF chrome (10px table headers, Inter print stack); DESIGN.md documents the storefront surface, not printed documents. Jerky 5+1 promo work only adds a promo note and summary row."
+      },
+      {
+        "rule": "design-system-font",
+        "value": "*",
+        "files": [
+          "backend/templates/invoice.html"
+        ],
+        "createdAt": "2026-09-16T11:05:39.417Z",
+        "reason": "Pre-existing WeasyPrint accounting-PDF chrome (10px table headers, Inter print stack); DESIGN.md documents the storefront surface, not printed documents. Jerky 5+1 promo work only adds a promo note and summary row."
+      },
+      {
+        "rule": "design-system-font",
+        "value": "*",
+        "files": [
+          "backend/templates/credit_note.html"
+        ],
+        "createdAt": "2026-09-16T11:05:39.433Z",
+        "reason": "Pre-existing WeasyPrint accounting-PDF chrome (10px table headers, Inter print stack); DESIGN.md documents the storefront surface, not printed documents. Jerky 5+1 promo work only adds a promo note and summary row."
+      },
+      {
+        "rule": "overused-font",
+        "value": "*",
+        "files": [
+          "backend/templates/invoice.html"
+        ],
+        "createdAt": "2026-09-16T11:05:39.456Z",
+        "reason": "Pre-existing WeasyPrint accounting-PDF chrome (10px table headers, Inter print stack); DESIGN.md documents the storefront surface, not printed documents. Jerky 5+1 promo work only adds a promo note and summary row."
+      },
+      {
+        "rule": "overused-font",
+        "value": "*",
+        "files": [
+          "backend/templates/credit_note.html"
+        ],
+        "createdAt": "2026-09-16T11:05:39.475Z",
+        "reason": "Pre-existing WeasyPrint accounting-PDF chrome (10px table headers, Inter print stack); DESIGN.md documents the storefront surface, not printed documents. Jerky 5+1 promo work only adds a promo note and summary row."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "*",
+        "files": [
+          "backend/templates/invoice.html"
+        ],
+        "createdAt": "2026-09-16T11:06:02.329Z",
+        "reason": "Pre-existing WeasyPrint accounting-PDF print CSS (px sizes, grayscale/Stripe-style palette); DESIGN.md documents the storefront surface, not printed documents. Jerky 5+1 promo work only adds a promo note and summary row and must leave existing documents byte-identical."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "*",
+        "files": [
+          "backend/templates/credit_note.html"
+        ],
+        "createdAt": "2026-09-16T11:06:02.347Z",
+        "reason": "Pre-existing WeasyPrint accounting-PDF print CSS (px sizes, grayscale/Stripe-style palette); DESIGN.md documents the storefront surface, not printed documents. Jerky 5+1 promo work only adds a promo note and summary row and must leave existing documents byte-identical."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "*",
+        "files": [
+          "backend/templates/invoice.html"
+        ],
+        "createdAt": "2026-09-16T11:06:02.363Z",
+        "reason": "Pre-existing WeasyPrint accounting-PDF print CSS (px sizes, grayscale/Stripe-style palette); DESIGN.md documents the storefront surface, not printed documents. Jerky 5+1 promo work only adds a promo note and summary row and must leave existing documents byte-identical."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "*",
+        "files": [
+          "backend/templates/credit_note.html"
+        ],
+        "createdAt": "2026-09-16T11:06:02.378Z",
+        "reason": "Pre-existing WeasyPrint accounting-PDF print CSS (px sizes, grayscale/Stripe-style palette); DESIGN.md documents the storefront surface, not printed documents. Jerky 5+1 promo work only adds a promo note and summary row and must leave existing documents byte-identical."
+      },
+      {
+        "rule": "low-contrast",
+        "value": "*",
+        "files": [
+          "backend/templates/invoice.html"
+        ],
+        "createdAt": "2026-09-16T11:06:02.394Z",
+        "reason": "Pre-existing WeasyPrint accounting-PDF print CSS (px sizes, grayscale/Stripe-style palette); DESIGN.md documents the storefront surface, not printed documents. Jerky 5+1 promo work only adds a promo note and summary row and must leave existing documents byte-identical."
+      },
+      {
+        "rule": "low-contrast",
+        "value": "*",
+        "files": [
+          "backend/templates/credit_note.html"
+        ],
+        "createdAt": "2026-09-16T11:06:02.410Z",
+        "reason": "Pre-existing WeasyPrint accounting-PDF print CSS (px sizes, grayscale/Stripe-style palette); DESIGN.md documents the storefront surface, not printed documents. Jerky 5+1 promo work only adds a promo note and summary row and must leave existing documents byte-identical."
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "*",
+        "files": [
+          "backend/templates/credit_note.html"
+        ],
+        "createdAt": "2026-09-16T11:06:28.375Z",
+        "reason": "Pre-existing 4px radius on the credit-note PDF badge chrome; DESIGN.md documents the storefront surface, not printed documents. Jerky 5+1 promo work only adds a promo note and summary row."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(251, 191, 36, 0.35)",
+        "createdAt": "2026-09-21T11:45:32.061Z",
+        "reason": "pre-existing auth warning highlight; copy-only change"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(0, 0, 0, 0.15)",
+        "createdAt": "2026-09-21T11:45:32.129Z",
+        "reason": "pre-existing popup overlay; copy-only change"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "1.5rem",
+        "createdAt": "2026-09-21T11:45:32.193Z",
+        "reason": "pre-existing popup card radius; copy-only change"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(251, 191, 36, 0.1)",
+        "createdAt": "2026-09-21T11:45:32.255Z",
+        "reason": "pre-existing unverified warning fill; copy-only change"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(255, 193, 7, 0.1)",
+        "createdAt": "2026-09-21T11:45:32.319Z",
+        "reason": "pre-existing unverified warning fill; copy-only change"
       }
     ]
   }

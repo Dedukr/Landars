@@ -8,6 +8,8 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext as _
 
+from .email_normalization import normalize_email
+
 User = get_user_model()
 
 
@@ -68,11 +70,13 @@ def validate_unique_email(email, exclude_user_id=None):
         return
 
     # Ensure email is normalized (in case it wasn't normalized before)
-    normalized_email = User.objects.normalize_email(email)
+    normalized_email = normalize_email(email)
+    if not normalized_email:
+        return
 
-    # Check for existing user with this email (case-insensitive)
-    # Use exact match since emails are normalized in the database
-    queryset = User.objects.filter(email=normalized_email)
+    # Case-insensitive: legacy rows may differ from the canonical form only by
+    # case (the DB unique index is case-sensitive).
+    queryset = User.objects.filter(email__iexact=normalized_email)
     if exclude_user_id is not None:
         queryset = queryset.exclude(pk=exclude_user_id)
 

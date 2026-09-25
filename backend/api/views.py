@@ -77,6 +77,8 @@ from .cache_utils import (
 )
 from .validators import validate_image_file_extension
 
+logger = logging.getLogger(__name__)
+
 
 # Custom throttle for categories - more permissive since it's read-only
 class CategoryThrottle(AnonRateThrottle):
@@ -1002,6 +1004,13 @@ class OrderListView(APIView):
             Decimal(str(cart.sum_price or 0)), coupon_code
         )
 
+        # Automatic promotions (Jerky 5+1): computed server-side from the locked cart
+        # lines and frozen onto the order. Stacks with the coupon, which keeps its
+        # own basis (cart.sum_price), so the two discounts never interfere.
+        from api.services.promotions import compute_promo
+
+        promo = compute_promo(cart_items)
+
         shipping_method_id = request.data.get("shipping_method_id")
         address_data = request.data.get("address") or {}
         if not isinstance(address_data, dict):
@@ -1072,6 +1081,7 @@ class OrderListView(APIView):
             "delivery_date": cart.delivery_date
             or request.data.get("delivery_date"),
             "discount": discount_value,
+            "promo_discount": promo.discount,
             "is_home_delivery": cart.is_home_delivery,
             "delivery_fee": delivery_fee_value,
             "status": "pending",
@@ -1154,10 +1164,13 @@ class OrderListView(APIView):
                 **shipping_details_data,
             )
 
-        # Create order items from cart items
+        # Create order items from cart items, attributing promo free units per line.
         for cart_item in cart_items:
             OrderItem.objects.create(
-                order=order, product=cart_item.product, quantity=cart_item.quantity
+                order=order,
+                product=cart_item.product,
+                quantity=cart_item.quantity,
+                free_quantity=promo.free_quantity_for_product(cart_item.product_id),
             )
 
         # Home delivery: compute fee from cart weight/rules (never client-supplied).

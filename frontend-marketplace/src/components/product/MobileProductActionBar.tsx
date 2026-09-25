@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/Button";
 
 interface MobileProductActionBarProps {
   priceDisplay: string | null;
+  /** Promo strip copy, e.g. "5 + 1 FREE · Buy any 5 Jerky, get 1 free". */
+  promoNote?: string | null;
   quantity: number;
   cartQuantity: number;
   isAvailable: boolean;
@@ -16,6 +18,7 @@ interface MobileProductActionBarProps {
 
 export default function MobileProductActionBar({
   priceDisplay,
+  promoNote,
   quantity,
   cartQuantity,
   isAvailable,
@@ -35,6 +38,19 @@ export default function MobileProductActionBar({
       role="region"
       aria-label="Basket and add to order"
     >
+      {promoNote && (
+        <p
+          className="border-b px-4 py-2 text-xs font-semibold"
+          style={{
+            background: "var(--success-bg)",
+            borderColor: "var(--success-border)",
+            color: "var(--success-text)",
+          }}
+        >
+          {promoNote}
+        </p>
+      )}
+
       {cartQuantity > 0 && onRemoveFromBasket && (
         <div
           className="flex items-center justify-between gap-3 border-b px-4 py-2.5"

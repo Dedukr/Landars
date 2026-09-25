@@ -33,6 +33,16 @@ function unitPrice(item: OrderDetailItem): string | null {
   return n.toFixed(2);
 }
 
+function freeQuantity(item: OrderDetailItem): number {
+  const n = parseFloat(String(item.free_quantity ?? "0"));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function linePromoDiscount(item: OrderDetailItem): number {
+  const n = parseFloat(String(item.promo_discount ?? "0"));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 function resolveProductId(item: OrderDetailItem): number | null {
   const p = item.product;
   if (p == null) return null;
@@ -59,6 +69,8 @@ export function OrderDetailItemCard({ item }: { item: OrderDetailItem }) {
   const each = unitPrice(item);
   const lineFormatted = line != null ? formatGbpPrice(line) : null;
   const eachFormatted = each != null ? formatGbpPrice(each) : null;
+  const free = freeQuantity(item);
+  const promoOff = linePromoDiscount(item);
 
   const inner = (
     <div
@@ -132,6 +144,18 @@ export function OrderDetailItemCard({ item }: { item: OrderDetailItem }) {
           >
             Qty {qtyLabel}
           </span>
+          {free > 0 ? (
+            <span
+              className="inline-flex min-h-[32px] items-center rounded-lg px-2.5 py-1 text-xs font-bold sm:text-sm"
+              style={{
+                background: "var(--success-bg)",
+                color: "var(--success-text)",
+                border: "1px solid var(--success-border)",
+              }}
+            >
+              {free} free
+            </span>
+          ) : null}
           {eachFormatted ? (
             <span style={{ color: "var(--muted-foreground)" }}>
               {eachFormatted} each
@@ -153,6 +177,14 @@ export function OrderDetailItemCard({ item }: { item: OrderDetailItem }) {
             —
           </span>
         )}
+        {promoOff > 0 ? (
+          <p
+            className="mt-1 text-xs font-semibold tabular-nums"
+            style={{ color: "var(--success-text)" }}
+          >
+            −£{promoOff.toFixed(2)} (5+1 offer)
+          </p>
+        ) : null}
       </div>
     </div>
   );

@@ -15,6 +15,7 @@ import LoadingSpinner from "@/components/LoadingSpinner";
 import { Button } from "@/components/ui/Button";
 import OrderReviewItem from "@/components/OrderReviewItem";
 import DiscountDisplay from "@/components/cart/DiscountDisplay";
+import PromoDiscountDisplay from "@/components/cart/PromoDiscountDisplay";
 import DeliveryFeeDisplay from "@/components/cart/DeliveryFeeDisplay";
 import SubtotalDisplay from "@/components/cart/SubtotalDisplay";
 import TotalDisplay from "@/components/cart/TotalDisplay";
@@ -99,12 +100,19 @@ interface CartData {
     quantity: string;
     total_price: string;
     added_date: string;
+    free_quantity?: string;
+    promo_discount?: string;
   }>;
   notes?: string;
   delivery_date?: string | null;
   is_home_delivery?: boolean;
   delivery_fee?: string;
   discount?: string;
+  promo_discount?: string;
+  promo_free_units?: number;
+  promo_eligible_quantity?: number;
+  promo_units_to_next_free?: number;
+  promo_label?: string;
   sum_price?: string;
   total_price?: string;
   total_items?: number;
@@ -324,6 +332,13 @@ export default function CheckoutPage() {
   // All values come from cart model - single source of truth
   const cartSubtotal = cartData?.sum_price ? parseFloat(cartData.sum_price) : 0;
   const cartDiscount = cartData?.discount ? parseFloat(cartData.discount) : 0;
+  const cartPromoDiscount = cartData?.promo_discount
+    ? parseFloat(String(cartData.promo_discount))
+    : 0;
+  const cartPromoFreeUnits = Number(cartData?.promo_free_units ?? 0);
+  const cartPromoUnitsToNextFree = Number(
+    cartData?.promo_units_to_next_free ?? 0
+  );
   const cartDeliveryFee = cartData?.delivery_fee
     ? parseFloat(cartData.delivery_fee)
     : 0;
@@ -418,9 +433,9 @@ export default function CheckoutPage() {
 
   // Calculate display total - only include delivery fee if address is filled
   const displayTotal = !isAddressFilled
-    ? cartSubtotal - cartDiscount // No delivery fee if address not filled
+    ? cartSubtotal - cartDiscount - cartPromoDiscount // No delivery fee if address not filled
     : !cartIsHomeDelivery
-      ? cartSubtotal + apiDeliveryFee - cartDiscount
+      ? cartSubtotal + apiDeliveryFee - cartDiscount - cartPromoDiscount
       : cartTotal;
 
   const deliveryDisplayProps = {
@@ -1705,6 +1720,12 @@ export default function CheckoutPage() {
                     <SubtotalDisplay subtotal={cartSubtotal} />
                     <DeliveryFeeDisplay {...deliveryDisplayProps} />
                     <DiscountDisplay discount={cartDiscount} />
+                    <PromoDiscountDisplay
+                      promoDiscount={cartPromoDiscount}
+                      freeUnits={cartPromoFreeUnits}
+                      unitsToNextFree={cartPromoUnitsToNextFree}
+                      label={cartData?.promo_label ?? null}
+                    />
                     <TotalDisplay total={displayTotal} />
                   </div>
 
@@ -2224,6 +2245,11 @@ export default function CheckoutPage() {
                       <SubtotalDisplay subtotal={cartSubtotal} />
                       <DeliveryFeeDisplay {...deliveryDisplayProps} />
                       <DiscountDisplay discount={cartDiscount} />
+                      <PromoDiscountDisplay
+                        promoDiscount={cartPromoDiscount}
+                        freeUnits={cartPromoFreeUnits}
+                        label={cartData?.promo_label ?? null}
+                      />
                       <TotalDisplay total={displayTotal} />
                     </div>
                   </div>

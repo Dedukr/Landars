@@ -14,6 +14,7 @@ interface UseDeliveryFeeProps {
   products: CartProduct[];
   subtotal: number;
   discount?: number;
+  promoDiscount?: number;
   postDeliveryGroup?: ApiCategoryGroup | null;
   categoryRecords?: ShopCategoryRecord[];
 }
@@ -28,6 +29,7 @@ export function useDeliveryFee({
   products,
   subtotal,
   discount = 0,
+  promoDiscount = 0,
   postDeliveryGroup = null,
   categoryRecords,
 }: UseDeliveryFeeProps): UseDeliveryFeeReturn {
@@ -61,9 +63,10 @@ export function useDeliveryFee({
     return calculateTotalPrice(
       subtotal,
       deliveryCalculation.deliveryFee,
-      discount
+      discount,
+      promoDiscount
     );
-  }, [subtotal, deliveryCalculation.deliveryFee, discount]);
+  }, [subtotal, deliveryCalculation.deliveryFee, discount, promoDiscount]);
 
   return {
     deliveryCalculation,

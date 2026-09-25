@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.urls import path
 
-from . import views
+from . import client_events, views
 
 urlpatterns = [
     # Authentication
@@ -57,6 +57,8 @@ urlpatterns = [
     ),
     # CSRF Token
     path("csrf-token/", views.csrf_token, name="csrf_token"),
+    # Browser failure beacon (see account/client_events.py)
+    path("client-event/", client_events.client_event, name="client_event"),
 ]
 
 # Debug probes must not be reachable in production

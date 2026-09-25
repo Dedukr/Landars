@@ -393,8 +393,8 @@ class ReviewImageInline(admin.TabularInline):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ["name", "get_price", "get_vat_display", "sold_quantity", "sold_orders_count", "get_categories"]
-    list_filter = ["active", "categories", "vat"]
+    list_display = ["name", "get_price", "get_vat_display", "promo_group", "sold_quantity", "sold_orders_count", "get_categories"]
+    list_filter = ["active", "categories", "vat", "promo_group"]
     filter_horizontal = ["categories"]
     search_fields = ["name"]
     ordering = ["name"]
@@ -409,6 +409,7 @@ class ProductAdmin(admin.ModelAdmin):
         "vat",
         "weight",
         "categories",
+        "promo_group",
         "sold_quantity",
         "sold_orders_count",
         "created_at",
@@ -1895,6 +1896,7 @@ class OrderAdmin(admin.ModelAdmin):
             "delivery_fee",
             "holiday_fee",
             "discount",
+            "promo_discount",
             "bill_use_delivery_address",
             "bill_company_name",
             "bill_contact_name",
@@ -1921,6 +1923,8 @@ class OrderAdmin(admin.ModelAdmin):
             "get_shipping_tracking_link",
             "get_shipping_label_link",
             "delivery_date_order_id",
+            # Promo discount is computed at checkout from Product.promo_group.
+            "promo_discount",
         ]
         return readonly  # Admins can edit customer, status, notes
 
@@ -3407,7 +3411,9 @@ class OrderAdmin(admin.ModelAdmin):
                 line_vat = (line_gross - line_net).quantize(Decimal("0.01"))
                 items_net += line_net
                 items_vat += line_vat
-            sum_ex_vat = (items_net + order.delivery_fee + order.holiday_fee_amount - order.discount).quantize(Decimal("0.01"))
+            # Promo discount sits outside the VAT base, exactly like `discount`,
+            # so sum_ex_vat + vat_sum keeps matching order.total_price.
+            sum_ex_vat = (items_net + order.delivery_fee + order.holiday_fee_amount - order.discount - order.promo_discount).quantize(Decimal("0.01"))
             return {
                 "order_date": order.delivery_date.strftime("%Y-%m-%d") if order.delivery_date else "",
                 "client_full_name": order.customer.name if order.customer else "",

@@ -236,6 +236,17 @@ class Invoice(models.Model):
         max_digits=10, decimal_places=2, default=0
     )
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    # Automatic multi-buy promotion (e.g. Jerky 5+1), snapshotted from the order.
+    # Treated exactly like ``discount_amount``: outside the VAT base.
+    promo_discount_amount = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0
+    )
+    promo_label = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="Name of the applied promotion at issuance (e.g. 'Jerky 5+1').",
+    )
 
     vat_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
@@ -315,6 +326,7 @@ class Invoice(models.Model):
             "holiday_fee_amount",
             "delivery_fee_amount",
             "discount_amount",
+            "promo_discount_amount",
             "vat_amount",
             "total_amount",
             "amount_paid",
@@ -338,6 +350,8 @@ class Invoice(models.Model):
                     "holiday_fee_amount",
                     "delivery_fee_amount",
                     "discount_amount",
+                    "promo_discount_amount",
+                    "promo_label",
                     "vat_amount",
                     "total_amount",
                     "invoice_link",
@@ -443,6 +457,14 @@ class Invoice(models.Model):
 
         self.delivery_fee_amount = Decimal(str(order.delivery_fee))
         self.discount_amount = Decimal(str(order.discount))
+
+        # Automatic promotion (e.g. Jerky 5+1) frozen at issuance from the order's
+        # own checkout snapshot, so a later flag change cannot alter this invoice.
+        self.promo_discount_amount = Decimal(str(order.promo_discount or 0)).quantize(
+            Decimal("0.01")
+        )
+        self.promo_label = order.promo_label or ""
+
         self.total_amount = Decimal(str(order.total_price))
         # VAT amount will be calculated after line items are built
         self.vat_amount = Decimal("0")
@@ -495,6 +517,14 @@ class Invoice(models.Model):
 
             vat_total += line_vat_amount
 
+            # Promotion snapshot. quantity/line_total stay gross and the VAT figures
+            # above are computed on those gross values: the promo sits outside the
+            # VAT base, exactly like the order-level discount.
+            free_quantity = item.free_quantity or Decimal("0")
+            promo_discount = Decimal(str(item.get_promo_discount() or 0)).quantize(
+                Decimal("0.01")
+            )
+
             InvoiceLineItem.objects.create(
                 invoice=self,
                 description=description,
@@ -504,6 +534,8 @@ class Invoice(models.Model):
                 line_total=line_total_gross,
                 vat_rate=vat_rate,
                 vat_amount=line_vat_amount,
+                free_quantity=free_quantity,
+                promo_discount=promo_discount,
             )
 
         # Calculate total VAT from all line items
@@ -807,6 +839,16 @@ class CreditNote(models.Model):
         max_digits=10, decimal_places=2, default=0
     )
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    # Automatic multi-buy promotion, copied from the credited invoice.
+    promo_discount_amount = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0
+    )
+    promo_label = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="Name of the promotion applied on the credited invoice.",
+    )
     vat_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
@@ -850,6 +892,7 @@ class CreditNote(models.Model):
             "holiday_fee_amount",
             "delivery_fee_amount",
             "discount_amount",
+            "promo_discount_amount",
             "vat_amount",
             "total_amount",
         ]:
@@ -871,6 +914,8 @@ class CreditNote(models.Model):
                     "holiday_fee_amount",
                     "delivery_fee_amount",
                     "discount_amount",
+                    "promo_discount_amount",
+                    "promo_label",
                     "vat_amount",
                     "total_amount",
                     "credit_note_link",
@@ -919,6 +964,8 @@ class CreditNote(models.Model):
         self.holiday_fee_amount = invoice.holiday_fee_amount
         self.delivery_fee_amount = invoice.delivery_fee_amount
         self.discount_amount = invoice.discount_amount
+        self.promo_discount_amount = invoice.promo_discount_amount
+        self.promo_label = invoice.promo_label
         self.vat_amount = invoice.vat_amount
         self.total_amount = invoice.total_amount
 
@@ -947,6 +994,8 @@ class CreditNote(models.Model):
                 line_total=item.line_total,
                 vat_rate=item.vat_rate,
                 vat_amount=item.vat_amount,
+                free_quantity=item.free_quantity,
+                promo_discount=item.promo_discount,
             )
 
     def get_presigned_credit_note_url(self, expires_in: int = 300) -> str:
@@ -1147,6 +1196,20 @@ class CreditNoteLineItem(models.Model):
     )
     vat_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
+    # Promotion snapshot copied from the credited invoice line item.
+    free_quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text="Units on this line given away by a promotion (included in quantity).",
+    )
+    promo_discount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text="Value of the free units on this line.",
+    )
+
     class Meta:
         ordering = ["id"]
 
@@ -1158,12 +1221,22 @@ class CreditNoteLineItem(models.Model):
         """VAT amount per unit: unit_gross - unit_price (gross - net)."""
         return (self.unit_gross - self.unit_price).quantize(Decimal("0.01"))
 
+    @property
+    def net_line_total(self) -> Decimal:
+        """``line_total`` after the promotion discount."""
+        return (self.line_total or Decimal("0")) - (self.promo_discount or Decimal("0"))
+
     def get_vat_display(self) -> str:
         """Display VAT rate as percentage (e.g., '20%' instead of 0.20)."""
         vat_percent = self.vat_rate * Decimal("100")
         return f"{vat_percent:.0f}%"
 
     def clean(self):
+        for promo_field in ("free_quantity", "promo_discount"):
+            value = getattr(self, promo_field)
+            if value is not None and value < 0:
+                raise ValidationError({promo_field: "Must be non-negative."})
+
         if self.pk:
             prev = CreditNoteLineItem.objects.get(pk=self.pk)
             if (
@@ -1174,6 +1247,8 @@ class CreditNoteLineItem(models.Model):
                 or prev.line_total != self.line_total
                 or prev.vat_rate != self.vat_rate
                 or prev.vat_amount != self.vat_amount
+                or prev.free_quantity != self.free_quantity
+                or prev.promo_discount != self.promo_discount
                 or prev.credit_note_id != self.credit_note_id
             ):
                 raise ValidationError(
@@ -1214,6 +1289,22 @@ class InvoiceLineItem(models.Model):
     )
     vat_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
+    # Automatic promotion snapshot. ``quantity`` / ``line_total`` stay gross so the
+    # VAT figures above are unaffected; the promo is deducted at document level,
+    # exactly like the order-level discount.
+    free_quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text="Units on this line given away by a promotion (included in quantity).",
+    )
+    promo_discount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text="Value of the free units on this line.",
+    )
+
     class Meta:
         ordering = ["id"]
 
@@ -1225,12 +1316,22 @@ class InvoiceLineItem(models.Model):
         """VAT amount per unit: unit_gross - unit_price (gross - net)."""
         return (self.unit_gross - self.unit_price).quantize(Decimal("0.01"))
 
+    @property
+    def net_line_total(self) -> Decimal:
+        """``line_total`` after the promotion discount."""
+        return (self.line_total or Decimal("0")) - (self.promo_discount or Decimal("0"))
+
     def get_vat_display(self) -> str:
         """Display VAT rate as percentage (e.g., '20%' instead of 0.20)."""
         vat_percent = self.vat_rate * Decimal("100")
         return f"{vat_percent:.0f}%"
 
     def clean(self):
+        for promo_field in ("free_quantity", "promo_discount"):
+            value = getattr(self, promo_field)
+            if value is not None and value < 0:
+                raise ValidationError({promo_field: "Must be non-negative."})
+
         if self.pk:
             prev = InvoiceLineItem.objects.get(pk=self.pk)
             if (
@@ -1246,6 +1347,17 @@ class InvoiceLineItem(models.Model):
                 raise ValidationError(
                     "Invoice line items are immutable and cannot be modified after creation."
                 )
+
+            # Promo fields are write-once: they may still be populated after the row
+            # was created (line items are created before the promo is attributed),
+            # but never changed or cleared afterwards.
+            for promo_field in ("free_quantity", "promo_discount"):
+                previous = getattr(prev, promo_field) or Decimal("0")
+                current = getattr(self, promo_field) or Decimal("0")
+                if previous != current and previous != Decimal("0"):
+                    raise ValidationError(
+                        "Invoice line items are immutable and cannot be modified after creation."
+                    )
 
     def save(self, *args, **kwargs):
         self.full_clean()

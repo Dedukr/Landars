@@ -1,8 +1,16 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { httpClient } from "@/utils/httpClient";
-import { getAuthUrl, getSafeNextRedirect } from "@/utils/authHelpers";
+import {
+  describeAuthError,
+  formatWaitTime,
+  getAuthUrl,
+  getSafeNextRedirect,
+  describeResendQueuedNotice,
+} from "@/utils/authHelpers";
+import { AUTH_FETCH_TIMEOUT_MS } from "@/utils/fetchWithTimeout";
+import { normalizeEmail } from "@/utils/emailValidation";
 
 interface EmailVerificationPopupProps {
   isOpen: boolean;
@@ -11,19 +19,47 @@ interface EmailVerificationPopupProps {
   userName?: string;
   /** Optional return path; preserved on sign-in link when safe */
   next?: string | null;
+  /**
+   * False when the backend created the account but could not queue the
+   * verification email (`email_queued: false`): the popup then says so and
+   * puts the Resend button front and centre. Defaults to true.
+   */
+  emailQueued?: boolean;
 }
+
+interface ResendResponse {
+  message?: string;
+  already_verified?: boolean;
+  email_queued?: boolean;
+  next_request_allowed_in?: number;
+}
+
+const RESEND_NOTICE_MS = 6000;
 
 const EmailVerificationPopup: React.FC<EmailVerificationPopupProps> = ({
   isOpen,
   onClose,
   userEmail,
   next,
+  emailQueued = true,
 }) => {
   const router = useRouter();
   const [isResending, setIsResending] = useState(false);
   const [resendError, setResendError] = useState("");
-  const [resendSuccess, setResendSuccess] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState("");
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
+  // Flips once a resend went through, so "we couldn't send it" stops showing.
+  const [resentOk, setResentOk] = useState(false);
+  // Synchronous in-flight guard: state updates land too late for double clicks.
+  const resendingRef = useRef(false);
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    },
+    []
+  );
 
   // Countdown timer effect
   useEffect(() => {
@@ -44,17 +80,6 @@ const EmailVerificationPopup: React.FC<EmailVerificationPopupProps> = ({
       }
     };
   }, [cooldownRemaining]);
-
-  // Clear error when countdown reaches 0
-  useEffect(() => {
-    if (
-      cooldownRemaining === 0 &&
-      resendError &&
-      resendError.includes("Please wait")
-    ) {
-      setResendError("");
-    }
-  }, [cooldownRemaining, resendError]);
 
   if (!isOpen) return null;
 
@@ -80,58 +105,56 @@ const EmailVerificationPopup: React.FC<EmailVerificationPopupProps> = ({
   };
 
   const handleResendVerification = async () => {
-    if (isResending || cooldownRemaining > 0) return;
+    if (resendingRef.current || cooldownRemaining > 0) return;
+    resendingRef.current = true;
 
     setIsResending(true);
     setResendError("");
-    setResendSuccess(false);
+    setResendSuccess("");
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
 
     try {
-      await httpClient.post(
+      const email = normalizeEmail(userEmail);
+      const data = await httpClient.post<ResendResponse>(
         "/api/auth/resend-verification/",
-        {
-          email: userEmail,
-        },
-        { skipAuth: true, skipCSRF: true }
+        { email },
+        { skipAuth: true, skipCSRF: true, timeoutMs: AUTH_FETCH_TIMEOUT_MS }
       );
 
-      setResendSuccess(true);
-      // Clear success message after 3 seconds
-      setTimeout(() => setResendSuccess(false), 3000);
+      const notice = describeResendQueuedNotice(data, email);
+      if (notice.kind === "error") {
+        setResendError(notice.message);
+      } else {
+        setResentOk(true);
+        setResendSuccess(notice.message);
+        noticeTimerRef.current = setTimeout(
+          () => setResendSuccess(""),
+          RESEND_NOTICE_MS
+        );
+      }
+      const wait = Number(data?.next_request_allowed_in);
+      if (Number.isFinite(wait) && wait > 0) {
+        setCooldownRemaining(Math.ceil(wait));
+      }
     } catch (error: unknown) {
       console.error("Resend verification error:", error);
-
-      // Check if it's a cooldown error
-      if (error && typeof error === "object" && "response" in error) {
-        const response = (
-          error as {
-            response: {
-              data?: {
-                cooldown_remaining?: number;
-                error?: string;
-              };
-              status?: number;
-            };
-          }
-        ).response;
-
-        if (response?.data?.cooldown_remaining) {
-          setCooldownRemaining(response.data.cooldown_remaining);
-          // Don't set error message for cooldown - let countdown display handle it
-        } else if (response?.data?.error) {
-          setResendError(response.data.error);
-        } else {
-          setResendError("Failed to resend verification email");
-        }
+      const described = describeAuthError(error, "resend");
+      if (
+        (described.code === "cooldown" || described.code === "rate_limited") &&
+        described.retryAfter
+      ) {
+        // The live countdown below is the message; no stale text afterwards.
+        setCooldownRemaining(described.retryAfter);
       } else {
-        const errorMessage =
-          (error as Error).message || "Failed to resend verification email";
-        setResendError(errorMessage);
+        setResendError(described.message);
       }
     } finally {
+      resendingRef.current = false;
       setIsResending(false);
     }
   };
+
+  const showNotQueued = !emailQueued && !resentOk;
 
   return (
     <div
@@ -183,7 +206,7 @@ const EmailVerificationPopup: React.FC<EmailVerificationPopupProps> = ({
             className="text-2xl font-bold mb-3"
             style={{ color: "var(--foreground)" }}
           >
-            Check Your Email
+            {showNotQueued ? "Account Created" : "Check Your Email"}
           </h2>
 
           <p
@@ -193,65 +216,118 @@ const EmailVerificationPopup: React.FC<EmailVerificationPopupProps> = ({
               opacity: 0.8,
             }}
           >
-            We&apos;ve sent a verification link to{" "}
-            <span className="font-semibold" style={{ color: "var(--primary)" }}>
-              {userEmail}
-            </span>
-            . Please check your inbox and click the link to activate your
-            account.
+            {showNotQueued ? (
+              <>
+                Your account has been created, but we couldn&apos;t send the
+                verification email to{" "}
+                <span
+                  className="font-semibold"
+                  style={{ color: "var(--primary)" }}
+                >
+                  {userEmail}
+                </span>{" "}
+                automatically. Use the button below to send it now.
+              </>
+            ) : (
+              <>
+                We&apos;ve sent a verification link to{" "}
+                <span
+                  className="font-semibold"
+                  style={{ color: "var(--primary)" }}
+                >
+                  {userEmail}
+                </span>
+                . Please check your inbox and click the link to activate your
+                account.
+              </>
+            )}
           </p>
 
-          {/* Info box */}
-          <div
-            className="mb-6 p-4 rounded-lg border"
-            style={{
-              background: "var(--sidebar-bg)",
-              borderColor: "var(--sidebar-border)",
-            }}
-          >
-            <div className="flex items-start space-x-3">
-              <svg
-                className="w-5 h-5 mt-0.5 flex-shrink-0"
-                style={{ color: "var(--accent)" }}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+          {showNotQueued ? (
+            /* Nothing was sent: make Resend the primary action */
+            <div
+              className="mb-6 p-4 rounded-lg border"
+              style={{
+                background: "rgba(251, 191, 36, 0.1)",
+                borderColor: "rgba(251, 191, 36, 0.3)",
+              }}
+            >
+              <p
+                className="text-sm font-medium mb-3"
+                style={{ color: "var(--foreground)" }}
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              <div>
-                <p
-                  className="text-sm font-medium"
-                  style={{ color: "var(--foreground)" }}
+                Your verification email has not been sent yet.
+              </p>
+              <button
+                type="button"
+                onClick={handleResendVerification}
+                disabled={isResending || cooldownRemaining > 0}
+                className="w-full py-3 px-4 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  backgroundColor: "var(--btn-primary)",
+                  color: "var(--btn-primary-fg)",
+                  border: "1px solid var(--btn-primary)",
+                  boxShadow: "0 0 0 3px rgba(251, 191, 36, 0.35)",
+                }}
+              >
+                {isResending ? "Sending..." : "Resend verification email"}
+              </button>
+            </div>
+          ) : (
+            /* Info box */
+            <div
+              className="mb-6 p-4 rounded-lg border"
+              style={{
+                background: "var(--sidebar-bg)",
+                borderColor: "var(--sidebar-border)",
+              }}
+            >
+              <div className="flex items-start space-x-3">
+                <svg
+                  className="w-5 h-5 mt-0.5 flex-shrink-0"
+                  style={{ color: "var(--accent)" }}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
                 >
-                  Didn&apos;t receive the email?
-                </p>
-                <p
-                  className="text-sm mt-1"
-                  style={{ color: "var(--muted-foreground)" }}
-                >
-                  Check your spam folder or{" "}
-                  <button
-                    onClick={handleResendVerification}
-                    disabled={isResending || cooldownRemaining > 0}
-                    className="underline hover:no-underline transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ color: "var(--primary)" }}
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <div>
+                  <p
+                    className="text-sm font-medium"
+                    style={{ color: "var(--foreground)" }}
                   >
-                    {isResending ? "sending..." : "resend verification email"}
-                  </button>
-                </p>
+                    Didn&apos;t receive the email?
+                  </p>
+                  <p
+                    className="text-sm mt-1"
+                    style={{ color: "var(--muted-foreground)" }}
+                  >
+                    Check your spam folder or{" "}
+                    <button
+                      type="button"
+                      onClick={handleResendVerification}
+                      disabled={isResending || cooldownRemaining > 0}
+                      className="underline hover:no-underline transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ color: "var(--primary)" }}
+                    >
+                      {isResending ? "sending..." : "resend verification email"}
+                    </button>
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Resend Error Message - only show when there's an error but no countdown */}
           {resendError && cooldownRemaining === 0 && (
             <div
+              role="alert"
               className="mb-4 p-3 rounded-lg border text-sm"
               style={{
                 background: "rgba(239, 68, 68, 0.1)",
@@ -289,7 +365,7 @@ const EmailVerificationPopup: React.FC<EmailVerificationPopupProps> = ({
                   />
                 </svg>
                 <span className="font-medium">
-                  Resend available in {cooldownRemaining} seconds
+                  Resend available in {formatWaitTime(cooldownRemaining)}
                 </span>
               </div>
             </div>
@@ -297,6 +373,7 @@ const EmailVerificationPopup: React.FC<EmailVerificationPopupProps> = ({
 
           {resendSuccess && (
             <div
+              role="status"
               className="mb-4 p-3 rounded-lg border text-sm"
               style={{
                 background: "var(--success-bg)",
@@ -304,7 +381,7 @@ const EmailVerificationPopup: React.FC<EmailVerificationPopupProps> = ({
                 color: "var(--success-text)",
               }}
             >
-              Verification email sent successfully! Please check your inbox.
+              {resendSuccess}
             </div>
           )}
 

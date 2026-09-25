@@ -1,5 +1,6 @@
 "use client";
 import { useMemo } from "react";
+import { computeJerkyPromo, type JerkyPromoResult } from "@/lib/jerkyPromo";
 
 interface Product {
   id: number;
@@ -10,6 +11,7 @@ interface Product {
   primary_image?: string | null;
   description?: string;
   categories?: string[];
+  promo_group?: string;
 }
 
 interface CartItem {
@@ -26,7 +28,10 @@ interface CartCalculations {
     price: number;
     categories: string[];
     quantity: number;
+    promoGroup: string;
   }>;
+  /** Local promo estimate; server promo values take precedence when available. */
+  promo: JerkyPromoResult;
 }
 
 export const useCartCalculations = (
@@ -47,12 +52,23 @@ export const useCartCalculations = (
       price: parseFloat(product.price),
       categories: product.categories || [],
       quantity: cart.find((item) => item.productId === product.id)?.quantity || 0,
+      promoGroup: product.promo_group || "",
     }));
+
+    const promo = computeJerkyPromo(
+      cartProducts.map((product) => ({
+        productId: product.id,
+        price: product.price,
+        quantity: product.quantity,
+        promoGroup: product.promoGroup,
+      }))
+    );
 
     return {
       subtotal,
       totalItems,
       cartProducts,
+      promo,
     };
   }, [products, cart]);
 };
