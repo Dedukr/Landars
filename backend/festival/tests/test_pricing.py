@@ -2,7 +2,12 @@ from decimal import Decimal
 
 from django.test import SimpleTestCase
 
-from festival.services.pricing import price_line, price_order
+from festival.services.pricing import (
+    half_portion_unit_price,
+    portion_meal_unit_price,
+    price_line,
+    price_order,
+)
 
 
 class PricingTests(SimpleTestCase):
@@ -76,3 +81,19 @@ class PricingTests(SimpleTestCase):
         self.assertEqual(line.line_net, Decimal("0.84"))
         self.assertEqual(line.line_vat, Decimal("0.17"))
         self.assertEqual(line.line_net + line.line_vat, line.line_total)
+
+    def test_half_portion_rounds_to_pennies_before_quantity(self):
+        self.assertEqual(half_portion_unit_price(Decimal("8.99")), Decimal("4.50"))
+        self.assertEqual(half_portion_unit_price("8.99"), Decimal("4.50"))
+        self.assertEqual(portion_meal_unit_price(Decimal("8.99"), "FULL"), Decimal("8.99"))
+        self.assertEqual(portion_meal_unit_price(Decimal("8.99"), "HALF"), Decimal("4.50"))
+        # 4.50 × 3, not an unrounded 8.99 × 0.5 × 3.
+        line = price_line(
+            product_id=1,
+            product_name="A",
+            quantity=3,
+            unit_gross=half_portion_unit_price(Decimal("8.99")),
+            vat_rate_percent=Decimal("0"),
+        )
+        self.assertEqual(line.unit_price, Decimal("4.50"))
+        self.assertEqual(line.line_total, Decimal("13.50"))

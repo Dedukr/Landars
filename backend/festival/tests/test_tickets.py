@@ -8,6 +8,8 @@ from django.test import SimpleTestCase, override_settings
 
 from festival.services.tickets import (
     encode_print_payload,
+    render_cancellation_kitchen_ticket,
+    render_customer_credit_ticket,
     render_customer_ticket,
     render_customer_ticket_markup,
     render_kitchen_ticket,
@@ -186,6 +188,62 @@ class TicketLayoutTests(SimpleTestCase):
         self.assertIn("[align: center]Landar's Food\n", text)
         self.assertIn("[align: center]VAT No 512363424", text)
         self.assertIn("£9.99", strip_markup_tags(text))
+
+    def test_half_portion_is_labelled_on_kitchen_customer_and_credit_tickets(self):
+        item = _item(
+            product_name="Varenyky",
+            filling_name="Potato",
+            addition_name="Cola",
+            portion_size="HALF",
+            quantity=2,
+            line_total=Decimal("12.00"),
+        )
+        order = self._order([item])
+        order.cancelled_at = None
+        kitchen = render_kitchen_ticket(order)
+        self.assertIn(
+            "2 x Varenyky (Potato)\n   HALF PORTION\n   + Cola",
+            kitchen,
+        )
+        cancel = render_cancellation_kitchen_ticket(order, reason="Sold out")
+        self.assertIn("   HALF PORTION", cancel)
+        self.assertIn("2 x Varenyky (Potato)", cancel)
+
+        credit = SimpleNamespace(
+            issued_at=order.created_at,
+            credit_note_number="FCN-1",
+            original_invoice_number="FINV-1",
+            total_gross=Decimal("12.00"),
+            vat_breakdown={},
+            reason="",
+            seller_snapshot={
+                "name": "Landar's Food",
+                "address": "15 Flint Rise",
+                "city": "Kent",
+                "postal_code": "DA10 1DJ",
+                "country": "United Kingdom",
+            },
+        )
+        with mock.patch(
+            "festival.services.documents.seller_snapshot",
+            return_value={"name": "Landar's Food", "vat_number": "512363424"},
+        ), mock.patch(
+            "festival.services.documents.pricing_from_order",
+            return_value=SimpleNamespace(
+                total_gross=Decimal("12.00"),
+                vat_breakdown={"0": {"net": "12.00", "vat": "0.00"}},
+            ),
+        ):
+            customer = render_customer_ticket(order, invoice=None)
+            markup = render_customer_ticket_markup(order, invoice=None)
+            kitchen_markup = render_kitchen_ticket_markup(order)
+        self.assertIn("HALF PORTION", customer)
+        self.assertIn("£12.00", customer)
+        self.assertIn("HALF PORTION", strip_markup_tags(markup))
+        self.assertIn("HALF PORTION", kitchen_markup)
+        refund = render_customer_credit_ticket(order, credit)
+        self.assertIn("HALF PORTION", refund)
+        self.assertIn("Varenyky (Potato)", refund)
 
 
 def _center_landars(text: str) -> bool:

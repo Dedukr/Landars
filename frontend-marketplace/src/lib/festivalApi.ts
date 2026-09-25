@@ -12,6 +12,8 @@ export type FestivalFilling = {
   image: string;
 };
 
+export type FestivalPortionSize = "FULL" | "HALF";
+
 export type FestivalProduct = {
   id: number;
   name: string;
@@ -24,6 +26,10 @@ export type FestivalProduct = {
   image: string;
   price: string;
   vat_rate: string;
+  /** When true, half_price is the backend-calculated 50% meal price. */
+  allow_half_portion?: boolean;
+  half_portion?: string;
+  half_price?: string | null;
 };
 
 export type FestivalPendingTicketItem = {
@@ -76,6 +82,7 @@ export type FestivalOrderItemInput = {
   quantity: number;
   filling_id?: number | null;
   addition_id?: number | null;
+  portion_size?: FestivalPortionSize;
 };
 
 export async function fetchFestivalProducts(): Promise<FestivalProduct[]> {

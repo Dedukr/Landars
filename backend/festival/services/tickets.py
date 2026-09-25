@@ -8,7 +8,15 @@ from zoneinfo import ZoneInfo
 from django.conf import settings
 from django.utils import timezone
 
-from festival.models import FestivalCreditNote, FestivalInvoice, FestivalOrder, FestivalOrderItem
+from festival.models import (
+    HALF_PORTION_LABEL,
+    PORTION_FULL,
+    PORTION_HALF,
+    FestivalCreditNote,
+    FestivalInvoice,
+    FestivalOrder,
+    FestivalOrderItem,
+)
 from festival.services.pricing import money
 
 LONDON = ZoneInfo("Europe/London")
@@ -197,11 +205,20 @@ def _wrap_words(text: str, width: int) -> list[str]:
 
 
 def _product_label(item: FestivalOrderItem) -> str:
-    """Product (+ filling); addition is rendered on its own line."""
-    name = item.product_name or ""
-    if item.filling_name:
-        name = f"{name} ({item.filling_name})"
+    """Product (+ filling). Half portion and addition are their own lines."""
+    name = getattr(item, "product_name", "") or ""
+    filling = getattr(item, "filling_name", "") or ""
+    if filling:
+        name = f"{name} ({filling})"
     return name
+
+
+def _portion_label(item: FestivalOrderItem) -> str:
+    """Blank for full portions so legacy tickets stay unchanged."""
+    portion = getattr(item, "portion_size", None) or PORTION_FULL
+    if portion == PORTION_HALF:
+        return HALF_PORTION_LABEL
+    return ""
 
 
 def _addition_label(item: FestivalOrderItem) -> str:
@@ -265,11 +282,13 @@ def _qty_item_lines(
     Item block::
 
         1 x Deep Fried Pelmeni          £9.99
+           HALF PORTION
             + Sparkling water
     """
     prefix = f"{quantity} x "
     indent = " " * len(prefix)
     product = _product_label(item)
+    portion = _portion_label(item)
     addition = _addition_label(item)
     lines: list[str] = []
 
@@ -293,6 +312,12 @@ def _qty_item_lines(
             lines.append(f"{first}{' ' * pad}{price}"[:width])
         for part in wrapped[1:]:
             lines.append(f"{indent}{part}"[:width])
+
+    if portion:
+        if markup:
+            lines.append(_align_left(f"{_ADDITION_INDENT_MARKUP}{portion}"))
+        else:
+            lines.append(f"{_ADDITION_INDENT}{portion}"[:width])
 
     if addition:
         add_avail = max(8, width - len(_ADDITION_INDENT))

@@ -91,6 +91,7 @@ export function FestivalCategorySection({
                   brokenImages={brokenImages}
                   onImageError={onImageError}
                   priority={imagePriorityStart + index < 2}
+                  drinksIncluded={showDrinksIncluded}
                 />
               </li>
             ))}

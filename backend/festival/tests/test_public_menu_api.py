@@ -172,6 +172,9 @@ class FestivalPublicMenuAPITests(TestCase):
                 "image",
                 "price",
                 "portion",
+                "allow_half_portion",
+                "half_portion",
+                "half_price",
                 "description",
                 "fillings",
                 "addition_class",
@@ -185,6 +188,9 @@ class FestivalPublicMenuAPITests(TestCase):
         self.assertNotIn("id", varenyky)
         self.assertNotIn("vat_rate", varenyky)
         self.assertEqual(varenyky["portion"], "6 pieces")
+        self.assertFalse(varenyky["allow_half_portion"])
+        self.assertEqual(varenyky["half_portion"], "")
+        self.assertIsNone(varenyky["half_price"])
         self.assertEqual(varenyky["description"], "Handmade dumplings")
         self.assertEqual(
             [f["name"] for f in varenyky["fillings"]], ["Potato", "Cheese"]
@@ -210,6 +216,25 @@ class FestivalPublicMenuAPITests(TestCase):
         self.assertEqual(kvas["addition_class"], "Soft drinks")
         self.assertEqual([a["name"] for a in kvas["additions"]], ["Cola"])
         self.assertEqual(set(kvas["additions"][0].keys()), {"name", "price"})
+
+    def test_half_portion_price_is_calculated_not_stored(self):
+        self.public_product.price = Decimal("8.99")
+        self.public_product.allow_half_portion = True
+        self.public_product.half_portion = "3 pieces"
+        self.public_product.save()
+
+        resp = self.client.get("/api/festival/menu/")
+        meals = next(c for c in resp.data["categories"] if c["name"] == "Meals")
+        varenyky = next(p for p in meals["products"] if p["name"] == "Varenyky")
+        self.assertTrue(varenyky["allow_half_portion"])
+        self.assertEqual(varenyky["portion"], "6 pieces")
+        self.assertEqual(varenyky["half_portion"], "3 pieces")
+        self.assertEqual(varenyky["half_price"], "4.50")
+        self.assertEqual(varenyky["price"], "8.99")
+
+        shashlik = next(p for p in meals["products"] if p["name"] == "Shashlik")
+        self.assertFalse(shashlik["allow_half_portion"])
+        self.assertIsNone(shashlik["half_price"])
 
     def test_non_get_methods_return_405(self):
         for method in ("post", "put", "patch", "delete"):

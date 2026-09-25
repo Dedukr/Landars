@@ -19,6 +19,11 @@ export type FestivalMenuProduct = {
   image: string;
   price: string;
   portion: string;
+  /** Half portions are offered only when the product enables them. */
+  allow_half_portion?: boolean;
+  half_portion?: string;
+  /** Backend-calculated half meal price. Null when halves are disabled. */
+  half_price?: string | null;
   description: string;
   fillings: FestivalMenuFilling[];
   /** Backend addition class name, e.g. "Soft drinks". Null when no add-ons. */

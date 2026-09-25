@@ -42,6 +42,7 @@ from festival.services.documents import (
     get_presigned_pdf_url,
     issue_invoice_for_order,
 )
+from festival.services.pricing import half_portion_unit_price
 
 
 class FestivalOrderItemInline(admin.TabularInline):
@@ -52,6 +53,7 @@ class FestivalOrderItemInline(admin.TabularInline):
     fields = [
         "product_display",
         "filling_display",
+        "portion_display",
         "addition_display",
         "quantity",
         "addition_unit_price",
@@ -97,6 +99,10 @@ class FestivalOrderItemInline(admin.TabularInline):
             )
             return format_html('<a href="{}">{}</a>', url, filling)
         return obj.filling_name or "—"
+
+    @admin.display(description="Portion")
+    def portion_display(self, obj: FestivalOrderItem):
+        return obj.get_portion_size_display()
 
     @admin.display(description="Addition")
     def addition_display(self, obj: FestivalOrderItem):
@@ -236,17 +242,18 @@ class FestivalProductAdmin(admin.ModelAdmin):
         "category",
         "addition_class",
         "price",
+        "allow_half_portion",
         "vat_rate",
         "is_active",
         "created_at",
         "image_preview",
     ]
-    list_filter = ["category", "addition_class", "is_active", "vat_rate"]
+    list_filter = ["category", "addition_class", "is_active", "allow_half_portion", "vat_rate"]
     list_editable = ["is_active"]
     search_fields = ["name", "category__name", "addition_class__name"]
     autocomplete_fields = ["category", "addition_class"]
     ordering = ["-is_active", "category__created_at", "category__id", "created_at", "id"]
-    readonly_fields = ["updated_at", "image_preview"]
+    readonly_fields = ["updated_at", "image_preview", "half_price_preview"]
     fields = [
         "category",
         "addition_class",
@@ -254,6 +261,9 @@ class FestivalProductAdmin(admin.ModelAdmin):
         "price",
         "vat_rate",
         "portion",
+        "allow_half_portion",
+        "half_portion",
+        "half_price_preview",
         "description",
         "ingredients",
         "toppings",
@@ -268,6 +278,15 @@ class FestivalProductAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).prefetch_related("fillings")
+
+    @admin.display(description="Half price")
+    def half_price_preview(self, obj: FestivalProduct):
+        if obj is None or obj.price is None:
+            return "—"
+        price = half_portion_unit_price(obj.price)
+        if not obj.allow_half_portion:
+            return "—"
+        return f"£{price} (50% of the meal price, rounded to pennies)"
 
     def image_preview(self, obj: FestivalProduct):
         image_url = obj.image_url

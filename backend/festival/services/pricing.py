@@ -12,6 +12,24 @@ def money(value: Decimal | int | str) -> Decimal:
     return Decimal(str(value)).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
 
 
+def half_portion_unit_price(full_price: Decimal | int | str) -> Decimal:
+    """50% of the VAT-inclusive meal price, rounded to pennies.
+
+    £8.99 becomes £4.50. Round this unit price before multiplying by
+    quantity. Paid extras are not included.
+    """
+    return money(Decimal(str(full_price)) * Decimal("0.5"))
+
+
+def portion_meal_unit_price(
+    full_price: Decimal | int | str, portion_size: str
+) -> Decimal:
+    """Meal unit price for FULL or HALF. Extras are added by the caller."""
+    if portion_size == "HALF":
+        return half_portion_unit_price(full_price)
+    return money(full_price)
+
+
 @dataclass(frozen=True)
 class PricedLine:
     product_id: int

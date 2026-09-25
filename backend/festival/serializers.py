@@ -2,8 +2,15 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from festival.models import FestivalAddition, FestivalFilling, FestivalProduct
+from festival.models import (
+    PORTION_FULL,
+    PORTION_HALF,
+    FestivalAddition,
+    FestivalFilling,
+    FestivalProduct,
+)
 from festival.services.orders import order_print_status
+from festival.services.pricing import half_portion_unit_price
 
 
 def resolve_filling_image(
@@ -51,6 +58,12 @@ class PublicFestivalFillingSerializer(serializers.ModelSerializer):
         return resolve_filling_description(obj, self.context.get("product"))
 
 
+def serialized_half_price(product: FestivalProduct) -> str | None:
+    if not product.allow_half_portion:
+        return None
+    return f"{half_portion_unit_price(product.price):.2f}"
+
+
 class PublicFestivalProductSerializer(serializers.ModelSerializer):
     image = serializers.CharField(source="image_url", read_only=True)
     category = serializers.SerializerMethodField()
@@ -58,6 +71,7 @@ class PublicFestivalProductSerializer(serializers.ModelSerializer):
     additions = serializers.SerializerMethodField()
     fillings = serializers.SerializerMethodField()
     price = serializers.DecimalField(max_digits=10, decimal_places=2)
+    half_price = serializers.SerializerMethodField()
 
     class Meta:
         model = FestivalProduct
@@ -67,6 +81,9 @@ class PublicFestivalProductSerializer(serializers.ModelSerializer):
             "image",
             "price",
             "portion",
+            "allow_half_portion",
+            "half_portion",
+            "half_price",
             "description",
             "fillings",
             "addition_class",
@@ -76,6 +93,9 @@ class PublicFestivalProductSerializer(serializers.ModelSerializer):
             "allergens",
             "created_at",
         ]
+
+    def get_half_price(self, obj: FestivalProduct) -> str | None:
+        return serialized_half_price(obj)
 
     def get_category(self, obj: FestivalProduct) -> str | None:
         return obj.category.name if obj.category_id else None
@@ -119,6 +139,7 @@ class FestivalProductSerializer(serializers.ModelSerializer):
     addition_class = serializers.SerializerMethodField()
     additions = serializers.SerializerMethodField()
     fillings = serializers.SerializerMethodField()
+    half_price = serializers.SerializerMethodField()
 
     class Meta:
         model = FestivalProduct
@@ -134,7 +155,13 @@ class FestivalProductSerializer(serializers.ModelSerializer):
             "image",
             "price",
             "vat_rate",
+            "allow_half_portion",
+            "half_portion",
+            "half_price",
         ]
+
+    def get_half_price(self, obj: FestivalProduct) -> str | None:
+        return serialized_half_price(obj)
 
     def get_category(self, obj: FestivalProduct) -> str | None:
         return obj.category.name if obj.category_id else None
@@ -161,6 +188,17 @@ class FestivalOrderItemInputSerializer(serializers.Serializer):
     quantity = serializers.IntegerField(min_value=1)
     filling_id = serializers.IntegerField(min_value=1, required=False, allow_null=True)
     addition_id = serializers.IntegerField(min_value=1, required=False, allow_null=True)
+    portion_size = serializers.ChoiceField(
+        choices=[PORTION_FULL, PORTION_HALF],
+        required=False,
+        allow_null=True,
+        default=PORTION_FULL,
+    )
+
+    def validate_portion_size(self, value):
+        if value in (None, ""):
+            return PORTION_FULL
+        return value
 
 
 class FestivalOrderCreateSerializer(serializers.Serializer):
