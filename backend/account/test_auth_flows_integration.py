@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import secrets
 import time
 from datetime import datetime, timedelta, timezone as dt_timezone
 from email.utils import parsedate_to_datetime
@@ -467,6 +468,20 @@ def expired_token(user, cls=AccessToken, hours_ago=2):
     return str(token)
 
 
+def _access_like_jwt(user_id, signing_key):
+    """HS256 access-shaped JWT signed with ``signing_key`` (not necessarily SIGNING_KEY)."""
+    raw = pyjwt.encode(
+        {
+            "token_type": "access",
+            "user_id": user_id,
+            "exp": int((timezone.now() + timedelta(hours=1)).timestamp()),
+        },
+        signing_key,
+        algorithm="HS256",
+    )
+    return raw.decode("ascii") if isinstance(raw, bytes) else raw
+
+
 def jti_of(raw):
     return pyjwt.decode(raw, options={"verify_signature": False})["jti"]
 
@@ -871,6 +886,24 @@ class StaleSessionFlowTests(AuthFlowCase):
                 self.assertEqual((reply.status, reply.code), (401, "token_not_valid"), path)
         no_header = self.tab_a.request("GET", PROFILE, bearer=False)
         self.assertEqual(no_header.status, 401)
+
+    def test_g_access_signed_with_a_different_secret_is_401(self):
+        """Production SIGNING_KEY must reject a well-formed JWT signed elsewhere."""
+        forged = _access_like_jwt(self.user.pk, secrets.token_urlsafe(32))
+        reply = self.tab_a.profile(bearer=f"Bearer {forged}")
+        self.assertEqual((reply.status, reply.code), (401, "token_not_valid"), reply.json)
+
+    def test_g_refresh_jwt_as_bearer_access_is_401(self):
+        """AUTH_TOKEN_CLASSES is AccessToken only: a refresh JWT must not unlock routes."""
+        refresh = str(RefreshToken.for_user(self.user))
+        reply = self.tab_a.profile(bearer=f"Bearer {refresh}")
+        self.assertEqual((reply.status, reply.code), (401, "token_not_valid"), reply.json)
+
+    def test_g_access_missing_user_id_claim_is_401(self):
+        token = AccessToken.for_user(self.user)
+        del token["user_id"]
+        reply = self.tab_a.profile(bearer=f"Bearer {str(token)}")
+        self.assertEqual((reply.status, reply.code), (401, "token_not_valid"), reply.json)
 
     def test_g_missing_corrupted_and_wrong_type_cookies_are_401_token_not_valid(self):
         good = self.tab_a.jar.value(REFRESH_COOKIE)

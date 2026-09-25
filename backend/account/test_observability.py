@@ -3,6 +3,7 @@
 import hashlib
 import json
 import logging
+import secrets
 import sys
 from datetime import datetime
 from decimal import Decimal
@@ -10,6 +11,7 @@ from io import StringIO
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import jwt as pyjwt
 from django.core.management import CommandError, call_command
 from django.http import HttpResponse
 from django.test import Client, RequestFactory, SimpleTestCase, override_settings
@@ -391,11 +393,19 @@ class LogAuthEventTests(SimpleTestCase):
         self.assertNotIn("email_hash", event)  # only the email= parameter is ever hashed
 
     def test_string_values_are_scrubbed_and_truncated(self):
-        jwt = "eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoxfQ.c2lnbmF0dXJl"
+        # Runtime-built JWT (matches observability._JWT_IN_TEXT); no committed token fixture.
+        jwt = pyjwt.encode(
+            {"sub": "scrub-fixture", "iat": 1},
+            secrets.token_urlsafe(32),
+            algorithm="HS256",
+        )
+        if isinstance(jwt, bytes):
+            jwt = jwt.decode("ascii")
         event, record = self._log(
             None, "refresh", "rejected", note=f"got {jwt} and Bearer abc.def", long="x" * 500
         )
         self.assertNotIn(jwt, record.getMessage())
+        self.assertIn("<jwt>", event["note"])
         self.assertNotIn("abc.def", record.getMessage())
         self.assertEqual(len(event["long"]), 200)
 

@@ -315,6 +315,19 @@ class RegisterRegressionTests(TransactionTestCase):
         self.assertEqual(response.data["code"], "validation_error")
         self.assertEqual(response.data["field"], "email")
 
+    def test_weak_passwords_are_rejected_on_register(self):
+        for index, password in enumerate(("short1a", "abcdefgh", "12345678")):
+            with self.subTest(password=password):
+                response = self.client.post(
+                    REGISTER,
+                    reg_payload(email=f"weak-pw-{index}@example.com", password=password),
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 400, response.data)
+                self.assertEqual(response.data["code"], "validation_error")
+                self.assertEqual(response.data["field"], "password")
+        self.assertEqual(User.objects.count(), 0)
+
 
 @override_settings(**NO_THROTTLE)
 class AuthBeatTaskTests(TestCase):
@@ -1119,6 +1132,15 @@ class PasswordResetRegressionTests(TransactionTestCase):
         self.assertEqual(weak.data["code"], "validation_error")
         self.assertEqual(weak.data["field"], "new_password")
 
+        for new_password in ("abcdefgh", "12345678"):
+            with self.subTest(new_password=new_password):
+                reply = self.client.post(
+                    RESET_CONFIRM, {"token": token.token, "new_password": new_password}, format="json"
+                )
+                self.assertEqual(reply.status_code, 400, reply.data)
+                self.assertEqual(reply.data["code"], "validation_error")
+                self.assertEqual(reply.data["field"], "new_password")
+
         unknown = self.client.post(RESET_CONFIRM, {"token": "zzz", "new_password": "BrandNewPass9"}, format="json")
         self.assertEqual((unknown.status_code, unknown.data["code"]), (400, "token_invalid"))
 
@@ -1206,6 +1228,20 @@ class ProfileAndPasswordRegressionTests(TestCase):
             "/api/auth/change-password/", {"old_password": None, "new_password": 5}, format="json"
         )
         self.assertEqual((missing.status_code, missing.data["code"]), (400, "validation_error"))
+
+    def test_change_password_rejects_a_weak_new_password(self):
+        for new_password in ("short1a", "abcdefgh", "12345678"):
+            with self.subTest(new_password=new_password):
+                response = self.client.post(
+                    "/api/auth/change-password/",
+                    {"old_password": PASSWORD, "new_password": new_password},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 400, response.data)
+                self.assertEqual(response.data["code"], "validation_error")
+                self.assertEqual(response.data["field"], "new_password")
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(PASSWORD))
 
     def test_profile_email_uniqueness_is_case_insensitive_and_email_is_normalised(self):
         make_user("taken@example.com")
