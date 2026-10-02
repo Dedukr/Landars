@@ -206,8 +206,10 @@ class Product(models.Model):
         default="",
         db_index=True,
         help_text=(
-            "Automatic multi-buy promotion this product belongs to. Leave empty for "
-            "no promotion. Units pool across every product sharing the same group."
+            "Deprecated — unused for eligibility. Jerky 5+1 is driven by membership "
+            "in the Jerky ProductCategory (see JERKY_PROMO_CATEGORY_ID / "
+            "JERKY_PROMO_CATEGORY_NAME). Field retained to avoid a migration; "
+            "safe to leave empty."
         ),
     )
     # image = models.ImageField(
@@ -474,8 +476,8 @@ class Order(models.Model):
         blank=True,
         validators=[MinValueValidator(0)],
         help_text=(
-            "Automatic promotion discount (e.g. Jerky 5+1) frozen at checkout. "
-            "Applied on top of any coupon discount."
+            "Automatic promotion discount (e.g. Jerky 5+1), recalculated when "
+            "the order is saved. Applied on top of any coupon discount."
         ),
     )
     holiday_fee = models.DecimalField(
@@ -1068,7 +1070,11 @@ class OrderItem(models.Model):
 
         super().save(*args, **kwargs)
         if self.order_id:
-            Order.objects.get(pk=self.order_id).refresh_weight()
+            order = Order.objects.get(pk=self.order_id)
+            order.refresh_weight()
+            from api.services.promotions import apply_promo_to_order
+
+            apply_promo_to_order(order)
 
     def delete(self, *args, **kwargs):
         oid = self.order_id
@@ -1077,6 +1083,9 @@ class OrderItem(models.Model):
             o = Order.objects.filter(pk=oid).first()
             if o:
                 o.refresh_weight()
+                from api.services.promotions import apply_promo_to_order
+
+                apply_promo_to_order(o)
 
     def get_total_price(self):
         """
@@ -1237,9 +1246,9 @@ class Cart(models.Model):
         Carts are working data, never snapshots, so the promo is always recomputed
         from the current lines. Orders freeze it into ``Order.promo_discount``.
         """
-        from api.services.promotions import compute_promo
+        from api.services.promotions import compute_promo, promo_cart_items
 
-        return compute_promo(self.items.all())
+        return compute_promo(promo_cart_items(self).all())
 
     @property
     def promo_discount(self):

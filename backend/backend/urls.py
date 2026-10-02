@@ -48,6 +48,7 @@ urlpatterns = [
     path("api/payments/", include("api.payment_urls")),
     path("api/shipping/", include("shipping.urls")),
     path("api/festival/", include("festival.urls")),
+    path("pay/", include("billing.urls")),
     path("health/", health_check, name="health_check"),
     path(
         "health/comprehensive/",

@@ -416,6 +416,12 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 POST_DELIVERY_CATEGORY_GROUP_ID = int(os.getenv("POST_DELIVERY_CATEGORY_GROUP_ID", "1"))
 # Food summary export: products in this CategoryGroup count as frozen (default: group #2).
 FROZEN_CATEGORY_GROUP_ID = int(os.getenv("FROZEN_CATEGORY_GROUP_ID", "2"))
+# Jerky 5+1 promo: leaf ProductCategory of eligible products.
+# Default 0 = resolve by name (JERKY_PROMO_CATEGORY_NAME). Set a concrete id
+# once known (optional — name lookup works). Create/tag via admin or
+# ``manage.py backfill_jerky_promo``.
+JERKY_PROMO_CATEGORY_ID = int(os.getenv("JERKY_PROMO_CATEGORY_ID", "0"))
+JERKY_PROMO_CATEGORY_NAME = os.getenv("JERKY_PROMO_CATEGORY_NAME", "Jerky")
 
 # AWS Configuration
 

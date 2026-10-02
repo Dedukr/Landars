@@ -5,14 +5,17 @@ The calculator itself is pure Python — ``api.services.promotions`` only needs
 objects exposing ``product`` and ``quantity`` — so those cases run as
 ``SimpleTestCase`` against lightweight stubs and never touch the database.
 The model-level cases (``Cart``/``OrderItem``) need real rows and use ``TestCase``.
+
+Eligibility is Jerky **ProductCategory** membership (not ``Product.promo_group``).
 """
 
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 
-from api.models import Cart, Order, OrderItem, Product
+from api.models import Cart, Order, OrderItem, Product, ProductCategory
 from api.services.promotions import (
     JERKY_5_1,
     PromoResult,
@@ -27,16 +30,41 @@ from api.services.promotions import (
 User = get_user_model()
 
 JERKY_GROUP = JERKY_5_1.group
+# Stub category id that ``get_jerky_promo_category_ids`` is patched to return.
+STUB_JERKY_CATEGORY_ID = 9001
+
+
+class StubCategoryQuerySet:
+    """Minimal stand-in for ``product.categories`` (filter / exists / all)."""
+
+    def __init__(self, ids):
+        self._ids = set(ids)
+
+    def filter(self, id__in=None, **_kwargs):
+        matched = self._ids & set(id__in or [])
+        return StubCategoryQuerySet(matched)
+
+    def exists(self):
+        return bool(self._ids)
+
+    def all(self):
+        return [type("C", (), {"id": i})() for i in self._ids]
 
 
 class StubProduct:
     """Minimal stand-in for ``Product`` (no database involved)."""
 
-    def __init__(self, pk, price="6.00", promo_group=JERKY_GROUP, active=True):
+    def __init__(self, pk, price="6.00", eligible=True, active=True, category_ids=None):
         self.pk = pk
         self.price = Decimal(str(price))
-        self.promo_group = promo_group
         self.active = active
+        if category_ids is not None:
+            ids = list(category_ids)
+        elif eligible:
+            ids = [STUB_JERKY_CATEGORY_ID]
+        else:
+            ids = []
+        self.categories = StubCategoryQuerySet(ids)
 
 
 class StubLine:
@@ -53,8 +81,20 @@ def jerky(product_id, quantity, price="6.00"):
     return StubLine(StubProduct(product_id, price=price), quantity)
 
 
+def _patch_jerky_ids():
+    return patch(
+        "api.services.jerky_promo_categories.get_jerky_promo_category_ids",
+        return_value=frozenset({STUB_JERKY_CATEGORY_ID}),
+    )
+
+
 class PromoFreeUnitCountTests(SimpleTestCase):
     """Free units per basket size — the headline 5+1 rule."""
+
+    def setUp(self):
+        self._ids_patch = _patch_jerky_ids()
+        self._ids_patch.start()
+        self.addCleanup(self._ids_patch.stop)
 
     def test_five_units_earn_nothing(self):
         result = compute_promo([jerky(1, 5)])
@@ -108,6 +148,11 @@ class PromoFreeUnitCountTests(SimpleTestCase):
 
 class PromoPoolingAndAttributionTests(SimpleTestCase):
     """Units pool across flavours; free units come off the cheapest lines."""
+
+    def setUp(self):
+        self._ids_patch = _patch_jerky_ids()
+        self._ids_patch.start()
+        self.addCleanup(self._ids_patch.stop)
 
     def test_mixed_flavours_pool_into_one_group(self):
         result = compute_promo([jerky(3, 2), jerky(1, 2), jerky(2, 2)])
@@ -175,20 +220,25 @@ class PromoPoolingAndAttributionTests(SimpleTestCase):
 class PromoEligibilityTests(SimpleTestCase):
     """Which lines count towards the promotion."""
 
-    def test_products_without_the_promo_flag_are_ignored(self):
+    def setUp(self):
+        self._ids_patch = _patch_jerky_ids()
+        self._ids_patch.start()
+        self.addCleanup(self._ids_patch.stop)
+
+    def test_products_outside_the_jerky_category_are_ignored(self):
         result = compute_promo(
             [
                 jerky(1, 4),
-                StubLine(StubProduct(2, promo_group=""), 8),
-                StubLine(StubProduct(3, promo_group=None), 8),
-                StubLine(StubProduct(4, promo_group="some_other_promo"), 8),
+                StubLine(StubProduct(2, eligible=False), 8),
+                StubLine(StubProduct(3, category_ids=[]), 8),
+                StubLine(StubProduct(4, category_ids=[111]), 8),
             ]
         )
         self.assertEqual(result.eligible_quantity, 4)
         self.assertEqual(result.free_units, 0)
         self.assertEqual(result.discount, Decimal("0.00"))
 
-    def test_inactive_flagged_products_are_ignored(self):
+    def test_inactive_jerky_products_are_ignored(self):
         result = compute_promo(
             [jerky(1, 5), StubLine(StubProduct(2, active=False), 6)]
         )
@@ -231,6 +281,11 @@ class PromoEligibilityTests(SimpleTestCase):
 class PromoDefinitionLookupTests(SimpleTestCase):
     """The definition registry and the storefront-facing descriptors."""
 
+    def setUp(self):
+        self._ids_patch = _patch_jerky_ids()
+        self._ids_patch.start()
+        self.addCleanup(self._ids_patch.stop)
+
     def test_definition_shape(self):
         self.assertEqual(JERKY_5_1.group, "jerky_5_1")
         self.assertEqual(JERKY_5_1.group_size, 6)
@@ -245,14 +300,14 @@ class PromoDefinitionLookupTests(SimpleTestCase):
         self.assertIsNone(promo_definition_for_group(None))
         self.assertIsNone(promo_definition_for_group("nope"))
 
-    def test_product_lookup_respects_active_flag(self):
+    def test_product_lookup_respects_active_flag_and_group(self):
         self.assertIs(promo_definition_for_product(StubProduct(1)), JERKY_5_1)
         self.assertIsNone(promo_definition_for_product(None))
         self.assertIsNone(
             promo_definition_for_product(StubProduct(1, active=False))
         )
         self.assertIsNone(
-            promo_definition_for_product(StubProduct(1, promo_group=""))
+            promo_definition_for_product(StubProduct(1, eligible=False))
         )
 
     def test_product_payload_for_the_detail_page(self):
@@ -273,7 +328,9 @@ class PromoDefinitionLookupTests(SimpleTestCase):
     def test_label_for_items_falls_back_to_the_default(self):
         self.assertEqual(promo_label_for_items([jerky(1, 1)]), "Jerky 5+1")
         self.assertEqual(
-            promo_label_for_items([StubLine(StubProduct(1, promo_group=""), 6)]),
+            promo_label_for_items(
+                [StubLine(StubProduct(1, eligible=False), 6)]
+            ),
             "Jerky 5+1",
         )
         self.assertEqual(promo_label_for_items([], default=""), "")
@@ -287,6 +344,10 @@ class PromoDefinitionLookupTests(SimpleTestCase):
         self.assertFalse(result.applies)
 
 
+@override_settings(
+    JERKY_PROMO_CATEGORY_ID=0,
+    JERKY_PROMO_CATEGORY_NAME="Jerky",
+)
 class CartPromoTests(TestCase):
     """``Cart.promo_discount`` / ``Cart.total_price`` on real rows."""
 
@@ -299,13 +360,14 @@ class CartPromoTests(TestCase):
             is_email_verified=True,
         )
         self.cart = Cart.objects.create(user=self.user)
+        self.jerky_category = ProductCategory.objects.create(name="Jerky")
         self.jerky = Product.objects.create(
             name="Beef Jerky",
             base_price=Decimal("6.00"),
             holiday_fee=Decimal("0"),
             active=True,
-            promo_group=Product.PromoGroup.JERKY_5_1,
         )
+        self.jerky.categories.add(self.jerky_category)
         self.other = Product.objects.create(
             name="Crisps",
             base_price=Decimal("2.00"),
@@ -356,6 +418,14 @@ class CartPromoTests(TestCase):
         reloaded = Cart.objects.get(pk=self.cart.pk)
         self.assertEqual(reloaded.promo_discount, Decimal("0.00"))
 
+    def test_leaving_the_jerky_category_stops_earning_the_promo(self):
+        self.cart.items.create(product=self.jerky, quantity=6)
+        self.assertEqual(self.cart.promo_discount, Decimal("6.00"))
+
+        self.jerky.categories.remove(self.jerky_category)
+        reloaded = Cart.objects.get(pk=self.cart.pk)
+        self.assertEqual(reloaded.promo_discount, Decimal("0.00"))
+
     def test_promo_result_for_cart_is_memoised_per_instance(self):
         self.cart.items.create(product=self.jerky, quantity=6)
         first = promo_result_for_cart(self.cart)
@@ -367,6 +437,10 @@ class CartPromoTests(TestCase):
         self.assertEqual(promo_result_for_cart(reloaded).free_units, 2)
 
 
+@override_settings(
+    JERKY_PROMO_CATEGORY_ID=0,
+    JERKY_PROMO_CATEGORY_NAME="Jerky",
+)
 class OrderItemPromoTests(TestCase):
     """Per-line promo helpers and the frozen order-level promo total."""
 
@@ -378,13 +452,14 @@ class OrderItemPromoTests(TestCase):
             surname="Promo",
             is_email_verified=True,
         )
+        self.jerky_category = ProductCategory.objects.create(name="Jerky")
         self.jerky = Product.objects.create(
             name="Beef Jerky",
             base_price=Decimal("6.00"),
             holiday_fee=Decimal("0"),
             active=True,
-            promo_group=Product.PromoGroup.JERKY_5_1,
         )
+        self.jerky.categories.add(self.jerky_category)
         self.order = Order.objects.create(
             customer=self.user,
             status="pending",
@@ -463,17 +538,87 @@ class OrderItemPromoTests(TestCase):
         self.assertEqual(order.promo_free_units, 0)
         self.assertEqual(order.total_price, Decimal("12.00"))
 
-    def test_order_promo_is_frozen_when_the_product_flag_is_cleared(self):
+    def test_order_promo_is_frozen_when_product_leaves_the_jerky_category(self):
         OrderItem.objects.create(
             order=self.order,
             product=self.jerky,
             quantity=Decimal("6.00"),
             free_quantity=Decimal("1.00"),
         )
-        Product.objects.filter(pk=self.jerky.pk).update(promo_group="")
+        self.jerky.categories.clear()
 
         order = Order.objects.get(pk=self.order.pk)
         self.assertEqual(order.promo_discount, Decimal("6.00"))
         self.assertEqual(order.total_price, Decimal("30.00"))
         # Falls back to the default label rather than losing the summary row.
         self.assertEqual(order.promo_label, "Jerky 5+1")
+
+    def test_saving_six_jerky_applies_the_promo(self):
+        order = Order.objects.create(customer=self.user, status="pending")
+        item = OrderItem.objects.create(
+            order=order, product=self.jerky, quantity=Decimal("6.00")
+        )
+        item.refresh_from_db()
+        order.refresh_from_db()
+        self.assertEqual(item.free_quantity, Decimal("1.00"))
+        self.assertEqual(order.promo_discount, Decimal("6.00"))
+        self.assertEqual(order.total_price, Decimal("30.00"))
+
+    def test_saving_fewer_than_six_jerky_clears_the_promo(self):
+        order = Order.objects.create(customer=self.user, status="pending")
+        item = OrderItem.objects.create(
+            order=order, product=self.jerky, quantity=Decimal("6.00")
+        )
+        item.quantity = Decimal("5.00")
+        item.save()
+        item.refresh_from_db()
+        order.refresh_from_db()
+        self.assertEqual(item.free_quantity, Decimal("0.00"))
+        self.assertEqual(order.promo_discount, Decimal("0.00"))
+        self.assertEqual(order.total_price, Decimal("30.00"))
+
+    def test_deleting_the_qualifying_line_clears_the_promo(self):
+        order = Order.objects.create(customer=self.user, status="pending")
+        item = OrderItem.objects.create(
+            order=order, product=self.jerky, quantity=Decimal("6.00")
+        )
+        item.delete()
+        order.refresh_from_db()
+        self.assertEqual(order.promo_discount, Decimal("0.00"))
+        self.assertEqual(order.total_price, Decimal("0.00"))
+
+    def test_admin_save_reapplies_promo_even_if_lines_were_not_resaved(self):
+        from django.contrib.admin.sites import AdminSite
+        from django.test import RequestFactory
+
+        from api.admin import OrderAdmin
+
+        order = Order.objects.create(
+            customer=self.user,
+            status="pending",
+            delivery_fee_manual=True,
+        )
+        item = OrderItem.objects.create(
+            order=order, product=self.jerky, quantity=Decimal("6.00")
+        )
+        OrderItem.objects.filter(pk=item.pk).update(free_quantity=Decimal("0.00"))
+        Order.objects.filter(pk=order.pk).update(promo_discount=Decimal("0.00"))
+        order.refresh_from_db()
+
+        class _Form:
+            def __init__(self, instance):
+                self.instance = instance
+
+            def save_m2m(self):
+                return None
+
+        OrderAdmin(Order, AdminSite()).save_related(
+            RequestFactory().post("/admin/api/order/"),
+            _Form(order),
+            [],
+            change=True,
+        )
+        item.refresh_from_db()
+        order.refresh_from_db()
+        self.assertEqual(item.free_quantity, Decimal("1.00"))
+        self.assertEqual(order.promo_discount, Decimal("6.00"))

@@ -12,13 +12,13 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from api.checkout_security import money_to_pence
-from api.models import Cart, Order, Product
+from api.models import Cart, Order, Product, ProductCategory
 
 User = get_user_model()
 
@@ -33,6 +33,10 @@ ADDRESS = {
 }
 
 
+@override_settings(
+    JERKY_PROMO_CATEGORY_ID=0,
+    JERKY_PROMO_CATEGORY_NAME="Jerky",
+)
 class JerkyCheckoutTestCase(TestCase):
     """Shared fixture: a post-delivery cart holding 6 jerky at 6.00 each."""
 
@@ -47,20 +51,22 @@ class JerkyCheckoutTestCase(TestCase):
         )
         self.client.force_authenticate(self.user)
 
+        self.jerky_category = ProductCategory.objects.create(name="Jerky")
+
         self.jerky = Product.objects.create(
             name="Beef Jerky",
             base_price=Decimal("6.00"),
             holiday_fee=Decimal("0"),
             active=True,
-            promo_group=Product.PromoGroup.JERKY_5_1,
         )
+        self.jerky.categories.add(self.jerky_category)
         self.teriyaki = Product.objects.create(
             name="Teriyaki Jerky",
             base_price=Decimal("6.00"),
             holiday_fee=Decimal("0"),
             active=True,
-            promo_group=Product.PromoGroup.JERKY_5_1,
         )
+        self.teriyaki.categories.add(self.jerky_category)
         self.cart = Cart.objects.create(user=self.user, is_home_delivery=False)
 
     def checkout(self, **extra_data):
@@ -204,14 +210,15 @@ class CheckoutPromoTamperTests(JerkyCheckoutTestCase):
         )
         self.cart.items.create(product=crisps, quantity=6)
 
-        resp = self.checkout(promo_group=Product.PromoGroup.JERKY_5_1)
+        # Request body cannot invent ProductCategory eligibility.
+        resp = self.checkout(promo_group="jerky_5_1")
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
 
         order = Order.objects.get(pk=resp.data["id"])
         self.assertEqual(order.promo_discount, Decimal("0.00"))
         self.assertEqual(order.total_price, Decimal("36.00"))
         crisps.refresh_from_db()
-        self.assertEqual(crisps.promo_group, "")
+        self.assertFalse(crisps.categories.filter(pk=self.jerky_category.pk).exists())
 
     def test_client_supplied_discount_still_requires_a_valid_coupon(self):
         self.cart.items.create(product=self.jerky, quantity=6)

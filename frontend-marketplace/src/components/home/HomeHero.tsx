@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { Search, ChevronRight, Truck, Leaf, Star, ShieldCheck, Award } from "lucide-react";
+import OfferPills from "@/components/offers/OfferPills";
 import HeroProductPreview from "./HeroProductPreview";
 
 const trustItems = [
@@ -47,6 +48,7 @@ export default function HomeHero() {
 
       {/* ── Main hero content ─────────────────────────────── */}
       <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 md:py-22 lg:py-28">
+        <OfferPills className="mb-4 justify-center sm:mb-5 lg:justify-start" />
         {/* Top heading — mobile: full width, centered, fluid single line */}
         <div className="mb-5 sm:mb-6 w-full @container lg:hidden">
           <div

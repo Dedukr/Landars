@@ -12,10 +12,10 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from api.models import Order, OrderItem, Product
+from api.models import Order, OrderItem, Product, ProductCategory
 from billing.models import CreditNote, Invoice
 
 User = get_user_model()
@@ -43,6 +43,10 @@ def credit(invoice) -> CreditNote:
     return note
 
 
+@override_settings(
+    JERKY_PROMO_CATEGORY_ID=0,
+    JERKY_PROMO_CATEGORY_NAME="Jerky",
+)
 class InvoicePromoSnapshotTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
@@ -52,14 +56,15 @@ class InvoicePromoSnapshotTests(TestCase):
             surname="Promo",
             is_email_verified=True,
         )
+        self.jerky_category = ProductCategory.objects.create(name="Jerky")
         self.jerky = Product.objects.create(
             name="Beef Jerky",
             base_price=Decimal("6.00"),
             holiday_fee=Decimal("0"),
             active=True,
             vat=False,
-            promo_group=Product.PromoGroup.JERKY_5_1,
         )
+        self.jerky.categories.add(self.jerky_category)
         self.order = Order.objects.create(
             customer=self.user,
             status="paid",
@@ -116,9 +121,10 @@ class InvoicePromoSnapshotTests(TestCase):
         self.assertEqual(line.promo_discount, Decimal("0.00"))
         self.assertEqual(line.net_line_total, Decimal("12.00"))
 
-    def test_promo_is_frozen_against_later_flag_changes(self):
+    def test_promo_is_frozen_against_later_eligibility_changes(self):
         invoice = issue_invoice(self.order)
-        Product.objects.filter(pk=self.jerky.pk).update(promo_group="", active=False)
+        self.jerky.categories.clear()
+        Product.objects.filter(pk=self.jerky.pk).update(active=False)
 
         invoice.refresh_from_db()
         self.assertEqual(invoice.promo_discount_amount, Decimal("6.00"))
@@ -133,8 +139,8 @@ class InvoicePromoSnapshotTests(TestCase):
             holiday_fee=Decimal("0"),
             active=True,
             vat=True,
-            promo_group=Product.PromoGroup.JERKY_5_1,
         )
+        vatted.categories.add(self.jerky_category)
         order = Order.objects.create(
             customer=self.user,
             status="paid",
@@ -167,6 +173,10 @@ class InvoicePromoSnapshotTests(TestCase):
             line.save()
 
 
+@override_settings(
+    JERKY_PROMO_CATEGORY_ID=0,
+    JERKY_PROMO_CATEGORY_NAME="Jerky",
+)
 class CreditNotePromoCopyTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
@@ -176,13 +186,14 @@ class CreditNotePromoCopyTests(TestCase):
             surname="Promo",
             is_email_verified=True,
         )
+        self.jerky_category = ProductCategory.objects.create(name="Jerky")
         self.jerky = Product.objects.create(
             name="Beef Jerky",
             base_price=Decimal("6.00"),
             holiday_fee=Decimal("0"),
             active=True,
-            promo_group=Product.PromoGroup.JERKY_5_1,
         )
+        self.jerky.categories.add(self.jerky_category)
         self.order = Order.objects.create(
             customer=self.user,
             status="paid",

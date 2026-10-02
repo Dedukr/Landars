@@ -11,14 +11,25 @@ export const metadata: Metadata = {
 function ShopSkeleton() {
   return (
     <div
-      className="min-h-screen p-4 md:p-6 md:ml-4"
+      className="min-h-screen"
       style={{ background: "var(--background)" }}
     >
-      <div className="content-offset-md space-y-8">
-        <div
-          className="h-10 w-52 rounded-lg animate-pulse"
-          style={{ background: "var(--sidebar-bg)" }}
-        />
+      <div
+        className="border-b px-4 py-2.5 md:px-6 lg:px-8"
+        style={{ borderColor: "var(--sidebar-border)" }}
+      >
+        <div className="flex flex-nowrap justify-center gap-2">
+          <div
+            className="h-7 w-48 shrink-0 rounded-full animate-pulse"
+            style={{ background: "var(--sidebar-bg)" }}
+          />
+          <div
+            className="h-7 w-52 shrink-0 rounded-full animate-pulse"
+            style={{ background: "var(--sidebar-bg)" }}
+          />
+        </div>
+      </div>
+      <div className="space-y-8 p-4 md:p-6 md:ml-4">
         <div
           className="h-14 rounded-2xl animate-pulse max-w-3xl"
           style={{ background: "var(--card-bg)", border: "1px solid var(--sidebar-border)" }}

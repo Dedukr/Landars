@@ -954,7 +954,11 @@ class OrderListView(APIView):
 
         # Lock cart so concurrent checkout requests cannot read the same lines twice.
         cart = Cart.objects.select_for_update().get(user=request.user)
-        cart_items = list(cart.items.select_related("product").all())
+        cart_items = list(
+            cart.items.select_related("product").prefetch_related(
+                "product__categories"
+            ).all()
+        )
 
         if not cart_items:
             return Response(

@@ -44,6 +44,7 @@ from django.db.models.functions import Coalesce, Round
 from django.forms import ModelForm
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.template.loader import render_to_string
+from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils.html import escape, format_html, format_html_join
 from django.utils.safestring import mark_safe
@@ -393,8 +394,8 @@ class ReviewImageInline(admin.TabularInline):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ["name", "get_price", "get_vat_display", "promo_group", "sold_quantity", "sold_orders_count", "get_categories"]
-    list_filter = ["active", "categories", "vat", "promo_group"]
+    list_display = ["name", "get_price", "get_vat_display", "sold_quantity", "sold_orders_count", "get_categories"]
+    list_filter = ["active", "categories", "vat"]
     filter_horizontal = ["categories"]
     search_fields = ["name"]
     ordering = ["name"]
@@ -1780,6 +1781,7 @@ retry_shipment_creation.short_description = (
 class OrderAdmin(admin.ModelAdmin):
     form = OrderAdminForm
     change_form_template = "admin/api/order/change_form.html"
+    change_list_template = "admin/api/order/change_list.html"
 
     class Media:
         js = (
@@ -1923,7 +1925,7 @@ class OrderAdmin(admin.ModelAdmin):
             "get_shipping_tracking_link",
             "get_shipping_label_link",
             "delivery_date_order_id",
-            # Promo discount is computed at checkout from Product.promo_group.
+            # Recalculated from Jerky ProductCategory membership on order save.
             "promo_discount",
         ]
         return readonly  # Admins can edit customer, status, notes
@@ -2419,6 +2421,10 @@ class OrderAdmin(admin.ModelAdmin):
         super().save_related(request, form, formsets, change)
         order = form.instance
 
+        from api.services.promotions import apply_promo_to_order
+
+        apply_promo_to_order(order)
+
         # Only calculate delivery fees if not manually set
         if not order.delivery_fee_manual:
             compute_source = []
@@ -2656,9 +2662,14 @@ class OrderAdmin(admin.ModelAdmin):
         )
 
     def get_urls(self):
-        """Add custom URL for single-order invoice creation."""
+        """Add custom URLs for order admin tools."""
         urls = super().get_urls()
         custom_urls = [
+            path(
+                "payment-statement/",
+                self.admin_site.admin_view(self.payment_statement_view),
+                name="api_order_payment_statement",
+            ),
             path(
                 "customer-billing/<int:customer_id>/",
                 self.admin_site.admin_view(self.customer_billing_json),
@@ -2671,6 +2682,69 @@ class OrderAdmin(admin.ModelAdmin):
             ),
         ]
         return custom_urls + urls
+
+    def payment_statement_view(self, request):
+        """
+        Dedicated admin page: select an inclusive date range and download
+        a Payment Statement PDF or CSV of paid invoices.
+        """
+        from billing.forms import PaymentStatementForm
+        from billing.services.payment_statement import (
+            PaymentStatementError,
+            build_payment_statement,
+            render_payment_statement_csv,
+            render_payment_statement_pdf,
+        )
+
+        error_message = ""
+        form = PaymentStatementForm(request.POST or None)
+
+        if request.method == "POST" and form.is_valid():
+            from_date = form.cleaned_data["from_date"]
+            to_date = form.cleaned_data["to_date"]
+            output_format = form.cleaned_data["output_format"]
+            try:
+                statement = build_payment_statement(from_date, to_date)
+                filename_base = (
+                    f"payment_statement_"
+                    f"{from_date.isoformat()}_{to_date.isoformat()}"
+                )
+                if output_format == "csv":
+                    content = render_payment_statement_csv(statement)
+                    response = HttpResponse(
+                        content, content_type="text/csv; charset=utf-8"
+                    )
+                    response["Content-Disposition"] = (
+                        f'attachment; filename="{filename_base}.csv"'
+                    )
+                    return response
+
+                base_url = request.build_absolute_uri("/")
+                pdf_bytes = render_payment_statement_pdf(
+                    statement, base_url=base_url
+                )
+                response = HttpResponse(pdf_bytes, content_type="application/pdf")
+                response["Content-Disposition"] = (
+                    f'attachment; filename="{filename_base}.pdf"'
+                )
+                return response
+            except PaymentStatementError as exc:
+                error_message = str(exc)
+                messages.error(request, error_message)
+
+        context = {
+            **self.admin_site.each_context(request),
+            "opts": self.model._meta,
+            "title": "Generate Payment Statement",
+            "form": form,
+            "error_message": error_message,
+            "timezone_name": getattr(settings, "TIME_ZONE", "Europe/London"),
+        }
+        return TemplateResponse(
+            request,
+            "admin/billing/payment_statement_form.html",
+            context,
+        )
 
     def customer_billing_json(self, request, customer_id):
         """

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 import time
 from decimal import Decimal
 
@@ -256,6 +257,25 @@ class Invoice(models.Model):
     amount_paid = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     paid_at = models.DateTimeField(null=True, blank=True)
 
+    # Public online payment (LandarsFood pay link → Stripe Checkout Pay by Bank)
+    payment_public_token = models.CharField(
+        max_length=64,
+        unique=True,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Cryptographically secure public token for /pay/invoice/<token>.",
+    )
+    payment_version = models.PositiveIntegerField(
+        default=1,
+        help_text="Bumped when the payable amount changes so Stripe sessions stay in sync.",
+    )
+    stripe_checkout_session_id = models.CharField(
+        max_length=255, blank=True, default=""
+    )
+    stripe_payment_intent_id = models.CharField(max_length=255, blank=True, default="")
+    stripe_payment_status = models.CharField(max_length=64, blank=True, default="")
+
     # PDF storage (S3 key) for rendered invoice document
     invoice_link = models.CharField(
         max_length=255,
@@ -273,6 +293,9 @@ class Invoice(models.Model):
         indexes = [
             models.Index(fields=["invoice_number"]),
             models.Index(fields=["status", "created_at"]),
+            models.Index(fields=["payment_public_token"]),
+            models.Index(fields=["stripe_checkout_session_id"]),
+            models.Index(fields=["stripe_payment_intent_id"]),
         ]
 
     def __str__(self) -> str:
@@ -292,6 +315,51 @@ class Invoice(models.Model):
         if due < 0:
             return Decimal("0")
         return due
+
+    @property
+    def display_invoice_number(self) -> str:
+        """Human-facing invoice reference used on payment pages and Stripe descriptions."""
+        num = self.invoice_number if self.invoice_number is not None else 0
+        return f"LF-{int(num):06d}"
+
+    @property
+    def public_payment_url(self) -> str:
+        """Stable LandarsFood-controlled payment URL (never a raw Stripe Checkout URL)."""
+        from account.frontend_urls import get_public_frontend_base_url
+
+        token = self.payment_public_token or ""
+        if not token:
+            return ""
+        return f"{get_public_frontend_base_url()}/pay/invoice/{token}"
+
+    def ensure_payment_public_token(self) -> str:
+        """Assign a cryptographically secure public payment token if missing."""
+        if self.payment_public_token:
+            return self.payment_public_token
+        # 32 bytes → ~43 url-safe chars; unique constraint retries on collision.
+        for _ in range(5):
+            candidate = secrets.token_urlsafe(32)
+            if not Invoice.objects.filter(payment_public_token=candidate).exists():
+                self.payment_public_token = candidate
+                return candidate
+        # Extremely unlikely; fall through with a final candidate.
+        self.payment_public_token = secrets.token_urlsafe(32)
+        return self.payment_public_token
+
+    def bump_payment_version(self, *, save: bool = True) -> int:
+        """Invalidate any stored Stripe Checkout Session after payable amount changes."""
+        self.payment_version = int(self.payment_version or 1) + 1
+        self.stripe_checkout_session_id = ""
+        self.stripe_payment_status = ""
+        if save and self.pk:
+            self.save(
+                update_fields=[
+                    "payment_version",
+                    "stripe_checkout_session_id",
+                    "stripe_payment_status",
+                ]
+            )
+        return self.payment_version
 
     # ---------------------------------------------------------------------
     # Template compatibility / display helpers
@@ -355,6 +423,7 @@ class Invoice(models.Model):
                     "vat_amount",
                     "total_amount",
                     "invoice_link",
+                    "payment_public_token",
                 ]
                 for f in immutable_fields:
                     if getattr(prev, f) != getattr(self, f):
@@ -681,6 +750,7 @@ class Invoice(models.Model):
             invoice.issue_from_order()
             # Allocate invoice number before save() since it's now required
             invoice.allocate_invoice_number_if_needed()
+            invoice.ensure_payment_public_token()
 
             logger.info(
                 f"About to save invoice with number {invoice.invoice_number} for order {order.id}"
@@ -748,7 +818,10 @@ class Invoice(models.Model):
         if amount <= 0:
             raise ValidationError("Payment amount must be positive.")
 
+        previous_status = self.status
         self.amount_paid = (self.amount_paid or Decimal("0")) + Decimal(str(amount))
+
+        update_fields = ["amount_paid", "status", "paid_at"]
 
         if self.amount_paid >= self.total_amount:
             self.status = self.Status.PAID
@@ -757,16 +830,40 @@ class Invoice(models.Model):
             self.status = self.Status.PART_PAID
             if paid_at:
                 self.paid_at = paid_at
+            # Outstanding amount changed — expire any open Checkout Session and bump version.
+            from billing.services.invoice_payment import get_invoice_payment_service
 
-        self.save(update_fields=["amount_paid", "status", "paid_at"])
+            get_invoice_payment_service().expire_open_checkout_session(self)
+            self.payment_version = int(self.payment_version or 1) + 1
+            self.stripe_checkout_session_id = ""
+            self.stripe_payment_status = ""
+            update_fields.extend(
+                [
+                    "payment_version",
+                    "stripe_checkout_session_id",
+                    "stripe_payment_status",
+                ]
+            )
+
+        self.save(update_fields=update_fields)
+
+        if self.status == self.Status.PAID and previous_status != self.Status.PAID:
+            from billing.services.invoice_payment import get_invoice_payment_service
+
+            get_invoice_payment_service().expire_open_checkout_session(self)
 
     def void(self, reason: str = ""):
         if self.status == self.Status.PAID:
             raise ValidationError("Cannot void a paid invoice.")
+        previous_status = self.status
         self.status = self.Status.VOID
         self.voided_at = timezone.now()
         self.void_reason = reason or ""
         self.save(update_fields=["status", "voided_at", "void_reason"])
+        if previous_status != self.Status.VOID:
+            from billing.services.invoice_payment import get_invoice_payment_service
+
+            get_invoice_payment_service().expire_open_checkout_session(self)
 
     def save(self, *args, **kwargs):
         # Ensure snapshots are populated BEFORE validation on first save.
@@ -779,8 +876,28 @@ class Invoice(models.Model):
             ):
                 self.issue_from_order()
 
+        update_fields = kwargs.get("update_fields")
+        if not self.payment_public_token:
+            self.ensure_payment_public_token()
+            if update_fields is not None:
+                kwargs["update_fields"] = list(update_fields) + ["payment_public_token"]
+
+        becoming_paid = False
+        if self.pk and self.status == self.Status.PAID:
+            prev_status = (
+                Invoice.objects.filter(pk=self.pk)
+                .values_list("status", flat=True)
+                .first()
+            )
+            becoming_paid = prev_status != self.Status.PAID
+
         self.full_clean()
         super().save(*args, **kwargs)
+
+        if becoming_paid:
+            from billing.services.invoice_payment import get_invoice_payment_service
+
+            get_invoice_payment_service().expire_open_checkout_session(self)
 
 
 class CreditNote(models.Model):

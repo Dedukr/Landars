@@ -1,0 +1,18 @@
+{% extends "pay/base.html" %}
+
+{% block title %}Invoice no longer payable | LandarsFood{% endblock %}
+
+{% block content %}
+  <div class="seal seal--void" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/>
+      <path d="M8 12h8"/>
+    </svg>
+  </div>
+  <h1>This invoice is no longer payable.</h1>
+  <p class="lead">Invoice {{ invoice_number }} cannot accept online payment.</p>
+{% endblock %}
+
+{% block footer %}
+  <p class="foot">If you believe this is a mistake, contact Landar&rsquo;s Food using the details on your invoice.</p>
+{% endblock %}

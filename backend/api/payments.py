@@ -120,15 +120,82 @@ def stripe_webhook(request):
     except ValueError as e:
         logger.error(f"Invalid payload: {str(e)}")
         return HttpResponse(status=400)
-    except stripe.error.SignatureVerificationError as e:
+    except stripe.SignatureVerificationError as e:
         logger.error(f"Invalid signature: {str(e)}")
         return HttpResponse(status=400)
 
+    event_type = event["type"]
+    data_object = event["data"]["object"]
+
+    # Invoice Pay by Bank Checkout Sessions (authoritative payment confirmation).
+    if event_type in (
+        "checkout.session.completed",
+        "checkout.session.async_payment_succeeded",
+    ):
+        from billing.services.invoice_payment import (
+            InvoicePaymentError,
+            get_invoice_payment_service,
+        )
+
+        try:
+            metadata = (data_object.get("metadata") or {}) if isinstance(
+                data_object, dict
+            ) else {}
+            if metadata.get("purpose") == "invoice_pay_by_bank" or metadata.get(
+                "invoice_id"
+            ):
+                # async_payment_succeeded / completed with payment_status=paid
+                get_invoice_payment_service().reconcile_checkout_session(
+                    data_object, require_paid=True
+                )
+        except InvoicePaymentError as exc:
+            logger.error("Invoice checkout reconciliation rejected: %s", exc)
+            # Return 200 so Stripe does not retry forever on validation rejects
+            # (amount/currency mismatch). Ops can investigate from logs.
+        except Exception:
+            logger.exception("Error reconciling invoice Checkout Session webhook")
+            return HttpResponse(status=500)
+        return HttpResponse(status=200)
+
+    if event_type == "checkout.session.async_payment_failed":
+        logger.error(
+            "Invoice Checkout async payment failed: %s",
+            data_object.get("id") if isinstance(data_object, dict) else data_object,
+        )
+        return HttpResponse(status=200)
+
     # Handle the event
-    if event["type"] == "payment_intent.succeeded":
-        payment_intent = event["data"]["object"]
+    if event_type == "payment_intent.succeeded":
+        payment_intent = data_object
         payment_intent_id = payment_intent["id"]
         logger.info(f"Payment succeeded: {payment_intent_id}")
+
+        # Invoice Pay by Bank may also surface as payment_intent.succeeded.
+        pi_meta = payment_intent.get("metadata") or {}
+        if pi_meta.get("purpose") == "invoice_pay_by_bank" and pi_meta.get(
+            "invoice_id"
+        ):
+            try:
+                from billing.services.invoice_payment import get_invoice_payment_service
+
+                # Reconstruct a session-like payload from the PaymentIntent.
+                session_like = {
+                    "id": "",
+                    "metadata": pi_meta,
+                    "payment_status": "paid",
+                    "status": "complete",
+                    "currency": payment_intent.get("currency"),
+                    "amount_total": payment_intent.get("amount"),
+                    "payment_intent": payment_intent_id,
+                }
+                get_invoice_payment_service().reconcile_checkout_session(
+                    session_like, require_paid=True
+                )
+            except Exception:
+                logger.exception(
+                    "Error reconciling invoice PaymentIntent %s", payment_intent_id
+                )
+            return HttpResponse(status=200)
 
         # Find order with this payment intent ID
         from shipping.sendcloud_shipping import ShippingService
@@ -193,21 +260,21 @@ def stripe_webhook(request):
                 f"Error processing payment_intent.succeeded webhook: {e}", exc_info=True
             )
 
-    elif event["type"] == "payment_intent.payment_failed":
-        payment_intent = event["data"]["object"]
+    elif event_type == "payment_intent.payment_failed":
+        payment_intent = data_object
         logger.error(f"Payment failed: {payment_intent['id']}")
 
         # Handle failed payment
         # Update order status to failed
 
-    elif event["type"] == "payment_intent.canceled":
-        payment_intent = event["data"]["object"]
+    elif event_type == "payment_intent.canceled":
+        payment_intent = data_object
         logger.info(f"Payment canceled: {payment_intent['id']}")
 
         # Handle canceled payment
 
     else:
-        logger.info(f"Unhandled event type: {event['type']}")
+        logger.info(f"Unhandled event type: {event_type}")
 
     return HttpResponse(status=200)
 

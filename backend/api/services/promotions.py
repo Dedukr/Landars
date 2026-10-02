@@ -2,9 +2,10 @@
 Automatic multi-buy promotions — the single source of truth for promo money.
 
 Today there is exactly one promotion, ``jerky_5_1`` ("buy 5 Jerky, get the 6th
-free"), driven by the admin-editable ``Product.promo_group`` flag rather than by
-category or name matching. Every eligible unit in a basket pools together
-regardless of flavour, so 6 mixed jerky still yields 1 free unit.
+free"). Eligibility is driven by membership in the Jerky leaf
+:class:`~api.models.ProductCategory` (see :mod:`api.services.jerky_promo_categories`),
+not by ``Product.promo_group`` or CategoryGroup. Every eligible unit in a basket
+pools together regardless of flavour, so 6 mixed jerky still yields 1 free unit.
 
 Free units are always priced from the **cheapest** eligible units, ties broken by
 product id, so both the discount and its per-line attribution are deterministic
@@ -25,6 +26,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import TYPE_CHECKING
+
+from api.services.jerky_promo_categories import product_has_jerky_promo_category
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, avoids a models import cycle
     from api.models import Product
@@ -61,7 +64,7 @@ JERKY_5_1 = PromoDefinition(
     description="Buy any 5 Jerky, get 1 free",
 )
 
-# Registry keyed by ``Product.promo_group``. Add future promos here.
+# Registry keyed by promo ``group`` slug (API / badge identity). Add future promos here.
 PROMO_DEFINITIONS: dict[str, PromoDefinition] = {
     JERKY_5_1.group: JERKY_5_1,
 }
@@ -129,7 +132,7 @@ class _EligibleLine:
 
 
 def promo_definition_for_group(group: str | None) -> PromoDefinition | None:
-    """Look up a promo definition by its ``Product.promo_group`` value."""
+    """Look up a promo definition by its public ``group`` slug (e.g. ``jerky_5_1``)."""
     if not group:
         return None
     return PROMO_DEFINITIONS.get(str(group).strip())
@@ -139,11 +142,15 @@ def promo_definition_for_product(product: Product | None) -> PromoDefinition | N
     """
     Promo definition a product takes part in, or None.
 
-    Inactive products never advertise or earn a promotion.
+    Inactive products never advertise or earn a promotion. Jerky 5+1 eligibility
+    is leaf ProductCategory membership (see
+    :mod:`api.services.jerky_promo_categories`). ``Product.promo_group`` is ignored.
     """
     if product is None or not getattr(product, "active", True):
         return None
-    return promo_definition_for_group(getattr(product, "promo_group", ""))
+    if product_has_jerky_promo_category(product):
+        return JERKY_5_1
+    return None
 
 
 def promo_payload_for_product(product: Product | None) -> dict[str, object] | None:
@@ -240,7 +247,7 @@ def compute_promo(
 
     ``items`` may be any iterable of ``CartItem`` / ``OrderItem`` (or anything with
     ``product`` and ``quantity``). Lines whose product is missing, inactive, or not
-    flagged for this promo are ignored.
+    in the Jerky ProductCategory are ignored.
 
     Free units are taken from the cheapest eligible units first (ties broken by
     product id), which makes mixed-flavour baskets deterministic.
@@ -287,6 +294,13 @@ def compute_promo(
     )
 
 
+def promo_cart_items(cart):
+    """Cart lines with product + categories prefetched for eligibility checks."""
+    return cart.items.select_related("product").prefetch_related(
+        "product__categories"
+    )
+
+
 def promo_result_for_cart(cart) -> PromoResult:
     """
     Promo result for a cart, memoised on the cart instance.
@@ -299,9 +313,45 @@ def promo_result_for_cart(cart) -> PromoResult:
     """
     cached = getattr(cart, "_promo_result_cache", None)
     if cached is None:
-        cached = compute_promo(cart.items.all())
+        cached = compute_promo(promo_cart_items(cart).all())
         cart._promo_result_cache = cached
     return cached
+
+
+def apply_promo_to_order(order) -> PromoResult:
+    """
+    Recompute Jerky 5+1 from the order's current lines and store it.
+
+    Sets each line's ``free_quantity`` and ``Order.promo_discount``. Lines whose
+    product has been deleted keep the free units already stored on them, so a
+    later save does not drop a historical giveaway. Called whenever an order's
+    lines are saved, including from the admin.
+    """
+    if not getattr(order, "pk", None):
+        return compute_promo([])
+
+    items = list(
+        order.items.select_related("product").prefetch_related("product__categories")
+    )
+    promo = compute_promo(items)
+    discount = promo.discount
+
+    for item in items:
+        if item.product_id is None:
+            discount += _to_decimal(item.get_promo_discount())
+            continue
+        free = promo.free_quantity_for_product(item.product_id)
+        current = _to_decimal(item.free_quantity).quantize(TWOPLACES)
+        if current != free:
+            type(item).objects.filter(pk=item.pk).update(free_quantity=free)
+            item.free_quantity = free
+
+    discount = discount.quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+    current_discount = _to_decimal(order.promo_discount).quantize(TWOPLACES)
+    if current_discount != discount:
+        type(order).objects.filter(pk=order.pk).update(promo_discount=discount)
+        order.promo_discount = discount
+    return promo
 
 
 def promo_label_for_items(
@@ -312,8 +362,8 @@ def promo_label_for_items(
     """
     Label of the promotion these lines belong to, for snapshots and summary rows.
 
-    Falls back to ``default`` when no line is flagged any more (an order keeps its
-    ``promo_discount`` even if a product's flag is cleared later on).
+    Falls back to ``default`` when no line is eligible any more (an order keeps its
+    ``promo_discount`` even if a product leaves the Jerky category later).
     """
     for line in items:
         definition = promo_definition_for_product(getattr(line, "product", None))

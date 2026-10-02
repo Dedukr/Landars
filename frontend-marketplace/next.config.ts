@@ -98,10 +98,24 @@ const nextConfig: NextConfig = {
       }
     };
 
+    const getPayBackendUrl = () => {
+      if (process.env.NODE_ENV === "development") {
+        const apiBaseUrl =
+          process.env.NEXT_PUBLIC_API_BASE_URL || "https://localhost";
+        return `${apiBaseUrl}/pay/:path*/`;
+      }
+      return "http://backend:8000/pay/:path*/";
+    };
+
     return [
       {
         source: "/api/:path*",
         destination: getBackendUrl(),
+      },
+      {
+        // Local/dev: invoice payment links without nginx /pay → Django.
+        source: "/pay/:path*",
+        destination: getPayBackendUrl(),
       },
     ];
   },

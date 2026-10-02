@@ -1,0 +1,43 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<div id="content-main">
+  <h1>Generate Payment Statement</h1>
+  <p class="help" style="max-width: 640px; margin-bottom: 1.5rem;">
+    Internal accounting PDF/CSV of <strong>paid invoices</strong> whose payment date
+    falls in the selected inclusive period (business timezone:
+    {{ timezone_name }}). Amounts use stored invoice snapshots — not live catalog prices.
+  </p>
+
+  {% if error_message %}
+  <ul class="messagelist">
+    <li class="error">{{ error_message }}</li>
+  </ul>
+  {% endif %}
+
+  <form method="post" action="">
+    {% csrf_token %}
+    <fieldset class="module aligned">
+      {% for field in form %}
+      <div class="form-row{% if field.errors %} errors{% endif %}">
+        <div>
+          {{ field.errors }}
+          <label for="{{ field.id_for_label }}"{% if field.field.required %} class="required"{% endif %}>
+            {{ field.label }}:
+          </label>
+          {{ field }}
+          {% if field.help_text %}
+          <div class="help">{{ field.help_text }}</div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </fieldset>
+    <div class="submit-row">
+      <input type="submit" value="Generate" class="default">
+      <a href="{% url 'admin:api_order_changelist' %}" class="button cancel-link">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

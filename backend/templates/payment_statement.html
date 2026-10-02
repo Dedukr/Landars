@@ -1,0 +1,390 @@
+<!DOCTYPE html
+    PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-US" xml:lang="en-US">
+
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <style>
+        html,
+        body,
+        span {
+            border: 0 !important;
+            margin: 0 !important;
+            outline: 0 !important;
+            text-decoration: none !important;
+        }
+
+        a,
+        span,
+        td,
+        th {
+            -webkit-font-smoothing: antialiased !important;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        html {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        body {
+            color: #000000;
+            font-size: 10px;
+            line-height: 150%;
+            font-weight: 400;
+            font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        }
+
+        .logo-gray {
+            color: RGB(128, 128, 128);
+        }
+
+        .mid-gray {
+            color: #757575;
+        }
+
+        .h1 {
+            font-weight: 600;
+            font-size: 22px;
+            line-height: 130%;
+        }
+
+        .h2 {
+            font-weight: 600;
+            font-size: 14px;
+            line-height: 130%;
+        }
+
+        .bold {
+            font-weight: 600;
+        }
+
+        .caption {
+            font-size: 9px;
+            line-height: 140%;
+            color: #757575;
+        }
+
+        .nowrap {
+            white-space: nowrap;
+        }
+
+        .break-word {
+            word-wrap: break-word;
+            word-break: break-word;
+        }
+
+        .width-100 {
+            width: 100%;
+        }
+
+        .mb10 {
+            margin-bottom: 10px;
+        }
+
+        .mb20 {
+            margin-bottom: 20px;
+        }
+
+        .mb30 {
+            margin-bottom: 30px;
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
+        .text-left {
+            text-align: left;
+        }
+
+        .flex-horizontal {
+            display: flex;
+            flex-direction: row;
+        }
+
+        .flex-justify {
+            justify-content: space-between;
+        }
+
+        .flex-align-start {
+            align-items: flex-start;
+        }
+
+        .brand-color-header {
+            background-color: #F0F2F8;
+        }
+
+        table.metadata td {
+            padding: 2px 12px 2px 0;
+            vertical-align: top;
+        }
+
+        table.metadata td:first-child {
+            color: #757575;
+            white-space: nowrap;
+        }
+
+        table.statement-table {
+            page-break-inside: auto;
+        }
+
+        table.statement-table thead {
+            display: table-header-group;
+        }
+
+        table.statement-table tr {
+            page-break-inside: avoid;
+            page-break-after: auto;
+        }
+
+        table.statement-table th {
+            background-color: #F0F2F8;
+            font-weight: 600;
+            font-size: 9px;
+            text-align: left;
+            padding: 6px 4px;
+            border-bottom: 1px solid #d0d4e0;
+            vertical-align: bottom;
+        }
+
+        table.statement-table th.num,
+        table.statement-table td.num {
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        table.statement-table td {
+            padding: 5px 4px;
+            border-bottom: 1px solid #eceef4;
+            vertical-align: top;
+            font-size: 9px;
+        }
+
+        table.statement-table tr.credit-note td {
+            color: #5a3a00;
+        }
+
+        table.totals td {
+            padding: 4px 8px;
+        }
+
+        table.totals td.label {
+            color: #757575;
+        }
+
+        table.totals td.value {
+            text-align: right;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .section-title {
+            font-weight: 600;
+            font-size: 12px;
+            margin-bottom: 8px;
+            margin-top: 18px;
+        }
+
+        @font-face {
+            font-family: 'Inter';
+            font-weight: 400;
+            font-display: swap;
+            src: url('https://b.stripecdn.com/manage-statics-srv/assets/fonts/inter/Inter-Regular.woff2') format('woff2');
+        }
+
+        @font-face {
+            font-family: 'Inter';
+            font-weight: 500;
+            font-display: swap;
+            src: url('https://b.stripecdn.com/manage-statics-srv/assets/fonts/inter/Inter-Medium.woff2') format('woff2');
+        }
+
+        @font-face {
+            font-family: 'Inter';
+            font-weight: 600;
+            font-display: swap;
+            src: url('https://b.stripecdn.com/manage-statics-srv/assets/fonts/inter/Inter-SemiBold.woff2') format('woff2');
+        }
+
+        @page {
+            size: A4 landscape;
+            margin: 14mm 12mm 16mm 12mm;
+
+            @bottom-center {
+                content: "Page " counter(page) " of " counter(pages);
+                font-size: 8px;
+                color: #757575;
+                font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="width-100">
+        <div style="height: 28px;" class="width-100">
+            <div style="height: 4px; background-color: #F0F2F8;" class="width-100 brand-color-header">
+                &nbsp;
+            </div>
+        </div>
+    </div>
+
+    <div style="margin-left: 8px; margin-right: 8px;">
+        <div class="flex-horizontal flex-justify flex-align-start mb20">
+            <div>
+                <div class="h1">Payment Statement</div>
+                <div class="h2 mb10">Period: {{ statement.period_display }}</div>
+                <div class="caption">Internal accounting document — not a customer invoice</div>
+            </div>
+            <div class="text-right">
+                <div class="h1 logo-gray">{{ business.name }}</div>
+                <div class="caption">
+                    {% if business.address %}{{ business.address }}<br>{% endif %}
+                    {% if business.city or business.postal_code %}
+                        {{ business.city }}{% if business.city and business.postal_code %}, {% endif %}{{ business.postal_code }}<br>
+                    {% endif %}
+                    {% if business.country %}{{ business.country }}<br>{% endif %}
+                    {% if business.tax_code %}Tax / VAT: {{ business.tax_code }}{% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="mb20">
+            <table class="metadata" cellpadding="0" cellspacing="0">
+                <tbody>
+                    <tr>
+                        <td>Generated</td>
+                        <td>{{ statement.generated_at_display }}</td>
+                    </tr>
+                    <tr>
+                        <td>Currency</td>
+                        <td>{{ statement.currency }}</td>
+                    </tr>
+                    {% if statement.reference %}
+                    <tr>
+                        <td>Reference</td>
+                        <td>{{ statement.reference }}</td>
+                    </tr>
+                    {% endif %}
+                    <tr>
+                        <td>Paid transactions</td>
+                        <td>{{ statement.paid_transaction_count }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <table class="statement-table" cellpadding="0" cellspacing="0">
+            <thead>
+                <tr>
+                    <th style="width: 11%;">Payment Date</th>
+                    <th style="width: 11%;">Order</th>
+                    <th style="width: 12%;">Invoice</th>
+                    <th style="width: 16%;">Customer</th>
+                    <th style="width: 10%;">Method</th>
+                    <th style="width: 7%;">VAT Rate</th>
+                    <th class="num" style="width: 7%;">Net</th>
+                    <th class="num" style="width: 7%;">VAT</th>
+                    <th class="num" style="width: 8%;">Gross</th>
+                    <th style="width: 11%;">Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in statement.rows %}
+                <tr class="{% if row.row_kind == 'credit_note' %}credit-note{% endif %}">
+                    <td class="nowrap">{{ row.payment_date_display }}</td>
+                    <td class="nowrap">{{ row.order_reference }}</td>
+                    <td class="nowrap">{{ row.invoice_number }}</td>
+                    <td class="break-word">
+                        {{ row.customer }}
+                        {% if row.customer_business_name %}
+                        <div class="caption">{{ row.customer_business_name }}</div>
+                        {% endif %}
+                    </td>
+                    <td>{{ row.payment_method }}</td>
+                    <td class="nowrap">{{ row.vat_rate_label }}</td>
+                    <td class="num">{{ row.net_display }}</td>
+                    <td class="num">{{ row.vat_display }}</td>
+                    <td class="num">{{ row.gross_display }}</td>
+                    <td class="break-word caption">{{ row.notes }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="section-title">Totals</div>
+        <table class="totals" style="width: 360px;" cellpadding="0" cellspacing="0">
+            <tbody>
+                <tr>
+                    <td class="label">Total Net Sales</td>
+                    <td class="value">{{ statement.total_net_display }}</td>
+                </tr>
+                <tr>
+                    <td class="label">Total VAT</td>
+                    <td class="value">{{ statement.total_vat_display }}</td>
+                </tr>
+                <tr>
+                    <td class="label">Total Gross Sales</td>
+                    <td class="value">{{ statement.total_gross_display }}</td>
+                </tr>
+                <tr>
+                    <td class="label">Number of Paid Transactions</td>
+                    <td class="value">{{ statement.paid_transaction_count }}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        {% if statement.payment_method_summaries %}
+        <div class="section-title">Payment method summary</div>
+        <table class="statement-table" style="width: 420px;" cellpadding="0" cellspacing="0">
+            <thead>
+                <tr>
+                    <th>Method</th>
+                    <th class="num">Count</th>
+                    <th class="num">Gross</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in statement.payment_method_summaries %}
+                <tr>
+                    <td>{{ item.payment_method }}</td>
+                    <td class="num">{{ item.count }}</td>
+                    <td class="num">{{ item.gross_display }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        {% if statement.vat_summaries|length > 1 %}
+        <div class="section-title">VAT summary by rate (line items; document totals above are authoritative)</div>
+        <table class="statement-table" style="width: 480px;" cellpadding="0" cellspacing="0">
+            <thead>
+                <tr>
+                    <th>VAT Rate</th>
+                    <th class="num">Net</th>
+                    <th class="num">VAT</th>
+                    <th class="num">Gross</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in statement.vat_summaries %}
+                <tr>
+                    <td>{{ item.vat_rate_label }}</td>
+                    <td class="num">{{ item.net_display }}</td>
+                    <td class="num">{{ item.vat_display }}</td>
+                    <td class="num">{{ item.gross_display }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+</body>
+
+</html>

@@ -1,0 +1,20 @@
+{% extends "pay/base.html" %}
+
+{% block title %}Online payment unavailable | LandarsFood{% endblock %}
+
+{% block content %}
+  <div class="seal seal--unavailable" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/>
+      <path d="M12 8v5"/>
+      <circle cx="12" cy="16" r="0.75" fill="currentColor" stroke="none"/>
+    </svg>
+  </div>
+  <h1>Online payment unavailable</h1>
+  <p class="lead">Invoice {{ invoice_number }}</p>
+  <p class="lead">{{ message }}</p>
+{% endblock %}
+
+{% block footer %}
+  <p class="foot">Your invoice still includes bank transfer details if you prefer to pay that way.</p>
+{% endblock %}

@@ -15,6 +15,16 @@ export interface CachedListingProduct {
   in_stock?: boolean;
   stock_quantity?: number;
   promo_group?: string;
+  /** Full promo descriptor when Jerky ProductCategory–eligible (list + detail). */
+  promo?: {
+    group?: string;
+    label?: string;
+    description?: string;
+    group_size?: number;
+    free_per_group?: number;
+    paid_per_group?: number;
+    badge?: string;
+  } | null;
 }
 
 export type ListingProductCacheScope = "cart" | "wishlist";

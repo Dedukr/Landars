@@ -713,18 +713,25 @@
                 Sort Code: {{ invoice.seller_snapshot.sort_code }}
             </div>
         </div>
+        {% if invoice.payment_public_token and invoice.public_payment_url %}
+        <div class="mt20">
+            <div class="h2">
+                Pay online
+            </div>
+            <div class="">
+                Alternatively, you can pay securely from your bank account:
+            </div>
+            <div class="mt10 pb5 bold">
+                <a href="{{ invoice.public_payment_url }}">Pay invoice</a>
+            </div>
+        </div>
+        {% endif %}
         <div class="mt20 pt20 light-gray-border-top fs-10 line-height-140">
             <div class="mb10">
                 <div class="h2">
                     £{{ invoice.total|floatformat:2 }} billed due
                     {{invoice.due_date|date:"d M Y" }}
                 </div>
-                <!-- <div class="mt10 pb5 bold">
-                    <a
-                        href="https://invoice.stripe.com/i/acct_1PV1n5D0vxs6Rohp/live_YWNjdF8xUFYxbjVEMHZ4czZSb2hwLF9TTVB4Y2FHMmt2d1YwVjM1UVFzYXRmNVRiV1NFaDhJLDEzODQ5MTk4Mw0200QXWz0Hgi?s=pd">
-                        Pay online
-                    </a>
-                </div> -->
             </div>
         </div>
         <div class="line_items_table_title mt20">
@@ -748,11 +755,7 @@
                         <td>
                             <div style="word-break: break-word; padding-left: 0px; padding-right: 5px;">
                                 {{ item.description }}
-                            </div>{% if item.free_quantity > 0 %}
-                            <div class="mid-gray"
-                                style="word-break: break-word; padding-left: 0px; padding-right: 5px;">
-                                incl. {{ item.free_quantity|floatformat:0 }} free (5+1)
-                            </div>{% endif %}
+                            </div>
                         </td>
                         <td class="break-word align-right">
                             {{ item.quantity|floatformat:0 }}

@@ -536,6 +536,8 @@ class ProductSerializer(ProductImageValidationMixin, serializers.ModelSerializer
     primary_image = serializers.SerializerMethodField()
     price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     categories = serializers.SerializerMethodField()
+    # Computed from Jerky ProductCategory membership (not Product.promo_group DB field).
+    promo_group = serializers.SerializerMethodField()
     promo = serializers.SerializerMethodField()
 
     class Meta:
@@ -560,6 +562,7 @@ class ProductSerializer(ProductImageValidationMixin, serializers.ModelSerializer
             "primary_image",
             "sold_quantity",
             "sold_orders_count",
+            "promo_group",
             "promo",
         ]
 
@@ -573,6 +576,18 @@ class ProductSerializer(ProductImageValidationMixin, serializers.ModelSerializer
         from api.services.promotions import promo_payload_for_product
 
         return promo_payload_for_product(obj)
+
+    def get_promo_group(self, obj):
+        """
+        Promo slug when eligible via the Jerky ProductCategory, else empty string.
+
+        Kept for guest-cart / cache clients that still key off ``promo_group``;
+        eligibility itself ignores the unused DB column of the same name.
+        """
+        from api.services.promotions import promo_definition_for_product
+
+        definition = promo_definition_for_product(obj)
+        return definition.group if definition else ""
 
     # def get_stock_quantity(self, obj):
     #     stock = Stock.objects.filter(product=obj).first()
@@ -634,6 +649,9 @@ class ProductListSerializer(serializers.ModelSerializer):
     primary_image = serializers.SerializerMethodField()
     images = serializers.SerializerMethodField()
     categories = serializers.SerializerMethodField()
+    # Computed from Jerky ProductCategory membership (not Product.promo_group DB field).
+    promo_group = serializers.SerializerMethodField()
+    promo = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -649,6 +667,7 @@ class ProductListSerializer(serializers.ModelSerializer):
             "sold_orders_count",
             # Needed so the client-side (guest) cart can mirror the promo maths.
             "promo_group",
+            "promo",
         ]
 
     def get_primary_image(self, obj):
@@ -665,6 +684,17 @@ class ProductListSerializer(serializers.ModelSerializer):
         """Return the product's own (leaf) category names."""
         categories = sorted(obj.categories.all(), key=lambda cat: cat.name)
         return [cat.name for cat in categories]
+
+    def get_promo(self, obj):
+        from api.services.promotions import promo_payload_for_product
+
+        return promo_payload_for_product(obj)
+
+    def get_promo_group(self, obj):
+        from api.services.promotions import promo_definition_for_product
+
+        definition = promo_definition_for_product(obj)
+        return definition.group if definition else ""
 
 
 class OrderItemSerializer(serializers.ModelSerializer):

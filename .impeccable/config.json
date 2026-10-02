@@ -341,6 +341,426 @@
         "value": "rgba(255, 193, 7, 0.1)",
         "createdAt": "2026-09-21T11:45:32.319Z",
         "reason": "pre-existing unverified warning fill; copy-only change"
+      },
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-09-29T12:38:06.543Z",
+        "reason": "case variant of Inter ignore for backend payment templates"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "inter",
+        "createdAt": "2026-09-29T12:38:06.566Z",
+        "reason": "case variant of Inter ignore for backend payment templates"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#0a2540",
+        "createdAt": "2026-09-29T12:38:06.587Z",
+        "reason": "transactional Stripe-adjacent payment status pages; not marketing UI"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#425466",
+        "createdAt": "2026-09-29T12:38:06.612Z",
+        "reason": "transactional payment status pages; not marketing UI"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#e6ebf1",
+        "createdAt": "2026-09-29T12:38:06.630Z",
+        "reason": "transactional payment status pages; not marketing UI"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#697386",
+        "createdAt": "2026-09-29T12:38:06.655Z",
+        "reason": "transactional payment status pages; not marketing UI"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "14px",
+        "createdAt": "2026-09-29T12:38:26.567Z",
+        "reason": "backend payment status templates; utilitarian Stripe-adjacent pages"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "15px",
+        "createdAt": "2026-09-29T12:38:26.586Z",
+        "reason": "backend payment status templates; utilitarian Stripe-adjacent pages"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "24px",
+        "createdAt": "2026-09-29T12:38:26.605Z",
+        "reason": "backend payment status templates; utilitarian Stripe-adjacent pages"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "32px",
+        "createdAt": "2026-09-29T12:38:26.626Z",
+        "reason": "backend payment status templates padding; utilitarian pages"
+      },
+      {
+        "rule": "cream-palette",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/base.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.181Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/base.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.196Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/base.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.210Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/base.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.226Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "design-system-font",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/base.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.241Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "overused-font",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/base.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.255Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "cream-palette",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/invoice_paid.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.270Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/invoice_paid.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.288Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/invoice_paid.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.308Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/invoice_paid.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.322Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "design-system-font",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/invoice_paid.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.337Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "overused-font",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/invoice_paid.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.351Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "cream-palette",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/invoice_void.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.370Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/invoice_void.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.428Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/invoice_void.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.446Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/invoice_void.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.461Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "design-system-font",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/invoice_void.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.476Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "overused-font",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/invoice_void.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.491Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "cream-palette",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/invoice_unavailable.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.507Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/invoice_unavailable.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.523Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/invoice_unavailable.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.540Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/invoice_unavailable.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.556Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "design-system-font",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/invoice_unavailable.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.573Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "overused-font",
+        "value": "*",
+        "files": [
+          "backend/templates/pay/invoice_unavailable.html"
+        ],
+        "createdAt": "2026-09-29T14:05:26.588Z",
+        "reason": "Invoice payment status pages use marketplace brand tokens from frontend-marketplace globals.css; DESIGN.md documents festival-menu only. Approved payment-page redesign plan."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#000000",
+        "files": [
+          "backend/templates/payment_statement.html"
+        ],
+        "createdAt": "2026-09-29T14:20:58.281Z",
+        "reason": "Matches existing invoice.html PDF accounting document palette"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgb(128, 128, 128)",
+        "files": [
+          "backend/templates/payment_statement.html"
+        ],
+        "createdAt": "2026-09-29T14:20:58.298Z",
+        "reason": "Matches existing invoice.html logo-gray used on PDF documents"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#757575",
+        "files": [
+          "backend/templates/payment_statement.html"
+        ],
+        "createdAt": "2026-09-29T14:20:58.316Z",
+        "reason": "Matches existing invoice.html mid-gray used on PDF documents"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#f0f2f8",
+        "files": [
+          "backend/templates/payment_statement.html"
+        ],
+        "createdAt": "2026-09-29T14:20:58.334Z",
+        "reason": "Matches existing invoice.html brand-color-header used on PDF documents"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#d0d4e0",
+        "files": [
+          "backend/templates/payment_statement.html"
+        ],
+        "createdAt": "2026-09-29T14:20:58.354Z",
+        "reason": "Table border companion to invoice PDF header strip #F0F2F8"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#eceef4",
+        "files": [
+          "backend/templates/payment_statement.html"
+        ],
+        "createdAt": "2026-09-29T14:20:58.371Z",
+        "reason": "Subtle row divider for multi-row PDF statement table"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#5a3a00",
+        "files": [
+          "backend/templates/payment_statement.html"
+        ],
+        "createdAt": "2026-09-29T14:20:58.389Z",
+        "reason": "Credit-note adjustment row emphasis on internal PDF statement"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "9px",
+        "files": [
+          "backend/templates/payment_statement.html"
+        ],
+        "createdAt": "2026-09-29T14:20:58.415Z",
+        "reason": "Landscape multi-column accounting PDF; same density as invoice.html caption/table sizes"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "10px",
+        "files": [
+          "backend/templates/payment_statement.html"
+        ],
+        "createdAt": "2026-09-29T14:20:58.432Z",
+        "reason": "Matches invoice.html body font-size for PDF documents"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "12px",
+        "files": [
+          "backend/templates/payment_statement.html"
+        ],
+        "createdAt": "2026-09-29T14:20:58.449Z",
+        "reason": "Section titles matching invoice.pdf typography scale"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "14px",
+        "files": [
+          "backend/templates/payment_statement.html"
+        ],
+        "createdAt": "2026-09-29T14:20:58.467Z",
+        "reason": "Period subtitle on PDF statement header"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "22px",
+        "files": [
+          "backend/templates/payment_statement.html"
+        ],
+        "createdAt": "2026-09-29T14:20:58.486Z",
+        "reason": "Document title scale near invoice.html h1 24px"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "8px",
+        "files": [
+          "backend/templates/payment_statement.html"
+        ],
+        "createdAt": "2026-09-29T14:20:58.588Z",
+        "reason": "WeasyPrint @page footer page numbers on landscape PDF"
+      },
+      {
+        "rule": "tiny-text",
+        "value": "*",
+        "files": [
+          "backend/templates/payment_statement.html"
+        ],
+        "createdAt": "2026-09-29T14:20:58.608Z",
+        "reason": "Internal WeasyPrint accounting PDF reuses invoice.html print density, not web UI body text"
+      },
+      {
+        "rule": "undersized-ui-text",
+        "value": "*",
+        "files": [
+          "backend/templates/payment_statement.html"
+        ],
+        "createdAt": "2026-09-29T14:20:58.626Z",
+        "reason": "Internal WeasyPrint accounting PDF table cells; not interactive web UI"
+      },
+      {
+        "rule": "tight-leading",
+        "value": "*",
+        "files": [
+          "backend/templates/payment_statement.html"
+        ],
+        "createdAt": "2026-09-29T14:21:30.788Z",
+        "reason": "WeasyPrint landscape PDF table density matching invoice.html print layout"
       }
     ]
   }

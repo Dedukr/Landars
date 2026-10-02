@@ -11,7 +11,9 @@ interface Product {
   primary_image?: string | null;
   description?: string;
   categories?: string[];
+  /** Computed marker from list/detail API when Jerky-group eligible. */
   promo_group?: string;
+  promo?: { group?: string } | null;
 }
 
 interface CartItem {
@@ -52,7 +54,9 @@ export const useCartCalculations = (
       price: parseFloat(product.price),
       categories: product.categories || [],
       quantity: cart.find((item) => item.productId === product.id)?.quantity || 0,
-      promoGroup: product.promo_group || "",
+      // Prefer API ``promo.group`` (category-group eligibility); fall back to
+      // computed ``promo_group`` for older cached listing rows.
+      promoGroup: product.promo?.group || product.promo_group || "",
     }));
 
     const promo = computeJerkyPromo(

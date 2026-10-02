@@ -11,6 +11,7 @@ import {
 } from "@/components/shop/ShopDesktopFilterAside";
 import { ShopMobileFilterDrawer } from "@/components/shop/ShopMobileFilterDrawer";
 import { ShopFilterPanelContent } from "@/components/shop/ShopFilterPanelContent";
+import OfferPills from "@/components/offers/OfferPills";
 import type { ShopCategoryRecord } from "@/components/shop/ShopFilterPanelContent";
 import {
   type ShopListingFilters,
@@ -240,6 +241,15 @@ export default function ShopContent() {
           categoriesLoading={categoriesLoading}
         />
       </ShopMobileFilterDrawer>
+
+      <div
+        className="border-b"
+        style={{ borderColor: "var(--sidebar-border)" }}
+      >
+        <div className="flex w-full justify-center overflow-x-auto px-2.5 py-2.5 min-[340px]:px-3 min-[380px]:px-4 md:px-6 lg:mx-auto lg:max-w-7xl lg:px-8 [scrollbar-width:none]">
+          <OfferPills nowrap />
+        </div>
+      </div>
 
       <div className="px-3 sm:px-5 lg:px-10 pt-4 sm:pt-6 lg:content-offset-md">
         <div
