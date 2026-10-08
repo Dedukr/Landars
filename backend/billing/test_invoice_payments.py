@@ -9,13 +9,14 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.template.loader import render_to_string
 from django.test import Client, TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from api.models import Order, OrderItem, Product
-from billing.models import Invoice
+from billing.models import CreditNote, Invoice
 from billing.services.invoice_payment import (
     InvoicePaymentError,
     InvoicePaymentService,
@@ -653,3 +654,94 @@ class InvoicePaymentConcurrencyTests(TransactionTestCase):
             mock_create.call_args.kwargs["idempotency_key"],
             f"invoice-payment-{self.invoice.pk}-{self.invoice.payment_version}",
         )
+
+
+@override_settings(
+    FRONTEND_URL="https://landarsfood.test",
+    URL_BASE="https://landarsfood.test",
+    STRIPE_SECRET_KEY="sk_test_dummy",
+    STRIPE_WEBHOOK_SECRET="whsec_test_secret",
+)
+class PublishedInvoiceBlankTokenVoidTests(TestCase):
+    """Legacy published invoices may lack payment_public_token; voiding must still work."""
+
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(
+            email="blank-token-void@example.com",
+            password="SecurePass123!",
+            first_name="Blank",
+            surname="Token",
+            is_email_verified=True,
+        )
+        self.product = Product.objects.create(
+            name="Blank Token Pie",
+            base_price=Decimal("20.00"),
+            holiday_fee=Decimal("0"),
+            active=True,
+            vat=False,
+        )
+        self.order = Order.objects.create(
+            customer=self.user,
+            status="issued",
+            delivery_date=timezone.localdate(),
+            delivery_date_order_id=1,
+        )
+        OrderItem.objects.create(
+            order=self.order,
+            product=self.product,
+            quantity=Decimal("1.00"),
+        )
+        self.invoice = _issue_invoice(self.order, total=Decimal("20.00"))
+        # Mimic pre-token published invoices: PDF set, payment token blank.
+        Invoice.objects.filter(pk=self.invoice.pk).update(
+            invoice_link=f"invoices/invoice_{self.invoice.invoice_number}.pdf",
+            payment_public_token=None,
+        )
+        self.invoice.refresh_from_db()
+        self.assertTrue(self.invoice.invoice_link)
+        self.assertFalse(self.invoice.payment_public_token)
+
+    @patch.object(
+        CreditNote,
+        "generate_and_upload_pdf",
+        return_value="credit_notes/credit_note_test.pdf",
+    )
+    def test_credit_note_assigns_token_and_voids_in_same_save(self, _mock_pdf):
+        request = MagicMock()
+        request.build_absolute_uri.return_value = "https://landarsfood.test/"
+
+        note = CreditNote.create_and_publish_from_invoice(
+            invoice=self.invoice,
+            reason="Order changed",
+            request=request,
+        )
+
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.VOID)
+        self.assertIsNotNone(self.invoice.voided_at)
+        self.assertIn(
+            f"Cancelled by Credit Note #{note.credit_note_number}",
+            self.invoice.void_reason,
+        )
+        self.assertTrue(self.invoice.payment_public_token)
+        self.assertGreaterEqual(len(self.invoice.payment_public_token), 32)
+
+        response = self.client.get(
+            reverse(
+                "pay_invoice",
+                kwargs={"token": self.invoice.payment_public_token},
+            )
+        )
+        self.assertEqual(response.status_code, 410)
+        self.assertContains(response, "no longer payable", status_code=410)
+
+        # Existing token must stay frozen; accounting totals stay immutable.
+        self.invoice.payment_public_token = "rotated-token-must-be-rejected"
+        with self.assertRaises(ValidationError):
+            self.invoice.save(update_fields=["payment_public_token"])
+
+        self.invoice.refresh_from_db()
+        self.invoice.total_amount = Decimal("99.00")
+        with self.assertRaises(ValidationError):
+            self.invoice.save(update_fields=["total_amount"])

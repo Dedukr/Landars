@@ -423,13 +423,20 @@ class Invoice(models.Model):
                     "vat_amount",
                     "total_amount",
                     "invoice_link",
-                    "payment_public_token",
                 ]
                 for f in immutable_fields:
                     if getattr(prev, f) != getattr(self, f):
                         raise ValidationError(
                             "Invoices are immutable accounting documents; they cannot be modified after publication."
                         )
+                # Allow a one-time blank→token fill (legacy published invoices), but
+                # never rotate or clear an existing payment URL.
+                prev_token = prev.payment_public_token or ""
+                new_token = self.payment_public_token or ""
+                if prev_token != new_token and prev_token:
+                    raise ValidationError(
+                        "Invoices are immutable accounting documents; they cannot be modified after publication."
+                    )
 
     def _allocate_invoice_number(self) -> int:
         """
