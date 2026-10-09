@@ -745,3 +745,15 @@ class PublishedInvoiceBlankTokenVoidTests(TestCase):
         self.invoice.total_amount = Decimal("99.00")
         with self.assertRaises(ValidationError):
             self.invoice.save(update_fields=["total_amount"])
+
+    def test_mark_published_blank_token_invoice_paid_assigns_token(self):
+        """Admin 'mark paid' updates the invoice; blank-token published rows must not raise."""
+        self.invoice.amount_paid = self.invoice.total_amount
+        self.invoice.status = Invoice.Status.PAID
+        self.invoice.paid_at = timezone.now()
+        self.invoice.save(update_fields=["amount_paid", "status", "paid_at"])
+
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.PAID)
+        self.assertEqual(self.invoice.amount_paid, self.invoice.total_amount)
+        self.assertTrue(self.invoice.payment_public_token)
