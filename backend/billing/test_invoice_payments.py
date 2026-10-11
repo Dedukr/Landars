@@ -118,6 +118,14 @@ class InvoicePaymentTokenAndRenderTests(TestCase):
 )
 class InvoicePaymentPageTests(TestCase):
     def setUp(self):
+        # Invoice payment saves check whether the Checkout Session needs expiring.
+        completed_session = MagicMock()
+        completed_session.status = "complete"
+        retrieve_session = patch(
+            "stripe.checkout.Session.retrieve", return_value=completed_session
+        )
+        retrieve_session.start()
+        self.addCleanup(retrieve_session.stop)
         self.client = Client()
         self.user = User.objects.create_user(
             email="pay-page@example.com",
@@ -135,7 +143,7 @@ class InvoicePaymentPageTests(TestCase):
         )
         self.order = Order.objects.create(
             customer=self.user,
-            status="paid",
+            status="issued",
             delivery_date=timezone.localdate(),
             delivery_date_order_id=1,
         )
@@ -249,6 +257,9 @@ class InvoicePaymentPageTests(TestCase):
         self.assertEqual(self.invoice.status, Invoice.Status.PAID)
         self.assertEqual(self.invoice.amount_paid, Decimal("12.00"))
         self.assertEqual(self.invoice.stripe_payment_intent_id, "pi_paid_return")
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, "paid")
+        self.assertEqual(self.order.payment_status, "succeeded")
 
     @patch(
         "billing.services.invoice_payment.StripePaymentService.retrieve_checkout_session"
@@ -267,6 +278,9 @@ class InvoicePaymentPageTests(TestCase):
         self.invoice.refresh_from_db()
         self.assertEqual(self.invoice.status, Invoice.Status.ISSUED)
         self.assertEqual(self.invoice.amount_paid, Decimal("0"))
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, "issued")
+        self.assertEqual(self.order.payment_status, "pending")
 
     @patch(
         "billing.services.invoice_payment.StripePaymentService.retrieve_checkout_session"
@@ -286,6 +300,9 @@ class InvoicePaymentPageTests(TestCase):
         self.assertEqual(response.json()["status"], "paid")
         self.invoice.refresh_from_db()
         self.assertEqual(self.invoice.status, Invoice.Status.PAID)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, "paid")
+        self.assertEqual(self.order.payment_status, "succeeded")
 
 
 @override_settings(
@@ -415,7 +432,7 @@ class InvoiceStripeWebhookTests(TestCase):
         )
         self.order = Order.objects.create(
             customer=self.user,
-            status="paid",
+            status="issued",
             delivery_date=timezone.localdate(),
             delivery_date_order_id=1,
         )
@@ -456,7 +473,17 @@ class InvoiceStripeWebhookTests(TestCase):
                 HTTP_STRIPE_SIGNATURE="t=1,v1=fake",
             )
 
-    def test_successful_payment_marks_invoice_paid(self):
+    def _assert_order_paid(self):
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, "paid")
+        self.assertEqual(self.order.payment_status, "succeeded")
+
+    def _assert_order_unpaid(self):
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, "issued")
+        self.assertEqual(self.order.payment_status, "pending")
+
+    def test_successful_payment_marks_invoice_and_order_paid(self):
         response = self._post_event(
             "checkout.session.async_payment_succeeded", self._session_payload()
         )
@@ -466,6 +493,64 @@ class InvoiceStripeWebhookTests(TestCase):
         self.assertEqual(self.invoice.amount_paid, Decimal("9.00"))
         self.assertIsNotNone(self.invoice.paid_at)
         self.assertEqual(self.invoice.stripe_payment_intent_id, "pi_test_webhook")
+        self._assert_order_paid()
+
+    def test_paid_checkout_completed_marks_invoice_and_order_paid(self):
+        response = self._post_event(
+            "checkout.session.completed", self._session_payload()
+        )
+        self.assertEqual(response.status_code, 200)
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.PAID)
+        self._assert_order_paid()
+
+    def test_invoice_payment_intent_marks_invoice_and_order_paid(self):
+        response = self._post_event(
+            "payment_intent.succeeded",
+            {
+                "id": "pi_test_webhook",
+                "amount": 900,
+                "currency": "gbp",
+                "metadata": self._session_payload()["metadata"],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.PAID)
+        self.assertEqual(self.invoice.amount_paid, Decimal("9.00"))
+        self._assert_order_paid()
+
+    def test_unpaid_checkout_does_not_mark_invoice_or_order_paid(self):
+        response = self._post_event(
+            "checkout.session.completed", self._session_payload(payment_status="unpaid")
+        )
+        self.assertEqual(response.status_code, 200)
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.ISSUED)
+        self.assertEqual(self.invoice.amount_paid, Decimal("0"))
+        self._assert_order_unpaid()
+
+    def test_failed_checkout_does_not_mark_invoice_or_order_paid(self):
+        response = self._post_event(
+            "checkout.session.async_payment_failed",
+            self._session_payload(payment_status="unpaid"),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.ISSUED)
+        self.assertEqual(self.invoice.amount_paid, Decimal("0"))
+        self._assert_order_unpaid()
+
+    def test_void_invoice_payment_does_not_mark_order_paid(self):
+        self.invoice.void()
+        response = self._post_event(
+            "checkout.session.async_payment_succeeded", self._session_payload()
+        )
+        self.assertEqual(response.status_code, 200)
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.VOID)
+        self.assertEqual(self.invoice.amount_paid, Decimal("0"))
+        self._assert_order_unpaid()
 
     def test_amount_mismatch_rejected(self):
         response = self._post_event(
@@ -476,6 +561,7 @@ class InvoiceStripeWebhookTests(TestCase):
         self.invoice.refresh_from_db()
         self.assertEqual(self.invoice.status, Invoice.Status.ISSUED)
         self.assertEqual(self.invoice.amount_paid, Decimal("0"))
+        self._assert_order_unpaid()
 
     def test_currency_mismatch_rejected(self):
         response = self._post_event(
@@ -485,6 +571,7 @@ class InvoiceStripeWebhookTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.invoice.refresh_from_db()
         self.assertEqual(self.invoice.status, Invoice.Status.ISSUED)
+        self._assert_order_unpaid()
 
     def test_duplicate_webhook_is_harmless(self):
         payload = self._session_payload()
@@ -499,6 +586,40 @@ class InvoiceStripeWebhookTests(TestCase):
         self.invoice.refresh_from_db()
         self.assertEqual(self.invoice.status, Invoice.Status.PAID)
         self.assertEqual(self.invoice.amount_paid, Decimal("9.00"))
+        self._assert_order_paid()
+
+    def test_duplicate_webhook_preserves_later_order_delivery_status(self):
+        payload = self._session_payload()
+        response = self._post_event("checkout.session.async_payment_succeeded", payload)
+        self.assertEqual(response.status_code, 200)
+        self._assert_order_paid()
+        self.order.status = "delivered"
+        self.order.save(update_fields=["status"])
+
+        response = self._post_event("checkout.session.async_payment_succeeded", payload)
+        self.assertEqual(response.status_code, 200)
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.amount_paid, Decimal("9.00"))
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, "delivered")
+        self.assertEqual(self.order.payment_status, "succeeded")
+
+    @patch(
+        "billing.services.invoice_payment.set_order_status",
+        side_effect=RuntimeError("Order update failed"),
+    )
+    def test_order_update_failure_rolls_back_invoice_payment(self, mock_set_status):
+        response = self._post_event(
+            "checkout.session.async_payment_succeeded", self._session_payload()
+        )
+        self.assertEqual(response.status_code, 500)
+        mock_set_status.assert_called_once()
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.status, Invoice.Status.ISSUED)
+        self.assertEqual(self.invoice.amount_paid, Decimal("0"))
+        self.assertIsNone(self.invoice.paid_at)
+        self.assertEqual(self.invoice.stripe_payment_intent_id, "")
+        self._assert_order_unpaid()
 
     def test_invalid_webhook_signature_rejected(self):
         with patch(

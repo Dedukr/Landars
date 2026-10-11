@@ -2,7 +2,7 @@
 Invoice payment orchestration.
 
 Invoice → InvoicePaymentService → StripePaymentService
-Webhook / reconciliation also lands here to mark invoices paid idempotently.
+Webhook / reconciliation also lands here to mark invoices and orders paid idempotently.
 """
 
 from __future__ import annotations
@@ -15,6 +15,8 @@ from django.db import transaction
 from django.utils import timezone
 
 from api.checkout_security import money_to_pence
+from api.models import Order
+from api.services.product_sales import set_order_status
 from billing.models import Invoice
 from billing.services.stripe_payment import (
     PAY_BY_BANK_PAYMENT_METHOD,
@@ -227,7 +229,7 @@ class InvoicePaymentService:
         require_paid: bool = True,
     ) -> Invoice | None:
         """
-        Idempotently mark an invoice paid from a Checkout Session payload.
+        Idempotently mark an invoice and its order paid from a Checkout Session payload.
 
         Validates currency, amount, and payment success. Duplicate delivery is a no-op.
         """
@@ -275,7 +277,7 @@ class InvoicePaymentService:
                 return None
 
             if invoice.status == Invoice.Status.PAID:
-                # Idempotent success — still refresh Stripe refs if missing.
+                # Refresh Stripe refs without resetting later order fulfilment.
                 self._store_stripe_refs(invoice, session)
                 return invoice
 
@@ -312,6 +314,9 @@ class InvoicePaymentService:
             )
             invoice.apply_payment(paid_major, paid_at=timezone.now())
             self._store_stripe_refs(invoice, session, payment_status="paid")
+            if invoice.status == Invoice.Status.PAID:
+                order = Order.objects.select_for_update().get(pk=invoice.order_id)
+                set_order_status(order, "paid", payment_status="succeeded")
             logger.info(
                 "Invoice %s marked PAID via Stripe Checkout %s",
                 invoice.pk,
