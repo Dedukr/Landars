@@ -112,6 +112,7 @@ services:
     volumes:
       - static_volume:/backend/static
       - ./backend/db:/backend/db
+      - development_files:/backend/media
       # Optional longer auth-event retention (JSON lines). Uncomment together with AUTH_EVENT_LOG_FILE
       # below; chown once for uid 1000 — see docs/AUTH_OBSERVABILITY.md §8.
       # - auth_logs:/backend/logs
@@ -194,6 +195,7 @@ services:
     volumes:
       - static_volume:/backend/static
       - ./backend/db:/backend/db
+      - development_files:/backend/media
     environment:
       - PYTHONUNBUFFERED=1
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1,backend,frontend-marketplace,nginx}
@@ -260,6 +262,7 @@ services:
     volumes:
       - static_volume:/backend/static
       - ./backend/db:/backend/db
+      - development_files:/backend/media
     environment:
       - PYTHONUNBUFFERED=1
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1,backend,frontend-marketplace,nginx}
@@ -470,6 +473,9 @@ volumes:
   postgres_backups:
     external: true
     name: landars_postgres_backups
+
+  development_files:
+    name: landars_development_files
 
   redis_data:
     name: landars_redis_data

@@ -12,6 +12,8 @@ from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
+from backend.file_storage import ImageReferenceField
+
 
 def normalize_mac_address(value: str) -> str:
     """Normalize a MAC address to 12 uppercase hex characters (no separators)."""
@@ -146,7 +148,7 @@ class FestivalProduct(models.Model):
         help_text="Additions from this class can be chosen with the product.",
     )
     name = models.CharField(max_length=200)
-    image_url = models.URLField(blank=True, default="", max_length=500)
+    image_url = ImageReferenceField(blank=True, default="", max_length=500)
     vat_rate = models.DecimalField(
         max_digits=3,
         decimal_places=0,
@@ -252,7 +254,7 @@ class FestivalFilling(models.Model):
         related_name="fillings",
     )
     name = models.CharField(max_length=100)
-    image_url = models.URLField(
+    image_url = ImageReferenceField(
         blank=True,
         default="",
         max_length=500,

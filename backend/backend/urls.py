@@ -20,7 +20,7 @@ from django.http import JsonResponse
 from django.urls import include, path
 from django.views.decorators.http import require_http_methods
 
-from . import health_checks
+from . import health_checks, development_files
 
 
 @require_http_methods(["GET"])
@@ -42,6 +42,9 @@ def health_check(request):
 
 
 urlpatterns = [
+    path("api/development-files/document/", development_files.document, name="development-document"),
+    path("api/development-files/upload-image/", development_files.upload_image, name="development-image-upload"),
+    path("api/development-files/images/<path:key>", development_files.image, name="development-image"),
     path("admin/", admin.site.urls),
     path("api/", include("api.urls")),
     path("api/auth/", include("account.urls")),

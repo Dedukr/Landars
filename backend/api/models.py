@@ -12,6 +12,8 @@ from django.core.validators import (
 from django.db import models
 from django.utils import timezone
 
+from backend.file_storage import ImageReferenceField
+
 
 # ProductCategory model
 class ProductCategory(models.Model):
@@ -22,7 +24,7 @@ class ProductCategory(models.Model):
 
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
-    image_url = models.URLField(
+    image_url = ImageReferenceField(
         max_length=500,
         blank=True,
         null=True,
@@ -71,7 +73,7 @@ class CategoryGroup(models.Model):
 
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
-    image_url = models.URLField(
+    image_url = ImageReferenceField(
         max_length=500,
         blank=True,
         null=True,
@@ -98,7 +100,7 @@ class ProductImage(models.Model):
     product = models.ForeignKey(
         "Product", related_name="images", on_delete=models.CASCADE
     )
-    image_url = models.URLField(max_length=500)
+    image_url = ImageReferenceField(max_length=500)
     sort_order = models.PositiveIntegerField(default=0)
     alt_text = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -332,14 +334,14 @@ class ProductReview(models.Model):
 
 
 class ReviewImage(models.Model):
-    """Photo attached to a product or shop review (stored as public R2 CDN URL)."""
+    """Photo attached to a product or shop review (CDN URL, or a local image in development)."""
 
     review = models.ForeignKey(
         ProductReview,
         related_name="images",
         on_delete=models.CASCADE,
     )
-    image_url = models.URLField(max_length=500)
+    image_url = ImageReferenceField(max_length=500)
     sort_order = models.PositiveIntegerField(default=0)
     alt_text = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)

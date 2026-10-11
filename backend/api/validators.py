@@ -7,19 +7,22 @@ from rest_framework import serializers
 
 
 def validate_image_url(value):
-    """
-    Validate that an image URL is from the correct R2 domain.
-    """
+    """Accept the production CDN, or a development image reference while developing."""
     if not value:
         return value
-    
-    # Check if URL starts with the R2 public URL
-    if not value.startswith(settings.R2_PUBLIC_URL):
-        raise ValidationError(
-            f"Image URL must be from the configured R2 storage: {settings.R2_PUBLIC_URL}"
-        )
-    
-    return value
+
+    public = settings.R2_PUBLIC_URL or ""
+    if public and value.startswith(public):
+        return value
+
+    from backend.file_storage import image_reference_from_value, is_development
+
+    if is_development() and image_reference_from_value(value):
+        return value
+
+    raise ValidationError(
+        f"Image URL must be from the configured R2 storage: {public}"
+    )
 
 
 def validate_product_images(product):

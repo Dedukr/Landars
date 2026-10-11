@@ -136,7 +136,8 @@ COPY . .
 RUN python manage.py collectstatic --noinput
 
 # Run Gunicorn/Celery as non-root — avoids Celery's "superuser privileges" warning.
-RUN addgroup -g 1000 django && \
+RUN mkdir -p /backend/media/development && \
+    addgroup -g 1000 django && \
     adduser -D -u 1000 -G django django && \
     chown -R django:django /backend /opt/py /opt/star
 

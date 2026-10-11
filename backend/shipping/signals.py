@@ -110,28 +110,11 @@ def _delete_shipment_label_from_s3(instance: Shipment) -> None:
     key = (getattr(instance, "label_s3_key", None) or "").strip()
     if not key:
         return
-    from django.conf import settings
-
     from botocore.exceptions import ClientError
-
-    from billing.models import get_s3_client
-
-    bucket = getattr(settings, "AWS_STORAGE_BUCKET_NAME", None) or ""
-    if not bucket:
-        logger.warning(
-            "Shipment pk=%s: skip S3 label delete (AWS_STORAGE_BUCKET_NAME unset), key=%s",
-            instance.pk,
-            key,
-        )
-        return
+    from backend.file_storage import delete_file
     try:
-        s3 = get_s3_client()
-        s3.delete_object(Bucket=bucket, Key=key)
-        logger.info(
-            "Deleted label S3 object %s for Shipment pk=%s",
-            key,
-            instance.pk,
-        )
+        if delete_file(key):
+            logger.info("Deleted label object %s for Shipment pk=%s", key, instance.pk)
     except ClientError as exc:
         logger.warning(
             "S3 delete_object failed for label key=%s (Shipment pk=%s): %s",

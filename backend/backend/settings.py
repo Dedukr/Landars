@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 import os
 import sys
+from urllib.parse import urlsplit
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -402,7 +403,6 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, "static")
-STATICFILES_STORAGE = "django.contrib.staticfiles.storage.ManifestStaticFilesStorage"
 
 
 # Default primary key field type
@@ -434,6 +434,13 @@ AWS_S3_CUSTOM_DOMAIN = f"{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com"
 AWS_S3_FILE_OVERWRITE = False
 AWS_DEFAULT_ACL = None
 AWS_QUERYSTRING_AUTH = False
+
+# Existing DB keys continue to read production S3. Only new development writes
+# use this private filesystem; their local:// origin is persisted in the DB.
+APP_ENV = os.getenv("APP_ENV", "development" if DEBUG else "production").strip().lower()
+if APP_ENV not in {"development", "production"}:
+    raise ImproperlyConfigured("APP_ENV must be development or production.")
+DEVELOPMENT_FILE_ROOT = Path(os.getenv("DEVELOPMENT_FILE_ROOT", str(BASE_DIR / "media" / "development")))
 
 S3_STORAGE_CLASS = os.getenv("S3_STORAGE_CLASS")  # Storage class
 S3_BACKUP_DIR = os.getenv("S3_BACKUP_DIR")  # Directory prefix in S3
@@ -476,6 +483,21 @@ EMAIL_USE_LOCALTIME = os.getenv("EMAIL_USE_LOCALTIME", "False").lower() in (
 # AWS S3 Media files storage
 DEFAULT_FILE_STORAGE = os.getenv("DEFAULT_FILE_STORAGE")
 MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/"
+MEDIA_ROOT = DEVELOPMENT_FILE_ROOT / "generic"
+_development_storage = APP_ENV == "development" or DEBUG or urlsplit(URL_BASE).hostname in {
+    "localhost", "127.0.0.1", "::1", "0.0.0.0",
+}
+STORAGES = {
+    "default": {
+        "BACKEND": (
+            "backend.file_storage.DevelopmentStorage" if _development_storage else
+            (DEFAULT_FILE_STORAGE or "storages.backends.s3boto3.S3Boto3Storage")
+        ),
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.ManifestStaticFilesStorage",
+    },
+}
 
 # Cloudflare R2 Configuration (for product images)
 R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID")

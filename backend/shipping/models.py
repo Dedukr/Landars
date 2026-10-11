@@ -175,15 +175,6 @@ class Shipment(models.Model):
             raise ValidationError(
                 "Shipment has no label PDF in S3 (label_s3_key empty)."
             )
-        from billing.models import get_s3_client
-        from django.conf import settings
+        from backend.file_storage import file_url
 
-        s3 = get_s3_client()
-        return s3.generate_presigned_url(
-            "get_object",
-            Params={
-                "Bucket": settings.AWS_STORAGE_BUCKET_NAME,
-                "Key": key,
-            },
-            ExpiresIn=expires_in,
-        )
+        return file_url(key, expires_in=expires_in)

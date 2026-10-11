@@ -1476,10 +1476,9 @@ class OrderSerializer(serializers.ModelSerializer):
     def get_invoice_link(self, obj):
         """
         Return presigned URL for invoice PDF if available.
-        Checks Invoice model first, then falls back to Order.invoice_link.
+        Use the latest Invoice exclusively; legacy keys apply only without Invoice rows.
         """
         from billing.models import Invoice
-        from django.conf import settings
 
         # Try to get invoice from Invoice model (preferred)
         try:
@@ -1488,24 +1487,17 @@ class OrderSerializer(serializers.ModelSerializer):
                 try:
                     return invoice.get_presigned_invoice_url(expires_in=3600)  # 1 hour expiry
                 except Exception:
-                    pass
+                    return None
+            return None
         except Invoice.DoesNotExist:
             pass
 
         # Fallback to Order.invoice_link (backward compatibility)
         if obj.invoice_link:
             try:
-                from billing.models import get_s3_client
+                from backend.file_storage import file_url
 
-                s3 = get_s3_client()
-                url = s3.generate_presigned_url(
-                    "get_object",
-                    Params={
-                        "Bucket": settings.AWS_STORAGE_BUCKET_NAME,
-                        "Key": obj.invoice_link,
-                    },
-                    ExpiresIn=3600,  # 1 hour expiry
-                )
+                url = file_url(obj.invoice_link, expires_in=3600)
                 return url
             except Exception:
                 return None

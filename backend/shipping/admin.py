@@ -251,9 +251,7 @@ class ShipmentAdmin(admin.ModelAdmin):
         )
 
     def _shipment_label_pdf_response(self, request, object_id) -> HttpResponse:
-        from billing.models import get_s3_client
         from botocore.exceptions import ClientError
-        from django.conf import settings
         from django.core.exceptions import PermissionDenied
 
         if request.method != "GET":
@@ -267,12 +265,10 @@ class ShipmentAdmin(admin.ModelAdmin):
         if not key:
             raise Http404("No label file stored for this shipment.")
         try:
-            s3 = get_s3_client()
-            body = s3.get_object(
-                Bucket=settings.AWS_STORAGE_BUCKET_NAME,
-                Key=key,
-            )["Body"].read()
-        except ClientError as exc:
+            from backend.file_storage import read_bytes
+
+            body = read_bytes(key)
+        except (ClientError, OSError, ValueError, PermissionError) as exc:
             logger.warning(
                 "Admin label PDF S3 read failed shipment=%s key=%s: %s",
                 obj.pk,

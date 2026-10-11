@@ -8,6 +8,7 @@
 # %f = WAL file name only (optional, not used by wal-g but provided for logging)
 
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/storage_environment.sh"
 
 # WAL file path (provided by PostgreSQL as %p)
 WAL_PATH="${1:-}"
@@ -17,6 +18,20 @@ WAL_NAME="${2:-$(basename "$WAL_PATH")}"
 if [ -z "$WAL_PATH" ] || [ ! -f "$WAL_PATH" ]; then
     echo "ERROR: Invalid WAL file path: $WAL_PATH" >&2
     exit 1
+fi
+
+# Development WAL stays local, even with production AWS credentials present.
+# Returning success avoids accumulating unarchived WAL in the live data directory.
+if ! cloud_storage_writes_allowed; then
+    LOCAL_ARCHIVE="${DEVELOPMENT_WAL_ARCHIVE_DIR:-/var/lib/postgresql/archive/development}"
+    if [ "$WAL_NAME" != "$(basename "$WAL_NAME")" ] || [ "$WAL_NAME" = "." ] || [ "$WAL_NAME" = ".." ]; then
+        exit 1
+    fi
+    mkdir -p "$LOCAL_ARCHIVE"
+    cp "$WAL_PATH" "$LOCAL_ARCHIVE/$WAL_NAME"
+    warn_if_cloud_write_blocked_unexpectedly
+    prune_development_wal_archive "$LOCAL_ARCHIVE"
+    exit 0
 fi
 
 # Ensure wal-g is available

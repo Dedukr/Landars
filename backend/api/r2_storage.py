@@ -10,11 +10,16 @@ import boto3
 from botocore.client import Config
 from django.conf import settings
 from PIL import Image
+from backend.file_storage import (
+    UPLOAD_SALT, is_development, local_image_reference,
+    local_image_url, new_local_reference, protect_client, save_local_bytes,
+    signed_local_url, delete_file,
+)
 
 
 def get_r2_client():
     """Get a boto3 client configured for Cloudflare R2."""
-    return boto3.client(
+    return protect_client(boto3.client(
         "s3",
         endpoint_url=settings.R2_ENDPOINT_URL,
         aws_access_key_id=settings.R2_ACCESS_KEY_ID,
@@ -24,7 +29,7 @@ def get_r2_client():
             connect_timeout=10,  # 10 seconds connection timeout
             read_timeout=30,  # 30 seconds read timeout
         ),
-    )
+    ))
 
 
 def generate_unique_object_key(filename, product_id=None, folder=None):
@@ -52,11 +57,16 @@ def generate_unique_object_key(filename, product_id=None, folder=None):
 
 def object_key_from_public_url(image_url: str | None) -> str | None:
     """Extract the R2 object key from a public CDN URL, or None if not ours."""
+    if is_development():
+        local = local_image_reference(image_url)
+        if local:
+            return local
     if not image_url or not settings.R2_PUBLIC_URL:
         return None
-    if not image_url.startswith(settings.R2_PUBLIC_URL):
+    prefix = settings.R2_PUBLIC_URL.rstrip("/") + "/"
+    if not image_url.startswith(prefix):
         return None
-    return image_url.replace(f"{settings.R2_PUBLIC_URL}/", "", 1)
+    return image_url[len(prefix):]
 
 
 def generate_presigned_upload_url(object_key, content_type, expiration=None):
@@ -73,6 +83,17 @@ def generate_presigned_upload_url(object_key, content_type, expiration=None):
     """
     if expiration is None:
         expiration = settings.PRESIGNED_URL_EXPIRATION
+
+    if is_development():
+        if not validate_image_type(content_type):
+            raise ValueError("Invalid image type.")
+        reference = new_local_reference(object_key, kind="images")
+        return {
+            "presigned_url": signed_local_url(reference, expires_in=expiration, salt=UPLOAD_SALT, content_type=content_type),
+            "public_url": local_image_url(reference),
+            "object_key": reference,
+            "required_headers": {"Content-Type": content_type},
+        }
 
     r2_client = get_r2_client()
 
@@ -112,6 +133,9 @@ def delete_image_from_r2(object_key):
     """
     if not object_key:
         return False
+
+    if is_development():
+        return delete_file(object_key)
 
     try:
         r2_client = get_r2_client()
@@ -289,16 +313,18 @@ def upload_compressed_image_to_r2(
     )
 
     # Upload to R2
-    r2_client = get_r2_client()
-    r2_client.put_object(
-        Bucket=settings.R2_BUCKET_NAME,
-        Key=object_key,
-        Body=compressed_bytes,
-        ContentType=content_type,
-    )
-
-    # Generate public URL
-    public_url = f"{settings.R2_PUBLIC_URL}/{object_key}"
+    if is_development():
+        object_key = save_local_bytes(compressed_bytes, new_local_reference(object_key, kind="images"))
+        public_url = local_image_url(object_key)
+    else:
+        r2_client = get_r2_client()
+        r2_client.put_object(
+            Bucket=settings.R2_BUCKET_NAME,
+            Key=object_key,
+            Body=compressed_bytes,
+            ContentType=content_type,
+        )
+        public_url = f"{settings.R2_PUBLIC_URL}/{object_key}"
 
     # Calculate compression ratio
     compression_ratio = (

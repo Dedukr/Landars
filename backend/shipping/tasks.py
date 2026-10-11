@@ -305,7 +305,7 @@ def _apply_shipment_label_storage(
             f"shipment_labels/{now:%Y/%m}/"
             f"order_{ship_save.order_id}_sc_{ship_save.sendcloud_parcel_id}.pdf"
         )
-        upload_bytes_to_s3(
+        s3_key = upload_bytes_to_s3(
             pdf_bytes,
             s3_key,
             content_type="application/pdf",

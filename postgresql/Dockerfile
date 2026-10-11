@@ -70,6 +70,7 @@ COPY postgresql.conf /etc/postgresql/postgresql.conf
 # Copy wal-g archive and restore scripts
 COPY wal-g-archive.sh /usr/local/bin/wal-g-archive.sh
 COPY wal-g-restore.sh /usr/local/bin/wal-g-restore.sh
+COPY storage_environment.sh /usr/local/bin/storage_environment.sh
 COPY validate-wal-archiving.sh /usr/local/bin/validate-wal-archiving.sh
 
 # Copy initialization scripts (runs on first init of PGDATA)

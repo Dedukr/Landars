@@ -19,7 +19,6 @@ from billing.models import (
     Invoice,
     create_credit_note,
     create_invoice,
-    get_s3_client,
 )
 from django import forms
 from django.conf import settings
@@ -2479,17 +2478,11 @@ class OrderAdmin(admin.ModelAdmin):
                 pass
 
         # Check for backward compat (old Order.invoice_link)
-        if obj.invoice_link:
+        if invoice is None and obj.invoice_link:
             try:
-                s3 = get_s3_client()
-                url = s3.generate_presigned_url(
-                    "get_object",
-                    Params={
-                        "Bucket": settings.AWS_STORAGE_BUCKET_NAME,
-                        "Key": obj.invoice_link,
-                    },
-                    ExpiresIn=300,
-                )
+                from backend.file_storage import file_url
+
+                url = file_url(obj.invoice_link, expires_in=300)
                 return format_html(
                     '<a href="{}" target="_blank" class="button" style="background-color: #28a745; color: white; padding: 5px 10px; text-decoration: none; border-radius: 3px;">Download</a>',
                     url,

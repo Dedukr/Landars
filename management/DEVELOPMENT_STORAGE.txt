@@ -1,0 +1,107 @@
+Production reads with isolated development writes
+================================================
+
+Local root .env: APP_ENV=development, DEBUG=True, URL_BASE=https://localhost.
+AWS credentials and AWS_STORAGE_BUCKET_NAME=landar remain configured for reads.
+See development-storage.env.example. Production should set APP_ENV=production,
+DEBUG=False and its real URL_BASE. Existing production configuration with DEBUG=False
+and the real URL continues to default to production mode without a new env variable.
+DEBUG=True or a loopback URL also prevents cloud writes if APP_ENV is copied wrongly.
+
+Existing bare document keys in a restored production DB read production S3.
+New development PDFs save unique local://documents/<uuid>/<original-key> references
+into the SAME existing DB link fields. Document columns do not change.
+New images are stored as local://images/<uuid>/<original-key>. API and admin
+responses build the browser URL from the current URL_BASE, so changing
+localhost to 127.0.0.1 does not orphan the file. Existing production CDN URLs
+stay CDN URLs. Image columns are still varchar(500); the field class changed
+from URLField to ImageReferenceField, so run makemigrations (see the end).
+Local document downloads use expiring signed links, suitable for browser previews
+and downloads without exposing customer PDFs as public static files.
+Local image PUT links are signed, limited to images and cannot overwrite an object.
+Production does not serve development file endpoints or local document references.
+
+Files live under backend/media/development for a native Python process, or under
+/backend/media/development in the landars_development_files Docker volume. The same
+volume is mounted in backend and Celery workers. Restarting does not reset files.
+Production S3/R2 deletes are skipped in development and a warning is logged, so a
+cleanup does not look like it removed the production object. Direct cloud clients
+also reject mutations and presigned PUT/DELETE URLs. Django default_storage follows
+the same rule and does not HEAD a production key while saving a new local file.
+PostgreSQL WAL remains under the local postgres_archive volume's development folder.
+Segments older than WAL_RETENTION_DAYS (default 14) are deleted after each local
+archive. If APP_ENV is empty or production while the write guard still blocks the
+upload, archive_command and backup uploads log a warning and keep the file locally.
+APP_ENV=development does not warn. Local backup uploads and S3 retention deletions
+are blocked, while S3 reads remain.
+
+Activate changed source/image code locally (do not pull old images afterwards):
+  docker compose build backend postgres
+  docker compose up -d postgres backend celery celery-email celery-beat
+Recreation preserves the existing local database and the development files volume.
+The repository's backend source is not bind-mounted; image rebuilds are necessary.
+
+Refreshing the development database
+----------------------------------
+These commands replace the database the app is using with the fetched production
+copy, then erase local files (invoices, labels, images) created on this machine:
+
+  ./management/pg_backup.sh restore <backup_file> --promote
+  ./management/pg_backup.sh restore <backup_file> --force
+  ./management/pg_backup.sh promote
+  ./management/pg_backup.sh pitr-restore
+
+After a successful swap the active database is the production copy again. Invoice
+and image keys in that database read production S3/R2. They are not local files.
+New invoices created afterwards are local again and are not uploaded.
+
+A plain `restore` without --promote or --force loads the dump into
+<database>_restore only. The app keeps using the current local database until
+you promote that restore.
+
+The script stops the backend and Celery before the swap and leaves them stopped
+until local files are erased. It then migrates the restored database, purges old
+Celery/email jobs, clears the local cache, and deletes development files that the
+restored database does not reference. Previously running services are started
+again only after that cleanup. Production skips all of it.
+If cleanup fails, writers remain stopped, and the command reports failure. Resolve
+the error and run the purge/cache/prune steps before restarting workers.
+Database restore itself is an existing operation; no database was replaced merely
+to install this storage change.
+
+Even when restoring manually, routing resets immediately with the DB: production
+keys cannot resolve to old local files. For physical cleanup after a manual import,
+stop local writers and run:
+  docker compose run --rm --no-deps -T backend python manage.py prune_development_files --after-database-refresh
+Then purge the old local Celery/email queues and clear the local Django cache before
+restarting workers. The prune command only removes unreferenced development files.
+Without --after-database-refresh it retains uploads less than an hour old, to protect
+uploads that have not yet saved their DB link. Do not use the refresh flag with active
+writers. A failed DB read aborts pruning before any file deletion.
+
+Boundary outside this application
+---------------------------------
+These guards cover the application, its upload endpoints, backup uploads/retention
+and WAL archiving. They are not an AWS account permission change. Keeping a credential
+with production write rights still lets unrelated tools or arbitrary new boto3 code
+write to production. For independent enforcement, create a separate development IAM
+user and attach management/development-s3-read-policy.json (GetObject, GetObjectVersion,
+ListBucket, ListBucketVersions on landar only). Put that user's keys in the local
+.env. Do not remove rights from the identity currently used by production.
+Leave R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY unset in development. Product images
+are read from R2_PUBLIC_URL; the upload API does not need the R2 write secret locally.
+
+Validation
+----------
+backend/backend/test_file_storage.py tests isolated writes, production reads with
+colliding names, signed downloads, expiry/tampering/path traversal, image uploads,
+deletion guards, invoice/credit note/festival/shipping callers, default_storage,
+DB-reference cleanup and shell backup/WAL guards. Cloud clients are mocked in tests;
+the real production bucket is never used as a test write destination.
+
+After pulling the image-field change, generate the Django migration (do not write it
+by hand) and apply it. The operation is a field-class change on existing varchar(500)
+image_url columns:
+
+  python manage.py makemigrations api festival
+  python manage.py migrate

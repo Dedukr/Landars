@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import os
 import secrets
-import time
 from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
+from backend.file_storage import get_s3_client, file_url, store_file, store_bytes
 
 
 class DocumentNumberSequence(models.Model):
@@ -42,105 +41,13 @@ class DocumentNumberSequence(models.Model):
 # Unified utility functions for invoice/credit note creation and S3 uploads
 # ============================================================================
 
-def get_s3_client():
-    """Get S3 client for file uploads."""
-    import boto3
-
-    return boto3.client(
-        "s3",
-        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-        region_name=getattr(settings, "AWS_S3_REGION_NAME", None),
-    )
-
-
 def upload_file_to_s3(file_path: str, s3_key: str, max_retries: int = 3) -> str:
-    """
-    Unified function to upload any file to S3 bucket.
-
-    Args:
-        file_path: Path to the file to upload
-        s3_key: S3 key (path) where the file should be stored
-        max_retries: Maximum number of retry attempts
-
-    Returns:
-        str: The S3 key if successful
-
-    Raises:
-        FileNotFoundError: If file doesn't exist
-        PermissionError: If file cannot be read
-        Exception: If upload fails after all retries
-    """
-    # Validate file exists and is readable
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"File not found: {file_path}")
-
-    if not os.access(file_path, os.R_OK):
-        raise PermissionError(f"Cannot read file: {file_path}")
-
-    s3_client = get_s3_client()
-    bucket = settings.AWS_STORAGE_BUCKET_NAME
-
-    # Retry logic for network issues
-    last_exception = None
-    for attempt in range(1, max_retries + 1):
-        try:
-            s3_client.upload_file(file_path, bucket, s3_key)
-            return s3_key
-        except Exception as e:
-            last_exception = e
-            if attempt < max_retries:
-                # Exponential backoff: wait 1s, 2s, 4s...
-                wait_time = 2 ** (attempt - 1)
-                time.sleep(wait_time)
-            else:
-                raise Exception(
-                    f"Failed to upload file to S3 after {max_retries} attempts: {str(e)}"
-                ) from last_exception
-
-    raise Exception(f"Failed to upload file to S3: {str(last_exception)}")
+    """Return the actual storage reference (local:// in development, S3 key in production)."""
+    return store_file(file_path, s3_key, max_retries=max_retries)
 
 
-def upload_bytes_to_s3(
-    data: bytes,
-    s3_key: str,
-    *,
-    content_type: str = "application/octet-stream",
-    max_retries: int = 3,
-) -> str:
-    """
-    Upload raw bytes to ``AWS_STORAGE_BUCKET_NAME`` using the same client/region as
-    :func:`upload_file_to_s3` (and invoice PDF uploads).
-
-    Returns the ``s3_key`` on success.
-    """
-    if not data:
-        raise ValueError("No data to upload")
-
-    s3_client = get_s3_client()
-    bucket = settings.AWS_STORAGE_BUCKET_NAME
-    last_exception: BaseException | None = None
-
-    for attempt in range(1, max_retries + 1):
-        try:
-            s3_client.put_object(
-                Bucket=bucket,
-                Key=s3_key,
-                Body=data,
-                ContentType=content_type,
-            )
-            return s3_key
-        except Exception as e:
-            last_exception = e
-            if attempt < max_retries:
-                wait_time = 2 ** (attempt - 1)
-                time.sleep(wait_time)
-            else:
-                raise Exception(
-                    f"Failed to upload bytes to S3 after {max_retries} attempts: {str(e)}"
-                ) from last_exception
-
-    raise Exception(f"Failed to upload bytes to S3: {str(last_exception)}")
+def upload_bytes_to_s3(data: bytes, s3_key: str, *, content_type="application/octet-stream", max_retries=3) -> str:
+    return store_bytes(data, s3_key, content_type=content_type, max_retries=max_retries)
 
 
 def create_invoice(order, request):
@@ -625,20 +532,12 @@ class Invoice(models.Model):
         if not self.invoice_link:
             raise ValidationError("Invoice has no stored PDF (invoice_link is empty).")
 
-        s3 = get_s3_client()
-        return s3.generate_presigned_url(
-            "get_object",
-            Params={
-                "Bucket": settings.AWS_STORAGE_BUCKET_NAME,
-                "Key": self.invoice_link,
-            },
-            ExpiresIn=expires_in,
-        )
+        return file_url(self.invoice_link, expires_in=expires_in)
 
     def generate_and_upload_pdf(self, request, *, max_retries: int = 3) -> str:
         """
-        Render invoice.html, generate a PDF and upload to S3.
-        Stores the resulting S3 key on this Invoice as `invoice_link`.
+        Render invoice.html and save the PDF in the environment's file store.
+        Stores the resulting reference on this Invoice as `invoice_link`.
         """
         import gc
         import os
@@ -715,7 +614,7 @@ class Invoice(models.Model):
 
             # Upload with retries using unified function
             s3_key = f"invoices/invoice_{self.invoice_number}.pdf"
-            upload_file_to_s3(tmp_path, s3_key, max_retries=max_retries)
+            s3_key = upload_file_to_s3(tmp_path, s3_key, max_retries=max_retries)
             self.invoice_link = s3_key
             self.save(update_fields=["invoice_link"])
             return s3_key
@@ -1131,15 +1030,7 @@ class CreditNote(models.Model):
                 "Credit note has no stored PDF (credit_note_link is empty)."
             )
 
-        s3 = get_s3_client()
-        return s3.generate_presigned_url(
-            "get_object",
-            Params={
-                "Bucket": settings.AWS_STORAGE_BUCKET_NAME,
-                "Key": self.credit_note_link,
-            },
-            ExpiresIn=expires_in,
-        )
+        return file_url(self.credit_note_link, expires_in=expires_in)
 
     def generate_and_upload_pdf(self, request, *, max_retries: int = 3) -> str:
         """
@@ -1221,7 +1112,7 @@ class CreditNote(models.Model):
 
             # Upload with retries using unified function
             s3_key = f"credit_notes/credit_note_{self.credit_note_number}.pdf"
-            upload_file_to_s3(tmp_path, s3_key, max_retries=max_retries)
+            s3_key = upload_file_to_s3(tmp_path, s3_key, max_retries=max_retries)
             self.credit_note_link = s3_key
             self.save(update_fields=["credit_note_link"])
             return s3_key

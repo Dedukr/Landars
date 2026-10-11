@@ -8,7 +8,8 @@ from django.conf import settings
 from django.template.loader import render_to_string
 from django.utils import timezone
 
-from billing.models import get_s3_client, upload_file_to_s3
+from billing.models import upload_file_to_s3
+from backend.file_storage import file_url
 from festival.models import FestivalCreditNote, FestivalInvoice
 from festival.services.numbering import (
     allocate_credit_note_number,
@@ -181,7 +182,7 @@ def generate_invoice_pdf(invoice: FestivalInvoice) -> str:
         tmp.write(pdf_bytes)
         tmp_path = tmp.name
     try:
-        upload_file_to_s3(tmp_path, s3_key)
+        s3_key = upload_file_to_s3(tmp_path, s3_key)
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 
@@ -219,7 +220,7 @@ def generate_credit_note_pdf(credit_note: FestivalCreditNote) -> str:
         tmp.write(pdf_bytes)
         tmp_path = tmp.name
     try:
-        upload_file_to_s3(tmp_path, s3_key)
+        s3_key = upload_file_to_s3(tmp_path, s3_key)
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 
@@ -236,12 +237,4 @@ def generate_credit_note_pdf(credit_note: FestivalCreditNote) -> str:
 def get_presigned_pdf_url(s3_key: str, *, expires_in: int = 300) -> str:
     if not s3_key:
         raise ValueError("No PDF key.")
-    s3 = get_s3_client()
-    return s3.generate_presigned_url(
-        "get_object",
-        Params={
-            "Bucket": settings.AWS_STORAGE_BUCKET_NAME,
-            "Key": s3_key,
-        },
-        ExpiresIn=expires_in,
-    )
+    return file_url(s3_key, expires_in=expires_in)

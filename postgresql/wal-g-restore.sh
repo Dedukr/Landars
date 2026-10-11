@@ -8,11 +8,22 @@
 # %p = full path where to restore the WAL file
 
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/storage_environment.sh"
 
 # WAL file name (provided by PostgreSQL as %f)
 WAL_NAME="$1"
 # Path where to restore the WAL file (provided by PostgreSQL as %p)
 RESTORE_PATH="$2"
+
+# Read the isolated development archive first. Missing files may still be fetched
+# from production S3; recovery never uploads anything.
+if ! cloud_storage_writes_allowed; then
+    LOCAL_ARCHIVE="${DEVELOPMENT_WAL_ARCHIVE_DIR:-/var/lib/postgresql/archive/development}"
+    if [ "$WAL_NAME" = "$(basename "$WAL_NAME")" ] && [ -f "$LOCAL_ARCHIVE/$WAL_NAME" ]; then
+        cp "$LOCAL_ARCHIVE/$WAL_NAME" "$RESTORE_PATH"
+        exit 0
+    fi
+fi
 
 # Ensure wal-g is available
 if ! command -v wal-g >/dev/null 2>&1; then

@@ -63,6 +63,14 @@
 
 # Script configuration
 # Note: set -e is intentionally disabled to allow graceful error handling
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/storage_environment.sh"
+
+# Set by main() only when this development machine is about to replace its
+# active database. Application servers stay stopped until local files created
+# on top of the previous database have been erased.
+defer_application_restart_for_development_refresh() {
+    [[ "${DEVELOPMENT_DB_REFRESH:-}" == "1" ]]
+}
 
 # Color codes for enhanced output
 RED='\033[0;31m'
@@ -1134,7 +1142,10 @@ restore_postgresql_backup() {
         log_info ""
         log_info "⚠️  Database '$DB_NAME' has been replaced with the backup."
         log_info "   Backend service may need to be restarted to use the restored database."
-        
+
+        if defer_application_restart_for_development_refresh; then
+            log_info "Application writers stay stopped until local development files are erased."
+        else
         # Only start backend and run migrations if restoring to the main database
     log_info "🚀 Starting backend service..."
         if docker compose up -d backend >/dev/null 2>&1 || docker-compose up -d backend >/dev/null 2>&1; then
@@ -1178,6 +1189,7 @@ restore_postgresql_backup() {
             log_info "  - Users restored: $user_count"
     else
         log_warning "Could not verify user count"
+        fi
         fi
     fi
     
@@ -1375,7 +1387,11 @@ promote_database() {
         return 1
     fi
     
-    # Step 5: Restart backend service
+    # Step 5: Restart backend service after the swap, unless this development
+    # machine still has to erase local files created against the old database.
+    if defer_application_restart_for_development_refresh; then
+        log_info "Application writers stay stopped until local development files are erased."
+    else
     log_info "🚀 Restarting backend service..."
     if docker compose restart backend >/dev/null 2>&1 || docker-compose restart backend >/dev/null 2>&1; then
         log_success "✓ Backend service restarted"
@@ -1392,6 +1408,7 @@ promote_database() {
         log_success "✓ Django migrations completed"
     else
         log_warning "⚠️  Django migrations failed (may be normal if database is up to date)"
+    fi
     fi
     
     # Summary
@@ -1677,6 +1694,9 @@ restore_pitr_backup() {
     pg_service=$(get_postgres_service)
     local container_backup_base_dir="/var/lib/postgresql/archive/basebackups"
     local container_wal_archive_dir="/var/lib/postgresql/archive"
+    if ! cloud_storage_writes_allowed; then
+        container_wal_archive_dir="${DEVELOPMENT_WAL_ARCHIVE_DIR:-/var/lib/postgresql/archive/development}"
+    fi
     
     # Helper function to list backups from volume (works even if container is stopped)
     list_backups_from_volume() {
@@ -2263,7 +2283,10 @@ restore_pitr_backup() {
         # The restored database should already be using the live database name
         # (since we restored directly to the data directory)
         log_success "✅ Database promoted to live successfully!"
-        
+
+        if defer_application_restart_for_development_refresh; then
+            log_info "Application writers stay stopped until local development files are erased."
+        else
         # Restart backend service
         log_info "🚀 Restarting backend service..."
         if docker compose restart backend >/dev/null 2>&1 || docker-compose restart backend >/dev/null 2>&1; then
@@ -2282,6 +2305,7 @@ restore_pitr_backup() {
             log_success "Django migrations completed"
         else
             log_warning "Migrations may have failed (check manually)"
+        fi
         fi
         
         # Final verification
@@ -2568,6 +2592,9 @@ list_wal_files() {
     local pg_service
     pg_service=$(get_postgres_service)
     local container_wal_archive_dir="/var/lib/postgresql/archive"
+    if ! cloud_storage_writes_allowed; then
+        container_wal_archive_dir="${DEVELOPMENT_WAL_ARCHIVE_DIR:-/var/lib/postgresql/archive/development}"
+    fi
     
     log_info "📋 Listing WAL files in archive..."
     echo ""
@@ -2747,6 +2774,11 @@ list_wal_files() {
 upload_to_s3() {
     local file_path="$1"
     local backup_type="$2"
+    if ! cloud_storage_writes_allowed; then
+        warn_if_cloud_write_blocked_unexpectedly
+        log_info "Development backup retained locally; production S3 upload blocked"
+        return 0
+    fi
     
     # Check if bucket is configured
     if [[ -z "$AWS_STORAGE_BUCKET_NAME" ]]; then
@@ -2822,6 +2854,11 @@ upload_to_s3() {
 
 # Cleanup old S3 backups
 cleanup_s3_backups() {
+    if ! cloud_storage_writes_allowed; then
+        warn_if_cloud_write_blocked_unexpectedly
+        log_info "Development: production S3 cleanup blocked"
+        return 0
+    fi
     if [[ -z "$AWS_STORAGE_BUCKET_NAME" ]]; then
         log_info "☁️  S3 backup not configured, skipping S3 cleanup"
         return 0
@@ -3739,6 +3776,21 @@ main() {
     init_config
 
     local command="${1:-backup}"
+    local refresh_local_files=false
+    case "$command" in
+        promote) refresh_local_files=true ;;
+        restore|pg-restore)
+            for restore_arg in "$@"; do
+                if [[ "$restore_arg" == "--promote" || "$restore_arg" == "--force" ]]; then
+                    refresh_local_files=true
+                fi
+            done ;;
+        pitr-restore|restore-pitr) refresh_local_files=true ;;
+    esac
+    for restore_arg in "$@"; do
+        case "$restore_arg" in --help|-h) refresh_local_files=false ;; esac
+    done
+
     
     # Build command arguments string for logging (save all args except command)
     local command_args=""
@@ -3763,6 +3815,21 @@ main() {
     
     # Execute command and capture exit code
     local exit_code=0
+    local development_refresh=false
+    local refresh_services=()
+    if [[ "$refresh_local_files" == true ]] && ! cloud_storage_writes_allowed; then
+        development_refresh=true
+        export DEVELOPMENT_DB_REFRESH=1
+        # Keep old development tasks from acting on reused IDs in the restored DB.
+        while IFS= read -r service; do
+            case "$service" in
+                backend|celery|celery-email|celery-beat) refresh_services+=("$service") ;;
+            esac
+        done < <(docker compose ps --status running --services)
+        if [[ ${#refresh_services[@]} -gt 0 ]]; then
+            docker compose stop "${refresh_services[@]}" || return 1
+        fi
+    fi
     case "$command" in
         "backup"|"pg-backup"|"postgresql")
             create_postgresql_backup || exit_code=$?
@@ -3836,6 +3903,32 @@ main() {
             ;;
     esac
     
+
+    if [[ "$development_refresh" == true ]]; then
+        if [[ "$exit_code" -eq 0 ]]; then
+            # Some restore paths restart backend themselves. Quiesce it again for
+            # pruning recent files; keep it running afterwards if that path started it.
+            if docker compose ps --status running --services | grep -qx backend; then
+                if [[ " ${refresh_services[*]} " != *" backend "* ]]; then
+                    refresh_services+=(backend)
+                fi
+            fi
+            log_info "Resetting development files, queued jobs and cache for the refreshed database..."
+            if ! docker compose stop backend celery celery-email celery-beat ||
+               ! docker compose run --rm --no-deps -T backend python manage.py migrate --noinput ||
+               ! docker compose run --rm --no-deps -T backend celery -A backend purge -f -Q celery,email ||
+               ! docker compose run --rm --no-deps -T backend python manage.py shell -c "from django.core.cache import cache; cache.clear()" ||
+               ! docker compose run --rm --no-deps -T backend python manage.py prune_development_files --after-database-refresh; then
+                log_error "Database refresh finished, but development cleanup failed. Writers remain stopped; rerun cleanup before restarting."
+                print_command_end "$command" 1
+                return 1
+            fi
+        fi
+        if [[ ${#refresh_services[@]} -gt 0 ]]; then
+            docker compose up -d "${refresh_services[@]}" || exit_code=1
+        fi
+    fi
+
     # Print end separator
     print_command_end "$command" "$exit_code"
     
