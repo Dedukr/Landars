@@ -94,18 +94,16 @@ class InvoicePaymentTokenAndRenderTests(TestCase):
         self.assertIn(invoice.payment_public_token, url)
         self.assertNotIn("checkout.stripe.com", url)
 
-    def test_invoice_html_renders_pay_online_after_bank_details(self):
+    def test_invoice_html_omits_pay_online_link(self):
         invoice = _issue_invoice(self.order)
         html = render_to_string(
             "invoice.html",
             {"invoice": invoice, "business": {}},
         )
-        bank_pos = html.find("Bank Details")
-        pay_pos = html.find("Pay online")
-        self.assertGreater(bank_pos, 0)
-        self.assertGreater(pay_pos, bank_pos)
-        self.assertIn("pay securely from your bank account", html.lower())
-        self.assertIn(invoice.public_payment_url, html)
+        self.assertIn("Bank Details", html)
+        self.assertNotIn("Pay online", html)
+        self.assertNotIn("pay securely from your bank account", html.lower())
+        self.assertNotIn(invoice.public_payment_url, html)
         self.assertNotIn("checkout.stripe.com", html)
         self.assertNotIn("Pay by card", html)
 

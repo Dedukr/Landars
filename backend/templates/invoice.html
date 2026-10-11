@@ -713,6 +713,8 @@
                 Sort Code: {{ invoice.seller_snapshot.sort_code }}
             </div>
         </div>
+        {% comment %}
+        Pay link hidden on the invoice PDF. Uncomment to show it again.
         {% if invoice.payment_public_token and invoice.public_payment_url %}
         <div class="mt20">
             <div class="h2">
@@ -726,6 +728,7 @@
             </div>
         </div>
         {% endif %}
+        {% endcomment %}
         <div class="mt20 pt20 light-gray-border-top fs-10 line-height-140">
             <div class="mb10">
                 <div class="h2">
