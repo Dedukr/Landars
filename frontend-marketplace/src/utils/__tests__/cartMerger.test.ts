@@ -14,8 +14,8 @@ import {
   mergeCarts,
   MergeStrategy,
   ConflictResolution,
-  type CartItem,
 } from "../cartMerger";
+import type { CartItem } from "@/contexts/CartContext";
 
 describe("CartMerger", () => {
   let cartMerger: CartMerger;

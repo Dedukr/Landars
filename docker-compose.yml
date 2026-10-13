@@ -93,6 +93,30 @@ services:
         reservations:
           memory: 64M
 
+  # Existing named volumes hide the static bundle collected into the image.
+  # Refresh the mounted volume before any Django process can cache its manifest.
+  # --clear must run only while nothing is serving the volume; this one-shot
+  # finishes before backend and nginx start (depends_on).
+  static-init:
+    image: dedukr/landar-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    user: "0:0"
+    working_dir: /backend
+    env_file:
+      - .env
+    volumes:
+      - static_volume:/backend/static
+    command:
+      - sh
+      - -ec
+      - |
+        python manage.py collectstatic --noinput --clear
+        chown -R django:django /backend/static
+    restart: "no"
+    mem_limit: 512m
+
   backend:
     mem_limit: 1g
     mem_reservation: 512m
@@ -130,6 +154,8 @@ services:
       # Optional: AUTH_EVENT_LOG_FILE is unset by default (events stay in Docker's 3×10 MB stdout window).
       # - AUTH_EVENT_LOG_FILE=/backend/logs/auth_events.log
     depends_on:
+      static-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -416,10 +442,14 @@ services:
       - "80:80"
       - "443:443"
     depends_on:
-      - frontend-marketplace
-      - backend
+      static-init:
+        condition: service_completed_successfully
+      frontend-marketplace:
+        condition: service_started
+      backend:
+        condition: service_started
     volumes:
-      - static_volume:/backend/static
+      - static_volume:/backend/static:ro
       - ./nginx/certs:/etc/ssl/landarsfood:ro
     logging:
       driver: "json-file"

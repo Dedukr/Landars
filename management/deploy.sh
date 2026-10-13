@@ -211,18 +211,49 @@ fix_sequences() {
     fi
 }
 
-# Collect static files
-collect_static() {
-    log "Collecting static files..."
-    
+# Confirm static-init collected files. Do not collectstatic again after gunicorn
+# is up: ManifestStaticFilesStorage caches staticfiles.json in each worker, so a
+# second collect races hashed URLs until those workers restart.
+verify_static() {
+    log "Verifying collected static files..."
+
     cd "$PROJECT_DIR"
-    
-    if docker compose exec -T backend python manage.py collectstatic --noinput; then
-        log "✅ Static files collected"
+
+    local py='
+import json
+import sys
+from pathlib import Path
+
+root = Path("/backend/static")
+manifest_path = root / "staticfiles.json"
+required = (
+    "admin/js/order_filters_cleaner.js",
+    "admin/css/product_image_inline.css",
+)
+if not manifest_path.is_file():
+    print("missing " + str(manifest_path), file=sys.stderr)
+    sys.exit(1)
+manifest = json.loads(manifest_path.read_text())
+paths = manifest.get("paths", manifest)
+if not isinstance(paths, dict):
+    print("staticfiles.json has no paths map", file=sys.stderr)
+    sys.exit(1)
+missing = []
+for name in required:
+    hashed = paths.get(name)
+    on_disk = (root / name).is_file() or bool(hashed and (root / str(hashed)).is_file())
+    if hashed is None and not on_disk:
+        missing.append(name)
+if missing:
+    print("missing static: " + ", ".join(missing), file=sys.stderr)
+    sys.exit(1)
+'
+    if docker compose exec -T backend python -c "$py"; then
+        log "✅ Static files verified"
         return 0
     else
-        warn "Static file collection failed (non-critical)"
-        return 0
+        error "Collected static files failed verification. Admin assets may 404."
+        return 1
     fi
 }
 
@@ -355,7 +386,13 @@ main() {
     fi
     
     fix_sequences
-    collect_static
+    if ! verify_static; then
+        error "Static files failed verification. Rolling back..."
+        if [ -x "$SCRIPT_DIR/rollback.sh" ]; then
+            "$SCRIPT_DIR/rollback.sh"
+        fi
+        exit 1
+    fi
     
     if ! run_health_checks; then
         error "Health checks failed. Rolling back..."
