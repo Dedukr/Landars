@@ -48,9 +48,8 @@ export default function HomeHero() {
 
       {/* ── Main hero content ─────────────────────────────── */}
       <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 md:py-22 lg:py-28">
-        <OfferPills className="mb-4 justify-center sm:mb-5 lg:justify-start" />
         {/* Top heading — mobile: full width, centered, fluid single line */}
-        <div className="mb-5 sm:mb-6 w-full @container lg:hidden">
+        <div className="mb-4 sm:mb-5 w-full @container lg:hidden">
           <div
             className="flex w-full max-w-full items-center justify-center gap-1.5 px-3 py-1.5 rounded-full font-semibold border whitespace-nowrap text-[clamp(0.35rem,2.85cqi,1.875rem)]"
             style={{
@@ -65,37 +64,40 @@ export default function HomeHero() {
           </div>
         </div>
 
+        {/* Top heading — desktop: left-aligned badge row */}
+        <div className="mb-4 sm:mb-5 hidden lg:flex flex-wrap items-center gap-2 min-w-0">
+          <div
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold border leading-tight"
+            style={{
+              background: "var(--success-bg)",
+              borderColor: "var(--success-border)",
+              color: "var(--success-text)",
+            }}
+          >
+            <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-current animate-pulse" />
+            Ukrainian and Eastern European food · Delivered Across the UK
+            <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-current animate-pulse" />
+          </div>
+
+          <span
+            className="inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold"
+            style={{
+              background: "var(--success-bg)",
+              borderColor: "var(--success-border)",
+              color: "var(--success-text)",
+            }}
+          >
+            <Award className="h-4 w-4 shrink-0" strokeWidth={2.25} aria-hidden />
+            Four years of experience
+          </span>
+        </div>
+
+        <OfferPills className="mb-5 justify-center sm:mb-6 lg:justify-start" />
+
         {/* Two-column layout: content left, product cards right (desktop) */}
         <div className="flex items-center justify-between gap-10 xl:gap-16">
           {/* Left column */}
           <div className="flex-1 min-w-0">
-            {/* Top heading — desktop: original left-aligned badge row */}
-            <div className="mb-5 sm:mb-6 hidden lg:flex flex-wrap items-center gap-2 min-w-0">
-              <div
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold border leading-tight"
-                style={{
-                  background: "var(--success-bg)",
-                  borderColor: "var(--success-border)",
-                  color: "var(--success-text)",
-                }}
-              >
-                <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-current animate-pulse" />
-                Ukrainian and Eastern European food · Delivered Across the UK
-                <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-current animate-pulse" />
-              </div>
-
-              <span
-                className="inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold"
-                style={{
-                  background: "var(--success-bg)",
-                  borderColor: "var(--success-border)",
-                  color: "var(--success-text)",
-                }}
-              >
-                <Award className="h-4 w-4 shrink-0" strokeWidth={2.25} aria-hidden />
-                Four years of experience
-              </span>
-            </div>
             {/* Headline + logo */}
             <div className="flex items-center justify-between gap-4 sm:gap-6 mb-4 sm:mb-5 min-w-0">
               <h1

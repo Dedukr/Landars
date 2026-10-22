@@ -85,24 +85,39 @@ const nextConfig: NextConfig = {
 
   // Proxy API calls to backend
   async rewrites() {
-    // Get backend URL from environment variables
+    // Local nginx (https://localhost) presents a certificate Node does not trust, so a
+    // rewrite to that origin fails with UNABLE_TO_VERIFY_LEAF_SIGNATURE and the browser
+    // sees "Failed to fetch" (including /api/auth/csrf-token/). Django is published on
+    // loopback :8000 for this. Other configured origins are left unchanged.
+    const devOrigin = () => {
+      const configured = (
+        process.env.NEXT_PUBLIC_API_BASE_URL || "https://localhost"
+      )
+        .trim()
+        .replace(/\/$/, "");
+      try {
+        const url = new URL(configured);
+        const localHttps =
+          url.protocol === "https:" &&
+          (url.hostname === "localhost" || url.hostname === "127.0.0.1");
+        if (localHttps) return "http://127.0.0.1:8000";
+      } catch {
+        // Keep the configured string if it is not a URL.
+      }
+      return configured;
+    };
+
     const getBackendUrl = () => {
       if (process.env.NODE_ENV === "development") {
-        // For development, use NEXT_PUBLIC_API_BASE_URL or fallback to https://localhost
-        const apiBaseUrl =
-          process.env.NEXT_PUBLIC_API_BASE_URL || "https://localhost";
-        return `${apiBaseUrl}/api/:path*/`;
-      } else {
-        // For production, use Docker service name
-        return "http://backend:8000/api/:path*/";
+        return `${devOrigin()}/api/:path*/`;
       }
+      // For production, use Docker service name
+      return "http://backend:8000/api/:path*/";
     };
 
     const getPayBackendUrl = () => {
       if (process.env.NODE_ENV === "development") {
-        const apiBaseUrl =
-          process.env.NEXT_PUBLIC_API_BASE_URL || "https://localhost";
-        return `${apiBaseUrl}/pay/:path*/`;
+        return `${devOrigin()}/pay/:path*/`;
       }
       return "http://backend:8000/pay/:path*/";
     };

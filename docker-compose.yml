@@ -489,19 +489,15 @@ services:
 
 volumes:
   static_volume:
-    external: true
     name: landars_static_volume
 
   postgres_data:
-    external: true
     name: landars_postgres_data
 
   postgres_archive:
-    external: true
     name: landars_postgres_archive
 
   postgres_backups:
-    external: true
     name: landars_postgres_backups
 
   development_files:

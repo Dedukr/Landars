@@ -3915,10 +3915,26 @@ main() {
             fi
             log_info "Resetting development files, queued jobs and cache for the refreshed database..."
             if ! docker compose stop backend celery celery-email celery-beat ||
-               ! docker compose run --rm --no-deps -T backend python manage.py migrate --noinput ||
-               ! docker compose run --rm --no-deps -T backend celery -A backend purge -f -Q celery,email ||
-               ! docker compose run --rm --no-deps -T backend python manage.py shell -c "from django.core.cache import cache; cache.clear()" ||
-               ! docker compose run --rm --no-deps -T backend python manage.py prune_development_files --after-database-refresh; then
+               ! docker compose run --rm --no-deps -T backend python manage.py migrate --noinput; then
+                log_error "Database refresh finished, but development cleanup failed. Writers remain stopped; rerun cleanup before restarting."
+                print_command_end "$command" 1
+                return 1
+            fi
+            # Purge and cache clear talk to Redis. The one-off backend is started
+            # with --no-deps, so Compose will not start Redis for them. Bring Redis
+            # up first. If it cannot start, there is no broker holding jobs from the
+            # previous database, and that must not fail a refresh that already finished.
+            if docker compose up -d --wait redis; then
+                if ! docker compose run --rm --no-deps -T backend celery -A backend purge -f -Q celery,email; then
+                    log_warning "Could not purge queued jobs after the database refresh. Continuing."
+                fi
+                if ! docker compose run --rm --no-deps -T backend python manage.py shell -c "from django.core.cache import cache; cache.clear()"; then
+                    log_warning "Could not clear the cache after the database refresh. Continuing."
+                fi
+            else
+                log_warning "Redis did not start, so queued jobs and cache were not reset. Continuing."
+            fi
+            if ! docker compose run --rm --no-deps -T backend python manage.py prune_development_files --after-database-refresh; then
                 log_error "Database refresh finished, but development cleanup failed. Writers remain stopped; rerun cleanup before restarting."
                 print_command_end "$command" 1
                 return 1

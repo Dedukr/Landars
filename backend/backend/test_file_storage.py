@@ -313,6 +313,7 @@ print_command_start() { :; }
 print_command_end() { :; }
 log_info() { :; }
 log_error() { :; }
+log_warning() { :; }
 restore_postgresql_backup() { return "${RESTORE_FAIL:-0}"; }
 restore_pitr_backup() { return "${RESTORE_FAIL:-0}"; }
 promote_database() { return "${RESTORE_FAIL:-0}"; }
@@ -321,32 +322,38 @@ docker() {
     if [ "$*" = "compose ps --status running --services" ]; then
         printf 'backend\\ncelery\\n'
     fi
+    if [ "${REDIS_UP_FAIL:-0}" = "1" ] && [ "$*" = "compose up -d --wait redis" ]; then
+        return 1
+    fi
     return 0
 }
 '''
         shell = f'source "{root}/management/storage_environment.sh"\n' + stubs + main_function + '\nmain "$@"'
         with tempfile.TemporaryDirectory() as folder:
             trace = Path(folder) / "trace"
-            for args, mode, failed, expect_prune in (
-                (["restore", "dump", "--promote"], "development", False, True),
-                (["restore", "dump", "--force"], "development", False, True),
-                (["promote"], "development", False, True),
-                (["restore", "dump"], "development", False, False),
-                (["promote", "--help"], "development", False, False),
-                (["pitr-restore", "--help"], "development", False, False),
-                (["restore", "dump", "--promote"], "development", True, False),
-                (["restore", "dump", "--promote"], "production", False, False),
+            for args, mode, failed, expect_prune, redis_down in (
+                (["restore", "dump", "--promote"], "development", False, True, False),
+                (["restore", "dump", "--force"], "development", False, True, False),
+                (["promote"], "development", False, True, False),
+                (["restore", "dump", "--promote"], "development", False, True, True),
+                (["restore", "dump"], "development", False, False, False),
+                (["promote", "--help"], "development", False, False, False),
+                (["pitr-restore", "--help"], "development", False, False, False),
+                (["restore", "dump", "--promote"], "development", True, False, False),
+                (["restore", "dump", "--promote"], "production", False, False, False),
             ):
                 trace.unlink(missing_ok=True)
-                result = subprocess.run(["bash", "-c", shell, "storage-test", *args], env={"PATH": "/usr/bin:/bin", "TRACE_FILE": str(trace), "APP_ENV": mode, "DEBUG": "False", "URL_BASE": "https://landarsfood.com", "RESTORE_FAIL": "1" if failed else "0"}, capture_output=True, text=True, timeout=5)
+                result = subprocess.run(["bash", "-c", shell, "storage-test", *args], env={"PATH": "/usr/bin:/bin", "TRACE_FILE": str(trace), "APP_ENV": mode, "DEBUG": "False", "URL_BASE": "https://landarsfood.com", "RESTORE_FAIL": "1" if failed else "0", "REDIS_UP_FAIL": "1" if redis_down else "0"}, capture_output=True, text=True, timeout=5)
                 self.assertEqual(result.returncode, int(failed), result.stderr)
                 calls = trace.read_text() if trace.exists() else ""
                 self.assertEqual("prune_development_files --after-database-refresh" in calls, expect_prune, args)
-                self.assertEqual("purge -f -Q celery,email" in calls, expect_prune, args)
+                self.assertEqual("purge -f -Q celery,email" in calls, expect_prune and not redis_down, args)
                 if expect_prune:
                     prune_at = calls.index("prune_development_files --after-database-refresh")
                     self.assertLess(calls.index("migrate --noinput"), prune_at, args)
-                    self.assertLess(prune_at, calls.index("compose up -d"), args)
+                    self.assertLess(prune_at, calls.index("compose up -d backend celery"), args)
+                    if not redis_down:
+                        self.assertLess(calls.index("compose up -d --wait redis"), calls.index("purge -f -Q celery,email"), args)
                 if mode == "production" or "--help" in args or args == ["restore", "dump"]:
                     self.assertEqual(calls, "")
 

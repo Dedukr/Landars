@@ -8,8 +8,13 @@ FROM nginx:stable-alpine
 RUN rm /etc/nginx/conf.d/default.conf \
     && rm -f /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh \
     && rm -f /docker-entrypoint.d/30-tune-worker-processes.sh
+RUN apk add --no-cache openssl
 COPY nginx.conf.main /etc/nginx/nginx.conf
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY https-app.conf /etc/nginx/snippets/https-app.conf
+COPY localhost-cert.cnf /etc/nginx/localhost-cert.cnf
+COPY docker-entrypoint.d/20-localhost-cert.sh /docker-entrypoint.d/20-localhost-cert.sh
+RUN chmod +x /docker-entrypoint.d/20-localhost-cert.sh
 
 # Create SSL certificate directory (certificates will be mounted at runtime)
 RUN mkdir -p /etc/ssl/landarsfood
