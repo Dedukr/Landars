@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "./season.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import AuthWrapper from "@/components/AuthWrapper";
@@ -7,6 +8,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { CartProvider } from "@/contexts/CartContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { WishlistProvider } from "@/contexts/WishlistContext";
+import { SeasonProvider } from "@/contexts/SeasonContext";
 import CartMergeNotification from "@/components/CartMergeNotification";
 import { Toaster } from "sonner";
 
@@ -40,13 +42,15 @@ export default function RootLayout({
           <AuthProvider>
             <AuthWrapper>
               <CartProvider>
-                <WishlistProvider>
-                  <Header />
-                  <CartMergeNotification />
-                  <main className="flex-1">{children}</main>
-                  <Footer />
-                  <Toaster richColors position="top-right" />
-                </WishlistProvider>
+                <SeasonProvider>
+                  <WishlistProvider>
+                    <Header />
+                    <CartMergeNotification />
+                    <main className="flex-1">{children}</main>
+                    <Footer />
+                    <Toaster richColors position="top-right" />
+                  </WishlistProvider>
+                </SeasonProvider>
               </CartProvider>
             </AuthWrapper>
           </AuthProvider>

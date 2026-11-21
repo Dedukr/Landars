@@ -42,7 +42,12 @@ export function DeliveryFulfillmentCard({ order }: { order: MarketplaceOrderDeta
   const deliveryOption = order.is_home_delivery ? "Home delivery" : "Post";
   const notes = order.notes?.trim();
 
-  if (!address && !billingAddress && !deliveryDate && !notes) {
+  const holidayWindow =
+    !deliveryDate && order.holiday_event?.delivery_window_label
+      ? order.holiday_event.delivery_window_label
+      : null;
+
+  if (!address && !billingAddress && !deliveryDate && !notes && !holidayWindow) {
     return null;
   }
 
@@ -114,6 +119,24 @@ export function DeliveryFulfillmentCard({ order }: { order: MarketplaceOrderDeta
             </p>
           </div>
         </div>
+
+        {holidayWindow ? (
+          <div className="flex gap-3">
+            <Calendar
+              className="mt-0.5 h-5 w-5 shrink-0"
+              style={{ color: "var(--accent)" }}
+              aria-hidden
+            />
+            <div>
+              <p className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>
+                {order.holiday_event?.emoji} {order.holiday_event?.name} delivery
+              </p>
+              <p className="mt-1 text-sm" style={{ color: "var(--muted-foreground)" }}>
+                {holidayWindow} — we&apos;ll confirm your exact day.
+              </p>
+            </div>
+          </div>
+        ) : null}
 
         {deliveryDate ? (
           <div className="flex gap-3">

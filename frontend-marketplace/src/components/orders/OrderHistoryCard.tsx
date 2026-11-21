@@ -14,6 +14,7 @@ import { formatGbpPrice } from "@/lib/formatPrice";
 import { formatOrderDateShort } from "@/lib/orderFormat";
 import type { OrderListEntry } from "@/lib/orderTypes";
 import OrderItemsPreview from "./OrderItemsPreview";
+import OccasionBadge from "@/components/holiday/OccasionBadge";
 import { cn } from "@/lib/utils";
 
 interface OrderHistoryCardProps {
@@ -78,6 +79,7 @@ export default function OrderHistoryCard({
             >
               Order #{order.id}
             </p>
+            <OccasionBadge event={order.holiday_event} className="mt-1.5" />
             {placed ? (
               <p className="mt-0.5 text-xs sm:text-sm" style={{ color: "var(--muted-foreground)" }}>
                 Placed {placed}

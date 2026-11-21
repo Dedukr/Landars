@@ -3,6 +3,8 @@
  * Optional fields may be absent depending on serializer version.
  */
 
+import type { HolidayEvent } from "@/lib/holidayApi";
+
 export interface OrderDetailCustomer {
   id: number;
   name: string;
@@ -70,6 +72,12 @@ export interface MarketplaceOrderDetail {
   promo_discount?: string | number;
   promo_free_units?: number;
   promo_label?: string;
+  /** Christmas / New Year occasion chosen at checkout (null = regular). */
+  holiday_event?: HolidayEvent | null;
+  /** Holiday rate percent snapshot, e.g. "15". */
+  holiday_fee?: string | number;
+  /** Holiday rate in money, already included in total_price. */
+  holiday_fee_amount?: string;
   created_at: string;
   status: string;
   invoice_link: string;

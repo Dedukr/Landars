@@ -5,6 +5,8 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSeason } from "@/contexts/SeasonContext";
+import { Garland, SantaHat, SnowCap } from "@/components/holiday/SeasonArt";
 import { formatUserDisplayName, formatUserFirstName } from "@/lib/userName";
 import { getAuthUrl } from "@/utils/authHelpers";
 import {
@@ -31,6 +33,7 @@ const navLinks = [
 export default function Header() {
   const { cart } = useCart();
   const { user, logout } = useAuth();
+  const { theme: seasonTheme, cartOccasion } = useSeason();
 
   const userMenu = [
     { name: "My Profile", href: "/profile", icon: User },
@@ -133,8 +136,11 @@ export default function Header() {
           {/* Logo */}
           <Link
             href="/"
-            className="flex items-center gap-2.5 flex-shrink-0 hover:opacity-85 transition-opacity"
+            className="relative flex items-center gap-2.5 flex-shrink-0 hover:opacity-85 transition-opacity"
           >
+            {seasonTheme === "christmas" && (
+              <SnowCap className="season-logo-snow" />
+            )}
             <Image
               src="/landars_food_logo.svg"
               alt="Landar's Food"
@@ -195,6 +201,14 @@ export default function Header() {
               style={{ color: "var(--foreground)" }}
             >
               <ShoppingCart className="w-5 h-5 md:w-5 md:h-5" />
+              {cartOccasion?.theme === "christmas" && (
+                <SantaHat className="season-cart-hat" />
+              )}
+              {cartOccasion?.theme === "new_year" && (
+                <span className="season-cart-spark" aria-hidden="true">
+                  ✦
+                </span>
+              )}
               {cartItemCount > 0 && (
                 <span
                   className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 leading-none"
@@ -497,6 +511,7 @@ export default function Header() {
           </div>
         )}
       </div>
+      {seasonTheme && <Garland className="season-garland" />}
     </header>
   );
 }

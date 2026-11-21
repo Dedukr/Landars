@@ -95,7 +95,11 @@ export default function OrderDetailPage() {
       className="min-h-screen pb-28 lg:pb-10"
       style={{ background: "var(--background)" }}
     >
-      <OrderThankYouModal open={showThankYou} onClose={() => setShowThankYou(false)} />
+      <OrderThankYouModal
+        open={showThankYou}
+        onClose={() => setShowThankYou(false)}
+        holidayEvent={order.holiday_event ?? null}
+      />
       <div className="mx-auto max-w-6xl px-4 pb-10 pt-6 sm:px-6 lg:px-8 lg:pt-8">
         <OrderDetailsHeader order={order} />
 

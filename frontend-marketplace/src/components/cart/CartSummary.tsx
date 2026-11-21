@@ -6,6 +6,8 @@ import TotalDisplay from "./TotalDisplay";
 import DiscountDisplay from "./DiscountDisplay";
 import PromoDiscountDisplay from "./PromoDiscountDisplay";
 import DeliveryFeeDisplay from "./DeliveryFeeDisplay";
+import HolidayFeeDisplay from "./HolidayFeeDisplay";
+import type { HolidayEvent } from "@/lib/holidayApi";
 import {
   ClipboardList,
   Truck,
@@ -27,6 +29,9 @@ interface CartSummaryProps {
   promoFreeUnits?: number;
   promoUnitsToNextFree?: number;
   promoLabel?: string | null;
+  holidayEvent?: HolidayEvent | null;
+  holidayPercent?: number;
+  holidayFee?: number;
   total: number;
   totalItems: number;
   deliveryCalculation: DeliveryFeeCalculation;
@@ -41,6 +46,9 @@ const CartSummary = memo<CartSummaryProps>(
     promoFreeUnits = 0,
     promoUnitsToNextFree = 0,
     promoLabel,
+    holidayEvent = null,
+    holidayPercent = 0,
+    holidayFee = 0,
     total,
     totalItems,
     deliveryCalculation,
@@ -66,9 +74,13 @@ const CartSummary = memo<CartSummaryProps>(
         ? amountToFreeHomeDelivery.toFixed(2)
         : null;
 
+    const isHoliday = Boolean(holidayEvent) && holidayPercent > 0;
+
     return (
       <div
-        className="rounded-2xl overflow-hidden"
+        className={`rounded-2xl overflow-hidden${
+          isHoliday ? ` season-ribbon season-ribbon--${holidayEvent?.theme}` : ""
+        }`}
         style={{
           background: "var(--card-bg)",
           border: "1px solid var(--sidebar-border)",
@@ -89,7 +101,7 @@ const CartSummary = memo<CartSummaryProps>(
             className="text-sm font-semibold"
             style={{ color: "var(--foreground)" }}
           >
-            Order summary
+            {isHoliday ? `Your ${holidayEvent?.name} order` : "Order summary"}
           </h2>
         </div>
 
@@ -216,6 +228,11 @@ const CartSummary = memo<CartSummaryProps>(
           {/* Price breakdown */}
           <div className="space-y-2.5">
             <SubtotalDisplay subtotal={subtotal} />
+            <HolidayFeeDisplay
+              event={holidayEvent}
+              percent={holidayPercent}
+              amount={holidayFee}
+            />
             <DiscountDisplay discount={discount} />
             <PromoDiscountDisplay
               promoDiscount={promoDiscount}

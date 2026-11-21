@@ -26,7 +26,9 @@ def send_new_order_admin_alert(order_id: int) -> bool:
     """
     try:
         order = (
-            Order.objects.select_related("customer", "customer__profile", "address")
+            Order.objects.select_related(
+                "customer", "customer__profile", "address", "holiday_event"
+            )
             .prefetch_related("items", "items__product")
             .get(pk=order_id)
         )

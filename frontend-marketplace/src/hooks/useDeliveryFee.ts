@@ -15,6 +15,8 @@ interface UseDeliveryFeeProps {
   subtotal: number;
   discount?: number;
   promoDiscount?: number;
+  /** Holiday rate in money (Christmas / New Year baskets). */
+  holidayFee?: number;
   postDeliveryGroup?: ApiCategoryGroup | null;
   categoryRecords?: ShopCategoryRecord[];
 }
@@ -30,6 +32,7 @@ export function useDeliveryFee({
   subtotal,
   discount = 0,
   promoDiscount = 0,
+  holidayFee = 0,
   postDeliveryGroup = null,
   categoryRecords,
 }: UseDeliveryFeeProps): UseDeliveryFeeReturn {
@@ -64,9 +67,17 @@ export function useDeliveryFee({
       subtotal,
       deliveryCalculation.deliveryFee,
       discount,
-      promoDiscount
+      promoDiscount,
+      deliveryCalculation.allPostDelivery ? 0 : holidayFee
     );
-  }, [subtotal, deliveryCalculation.deliveryFee, discount, promoDiscount]);
+  }, [
+    subtotal,
+    deliveryCalculation.deliveryFee,
+    deliveryCalculation.allPostDelivery,
+    discount,
+    promoDiscount,
+    holidayFee,
+  ]);
 
   return {
     deliveryCalculation,

@@ -1114,6 +1114,10 @@ class CartSerializer(serializers.ModelSerializer):
     promo_eligible_quantity = serializers.SerializerMethodField()
     promo_units_to_next_free = serializers.SerializerMethodField()
     promo_label = serializers.SerializerMethodField()
+    holiday_event = serializers.SerializerMethodField()
+    holiday_event_open = serializers.SerializerMethodField()
+    holiday_fee_percent = serializers.SerializerMethodField()
+    holiday_fee_amount = serializers.SerializerMethodField()
 
     class Meta:
         model = Cart
@@ -1123,6 +1127,10 @@ class CartSerializer(serializers.ModelSerializer):
             "notes",
             "delivery_date",
             "is_home_delivery",
+            "holiday_event",
+            "holiday_event_open",
+            "holiday_fee_percent",
+            "holiday_fee_amount",
             "delivery_fee",
             "discount",
             "sum_price",
@@ -1175,6 +1183,23 @@ class CartSerializer(serializers.ModelSerializer):
         """Promotion name, or '' when the cart has not earned anything yet."""
         promo = self._promo(obj)
         return promo.label if promo.applies else ""
+
+    def get_holiday_event(self, obj):
+        from api.services.holidays import serialize_holiday_event
+
+        return serialize_holiday_event(obj.holiday_event)
+
+    def get_holiday_event_open(self, obj):
+        """False when the chosen holiday was switched off (checkout will refuse it)."""
+        event = obj.holiday_event
+        return bool(event and event.is_open())
+
+    def get_holiday_fee_percent(self, obj):
+        return str(obj.holiday_fee_percent)
+
+    def get_holiday_fee_amount(self, obj):
+        """Holiday rate in money, already included in ``total_price``."""
+        return str(Decimal(str(obj.holiday_fee_amount)).quantize(Decimal("0.01")))
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -1272,12 +1297,18 @@ class OrderSerializer(serializers.ModelSerializer):
     # Automatic promotion frozen at checkout (already deducted from total_price).
     promo_label = serializers.SerializerMethodField()
     promo_free_units = serializers.SerializerMethodField()
+    # Holiday occasion chosen at checkout; rate already included in total_price.
+    holiday_event = serializers.SerializerMethodField()
+    holiday_fee_amount = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
         fields = [
             "id",
             "customer",
+            "holiday_event",
+            "holiday_fee",
+            "holiday_fee_amount",
             "customer_name",
             "customer_first_name",
             "customer_surname",
@@ -1328,6 +1359,9 @@ class OrderSerializer(serializers.ModelSerializer):
             "promo_discount",
             "promo_label",
             "promo_free_units",
+            # Holiday rate is snapshotted server-side at checkout.
+            "holiday_fee",
+            "holiday_fee_amount",
         ]
 
     def _shipping(self, obj):
@@ -1336,6 +1370,14 @@ class OrderSerializer(serializers.ModelSerializer):
             return obj.shipping_details
         except Exception:
             return None
+
+    def get_holiday_event(self, obj):
+        from api.services.holidays import serialize_holiday_event
+
+        return serialize_holiday_event(obj.holiday_event)
+
+    def get_holiday_fee_amount(self, obj):
+        return str(Decimal(str(obj.holiday_fee_amount)).quantize(Decimal("0.01")))
 
     def get_sum_price(self, obj):
         return str(obj.sum_price)

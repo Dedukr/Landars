@@ -18,6 +18,12 @@ import {
 } from "@/utils/fetchWithTimeout";
 import type { ApiCategoryGroup } from "@/lib/prepareHomeDisplayCategories";
 import { httpClient } from "@/utils/httpClient";
+import { useSeason } from "@/contexts/SeasonContext";
+import OccasionPicker from "@/components/holiday/OccasionPicker";
+import {
+  holidayFeeAmount,
+  type CartHolidayFields,
+} from "@/lib/holidayApi";
 
 import CartHero from "@/components/cart/CartHero";
 import CartItemList from "@/components/cart/CartItemList";
@@ -27,7 +33,7 @@ import CartLoadingState from "@/components/cart/CartLoadingState";
 import MobileCartActionBar from "@/components/cart/MobileCartActionBar";
 import SavedForLaterList from "@/components/cart/SavedForLaterList";
 
-interface CartData {
+interface CartData extends CartHolidayFields {
   id: number;
   items: Array<{
     id: number;
@@ -78,6 +84,7 @@ export default function CartSignedIn() {
     increaseQuantity,
   } = useCartItems(products);
   const { addToCart, isLoading: cartIsLoading } = useCart();
+  const { syncFromCart } = useSeason();
   const [savedItems, setSavedItems] = useState<number[]>([]);
   const [cartData, setCartData] = useState<CartData | null>(null);
   const [postDeliveryGroup, setPostDeliveryGroup] =
@@ -108,10 +115,11 @@ export default function CartSignedIn() {
     try {
       const data = await httpClient.get<CartData>("/api/cart/");
       setCartData(data);
+      syncFromCart(data);
     } catch (error) {
       console.error("Failed to fetch cart data:", error);
     }
-  }, []);
+  }, [syncFromCart]);
 
   useEffect(() => {
     fetchCartData();
@@ -156,11 +164,17 @@ export default function CartSignedIn() {
     return byProduct;
   }, [cartData]);
 
+  // Holiday rate on the live subtotal (server returns 0% for parcel baskets).
+  const holidayEvent = cartData?.holiday_event ?? null;
+  const holidayPercent = parseApiNumber(cartData?.holiday_fee_percent) ?? 0;
+  const holidayFee = holidayFeeAmount(subtotal, holidayPercent);
+
   const { deliveryCalculation, totalPrice } = useDeliveryFee({
     products: cartProducts,
     subtotal,
     discount,
     promoDiscount,
+    holidayFee,
     postDeliveryGroup,
     categoryRecords,
   });
@@ -237,6 +251,12 @@ export default function CartSignedIn() {
         {!isInitialLoading && !isEmpty && (
           <div className="lg:grid lg:grid-cols-12 lg:gap-x-8 lg:items-start">
             <div className="lg:col-span-8 lg:col-start-1 lg:row-start-1 space-y-4">
+              <OccasionPicker
+                selected={holidayEvent}
+                selectedOpen={cartData?.holiday_event_open ?? true}
+                isPost={deliveryCalculation.allPostDelivery}
+                onChanged={() => void fetchCartData()}
+              />
               <CartItemList
                 products={filteredProducts}
                 cart={cart}
@@ -264,6 +284,11 @@ export default function CartSignedIn() {
                 promoFreeUnits={promoFreeUnits}
                 promoUnitsToNextFree={promoUnitsToNextFree}
                 promoLabel={cartData?.promo_label ?? null}
+                holidayEvent={holidayEvent}
+                holidayPercent={
+                  deliveryCalculation.allPostDelivery ? 0 : holidayPercent
+                }
+                holidayFee={holidayFee}
                 total={total}
                 totalItems={visibleQuantitySum}
                 deliveryCalculation={deliveryCalculation}

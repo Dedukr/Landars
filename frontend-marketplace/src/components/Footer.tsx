@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { MapPin, MessageCircle, Mail, Heart } from "lucide-react";
 import { ContactLink } from "@/components/ContactLink";
 import { getWhatsAppHref } from "@/lib/supportWhatsApp";
+import SeasonFooterHorizon from "@/components/holiday/SeasonFooterHorizon";
 
 const quickLinks = [
   { name: "Shop", href: "/shop" },
@@ -38,6 +39,8 @@ export default function Footer() {
   const whatsappHref = getWhatsAppHref();
 
   return (
+    <>
+    <SeasonFooterHorizon />
     <footer
       className="mt-auto border-t"
       style={{
@@ -213,5 +216,6 @@ export default function Footer() {
         </div>
       </div>
     </footer>
+    </>
   );
 }

@@ -13,6 +13,7 @@ import {
   ShoppingBag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import OccasionBadge from "@/components/holiday/OccasionBadge";
 import { getOrderStatusPresentation, toneSurfaceClass } from "@/lib/orderStatusDisplay";
 import {
   formatOrderDateLong,
@@ -190,8 +191,15 @@ export function OrderDetailsHeader({
                 className="text-2xl font-bold tracking-tight sm:text-3xl lg:text-[2rem] lg:leading-tight"
                 style={{ color: "var(--foreground)" }}
               >
-                Your order
+                {order.holiday_event
+                  ? `Your ${order.holiday_event.name} order`
+                  : "Your order"}
               </h1>
+              <OccasionBadge
+                event={order.holiday_event}
+                size="md"
+                className="mt-2"
+              />
               <p className="sr-only">
                 Order reference {order.id}. Current status: {status.label}.
               </p>
@@ -340,6 +348,15 @@ export function OrderDetailsHeader({
                       </p>
                     </div>
                   </div>
+                  {!deliveryPref && order.holiday_event?.delivery_window_label ? (
+                    <p
+                      className="text-sm leading-snug"
+                      style={{ color: "var(--muted-foreground)" }}
+                    >
+                      {order.holiday_event.delivery_window_label} — we&apos;ll
+                      confirm your day.
+                    </p>
+                  ) : null}
                   {deliveryPref ? (
                     <>
                       <div

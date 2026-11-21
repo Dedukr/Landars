@@ -68,6 +68,7 @@ from .models import (
     CartItem,
     CategoryGroup,
     CustomUser,
+    HolidayEvent,
     Order,
     OrderItem,
     Product,
@@ -462,6 +463,34 @@ class HolidayFeeFilter(admin.SimpleListFilter):
         elif self.value() == "no":
             return queryset.filter(holiday_fee=0)
         return queryset
+
+
+@admin.register(HolidayEvent)
+class HolidayEventAdmin(admin.ModelAdmin):
+    """Christmas / New Year: tick Active to open holiday ordering on the website."""
+
+    list_display = [
+        "get_label",
+        "theme",
+        "surcharge_percent",
+        "delivery_window_label",
+        "active",
+        "get_orders_count",
+    ]
+    list_editable = ["active"]
+    list_display_links = ["get_label"]
+    fields = ["name", "theme", "surcharge_percent", "delivery_window_label", "active"]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(_orders_count=Count("orders"))
+
+    @admin.display(description="Holiday", ordering="name")
+    def get_label(self, obj):
+        return obj.label
+
+    @admin.display(description="Orders", ordering="_orders_count")
+    def get_orders_count(self, obj):
+        return getattr(obj, "_orders_count", 0)
 
 
 @admin.register(ProductCategory)
@@ -1831,6 +1860,7 @@ class OrderAdmin(admin.ModelAdmin):
     list_display = [
         "id",
         "delivery_date",
+        "get_occasion",
         "customer_name",
         "customer_phone",
         "customer_address",
@@ -1845,6 +1875,7 @@ class OrderAdmin(admin.ModelAdmin):
     list_filter = [
         DateFilter,
         "status",
+        "holiday_event",
         HolidayFeeFilter,
     ]
     list_editable = ["status"]
@@ -1896,6 +1927,7 @@ class OrderAdmin(admin.ModelAdmin):
             "delivery_fee_manual",
             "delivery_fee",
             "holiday_fee",
+            "holiday_event",
             "discount",
             "promo_discount",
             "bill_use_delivery_address",
@@ -1937,6 +1969,7 @@ class OrderAdmin(admin.ModelAdmin):
         return qs.select_related(
             "customer",
             "customer__profile",
+            "holiday_event",
         ).prefetch_related(
             "invoices",
             "invoices__credit_note",
@@ -2163,6 +2196,18 @@ class OrderAdmin(admin.ModelAdmin):
         return "-"
 
     get_holiday_fee_amount.short_description = "Holiday Fee (£)"
+
+    @admin.display(description="Occasion", ordering="holiday_event")
+    def get_occasion(self, obj):
+        event = obj.holiday_event
+        if event is None:
+            return "-"
+        return format_html(
+            '<span style="display:inline-block;padding:2px 8px;border-radius:999px;'
+            'background:{};color:#fff;font-weight:600;white-space:nowrap">{}</span>',
+            "#1f5135" if event.theme == HolidayEvent.Theme.CHRISTMAS else "#1e2a4a",
+            event.label,
+        )
 
     def get_shipping_status_display(self, obj):
         """Display :class:`~shipping.models.Shipment` pipeline status with color coding."""

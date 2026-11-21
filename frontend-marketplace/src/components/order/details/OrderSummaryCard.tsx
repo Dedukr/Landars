@@ -87,6 +87,14 @@ export function OrderSummaryCard({
   const promoFormatted = showPromo ? `−£${promoNum.toFixed(2)}` : null;
   const promoLabel = jerkyPromoRowLabel(promoFreeUnits, order.promo_label);
 
+  const holidayNum = parseFloat(String(order.holiday_fee_amount ?? "0"));
+  const holidayPercent = parseFloat(String(order.holiday_fee ?? "0"));
+  const showHoliday =
+    Number.isFinite(holidayNum) && holidayNum > 0 && holidayPercent > 0;
+  const holidayLabel = order.holiday_event
+    ? `${order.holiday_event.emoji} ${order.holiday_event.name} rate (${holidayPercent}%)`
+    : `Holiday rate (${holidayPercent}%)`;
+
   const totalFormatted = formatGbpPrice(order.total_price);
 
   return (
@@ -111,6 +119,9 @@ export function OrderSummaryCard({
           label={`Subtotal (${order.total_items} items)`}
           value={subtotal}
         />
+        {showHoliday ? (
+          <PriceRow label={holidayLabel} value={`+£${holidayNum.toFixed(2)}`} />
+        ) : null}
         <PriceRow label="Delivery" value={deliveryFormatted} />
         {showDiscount ? (
           <PriceRow label="Discount" value={discountFormatted} emphasize="success" />

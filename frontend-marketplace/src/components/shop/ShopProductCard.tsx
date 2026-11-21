@@ -6,6 +6,10 @@ import { Heart } from "lucide-react";
 import ShopProductImage from "@/components/shop/ShopProductImage";
 import { Button } from "@/components/ui/Button";
 import { AddToCartButton } from "@/components/ui/AddToCartButton";
+import {
+  SeasonCardCorner,
+  SeasonPriceNote,
+} from "@/components/holiday/SeasonCardDecor";
 
 export interface ShopProductDto {
   id: number;
@@ -124,6 +128,7 @@ function ShopProductCard({
         aria-label={`View ${product.name}`}
       >
         <ShopProductImage src={mainImage} alt={product.name} />
+        <SeasonCardCorner />
         <div className="absolute inset-x-0 bottom-0 hidden sm:flex flex-wrap gap-1.5 px-3 pb-3 pt-6 bg-gradient-to-t from-black/50 to-transparent opacity-95 pointer-events-none">
           {categoryLabel && (
             <span
@@ -193,6 +198,7 @@ function ShopProductCard({
               >
                 {priceDisplay}
               </p>
+              <SeasonPriceNote price={priceNum} />
             </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">

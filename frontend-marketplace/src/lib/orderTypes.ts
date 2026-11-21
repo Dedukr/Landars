@@ -1,5 +1,7 @@
 /** Customer order list item shape from GET `/api/orders/`. */
 
+import type { HolidayEvent } from "@/lib/holidayApi";
+
 export interface OrderListItem {
   id: number;
   product: number;
@@ -28,6 +30,12 @@ export interface OrderListEntry {
   promo_discount?: string | number;
   promo_free_units?: number;
   promo_label?: string;
+  /** Christmas / New Year occasion chosen at checkout (null = regular). */
+  holiday_event?: HolidayEvent | null;
+  /** Holiday rate percent snapshot, e.g. "15". */
+  holiday_fee?: string | number;
+  /** Holiday rate in money, already included in total_price. */
+  holiday_fee_amount?: string;
   created_at: string;
   status: OrderListStatus | string;
   invoice_link?: string | null;

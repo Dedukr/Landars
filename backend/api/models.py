@@ -172,7 +172,10 @@ class Product(models.Model):
         decimal_places=2,
         default=0,
         validators=[MinValueValidator(0)],
-        help_text="Additional holiday fee applied to the product",
+        help_text=(
+            "Legacy: added to EVERY sale of this product. Keep at 0 — holiday "
+            "orders get their rate from Holiday events instead."
+        ),
     )
     vat = models.BooleanField(
         default=False,
@@ -410,6 +413,88 @@ Review = ProductReview
 #         self.save()
 
 
+class HolidayEvent(models.Model):
+    """
+    A holiday customers can order for on the website (Christmas, New Year).
+
+    Customers only pick the occasion, never a day: the admin assigns the delivery
+    date later. A holiday order gets ``surcharge_percent`` on its items subtotal
+    (snapshotted into ``Order.holiday_fee``). ``active`` is the single switch: it
+    shows the option, the seasonal site decoration, and allows checkout.
+    """
+
+    class Theme(models.TextChoices):
+        CHRISTMAS = "christmas", "Christmas"
+        NEW_YEAR = "new_year", "New Year"
+
+    THEME_EMOJI = {
+        Theme.CHRISTMAS: "🎄",
+        Theme.NEW_YEAR: "🎆",
+    }
+
+    name = models.CharField(max_length=100, help_text='Shown to customers, e.g. "Christmas".')
+    theme = models.CharField(
+        max_length=20,
+        choices=Theme.choices,
+        default=Theme.CHRISTMAS,
+        help_text="Picks the icon and the website decoration style.",
+    )
+    surcharge_percent = models.DecimalField(
+        max_digits=3,
+        decimal_places=0,
+        default=Decimal("15"),
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text="Holiday rate added to the items subtotal, in percent.",
+    )
+    delivery_window_label = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        help_text='Shown to customers, e.g. "Delivered 22–24 December".',
+    )
+    active = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text=(
+            "On: customers can choose this holiday at checkout and the website "
+            "shows the seasonal decoration. Off: hidden and closed."
+        ),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Holiday event"
+        verbose_name_plural = "Holiday events"
+        ordering = ["theme", "id"]
+
+    def __str__(self):
+        return self.label
+
+    @property
+    def emoji(self) -> str:
+        return self.THEME_EMOJI.get(self.theme, "")
+
+    @property
+    def label(self) -> str:
+        return f"{self.emoji} {self.name}".strip()
+
+    def is_open(self) -> bool:
+        return bool(self.active)
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        from api.services.holidays import invalidate_holiday_events_cache
+
+        invalidate_holiday_events_cache()
+
+    def delete(self, *args, **kwargs):
+        result = super().delete(*args, **kwargs)
+        from api.services.holidays import invalidate_holiday_events_cache
+
+        invalidate_holiday_events_cache()
+        return result
+
+
 class OrderQuerySet(models.QuerySet):
     """Custom queryset: bulk ``status`` updates refresh denormalised product sales counters."""
 
@@ -488,6 +573,17 @@ class Order(models.Model):
         default=0,
         validators=[MinValueValidator(0), MaxValueValidator(100)],
         help_text="Holiday fee percentage (0-100)",
+    )
+    holiday_event = models.ForeignKey(
+        "HolidayEvent",
+        on_delete=models.PROTECT,
+        related_name="orders",
+        null=True,
+        blank=True,
+        help_text=(
+            "Holiday the customer ordered for on the website. Its rate is "
+            "snapshotted into Holiday fee when the order is placed."
+        ),
     )
     created_at = models.DateTimeField(
         auto_now_add=True, help_text="Exact timestamp when order was created"
@@ -1228,6 +1324,14 @@ class Cart(models.Model):
     discount = models.DecimalField(
         max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0)]
     )
+    holiday_event = models.ForeignKey(
+        "HolidayEvent",
+        on_delete=models.SET_NULL,
+        related_name="+",
+        null=True,
+        blank=True,
+        help_text="Holiday the customer is ordering for (empty = regular order).",
+    )
 
     class Meta:
         verbose_name_plural = "Carts"
@@ -1258,9 +1362,31 @@ class Cart(models.Model):
         return self.promo_summary.discount
 
     @property
+    def holiday_fee_percent(self):
+        """Holiday rate (%) for this cart: only for home-delivery holiday carts."""
+        if self.holiday_event_id and self.is_home_delivery and self.holiday_event:
+            return self.holiday_event.surcharge_percent
+        return Decimal("0")
+
+    @property
+    def holiday_fee_amount(self):
+        """Same formula as :attr:`Order.holiday_fee_amount` so cart and order agree."""
+        percent = self.holiday_fee_percent
+        if not percent:
+            return Decimal("0")
+        return Decimal(str(self.sum_price)) * (percent / Decimal("100"))
+
+    @property
     def total_price(self):
-        """Calculate the total price of the cart including delivery fee and discounts."""
-        return self.sum_price + self.delivery_fee - self.discount - self.promo_discount
+        """Total including holiday fee, delivery fee and discounts (mirrors Order)."""
+        total = (
+            self.sum_price
+            + self.holiday_fee_amount
+            + self.delivery_fee
+            - self.discount
+            - self.promo_discount
+        )
+        return round(total, 2)
 
     @property
     def total_items(self):

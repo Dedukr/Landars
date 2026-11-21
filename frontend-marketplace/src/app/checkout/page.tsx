@@ -7,7 +7,7 @@ import { useCart } from "@/contexts/CartContext";
 import CheckoutProgress from "@/components/CheckoutProgress";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
-import { httpClient } from "@/utils/httpClient";
+import { httpClient, type HttpError } from "@/utils/httpClient";
 import DeliveryFeeInfo from "@/components/DeliveryFeeInfo";
 import LoadingSpinner from "@/components/LoadingSpinner";
 // import StripeProvider from "@/components/StripeProvider";
@@ -25,6 +25,13 @@ import {
   type ShipmentQuoteOption,
 } from "@/hooks/useShipmentQuoteOptions";
 import { applyLatinScriptErrors } from "@/utils/latinValidation";
+import { useSeason } from "@/contexts/SeasonContext";
+import OccasionPicker from "@/components/holiday/OccasionPicker";
+import HolidayFeeDisplay from "@/components/cart/HolidayFeeDisplay";
+import {
+  HOLIDAY_UNAVAILABLE_CODE,
+  type CartHolidayFields,
+} from "@/lib/holidayApi";
 
 interface ShippingFormData {
   first_name: string;
@@ -90,7 +97,7 @@ interface OrderItem {
   get_total_price?: string;
 }
 
-interface CartData {
+interface CartData extends CartHolidayFields {
   id: number;
   items: Array<{
     id: number;
@@ -167,6 +174,7 @@ export default function CheckoutPage() {
   const pathname = usePathname();
   const { user, token } = useAuth();
   const { cart, clearCart, isLoading: cartIsLoading } = useCart();
+  const { syncFromCart } = useSeason();
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -241,6 +249,7 @@ export default function CheckoutPage() {
     try {
       const data = await httpClient.get<CartData>("/api/cart/");
       setCartData(data);
+      syncFromCart(data);
 
       // Pre-populate notes from cart if available
       if (data.notes && !shippingForm.notes) {
@@ -257,7 +266,7 @@ export default function CheckoutPage() {
     } catch (error) {
       console.error("Failed to fetch cart data:", error);
     }
-  }, [user, shippingForm.notes]);
+  }, [user, shippingForm.notes, syncFromCart]);
 
   // Refetch cart metadata when CartContext finishes loading from the API.
   useEffect(() => {
@@ -343,6 +352,10 @@ export default function CheckoutPage() {
     ? parseFloat(cartData.delivery_fee)
     : 0;
   const cartIsHomeDelivery = cartData?.is_home_delivery ?? true;
+  // Holiday rate (Christmas / New Year) — server-computed, already in total_price.
+  const cartHolidayEvent = cartData?.holiday_event ?? null;
+  const cartHolidayPercent = parseFloat(cartData?.holiday_fee_percent ?? "0") || 0;
+  const cartHolidayFee = parseFloat(cartData?.holiday_fee_amount ?? "0") || 0;
   const cartTotal = cartData?.total_price
     ? parseFloat(cartData.total_price)
     : 0;
@@ -433,7 +446,7 @@ export default function CheckoutPage() {
 
   // Calculate display total - only include delivery fee if address is filled
   const displayTotal = !isAddressFilled
-    ? cartSubtotal - cartDiscount - cartPromoDiscount // No delivery fee if address not filled
+    ? cartSubtotal + cartHolidayFee - cartDiscount - cartPromoDiscount // No delivery fee if address not filled
     : !cartIsHomeDelivery
       ? cartSubtotal + apiDeliveryFee - cartDiscount - cartPromoDiscount
       : cartTotal;
@@ -1106,6 +1119,15 @@ export default function CheckoutPage() {
       router.push(`/orders/${order.id}`);
     } catch (error) {
       console.error("Order creation failed:", error);
+      const errorData = (error as HttpError)?.response?.data;
+      if (
+        errorData &&
+        typeof errorData === "object" &&
+        (errorData as { code?: unknown }).code === HOLIDAY_UNAVAILABLE_CODE
+      ) {
+        // Holiday switched off meanwhile: refresh so the picker offers "Switch to regular".
+        void fetchCartData();
+      }
       const message =
         error &&
         typeof error === "object" &&
@@ -1599,6 +1621,14 @@ export default function CheckoutPage() {
                 </div>
 
                 <div className="p-6 space-y-4">
+                  <OccasionPicker
+                    compact
+                    selected={cartHolidayEvent}
+                    selectedOpen={cartData?.holiday_event_open ?? true}
+                    isPost={!cartIsHomeDelivery}
+                    onChanged={() => void fetchCartData()}
+                  />
+
                   {/* Delivery Type Information */}
                   {!cartIsHomeDelivery && (
                     <div
@@ -1718,6 +1748,11 @@ export default function CheckoutPage() {
                   {/* Order Summary - mirror cart view */}
                   <div className="space-y-3">
                     <SubtotalDisplay subtotal={cartSubtotal} />
+                    <HolidayFeeDisplay
+                      event={cartHolidayEvent}
+                      percent={cartHolidayPercent}
+                      amount={cartHolidayFee}
+                    />
                     <DeliveryFeeDisplay {...deliveryDisplayProps} />
                     <DiscountDisplay discount={cartDiscount} />
                     <PromoDiscountDisplay

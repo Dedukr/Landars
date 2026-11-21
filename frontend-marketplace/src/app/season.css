@@ -1,0 +1,745 @@
+/*
+ * Seasonal (Christmas / New Year) styles.
+ * Tokens are always available (holiday badges stay readable on old orders);
+ * site-wide decoration only renders while <html data-season="…"> is set.
+ * Every animation stops under prefers-reduced-motion.
+ */
+
+:root {
+  --festive-red: #b3261e;
+  --festive-red-deep: #8c1d17;
+  --festive-pine: #1f5135;
+  --festive-pine-light: #2f7a4f;
+  --festive-gold: #d9a441;
+  --festive-bark: #6b4a2f;
+  --festive-wire: #3b3a36;
+  --festive-bulb-4: #f6e7c1;
+  --festive-snow: #fffdf8;
+  --festive-navy: #1e2a4a;
+  --festive-navy-deep: #111a33;
+  --festive-horizon: #e8d9bf;
+  --festive-window: #f5c766;
+}
+
+[data-season="new_year"] {
+  --festive-horizon: #e3dccd;
+}
+
+/* ── Header: fairy-light garland, snowy logo, Santa hat on the basket ───── */
+
+.season-garland {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% - 3px);
+  height: 30px;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
+}
+.season-garland-swag {
+  flex: 0 0 auto;
+}
+
+.season-bulb {
+  transform-box: fill-box;
+  transform-origin: center top;
+  animation: season-twinkle 2.6s ease-in-out infinite;
+}
+
+[data-season="new_year"] .season-garland-swag g:nth-of-type(odd) .season-bulb {
+  fill: var(--festive-gold);
+}
+[data-season="new_year"] .season-garland-swag g:nth-of-type(even) .season-bulb {
+  fill: var(--festive-bulb-4);
+}
+
+@keyframes season-twinkle {
+  0%,
+  100% {
+    opacity: 1;
+    filter: drop-shadow(0 0 3px currentColor) brightness(1.08);
+  }
+  50% {
+    opacity: 0.45;
+    filter: none;
+  }
+}
+
+.season-logo-snow {
+  position: absolute;
+  left: -3px;
+  top: -5px;
+  width: 38px;
+  height: 9px;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 1.5px rgb(31 81 53 / 0.45));
+}
+
+.season-cart-hat {
+  position: absolute;
+  left: 1px;
+  top: -3px;
+  width: 17px;
+  height: 14px;
+  transform: rotate(-16deg);
+  pointer-events: none;
+}
+
+.season-cart-spark {
+  position: absolute;
+  left: 2px;
+  top: -2px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--festive-gold);
+  pointer-events: none;
+}
+
+/* ── Home hero: snowfall + wrapping-paper ribbon ─────────────────────────── */
+
+.season-snow-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+[data-season="christmas"] .season-snow-canvas {
+  /* white flakes need a little contrast on the cream hero */
+  filter: drop-shadow(0 0 1.5px rgb(31 81 53 / 0.35));
+}
+
+.season-snow-toggle {
+  position: absolute;
+  right: 10px;
+  top: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 28px;
+  min-height: 28px;
+  z-index: 2;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--card-bg) 80%, transparent);
+  border: 1px solid var(--sidebar-border);
+  backdrop-filter: blur(4px);
+}
+.season-snow-toggle:hover {
+  background: var(--card-bg);
+}
+.season-snow-toggle-label {
+  display: none;
+}
+@media (min-width: 640px) {
+  .season-snow-toggle {
+    top: 36px;
+    right: 12px;
+  }
+  .season-snow-toggle-label {
+    display: inline;
+  }
+}
+
+.season-hero-ribbon {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  overflow: hidden;
+  color: var(--festive-snow);
+  box-shadow: 0 10px 28px rgb(17 26 20 / 0.18);
+}
+
+.season-hero-ribbon--christmas {
+  background:
+    radial-gradient(circle at 12px 12px, rgb(255 253 248 / 0.12) 1.6px, transparent 2px) 0 0 / 26px 26px,
+    linear-gradient(135deg, var(--festive-pine) 0%, #173f29 100%);
+}
+
+.season-hero-ribbon--new_year {
+  background:
+    radial-gradient(circle at 10px 10px, rgb(217 164 65 / 0.28) 1.2px, transparent 1.8px) 0 0 / 22px 22px,
+    linear-gradient(135deg, var(--festive-navy) 0%, var(--festive-navy-deep) 100%);
+}
+
+/* the gift ribbon band (wide screens only: it would cross the text on phones) */
+.season-hero-ribbon::after {
+  content: none;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 22%;
+  width: 14px;
+  background: linear-gradient(90deg, #b8862f, var(--festive-gold) 40%, #f1cf7f 55%, #b8862f);
+  opacity: 0.85;
+  pointer-events: none;
+}
+@media (min-width: 640px) {
+  .season-hero-ribbon::after {
+    content: "";
+  }
+}
+.season-hero-ribbon--christmas::after {
+  background: linear-gradient(90deg, var(--festive-red-deep), var(--festive-red) 45%, #d8433a 55%, var(--festive-red-deep));
+}
+
+.season-hero-ribbon > * {
+  position: relative;
+  z-index: 1;
+}
+
+.season-hero-ribbon-art {
+  /* light needles so the branch reads on the dark ribbon */
+  --festive-pine: #9fd3ad;
+  --festive-bark: #d8b27a;
+  display: none;
+  width: 76px;
+  flex-shrink: 0;
+}
+.season-hero-ribbon-art svg {
+  width: 100%;
+  height: auto;
+}
+@media (min-width: 640px) {
+  .season-hero-ribbon-art {
+    display: block;
+  }
+}
+
+.season-hero-ribbon-text {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.season-hero-ribbon-title {
+  font-weight: 800;
+  font-size: clamp(1rem, 2.6vw, 1.2rem);
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+}
+.season-hero-ribbon-sub {
+  margin-top: 2px;
+  font-size: 0.8125rem;
+  opacity: 0.85;
+}
+.season-hero-ribbon--new_year .season-hero-ribbon-title {
+  color: #f6dfa4;
+}
+
+.season-hero-ribbon-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  transition: transform 0.15s ease, filter 0.15s ease;
+  flex: 1 1 100%;
+}
+@media (min-width: 640px) {
+  .season-hero-ribbon-cta {
+    flex: 0 0 auto;
+  }
+}
+.season-hero-ribbon--christmas .season-hero-ribbon-cta {
+  background: var(--festive-snow);
+  color: var(--festive-red-deep);
+}
+.season-hero-ribbon--new_year .season-hero-ribbon-cta {
+  background: var(--festive-gold);
+  color: var(--festive-navy-deep);
+}
+.season-hero-ribbon-cta:hover {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+.season-hero-ribbon-cta:disabled {
+  opacity: 0.7;
+}
+
+/* ── Occasion picker (cart + checkout) ───────────────────────────────────── */
+
+.season-occasion {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  padding: 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--sidebar-border);
+  box-shadow: var(--card-shadow);
+}
+.season-occasion--compact {
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  overflow: visible;
+}
+
+.season-occasion-head {
+  margin-bottom: 12px;
+}
+.season-occasion-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--foreground);
+}
+.season-occasion--compact .season-occasion-title {
+  font-size: 0.875rem;
+}
+.season-occasion-sub {
+  margin-top: 2px;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.season-occasion-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+@media (min-width: 640px) {
+  .season-occasion:not(.season-occasion--compact) .season-occasion-grid {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
+}
+
+.season-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  padding: 12px 40px 12px 14px;
+  border-radius: 14px;
+  border: 1.5px solid var(--sidebar-border);
+  background: var(--card-bg);
+  color: var(--foreground);
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+  cursor: pointer;
+}
+.season-occasion--compact .season-card {
+  padding: 10px 40px 10px 12px;
+}
+.season-card:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.season-card:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.season-card:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.season-card-art-wrap {
+  height: 46px;
+  display: flex;
+  align-items: center;
+}
+.season-card-art {
+  height: 46px;
+  width: auto;
+}
+.season-card-icon {
+  width: 30px;
+  height: 30px;
+  color: var(--muted-foreground);
+}
+
+.season-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.season-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 0.9375rem;
+}
+.season-card-note {
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+.season-card-rate {
+  margin-top: 2px;
+  align-self: flex-start;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.season-card-check {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1.5px solid var(--sidebar-border);
+  background: var(--card-bg);
+}
+.season-card.is-checked .season-card-check {
+  border-color: transparent;
+  background: var(--btn-primary)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='white'%3E%3Cpath fill-rule='evenodd' d='M16.7 5.3a1 1 0 010 1.4l-8 8a1 1 0 01-1.4 0l-4-4a1 1 0 111.4-1.4L8 12.6l7.3-7.3a1 1 0 011.4 0z'/%3E%3C/svg%3E")
+    center / 13px no-repeat;
+}
+.season-card--regular.is-checked {
+  border-color: var(--btn-primary);
+  background: color-mix(in srgb, var(--btn-primary) 7%, var(--card-bg));
+}
+
+.season-card--christmas {
+  background:
+    radial-gradient(circle at 92% 110%, rgb(179 38 30 / 0.08), transparent 55%),
+    var(--card-bg);
+}
+.season-card--christmas .season-card-rate {
+  background: rgb(179 38 30 / 0.1);
+  color: var(--festive-red-deep);
+}
+.season-card--christmas.is-checked {
+  border-color: var(--festive-pine);
+  background:
+    radial-gradient(circle at 92% 110%, rgb(179 38 30 / 0.12), transparent 55%),
+    color-mix(in srgb, var(--festive-pine) 8%, var(--card-bg));
+}
+.season-card--christmas.is-checked .season-card-check {
+  background-color: var(--festive-pine);
+}
+
+.season-card--new_year {
+  color: var(--festive-snow);
+  border-color: var(--festive-navy);
+  background:
+    radial-gradient(circle at 85% 20%, rgb(217 164 65 / 0.25), transparent 50%),
+    linear-gradient(135deg, var(--festive-navy), var(--festive-navy-deep));
+}
+.season-card--new_year .season-card-note {
+  color: rgb(255 253 248 / 0.75);
+}
+.season-card--new_year .season-card-rate {
+  background: rgb(217 164 65 / 0.2);
+  color: #f6dfa4;
+}
+.season-card--new_year .season-card-check {
+  background: transparent;
+  border-color: rgb(255 253 248 / 0.45);
+}
+.season-card--new_year.is-checked {
+  border-color: var(--festive-gold);
+  box-shadow: 0 0 0 1px var(--festive-gold) inset;
+}
+.season-card--new_year.is-checked .season-card-check {
+  background-color: var(--festive-gold);
+}
+
+.season-occasion-note {
+  margin-top: 10px;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.season-occasion-alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--warning-bg, #fffbeb);
+  border: 1px solid var(--warning-border, #fcd34d);
+  color: var(--warning-text, #92400e);
+}
+.season-occasion-alert-btn {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.875rem;
+  background: var(--btn-primary);
+  color: var(--btn-primary-fg);
+}
+
+/* confetti-snow burst when a holiday is picked */
+.season-burst {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.season-burst i {
+  position: absolute;
+  top: -10px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  animation: season-burst-fall 1.1s ease-in forwards;
+}
+.season-burst--christmas i:nth-child(3n) {
+  background: var(--festive-red);
+}
+.season-burst--christmas i:nth-child(3n + 1) {
+  background: var(--festive-pine-light);
+}
+.season-burst--christmas i:nth-child(3n + 2) {
+  background: #cfdbe6;
+}
+.season-burst--new_year i {
+  background: var(--festive-gold);
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
+@keyframes season-burst-fall {
+  0% {
+    opacity: 0;
+    transform: translateY(0) rotate(0);
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(170px) rotate(160deg);
+  }
+}
+
+/* ── Prices ──────────────────────────────────────────────────────────────── */
+
+.season-fee-row {
+  color: var(--festive-pine);
+}
+
+.season-price-note {
+  display: block;
+  margin-top: 1px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--festive-red-deep);
+  white-space: nowrap;
+}
+
+/* candy-stripe edge on the basket summary for holiday orders */
+.season-ribbon::before {
+  content: "";
+  display: block;
+  height: 6px;
+}
+.season-ribbon--christmas::before {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--festive-red) 0 10px,
+    var(--festive-snow) 10px 20px,
+    var(--festive-pine) 20px 30px,
+    var(--festive-snow) 30px 40px
+  );
+}
+.season-ribbon--new_year::before {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--festive-navy) 0 10px,
+    var(--festive-gold) 10px 20px
+  );
+}
+
+/* ── Product cards ───────────────────────────────────────────────────────── */
+
+.season-card-corner {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  width: 30px;
+  height: 24px;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.25));
+}
+.season-card-corner svg {
+  width: 100%;
+  height: 100%;
+}
+.season-card-corner--new_year {
+  width: auto;
+  height: auto;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--festive-gold);
+  animation: season-sparkle 2.4s ease-in-out infinite;
+}
+
+/* ── Order tags ──────────────────────────────────────────────────────────── */
+
+.season-tag {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-weight: 700;
+  line-height: 1.2;
+  border-radius: 6px 999px 999px 6px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+.season-tag--sm {
+  padding: 3px 10px 3px 8px;
+  font-size: 0.75rem;
+}
+.season-tag--md {
+  padding: 5px 14px 5px 10px;
+  font-size: 0.875rem;
+}
+.season-tag-hole {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--card-bg);
+  box-shadow: 0 0 0 1.5px var(--festive-gold);
+}
+.season-tag--christmas {
+  background: linear-gradient(135deg, var(--festive-pine), #173f29);
+  color: var(--festive-snow);
+}
+.season-tag--christmas::after {
+  /* the red ribbon tie */
+  content: "";
+  position: absolute;
+  left: 2px;
+  bottom: -4px;
+  width: 9px;
+  height: 7px;
+  background: var(--festive-red);
+  clip-path: polygon(0 0, 100% 0, 70% 100%, 50% 60%, 30% 100%);
+}
+.season-tag--new_year {
+  background: linear-gradient(135deg, var(--festive-navy), var(--festive-navy-deep));
+  color: #f6dfa4;
+}
+
+/* ── Thank-you modal ─────────────────────────────────────────────────────── */
+
+.season-thanks-sky {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.season-thanks-sky i {
+  position: absolute;
+  top: -12px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #c9d6e3;
+  animation: season-sky-fall 4s linear infinite;
+}
+.season-thanks--new_year .season-thanks-sky i {
+  background: var(--festive-gold);
+  width: 4px;
+  height: 4px;
+}
+.season-thanks-art {
+  position: absolute;
+  right: -26px;
+  top: -14px;
+  width: 128px;
+  height: auto;
+  opacity: 0.35;
+  transform: rotate(18deg);
+}
+.season-thanks-sky {
+  z-index: 0;
+}
+.season-thanks > .relative {
+  z-index: 1;
+}
+.season-thanks--christmas {
+  border-top: 6px solid var(--festive-red) !important;
+}
+.season-thanks--new_year {
+  border-top: 6px solid var(--festive-gold) !important;
+}
+@keyframes season-sky-fall {
+  0% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate3d(14px, 380px, 0);
+    opacity: 0;
+  }
+}
+
+/* ── Footer horizon ──────────────────────────────────────────────────────── */
+
+.season-horizon {
+  height: 70px;
+  margin-top: 24px;
+  pointer-events: none;
+  overflow: hidden;
+}
+.season-horizon-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Shared sparkle / star twinkle ───────────────────────────────────────── */
+
+.season-sparkle,
+.season-star {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: season-sparkle 2.4s ease-in-out infinite;
+}
+@keyframes season-sparkle {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.72);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .season-bulb,
+  .season-sparkle,
+  .season-star,
+  .season-card-corner--new_year,
+  .season-thanks-sky i {
+    animation: none !important;
+  }
+  .season-burst,
+  .season-thanks-sky i {
+    display: none;
+  }
+  .season-card:hover:not(:disabled),
+  .season-hero-ribbon-cta:hover {
+    transform: none;
+  }
+}

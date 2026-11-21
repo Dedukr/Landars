@@ -156,7 +156,8 @@ export function calculateTotalPrice(
   subtotal: number,
   deliveryFee: number,
   discount: number = 0,
-  promoDiscount: number = 0
+  promoDiscount: number = 0,
+  holidayFee: number = 0
 ): number {
-  return subtotal + deliveryFee - discount - promoDiscount;
+  return subtotal + holidayFee + deliveryFee - discount - promoDiscount;
 }

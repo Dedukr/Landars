@@ -6,6 +6,8 @@ import Image from "next/image";
 import { Search, ChevronRight, Truck, Leaf, Star, ShieldCheck, Award } from "lucide-react";
 import OfferPills from "@/components/offers/OfferPills";
 import HeroProductPreview from "./HeroProductPreview";
+import Snowfall from "@/components/holiday/Snowfall";
+import HolidayHeroBanner from "@/components/holiday/HolidayHeroBanner";
 
 const trustItems = [
   { icon: Truck, label: "UK-Wide Delivery" },
@@ -45,6 +47,7 @@ export default function HomeHero() {
         className="absolute -bottom-20 -left-20 w-72 h-72 rounded-full opacity-[0.08] pointer-events-none"
         style={{ background: "var(--primary)" }}
       />
+      <Snowfall />
 
       {/* ── Main hero content ─────────────────────────────── */}
       <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 md:py-22 lg:py-28">
@@ -92,6 +95,7 @@ export default function HomeHero() {
           </span>
         </div>
 
+        <HolidayHeroBanner className="mb-5 sm:mb-6" />
         <OfferPills className="mb-5 justify-center sm:mb-6 lg:justify-start" />
 
         {/* Two-column layout: content left, product cards right (desktop) */}

@@ -693,6 +693,18 @@ class CategoryList(APIView):
         return serializer.data
 
 
+class HolidayEventList(APIView):
+    """Holidays customers can order for right now (drives the picker and site theme)."""
+
+    permission_classes = [AllowAny]
+    throttle_classes = []
+
+    def get(self, request):
+        from api.services.holidays import open_holiday_events_payload
+
+        return Response(open_holiday_events_payload())
+
+
 class CategoryGroupList(APIView):
     """All category groups for storefront navigation."""
 
@@ -848,8 +860,10 @@ class OrderListView(APIView):
             )
 
         # Get user's orders
-        orders = Order.objects.filter(customer=request.user).prefetch_related(
-            "items__product"
+        orders = (
+            Order.objects.filter(customer=request.user)
+            .select_related("holiday_event")
+            .prefetch_related("items__product")
         )
 
         # Filtering
@@ -1079,8 +1093,25 @@ class OrderListView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Holiday occasion (Christmas / New Year): re-check at checkout — the admin may
+        # have switched the event off, or the cart may have become a parcel order.
+        holiday_event = cart.holiday_event
+        if holiday_event is not None:
+            from api.services.holidays import UNAVAILABLE_CODE, holiday_choice_error
+
+            holiday_error = holiday_choice_error(holiday_event, cart)
+            if holiday_error:
+                return Response(
+                    {"error": holiday_error, "code": UNAVAILABLE_CODE},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         order_data = {
             "customer": request.user,
+            "holiday_event": holiday_event,
+            "holiday_fee": (
+                holiday_event.surcharge_percent if holiday_event else Decimal("0")
+            ),
             "notes": cart.notes or request.data.get("notes", ""),
             "delivery_date": cart.delivery_date
             or request.data.get("delivery_date"),
@@ -1301,7 +1332,9 @@ class OrderDetailView(APIView):
         """Get order object and check ownership."""
         try:
             return (
-                Order.objects.select_related("address", "shipping_details")
+                Order.objects.select_related(
+                    "address", "shipping_details", "holiday_event"
+                )
                 .get(id=order_id, customer=user)
             )
         except Order.DoesNotExist:
@@ -1515,7 +1548,14 @@ class CartView(APIView):
         cart, created = Cart.objects.get_or_create(user=request.user)
         if cart.items.exists():
             self._calculate_delivery_type_and_fee(cart)
-            cart.save(update_fields=["is_home_delivery", "delivery_fee", "updated_at"])
+            cart.save(
+                update_fields=[
+                    "is_home_delivery",
+                    "delivery_fee",
+                    "holiday_event",
+                    "updated_at",
+                ]
+            )
         serializer = CartSerializer(cart)
         return Response(serializer.data)
 
@@ -1686,6 +1726,13 @@ class CartView(APIView):
             if "is_home_delivery" in request.data:
                 cart.is_home_delivery = request.data.get("is_home_delivery", True)
 
+            if "holiday_event" in request.data:
+                holiday_response = self._apply_holiday_choice(
+                    cart, request.data.get("holiday_event")
+                )
+                if holiday_response is not None:
+                    return holiday_response
+
             if "coupon_code" in request.data:
                 from api.checkout_security import apply_coupon_to_cart
 
@@ -1715,10 +1762,35 @@ class CartView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+    @staticmethod
+    def _apply_holiday_choice(cart, raw_event_id):
+        """Set or clear the cart's holiday occasion. Returns an error Response or None."""
+        from api.models import HolidayEvent
+        from api.services.holidays import UNAVAILABLE_CODE, holiday_choice_error
+
+        if raw_event_id in (None, "", 0, "0", False):
+            cart.holiday_event = None
+            return None
+
+        try:
+            event = HolidayEvent.objects.get(pk=int(raw_event_id))
+        except (HolidayEvent.DoesNotExist, TypeError, ValueError):
+            event = None
+
+        error = holiday_choice_error(event, cart)
+        if error:
+            return Response(
+                {"error": error, "code": UNAVAILABLE_CODE},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        cart.holiday_event = event
+        return None
+
     def _calculate_delivery_type_and_fee(self, cart):
         """
         Calculate delivery type and fee automatically based on cart contents.
         Uses Royal Mail pricing for post-delivery group categories.
+        Parcel (post) carts can't be holiday orders, so their occasion is cleared.
         """
         from decimal import Decimal
 
@@ -1742,6 +1814,8 @@ class CartView(APIView):
         if all_post_delivery:
             # All lines are in the post-delivery category group — Royal Mail pricing
             cart.is_home_delivery = False
+            if isinstance(cart, Cart):
+                cart.holiday_event = None
             total_weight = ShippingService.parcel_weight_kg_from_line_items(items)
             cart.delivery_fee = ShippingService.get_delivery_fee_by_weight(
                 total_weight

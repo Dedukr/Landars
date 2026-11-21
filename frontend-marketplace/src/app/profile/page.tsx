@@ -679,81 +679,72 @@ export default function ProfilePage() {
             Used for invoices and payment records.
           </p>
 
-          {isEditing ? (
-            <>
-              <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                <Input
-                  label="Company name (optional)"
-                  name="bill_company_name"
-                  value={formData.bill_company_name}
-                  onChange={handleInputChange}
-                  placeholder="Company or organisation name"
-                />
-                <Input
-                  label="Contact name (optional)"
-                  name="bill_contact_name"
-                  value={formData.bill_contact_name}
-                  onChange={handleInputChange}
-                  placeholder="Billing contact person"
-                />
-              </div>
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              name="bill_use_delivery_address"
+              checked={formData.bill_use_delivery_address}
+              onChange={(e) => {
+                handleInputChange(e);
+                if (!isEditing) setIsEditing(true);
+              }}
+              className="mt-1 rounded border-[var(--sidebar-border)]"
+            />
+            <span className="text-sm text-[var(--foreground)]">
+              Billing address is the same as delivery
+            </span>
+          </label>
 
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  name="bill_use_delivery_address"
-                  checked={formData.bill_use_delivery_address}
-                  onChange={handleInputChange}
-                  className="mt-1 rounded border-[var(--sidebar-border)]"
-                />
-                <span className="text-sm text-[var(--foreground)]">
-                  Use your delivery address as billing address
-                </span>
-              </label>
-
-              {!formData.bill_use_delivery_address ? (
-                <div className="animate-billing-expand mt-6 pt-6 border-t border-[var(--sidebar-border)]">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <Input
-                      label="Billing Address Line 1"
-                      name="bill_address_line"
-                      value={formData.bill_address_line}
-                      onChange={handleInputChange}
-                      placeholder="Street address, P.O. box, etc."
-                    />
-                    <Input
-                      label="Billing Address Line 2"
-                      name="bill_address_line2"
-                      value={formData.bill_address_line2}
-                      onChange={handleInputChange}
-                      placeholder="Apartment, suite, unit, building, floor, etc."
-                    />
-                    <Input
-                      label="Billing City"
-                      name="bill_city"
-                      value={formData.bill_city}
-                      onChange={handleInputChange}
-                      placeholder="Enter billing city"
-                    />
-                    <Input
-                      label="Billing Postal Code"
-                      name="bill_postal_code"
-                      value={formData.bill_postal_code}
-                      onChange={handleInputChange}
-                      placeholder="Enter billing postal code"
-                    />
-                  </div>
+          {!formData.bill_use_delivery_address ? (
+            isEditing ? (
+              <div className="animate-billing-expand mt-6 pt-6 border-t border-[var(--sidebar-border)]">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <Input
+                    label="Company name (optional)"
+                    name="bill_company_name"
+                    value={formData.bill_company_name}
+                    onChange={handleInputChange}
+                    placeholder="Company or organisation name"
+                  />
+                  <Input
+                    label="Contact name (optional)"
+                    name="bill_contact_name"
+                    value={formData.bill_contact_name}
+                    onChange={handleInputChange}
+                    placeholder="Billing contact person"
+                  />
+                  <Input
+                    label="Billing Address Line 1"
+                    name="bill_address_line"
+                    value={formData.bill_address_line}
+                    onChange={handleInputChange}
+                    placeholder="Street address, P.O. box, etc."
+                  />
+                  <Input
+                    label="Billing Address Line 2"
+                    name="bill_address_line2"
+                    value={formData.bill_address_line2}
+                    onChange={handleInputChange}
+                    placeholder="Apartment, suite, unit, building, floor, etc."
+                  />
+                  <Input
+                    label="Billing City"
+                    name="bill_city"
+                    value={formData.bill_city}
+                    onChange={handleInputChange}
+                    placeholder="Enter billing city"
+                  />
+                  <Input
+                    label="Billing Postal Code"
+                    name="bill_postal_code"
+                    value={formData.bill_postal_code}
+                    onChange={handleInputChange}
+                    placeholder="Enter billing postal code"
+                  />
                 </div>
-              ) : null}
-            </>
-          ) : (
-            <>
-              <div className="mb-4 text-sm text-[var(--muted-foreground)]">
-                {profileData?.profile?.bill_use_delivery_address
-                  ? "Same as delivery address"
-                  : "Separate billing address"}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                 {[
                   {
                     label: "Company name",
@@ -798,8 +789,8 @@ export default function ProfilePage() {
                   </div>
                 ))}
               </div>
-            </>
-          )}
+            )
+          ) : null}
         </div>
 
         {/* Password Reset Section */}

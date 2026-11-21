@@ -2,13 +2,19 @@
 
 import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/Button";
+import type { HolidayEvent } from "@/lib/holidayApi";
+import { FirBranch, Sparkles } from "@/components/holiday/SeasonArt";
 
 type Props = {
   open: boolean;
   onClose: () => void;
+  /** Christmas / New Year orders get the festive variant. */
+  holidayEvent?: HolidayEvent | null;
 };
 
-export default function OrderThankYouModal({ open, onClose }: Props) {
+const FLAKES = 18;
+
+export default function OrderThankYouModal({ open, onClose, holidayEvent = null }: Props) {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -55,13 +61,34 @@ export default function OrderThankYouModal({ open, onClose }: Props) {
 
       {/* Modal */}
       <div
-        className="relative w-full max-w-lg rounded-2xl shadow-xl"
+        className={`relative w-full max-w-lg overflow-hidden rounded-2xl shadow-xl${
+          holidayEvent ? ` season-thanks season-thanks--${holidayEvent.theme}` : ""
+        }`}
         style={{
           background: "var(--card-bg)",
           border: "1px solid var(--sidebar-border)",
         }}
       >
-        <div className="p-6 sm:p-8">
+        {holidayEvent ? (
+          <div className="season-thanks-sky" aria-hidden="true">
+            {Array.from({ length: FLAKES }).map((_, i) => (
+              <i
+                key={i}
+                style={{
+                  left: `${(i * 53) % 100}%`,
+                  animationDelay: `${(i * 0.41) % 3.2}s`,
+                  animationDuration: `${3.6 + (i % 4) * 0.7}s`,
+                }}
+              />
+            ))}
+            {holidayEvent.theme === "christmas" ? (
+              <FirBranch className="season-thanks-art" />
+            ) : (
+              <Sparkles className="season-thanks-art" />
+            )}
+          </div>
+        ) : null}
+        <div className="relative p-6 sm:p-8">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3">
               <div
@@ -90,14 +117,19 @@ export default function OrderThankYouModal({ open, onClose }: Props) {
                   className="text-xl sm:text-2xl font-bold"
                   style={{ color: "var(--foreground)" }}
                 >
-                  Thank you for your order!
+                  {holidayEvent
+                    ? holidayEvent.theme === "christmas"
+                      ? "Your Christmas feast is booked!"
+                      : "Your New Year feast is booked!"
+                    : "Thank you for your order!"}
                 </h2>
                 <p
                   className="mt-1 text-sm"
                   style={{ color: "var(--foreground)", opacity: 0.7 }}
                 >
-                  We have received your order and will contact you shortly to
-                  confirm it.
+                  {holidayEvent
+                    ? `We have received your ${holidayEvent.name} order and will contact you shortly to confirm your delivery day.`
+                    : "We have received your order and will contact you shortly to confirm it."}
                 </p>
               </div>
             </div>
@@ -127,7 +159,11 @@ export default function OrderThankYouModal({ open, onClose }: Props) {
             className="mt-4 text-sm sm:text-base"
             style={{ color: "var(--foreground)", opacity: 0.85 }}
           >
-            Have a great day!
+            {holidayEvent
+              ? holidayEvent.theme === "christmas"
+                ? "Merry Christmas from all of us at Landar’s Food 🎄"
+                : "Happy New Year from all of us at Landar’s Food 🎆"
+              : "Have a great day!"}
           </p>
 
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">

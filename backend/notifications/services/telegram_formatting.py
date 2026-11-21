@@ -161,7 +161,13 @@ def _admin_order_url(order: Order) -> str:
 
 def format_order_for_telegram(order: Order) -> str:
     """Build HTML-formatted Telegram message for a new frontend order."""
-    lines: list[str] = ["🛒 <b>New LandarsFood order</b>", ""]
+    lines: list[str] = []
+    holiday_event = getattr(order, "holiday_event", None)
+    if holiday_event is not None:
+        lines.append(
+            f"{holiday_event.emoji} <b>{html.escape(holiday_event.name.upper())} ORDER</b>"
+        )
+    lines.extend(["🛒 <b>New LandarsFood order</b>", ""])
 
     reference = _order_reference(order)
     if reference:
@@ -191,6 +197,16 @@ def format_order_for_telegram(order: Order) -> str:
             if delivery_price:
                 lines.append(f"<b>Delivery:</b> {html.escape(delivery_price)}")
 
+    if order.holiday_fee and order.holiday_fee > 0:
+        holiday_amount = format_money(
+            Decimal(str(order.holiday_fee_amount)).quantize(Decimal("0.01"))
+        )
+        if holiday_amount:
+            lines.append(
+                f"<b>Holiday fee ({order.holiday_fee:.0f}%):</b> "
+                f"{html.escape(holiday_amount)}"
+            )
+
     total = format_money(order.total_price)
     if total:
         lines.extend(["", f"<b>Total:</b> {html.escape(total)}"])
@@ -205,6 +221,11 @@ def format_order_for_telegram(order: Order) -> str:
     if order.delivery_date:
         lines.append(
             f"<b>Delivery date:</b> {html.escape(order.delivery_date.strftime('%Y-%m-%d'))}"
+        )
+    elif holiday_event is not None and holiday_event.delivery_window_label:
+        lines.append(
+            f"<b>Delivery:</b> {html.escape(holiday_event.delivery_window_label)} "
+            "(date to be assigned)"
         )
 
     created = _format_created_at(order)
