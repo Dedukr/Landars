@@ -2,10 +2,7 @@ import React from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { ArrowRight, Package } from "lucide-react";
-import {
-  SeasonCardCorner,
-  SeasonPriceNote,
-} from "@/components/holiday/SeasonCardDecor";
+import { SeasonPriceNote } from "@/components/holiday/SeasonCardDecor";
 
 interface HomeProduct {
   id: number;
@@ -58,7 +55,6 @@ export default function HomeProductCard({ product, className = "" }: HomeProduct
         className="relative h-44 overflow-hidden flex-shrink-0"
         style={{ background: "var(--sidebar-bg)" }}
       >
-        <SeasonCardCorner />
         {imageUrl ? (
           <Image
             src={imageUrl}
