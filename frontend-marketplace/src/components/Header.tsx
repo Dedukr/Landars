@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSeason } from "@/contexts/SeasonContext";
-import { Garland, SantaHat, SnowCap } from "@/components/holiday/SeasonArt";
+import { Garland, GiftBow, Glint } from "@/components/holiday/SeasonArt";
 import { formatUserDisplayName, formatUserFirstName } from "@/lib/userName";
 import { getAuthUrl } from "@/utils/authHelpers";
 import {
@@ -139,7 +139,10 @@ export default function Header() {
             className="relative flex items-center gap-2.5 flex-shrink-0 hover:opacity-85 transition-opacity"
           >
             {seasonTheme === "christmas" && (
-              <SnowCap className="season-logo-snow" />
+              <GiftBow className="season-logo-bow" />
+            )}
+            {seasonTheme === "new_year" && (
+              <Glint className="season-logo-glint" />
             )}
             <Image
               src="/landars_food_logo.svg"
@@ -202,12 +205,10 @@ export default function Header() {
             >
               <ShoppingCart className="w-5 h-5 md:w-5 md:h-5" />
               {cartOccasion?.theme === "christmas" && (
-                <SantaHat className="season-cart-hat" />
+                <GiftBow className="season-cart-bow" />
               )}
               {cartOccasion?.theme === "new_year" && (
-                <span className="season-cart-spark" aria-hidden="true">
-                  ✦
-                </span>
+                <Glint className="season-cart-spark" />
               )}
               {cartItemCount > 0 && (
                 <span

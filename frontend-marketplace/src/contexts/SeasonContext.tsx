@@ -24,6 +24,34 @@ import {
 const INTENT_KEY = "landars_holiday_intent";
 const SNOW_OFF_KEY = "landars_season_snow_off";
 
+/**
+ * Development-only preview: open any page with ?season=christmas or
+ * ?season=new_year to see the decorations while no holiday is switched on in
+ * the admin. Compiled out of production builds (NODE_ENV is inlined).
+ */
+function devPreviewEvents(): HolidayEvent[] | null {
+  if (process.env.NODE_ENV === "production") return null;
+  const asked =
+    new URLSearchParams(window.location.search).get("season") ??
+    window.sessionStorage.getItem("landars_season_preview");
+  if (asked !== "christmas" && asked !== "new_year") return null;
+  window.sessionStorage.setItem("landars_season_preview", asked);
+  const christmas = asked === "christmas";
+  return [
+    {
+      id: -1,
+      name: christmas ? "Christmas" : "New Year",
+      theme: asked,
+      emoji: christmas ? "🎄" : "🎆",
+      label: christmas ? "Christmas" : "New Year",
+      surcharge_percent: "15",
+      delivery_window_label: christmas
+        ? "Delivered 22–24 December"
+        : "Delivered 29–31 December",
+    },
+  ];
+}
+
 function readStorage(key: string): string | null {
   try {
     return window.localStorage.getItem(key);
@@ -87,9 +115,17 @@ export function SeasonProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    void fetchHolidayEvents().then((list) => {
-      if (!cancelled) setEvents(list);
-    });
+    let preview: HolidayEvent[] | null = null;
+    try {
+      preview = devPreviewEvents();
+    } catch {
+      /* storage blocked — preview is optional */
+    }
+    if (preview) setEvents(preview);
+    else
+      void fetchHolidayEvents().then((list) => {
+        if (!cancelled) setEvents(list);
+      });
     setSnowEnabledState(readStorage(SNOW_OFF_KEY) !== "1");
     return () => {
       cancelled = true;

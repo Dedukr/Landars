@@ -48,6 +48,13 @@ export default function HolidayHeroBanner({ className = "" }: { className?: stri
     <div
       className={`season-hero-ribbon season-hero-ribbon--${event.theme} ${className}`.trim()}
     >
+      {["tl", "tr", "bl", "br"].map((corner) => (
+        <span
+          key={corner}
+          className={`season-hero-ribbon-corner season-hero-ribbon-corner--${corner}`}
+          aria-hidden="true"
+        />
+      ))}
       <span className="season-hero-ribbon-art" aria-hidden="true">
         {isChristmas ? <FirBranch /> : <Sparkles />}
       </span>

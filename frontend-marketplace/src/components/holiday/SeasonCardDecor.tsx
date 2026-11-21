@@ -2,18 +2,6 @@
 
 import { useSeason } from "@/contexts/SeasonContext";
 import { holidayUnitPrice, percentOf } from "@/lib/holidayApi";
-import { HollySprig } from "./SeasonArt";
-
-/** Holly sprig (Christmas) or a gold spark (New Year) in a product image corner. */
-export function SeasonCardCorner() {
-  const { theme } = useSeason();
-  if (!theme) return null;
-  return (
-    <span className={`season-card-corner season-card-corner--${theme}`} aria-hidden="true">
-      {theme === "christmas" ? <HollySprig /> : "✦"}
-    </span>
-  );
-}
 
 /**
  * Second price line while the basket is a holiday order, so the 15% never

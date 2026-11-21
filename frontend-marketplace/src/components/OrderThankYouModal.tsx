@@ -12,7 +12,7 @@ type Props = {
   holidayEvent?: HolidayEvent | null;
 };
 
-const FLAKES = 18;
+const FLAKES = 28;
 
 export default function OrderThankYouModal({ open, onClose, holidayEvent = null }: Props) {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
