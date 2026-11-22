@@ -166,13 +166,13 @@ function ShopProductCard({
           </h3>
           {product.description ? (
             <p
-              className="hidden sm:block text-sm leading-relaxed line-clamp-4 mb-4"
+              className="text-xs sm:text-sm leading-relaxed line-clamp-4 mb-2 sm:mb-4"
               style={{ color: "var(--muted-foreground)" }}
             >
               {product.description}
             </p>
           ) : (
-            <div className="hidden sm:block mb-4" />
+            <div className="mb-2 sm:mb-4" aria-hidden />
           )}
         </Link>
 

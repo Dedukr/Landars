@@ -68,7 +68,8 @@
   position: absolute;
   left: 0;
   right: 0;
-  top: calc(100% - 3px);
+  /* sits on the header's lower edge so the bulbs clear the promo pills below */
+  top: calc(100% - 17px);
   height: 40px;
   display: flex;
   justify-content: center;
